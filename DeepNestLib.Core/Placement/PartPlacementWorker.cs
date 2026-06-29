@@ -186,6 +186,35 @@
 
     private InnerFlowResult ProcessSecondaryPartOnSheet(INfp inputPart, int inputPartIndex, INfp processedPart)
     {
+      var (flow, position) = this.TryFindSecondaryPlacement(inputPartIndex, processedPart);
+      if (flow != InnerFlowResult.Success)
+      {
+        return flow;
+      }
+
+      if (position == null)
+      {
+        this.VerboseLog($"Could not place {processedPart}.");
+        return InnerFlowResult.Continue;
+      }
+
+      this.SheetPlacement = this.AddPlacement(inputPart, processedPart, position, inputPartIndex);
+      if (position.MergedLength.HasValue)
+      {
+        this.MergedLength += position.MergedLength.Value;
+      }
+
+      return InnerFlowResult.Success;
+    }
+
+    /// <summary>
+    /// Computes the best position for <paramref name="processedPart"/> against the current
+    /// <see cref="Placements"/> set, WITHOUT committing it (no <see cref="AddPlacement"/>).
+    /// This is the reusable core shared by greedy placement and re-insertion.
+    /// </summary>
+    /// <returns>The flow result and, on success, the chosen position (null if it cannot be placed).</returns>
+    private (InnerFlowResult Flow, PartPlacement Position) TryFindSecondaryPlacement(int inputPartIndex, INfp processedPart)
+    {
       this.VerboseLog("Already has a first placement.");
       this.VerboseLog($"Calculate placement #{this.Placements.Count} on SheetNfp");
       this.SheetNfp = this.InitialiseSheetNfp(processedPart);
@@ -196,81 +225,86 @@
 
       this.PrepExport(inputPartIndex, "SheetNfpItems.scad", () => this.SheetNfp.Items.ToOpenScadPolygon());
 
-      if (this.SheetNfp.CanAcceptPart)
-      {
-        this.VerboseLog($"Placement #{this.Placements.Count + 1}. . .");
-        string clipkey = "s:" + processedPart.Source + "r:" + processedPart.Rotation;
-
-        List<List<IntPoint>> combinedNfp;
-        if (!TryGetCombinedNfp(this.Placements, processedPart, clipkey, out combinedNfp))
-        {
-          this.VerboseLog($"{nameof(this.TryGetCombinedNfp)} clipper error.");
-          return InnerFlowResult.Continue;
-        }
-        else
-        {
-          this.CombinedNfp = combinedNfp;
-          this.PrepExport(inputPartIndex, "combinedNfp.scad", () => combinedNfp.ToOpenScadPolygon());
-        }
-
-        if (this.EnableCaches)
-        {
-          this.VerboseLog($"Add {clipkey} to {nameof(this.ClipCache)}");
-          this.ClipCache[clipkey] = new ClipCacheItem()
-          {
-            index = this.Placements.Count - 1,
-            nfpp = this.CombinedNfp.Select(z => z.ToArray()).ToArray(),
-          };
-        }
-
-        // console.log('save cache', placed.length - 1);
-
-        //Moved because I'm certain SheetNfp isn't accessed between where this was and here...
-        var clipperSheetNfp = NfpHelper.InnerNfpToClipperCoordinates(this.SheetNfp.Items, this.Config.ClipperScale);
-        this.PrepExport(inputPartIndex, "clipperSheetNfp.scad", () => clipperSheetNfp.ToOpenScadPolygon());
-
-        List<INfp> finalNfp;
-        InnerFlowResult clipperForDifferenceResult = this.TryGetDifferenceWithSheetPolygon(this.Config.ClipperScale, this.CombinedNfp, processedPart, clipperSheetNfp, out finalNfp);
-        if (clipperForDifferenceResult == InnerFlowResult.Break)
-        {
-          this.VerboseLog("ProcessPart returns InnerFlowResult.Break");
-          return InnerFlowResult.Break;
-        }
-        else if (clipperForDifferenceResult == InnerFlowResult.Continue)
-        {
-          this.VerboseLog("ProcessPart returns InnerFlowResult.Continue");
-          return InnerFlowResult.Continue;
-        }
-
-        this.PrepExport(inputPartIndex, "finalNfp.scad", () => finalNfp.ToOpenScadPolygon());
-        PartPlacement position = GetBestPosition(
-                                          processedPart,
-                                          finalNfp,
-                                          this.VerboseLog,
-                                          this.Config.PlacementType,
-                                          SheetPlacement.CombinedPoints(this.Placements));
-        if (position != null)
-        {
-          this.FinalNfp = new NfpCandidateList(finalNfp.ToArray(), this.Sheet, position.PlacedPart);
-          this.SheetPlacement = this.AddPlacement(inputPart, processedPart, position, inputPartIndex);
-          if (position.MergedLength.HasValue)
-          {
-            this.MergedLength += position.MergedLength.Value;
-          }
-        }
-        else
-        {
-          this.VerboseLog($"Could not place {processedPart}.");
-          return InnerFlowResult.Continue;
-        }
-      }
-      else
+      if (!this.SheetNfp.CanAcceptPart)
       {
         this.VerboseLog($"Could not place {processedPart.ToShortString()} even on empty {this.Sheet.ToShortString()}.");
-        return InnerFlowResult.Continue;
+        return (InnerFlowResult.Continue, null);
       }
 
-      return InnerFlowResult.Success;
+      this.VerboseLog($"Placement #{this.Placements.Count + 1}. . .");
+      string clipkey = "s:" + processedPart.Source + "r:" + processedPart.Rotation;
+
+      List<List<IntPoint>> combinedNfp;
+      if (!TryGetCombinedNfp(this.Placements, processedPart, clipkey, out combinedNfp))
+      {
+        this.VerboseLog($"{nameof(this.TryGetCombinedNfp)} clipper error.");
+        return (InnerFlowResult.Continue, null);
+      }
+
+      this.CombinedNfp = combinedNfp;
+      this.PrepExport(inputPartIndex, "combinedNfp.scad", () => combinedNfp.ToOpenScadPolygon());
+
+      if (this.EnableCaches)
+      {
+        this.VerboseLog($"Add {clipkey} to {nameof(this.ClipCache)}");
+        this.ClipCache[clipkey] = new ClipCacheItem()
+        {
+          index = this.Placements.Count - 1,
+          nfpp = this.CombinedNfp.Select(z => z.ToArray()).ToArray(),
+        };
+      }
+
+      // console.log('save cache', placed.length - 1);
+      var clipperSheetNfp = NfpHelper.InnerNfpToClipperCoordinates(this.SheetNfp.Items, this.Config.ClipperScale);
+      this.PrepExport(inputPartIndex, "clipperSheetNfp.scad", () => clipperSheetNfp.ToOpenScadPolygon());
+
+      List<INfp> finalNfp;
+      InnerFlowResult clipperForDifferenceResult = this.TryGetDifferenceWithSheetPolygon(this.Config.ClipperScale, this.CombinedNfp, processedPart, clipperSheetNfp, out finalNfp);
+      if (clipperForDifferenceResult == InnerFlowResult.Break)
+      {
+        this.VerboseLog("ProcessPart returns InnerFlowResult.Break");
+        return (InnerFlowResult.Break, null);
+      }
+      else if (clipperForDifferenceResult == InnerFlowResult.Continue)
+      {
+        this.VerboseLog("ProcessPart returns InnerFlowResult.Continue");
+        return (InnerFlowResult.Continue, null);
+      }
+
+      this.PrepExport(inputPartIndex, "finalNfp.scad", () => finalNfp.ToOpenScadPolygon());
+      PartPlacement position = GetBestPosition(
+                                        processedPart,
+                                        finalNfp,
+                                        this.VerboseLog,
+                                        this.Config.PlacementType,
+                                        SheetPlacement.CombinedPoints(this.Placements));
+      if (position != null)
+      {
+        this.FinalNfp = new NfpCandidateList(finalNfp.ToArray(), this.Sheet, position.PlacedPart);
+      }
+
+      return (InnerFlowResult.Success, position);
+    }
+
+    /// <summary>
+    /// Re-insertion entry point: finds the best position for an already-rotated part against the
+    /// current <see cref="Placements"/> set without committing it. Returns null if no valid
+    /// position exists. Used by the post-placement local search.
+    /// </summary>
+    internal PartPlacement TryReplace(INfp rotatedPart, int inputPartIndex)
+    {
+      lock (this.processPartLock)
+      {
+        this.SheetNfp = null;
+        this.SheetPlacement = null;
+        this.FinalNfp = null;
+        this.CombinedNfp = null;
+        this.InputPart = rotatedPart;
+        this.logList.Clear();
+        var processedPart = new NoFitPolygon(rotatedPart, WithChildren.Included) as INfp;
+        var (flow, position) = this.TryFindSecondaryPlacement(inputPartIndex, processedPart);
+        return flow == InnerFlowResult.Success ? position : null;
+      }
     }
 
     /// <summary>

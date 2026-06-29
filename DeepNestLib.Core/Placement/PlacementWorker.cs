@@ -81,6 +81,18 @@
         }
 
         lastPartPlacementWorker = new PartPlacementWorker(this, config, gene, placements, sheet, nfpHelper, state);
+        if (GridNesting.Enabled)
+        {
+          // Read the real part spacing from the full config so the grid pitch is correct in any
+          // host (the static GridNesting.Spacing is only set by the NestBench harness).
+          if (config is ISvgNestConfig gridConfig)
+          {
+            GridNesting.Spacing = gridConfig.Spacing;
+          }
+
+          GridNesting.PrePlace(unplacedParts, placements, sheet);
+        }
+
         var processingParts = (isPriorityPlacement ? unplacedParts.Where(o => o.IsPriority).Union(unplacedParts.Where(o => !o.IsPriority)) : unplacedParts).ToArray();
         for (int processingPartIndex = 0; processingPartIndex < processingParts.Length; processingPartIndex++)
         {
@@ -100,6 +112,21 @@
         RequeueSheets(sheet, requeue, isPriorityPlacement);
         if (lastPartPlacementWorker.Placements != null && lastPartPlacementWorker.Placements.Count > 0)
         {
+          if (Compaction.Enabled)
+          {
+            Compaction.Compact(lastPartPlacementWorker.Placements, sheet);
+          }
+
+          if (Reinsertion.Enabled)
+          {
+            Reinsertion.Optimize(lastPartPlacementWorker.Placements, sheet, config, nfpHelper, state, this, gene);
+          }
+
+          if (CommonLine.Enabled)
+          {
+            CommonLine.Apply(lastPartPlacementWorker.Placements, sheet);
+          }
+
           VerboseLog($"Add {config.PlacementType} placement {sheet.ToShortString()}.");
           allPlacements.Add(new SheetPlacement(config.PlacementType, sheet, lastPartPlacementWorker.Placements, lastPartPlacementWorker.MergedLength, config.ClipperScale));
         }

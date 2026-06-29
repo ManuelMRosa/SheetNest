@@ -42,6 +42,7 @@
       {
         var obsPart = new ObservablePartPlacement(partPlacement, order);
         order++;
+        obsPart.TryLoadExactForDisplay(); // render true outlines, not the coarse nesting geometry
         obsPart.PropertyChanged += this.ObsPart_PropertyChanged;
         this.observablePartPlacements.Add(obsPart);
       }

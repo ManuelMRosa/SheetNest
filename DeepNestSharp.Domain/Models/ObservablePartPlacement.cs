@@ -1,5 +1,6 @@
 ﻿namespace DeepNestSharp.Domain.Models
 {
+  using System.Collections.Concurrent;
   using System.Threading.Tasks;
   using System.Windows.Input;
   using DeepNestLib;
@@ -9,6 +10,10 @@
 
   public class ObservablePartPlacement : ObservablePropertyObject, IPartPlacement
   {
+    // Un-rotated exact geometry reloaded from the original DXF, cached per file so a result with
+    // many copies only reads each source once.
+    private static readonly ConcurrentDictionary<string, INfp> ExactGeometryCache = new ConcurrentDictionary<string, INfp>();
+
     private readonly IPartPlacement partPlacement;
     private readonly IPointXY originalPosition;
     private readonly double originalRotation;
@@ -167,6 +172,41 @@
         this.Part.ReplacePoints(loadedNfp);
         OnPropertyChanged(nameof(IsExact));
         loadExactCommand?.NotifyCanExecuteChanged();
+      }
+    }
+
+    /// <summary>
+    /// Replaces this placement's simplified/inflated nesting geometry with the exact original from
+    /// the source DXF (rotated to the placement), so the preview renders true part outlines instead
+    /// of the coarse polygons used by the nesting math. No-op if already exact or the file is gone.
+    /// </summary>
+    internal void TryLoadExactForDisplay()
+    {
+      try
+      {
+        var name = this.Part?.Name;
+        if (this.IsExact || string.IsNullOrEmpty(name) || !name.ToLower().Contains(".dxf"))
+        {
+          return;
+        }
+
+        if (!ExactGeometryCache.TryGetValue(name, out INfp baseNfp))
+        {
+          var raw = DxfParser.LoadDxfFile(name).GetAwaiter().GetResult();
+          if (raw == null || !raw.TryConvertToNfp(this.Part.Source, out baseNfp))
+          {
+            return;
+          }
+
+          ExactGeometryCache[name] = baseNfp;
+        }
+
+        this.Part.ReplacePoints(baseNfp.Rotate(this.Part.Rotation));
+        OnPropertyChanged(nameof(IsExact));
+      }
+      catch
+      {
+        // Keep the simplified geometry if the original can't be reloaded.
       }
     }
   }

@@ -17,6 +17,69 @@
     private const double RemoveThreshold = 10e-5;
     private const double ClosingThreshold = 10e-2;
 
+    // Curve tessellation: arcs/circles are approximated by line segments. The angular step is
+    // chosen so the chord deviation stays within CurveChordTolerance (drawing units), adaptive to
+    // radius, and clamped so even tiny holes look smooth and huge arcs don't explode in segments.
+    // (Replaces the old hard-coded 15 deg step that turned every circle into a 24-gon.)
+    private const double CurveChordTolerance = 0.05;
+    private const double MinArcStepDeg = 1.0;
+    private const double MaxArcStepDeg = 6.0;
+
+    private static double ArcStepDegrees(double radius)
+    {
+      if (radius <= 0)
+      {
+        return MaxArcStepDeg;
+      }
+
+      double cosHalf = 1.0 - (CurveChordTolerance / radius);
+      cosHalf = Math.Max(-1.0, Math.Min(1.0, cosHalf));
+      double stepDeg = 2.0 * Math.Acos(cosHalf) * 180.0 / Math.PI;
+      return Math.Max(MinArcStepDeg, Math.Min(MaxArcStepDeg, stepDeg));
+    }
+
+    /// <summary>
+    /// Intermediate arc points for a polyline "bulge" segment (DXF encodes arcs inside polylines as
+    /// bulge = tan(includedAngle/4) on the start vertex). Returns the points strictly between the two
+    /// vertices; the vertices themselves are added by the caller. A zero bulge yields nothing (straight).
+    /// </summary>
+    private static IEnumerable<PointF> BulgePoints(double x1, double y1, double x2, double y2, double bulge)
+    {
+      if (Math.Abs(bulge) < 1e-9)
+      {
+        yield break;
+      }
+
+      double theta = 4.0 * Math.Atan(bulge); // signed included angle
+      double dx = x2 - x1;
+      double dy = y2 - y1;
+      double chord = Math.Sqrt((dx * dx) + (dy * dy));
+      double sinHalf = Math.Sin(theta / 2.0);
+      if (chord < 1e-9 || Math.Abs(sinHalf) < 1e-12)
+      {
+        yield break;
+      }
+
+      double radius = chord / (2.0 * sinHalf); // signed
+      double mx = (x1 + x2) / 2.0;
+      double my = (y1 + y2) / 2.0;
+      double apothem = radius * Math.Cos(theta / 2.0); // signed
+      double ux = -dy / chord; // left perpendicular to the chord
+      double uy = dx / chord;
+      double cx = mx + (apothem * ux);
+      double cy = my + (apothem * uy);
+      double absR = Math.Abs(radius);
+      double a1 = Math.Atan2(y1 - cy, x1 - cx);
+      double stepRad = ArcStepDegrees(absR) * Math.PI / 180.0;
+      int n = Math.Max(1, (int)Math.Ceiling(Math.Abs(theta) / stepRad));
+      double da = theta / n;
+      for (int k = 1; k < n; k++)
+      {
+        double a = a1 + (da * k);
+        yield return new PointF((float)(cx + (absR * Math.Cos(a))), (float)(cy + (absR * Math.Sin(a))));
+      }
+    }
+
     private static volatile object loadLock = new object();
 
     public static async Task<IRawDetail> LoadDxfFile(string path)
@@ -79,9 +142,19 @@
               }
 
               var localContour = new List<PointF>();
-              foreach (DxfLwPolylineVertex vert in poly.Vertices)
+              var verts = poly.Vertices.ToList();
+              for (int vi = 0; vi < verts.Count; vi++)
               {
+                var vert = verts[vi];
                 localContour.Add(new PointF((float)vert.X, (float)vert.Y));
+
+                // If this vertex carries a bulge, the segment to the next vertex is an arc.
+                bool hasNext = vi < verts.Count - 1 || poly.IsClosed;
+                if (hasNext && Math.Abs(vert.Bulge) > 1e-9)
+                {
+                  var next = verts[(vi + 1) % verts.Count];
+                  localContour.AddRange(BulgePoints(vert.X, vert.Y, next.X, next.Y, vert.Bulge));
+                }
               }
 
               elems.AddRange(ConnectTheDots(localContour).ToList());
@@ -98,7 +171,8 @@
                 arc.StartAngle -= 360;
               }
 
-              for (var i = arc.StartAngle; i < arc.EndAngle; i += 15)
+              double arcStep = ArcStepDegrees(arc.Radius);
+              for (var i = arc.StartAngle; i < arc.EndAngle; i += arcStep)
               {
                 var tt = arc.GetPointFromAngle(i);
                 pp.Add(new PointF((float)tt.X, (float)tt.Y));
@@ -120,13 +194,17 @@
               DxfCircle cr = (DxfCircle)ent;
               var cc = new List<PointF>();
 
-              for (var i = 0; i <= 360; i += 15)
+              double circleStep = ArcStepDegrees(cr.Radius);
+              for (double i = 0; i < 360; i += circleStep)
               {
                 var ang = i * Math.PI / 180f;
                 var xx = cr.Center.X + cr.Radius * Math.Cos(ang);
                 var yy = cr.Center.Y + cr.Radius * Math.Sin(ang);
                 cc.Add(new PointF((float)xx, (float)yy));
               }
+
+              // Ensure the ring closes back on the first point.
+              cc.Add(cc[0]);
 
               elems.AddRange(ConnectTheDots(cc));
             }
@@ -148,9 +226,18 @@
               }
 
               var localContour = new List<PointF>();
-              foreach (DxfVertex vert in poly.Vertices)
+              var pverts = poly.Vertices.ToList();
+              for (int vi = 0; vi < pverts.Count; vi++)
               {
+                var vert = pverts[vi];
                 localContour.Add(new PointF((float)vert.Location.X, (float)vert.Location.Y));
+
+                bool hasNext = vi < pverts.Count - 1 || poly.IsClosed;
+                if (hasNext && Math.Abs(vert.Bulge) > 1e-9)
+                {
+                  var next = pverts[(vi + 1) % pverts.Count];
+                  localContour.AddRange(BulgePoints(vert.Location.X, vert.Location.Y, next.Location.X, next.Location.Y, vert.Bulge));
+                }
               }
 
               elems.AddRange(ConnectTheDots(localContour));

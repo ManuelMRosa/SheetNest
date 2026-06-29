@@ -10,7 +10,19 @@
   public class Procreant
   {
     private readonly HashSet<string> ancestors = new HashSet<string>();
-    private readonly Random r = new Random();
+
+    /// <summary>Optional deterministic seed for reproducible benchmarking. Null = production (time-seeded).</summary>
+    public static int? RandomSeed { get; set; }
+
+    /// <summary>When set, the adam individual seeds each part's rotation to its minimum bounding-box
+    /// orientation (a compact start the GA then explores). Default off => random seed rotations.</summary>
+    public static bool SmartRotationSeed { get; set; }
+
+    /// <summary>Orientations evaluated when choosing the smart seed rotation. 0 => use config.Rotations.
+    /// Larger values find a tighter seed angle without slowing the GA (which keeps config.Rotations).</summary>
+    public static int SmartRotationSteps { get; set; }
+
+    private readonly Random r = RandomSeed.HasValue ? new Random(RandomSeed.Value) : new Random();
     private readonly ISvgNestConfig config;
     private readonly IProgressDisplayer progressDisplayer;
     private readonly Stopwatch chaperone = new Stopwatch();
@@ -42,7 +54,7 @@
       var angles = new List<double>();
       for (var i = 0; i < adam.Length; i++)
       {
-        angles.Add(GetRandomRotation(adam[i]));
+        angles.Add(GetSeedRotation(adam[i]));
       }
 
       var population = new PopulationItem[config.PopulationSize];
@@ -151,7 +163,7 @@
       return adam.ToArray();
     }
 
-    private readonly Random random = new Random();
+    private readonly Random random = RandomSeed.HasValue ? new Random(RandomSeed.Value ^ 0x5f3759df) : new Random();
 
     public bool IsCurrentGenerationFinished
     {
@@ -194,6 +206,35 @@
       }
 
       return new PopulationItem(new DeepNestGene(clone));
+    }
+
+    /// <summary>The adam's initial rotation for a part: its tightest bounding box when smart
+    /// seeding is on (respecting strict-angle parts), otherwise a random allowed rotation.</summary>
+    private double GetSeedRotation(INfp part)
+    {
+      if (!SmartRotationSeed
+          || IsPartRotationRestricted(part, AnglesEnum.AsPreviewed)
+          || IsPartRotationRestricted(part, AnglesEnum.Rotate90))
+      {
+        return GetRandomRotation(part);
+      }
+
+      int rotations = SmartRotationSteps > 0 ? SmartRotationSteps : Math.Max(1, config.Rotations);
+      double bestDeg = 0;
+      double bestArea = double.MaxValue;
+      for (int k = 0; k < rotations; k++)
+      {
+        double deg = k * (360.0 / rotations);
+        var rotated = part.Rotate(deg);
+        double area = rotated.WidthCalculated * rotated.HeightCalculated;
+        if (area < bestArea)
+        {
+          bestArea = area;
+          bestDeg = deg;
+        }
+      }
+
+      return bestDeg;
     }
 
     private double GetRandomRotation(INfp part)

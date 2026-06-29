@@ -80,6 +80,11 @@
     {
       // Generate Sheet Outline in Dxf
       var sheetdxf = new DxfFile();
+
+      // Write DXF R2000 (AC1015) instead of the default R12: R12 symbol/table names can't contain
+      // spaces, so a layer like "Plate H130 W70" makes AutoCAD reject the whole file. R2000 allows
+      // spaces in names and preserves LWPOLYLINE/arcs more faithfully. Universally supported.
+      sheetdxf.Header.Version = DxfAcadVersion.R2000;
       sheetdxf.Views.Clear();
 
       List<DxfVertex> sheetverts = new List<DxfVertex>();
@@ -99,7 +104,7 @@
       DxfPolyline sheetentity = new DxfPolyline(sheetverts)
       {
         IsClosed = true,
-        Layer = $"Plate H{sheet.HeightCalculated} W{sheet.WidthCalculated}",
+        Layer = $"Plate_H{sheet.HeightCalculated}_W{sheet.WidthCalculated}",
       };
 
       sheetdxf.Entities.Add(sheetentity);
@@ -258,14 +263,18 @@
             break;
 
           case DxfEntityType.LwPolyline:
-            DxfPolyline dxfPoly = (DxfPolyline)entity;
-            foreach (DxfVertex vrt in dxfPoly.Vertices)
+            // A LwPolyline's entity type is DxfLwPolyline (NOT DxfPolyline); its vertices are
+            // DxfLwPolylineVertex (X/Y/Bulge), not DxfVertex. The old (DxfPolyline) cast always threw.
+            DxfLwPolyline dxfLwPoly = (DxfLwPolyline)entity;
+            foreach (DxfLwPolylineVertex vrt in dxfLwPoly.Vertices)
             {
-              vrt.Location = RotateLocation(rotationAngle, vrt.Location);
-              vrt.Location += offset;
+              var rotated = RotateLocation(rotationAngle, new DxfPoint(vrt.X, vrt.Y, 0));
+              rotated += offset;
+              vrt.X = rotated.X;
+              vrt.Y = rotated.Y;
             }
 
-            result.Add(dxfPoly);
+            result.Add(dxfLwPoly);
             break;
 
           case DxfEntityType.MLine:
