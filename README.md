@@ -6,6 +6,14 @@
 
 **SheetNest** is a fork of [DeepNestSharp](https://github.com/9swampy/DeepNestSharp) — itself a C# port of [Deepnest](https://github.com/Jack000/Deepnest) — focused on production sheet-metal nesting (laser / plasma) with a streamlined operator workflow.
 
+## ⬇️ Download &amp; install (Windows 10/11, 64-bit)
+
+1. Open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download **`SheetNest-1.0.0-win-x64.zip`**.
+2. Right-click the zip → **Extract All** (anywhere — e.g. your Desktop).
+3. Open the folder and run **`SheetNest.exe`**.
+
+That's it — no .NET or anything else to install (it's a self-contained build). The first launch may show a Windows SmartScreen prompt (the app isn't code-signed) → **More info → Run anyway**.
+
 ### What SheetNest adds
 - **GPU / raster nesting engine** — an alternative bitmap-based nester (bottom-left fill, rotations, multi-sheet) that on real jobs reaches higher material utilization than the classic NFP engine. A single **NEST** button switches between the **CPU (NFP)** and **GPU (raster)** engines via a Settings toggle that auto-enables when a GPU is detected.
 - **Industrial production plan** — groups identical sheets into "cut N × layout A + M × layout B" (cutting-stock style) and **exports one DXF per distinct layout** instead of one per physical sheet.
