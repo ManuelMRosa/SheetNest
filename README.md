@@ -1,3 +1,17 @@
+# SheetNest
+
+**SheetNest** is a fork of [DeepNestSharp](https://github.com/9swampy/DeepNestSharp) — itself a C# port of [Deepnest](https://github.com/Jack000/Deepnest) — focused on production sheet-metal nesting (laser / plasma) with a streamlined operator workflow.
+
+### What SheetNest adds
+- **GPU / raster nesting engine** — an alternative bitmap-based nester (bottom-left fill, rotations, multi-sheet) that on real jobs reaches higher material utilization than the classic NFP engine. A single **NEST** button switches between the **CPU (NFP)** and **GPU (raster)** engines via a Settings toggle that auto-enables when a GPU is detected.
+- **Industrial production plan** — groups identical sheets into "cut N × layout A + M × layout B" (cutting-stock style) and **exports one DXF per distinct layout** instead of one per physical sheet.
+- **Part spacing & sheet-edge margin** honoured in the raster engine, a faithful DXF viewer, part thumbnails, an inch (imperial) workflow, and a simplified settings panel.
+- Engine fixes: inch-appropriate curve tolerance, grid-packer spacing, and DXF bulge-arc import/export.
+
+SheetNest is built on the MIT-licensed DeepNestSharp; its original lineage and license are preserved below and in [LICENSE](LICENSE).
+
+---
+
 # DeepNestSharp
 DeepNest - The Original (https://github.com/Jack000/Deepnest)<br />
 DeepNestPort - C# port (https://github.com/fel88/DeepNestPort)

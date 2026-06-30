@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>GpuNestLab</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ILGPU" Version="1.5.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reuse the proven DXF parser / polygon types; we do NOT touch the NFP engine. -->
+    <ProjectReference Include="..\DeepNestLib.Core\DeepNestLib.Core.csproj" />
+  </ItemGroup>
+
+</Project>

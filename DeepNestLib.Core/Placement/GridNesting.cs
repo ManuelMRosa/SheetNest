@@ -130,8 +130,13 @@ namespace DeepNestLib.Placement
     {
       double w = geom.WidthCalculated;
       double h = geom.HeightCalculated;
-      double pitchX = (w - spacing) + Kerf;
-      double pitchY = (h - spacing) + Kerf;
+
+      // geom is already inflated by the part spacing (w = originalWidth + spacing), so a pitch of w
+      // lays the parts exactly `spacing` apart — matching the NFP placement. (The old `(w - spacing)
+      // + Kerf` forced a common-line Kerf gap that ignored the user's spacing, so grid-tiled parts
+      // came out touching while NFP-placed parts had the real gap — inconsistent.)
+      double pitchX = w;
+      double pitchY = h;
       if (pitchX <= Eps || pitchY <= Eps || w > availW + Eps || h > availH + Eps)
       {
         return null;

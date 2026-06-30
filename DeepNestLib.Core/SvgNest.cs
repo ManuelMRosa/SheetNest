@@ -22,6 +22,12 @@
 
     private volatile bool isStopped;
 
+    /// <summary>Stop the run after this many nests have been produced and keep the best of them
+    /// (0 = unlimited / original behaviour). Avoids DeepNest iterating forever.</summary>
+    public static int MaxNests = 3;
+
+    private int completedNests;
+
     public SvgNest(
       IMessageService messageService,
       IProgressDisplayer progressDisplayer,
@@ -207,6 +213,12 @@
         State.IncrementNestCount();
         State.IncrementPlacementTime(payload.PlacePartTime);
         State.IncrementNestTime(payload.BackgroundTime);
+
+        // Cap the number of nests: stop once we've produced MaxNests, keeping the best so far.
+        if (MaxNests > 0 && System.Threading.Interlocked.Increment(ref this.completedNests) >= MaxNests)
+        {
+          this.Stop();
+        }
 
 #if NCRUNCH
         Trace.WriteLine("payload.Index I don't think is being set right; double check before retrying threaded execution.");

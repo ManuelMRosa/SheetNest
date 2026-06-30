@@ -8,9 +8,12 @@
         Title="{Binding Title, Mode=OneTime}" Height="610" Width="800" ResizeMode="NoResize" >
   <Grid>
     <StackPanel Orientation="Vertical">
+      <TextBlock TextWrapping="Wrap" Margin="5,5,5,8" FontWeight="Bold" FontSize="16" Foreground="#2E7D32">
+SheetNest — a fork of DeepNestSharp, adding a GPU / raster nesting engine, an industrial production plan with grouped-layout DXF export, and a streamlined operator UI. MIT licensed; full lineage below.
+      </TextBlock>
       <StackPanel Orientation="Horizontal">
         <TextBlock TextWrapping="Wrap" Margin="5,0" FontWeight="Bold">
-    DeepNest# - Net Core C#/Mvvm/WPF port (<Hyperlink 
+    DeepNest# - Net Core C#/Mvvm/WPF port (<Hyperlink
         NavigateUri="https://github.com/9swampy/DeepNestSharp"
         RequestNavigate="Hyperlink_RequestNavigate">
         https://github.com/9swampy/DeepNestSharp

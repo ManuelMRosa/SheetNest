@@ -135,6 +135,8 @@ namespace NestBench
       DeepNestLib.GeneticAlgorithm.Procreant.SmartRotationSeed = opt.SmartRot;
       DeepNestLib.GeneticAlgorithm.Procreant.SmartRotationSteps = opt.SeedSteps;
 
+      DeepNestLib.SvgNest.MaxNests = opt.MaxNests; // 0 = unbounded; >0 mimics the app's nests-per-run cap
+      if (opt.CurveTol > 0) { DeepNestLib.SvgNest.Config.CurveTolerance = opt.CurveTol; } // match the app's 0.01
       DeepNestLib.Placement.Compaction.Enabled = opt.Compact;
       DeepNestLib.Placement.Reinsertion.Enabled = opt.Reinsert;
       DeepNestLib.Placement.CommonLine.Enabled = opt.CommonLine;
@@ -392,6 +394,12 @@ namespace NestBench
 
       public int GridMin { get; private set; } = 4;
 
+      public int MaxNests { get; private set; } = 0;
+
+      public int Stall { get; private set; } = 0;
+
+      public double CurveTol { get; private set; } = 0;
+
       public string ExportDir { get; private set; } = null;
 
       public bool Mix { get; private set; } = false;
@@ -451,6 +459,9 @@ namespace NestBench
               case "--rectcount": o.RectCount = int.Parse(Next()); break;
               case "--grid": o.Grid = true; break;
               case "--gridmin": o.GridMin = int.Parse(Next()); break;
+              case "--maxnests": o.MaxNests = int.Parse(Next()); break;
+              case "--stall": o.Stall = int.Parse(Next()); break;
+              case "--curvetol": o.CurveTol = double.Parse(Next()); break;
               case "--export": o.ExportDir = Next(); break;
               case "--mix": o.Mix = true; break;
               case "--smartrot": o.SmartRot = true; break;

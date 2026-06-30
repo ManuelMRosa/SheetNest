@@ -303,6 +303,12 @@
             await NestIterate();
             await UpdateNestsList();
             sw.Stop();
+
+            // Engine self-stopped (reached SvgNest.MaxNests) — exit instead of spinning forever.
+            if (nestMonitorViewModel.Context.Nest != null && nestMonitorViewModel.Context.Nest.IsStopped)
+            {
+              break;
+            }
             if (SvgNest.Config.UseParallel)
             {
               await DisplayToolStripMessage($"Iteration time:{sw.ElapsedMilliseconds}ms Average:{nestMonitorViewModel.Context.State.AveragePlacementTime}ms");

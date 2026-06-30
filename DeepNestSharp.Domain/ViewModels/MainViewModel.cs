@@ -166,7 +166,7 @@
 
     public IMessageService MessageService => this.messageService;
 
-    public string Title => $"DeepNest# {this.GetType().Assembly.GetName().Version?.ToString()}";
+    public string Title => $"SheetNest {this.GetType().Assembly.GetName().Version?.ToString()}";
 
     public void SetSelectedToolView(IFileViewModel fileViewModel)
     {

@@ -161,5 +161,28 @@
 
       return result;
     }
+
+    /// <summary>
+    /// Show a single externally-produced result (e.g. the experimental raster/GPU nester) in the
+    /// results list, replacing any existing entries, so it appears alongside normal results and can be
+    /// selected — its stats then show in the list and the status bar. Does not run or affect the GA.
+    /// </summary>
+    public void SetSingleResult(INestResult result)
+    {
+      if (dispatcherService.InvokeRequired)
+      {
+        dispatcherService.Invoke(() => SetSingleResult(result));
+        return;
+      }
+
+      lock (lockItemsObject)
+      {
+        items.Clear();
+        if (result != null)
+        {
+          items.Insert(0, result);
+        }
+      }
+    }
   }
 }
