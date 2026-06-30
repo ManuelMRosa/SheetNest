@@ -6,13 +6,22 @@
     <UseWPF>true</UseWPF>
     <Platforms>AnyCPU;x64;x86</Platforms>
     <PublishSingleFile>false</PublishSingleFile>
-    <ApplicationIcon>..\icon.ico</ApplicationIcon>
+    <ApplicationIcon>Branding\sheetnest.ico</ApplicationIcon>
     <DebugType>embedded</DebugType>
-    <AssemblyVersion>0.2.0.0</AssemblyVersion>
-    <FileVersion>0.2.0.0</FileVersion>
-    <InformationalVersion>0.2.0-beta.2+0.Branch.release-0.2.Sha.1c9007f1804360e9b5ec30637563729f1e28e956</InformationalVersion>
-    <Version>0.2.0-beta0002</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <Version>1.0.0</Version>
+    <Product>SheetNest</Product>
+    <AssemblyTitle>SheetNest</AssemblyTitle>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Branding\sheetnest-icon.png" />
+    <None Remove="Branding\sheetnest-logo.png" />
+    <Resource Include="Branding\sheetnest-icon.png" />
+    <Resource Include="Branding\sheetnest-logo.png" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <CodeAnalysisRuleSet />
     <PlatformTarget>AnyCPU</PlatformTarget>

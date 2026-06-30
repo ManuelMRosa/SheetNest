@@ -10,7 +10,8 @@
         xmlns:placement="clr-namespace:DeepNestLib.Placement;assembly=DeepNestLib.Core"
         xmlns:nestproject="clr-namespace:DeepNestLib.NestProject;assembly=DeepNestLib.Core"
         mc:Ignorable="d"
-        Title="{Binding Title}" Height="850" Width="1340" WindowStartupLocation="CenterScreen">
+        Title="{Binding Title}" Icon="/Branding/sheetnest-icon.png"
+        Height="850" Width="1340" WindowStartupLocation="CenterScreen">
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
     <converters:PartPreviewConverter x:Key="PartPreview" />
@@ -55,8 +56,11 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Menu bar -->
-    <Menu Grid.Row="0">
+    <!-- Menu bar with SheetNest logo -->
+    <DockPanel Grid.Row="0" Background="#FAFAFA">
+      <Image DockPanel.Dock="Right" Source="/Branding/sheetnest-logo.png" Height="30"
+             Margin="0,2,12,2" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
+      <Menu Background="Transparent" VerticalAlignment="Center">
       <MenuItem Header="_File">
         <MenuItem Header="New Project" Command="{Binding CreateNestProjectCommand}" />
         <MenuItem Header="Open Project..." Command="{Binding LoadNestProjectCommand}" />
@@ -71,6 +75,7 @@
         <MenuItem Header="About" Command="{Binding AboutDialogCommand}" />
       </MenuItem>
     </Menu>
+    </DockPanel>
 
     <!-- Ribbon -->
     <TabControl Grid.Row="1" Background="#F3F3F3" Height="92">

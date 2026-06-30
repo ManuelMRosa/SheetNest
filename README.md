@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="SheetNest — nesting for sheet metal" width="900">
+</p>
+
 # SheetNest
 
 **SheetNest** is a fork of [DeepNestSharp](https://github.com/9swampy/DeepNestSharp) — itself a C# port of [Deepnest](https://github.com/Jack000/Deepnest) — focused on production sheet-metal nesting (laser / plasma) with a streamlined operator workflow.
