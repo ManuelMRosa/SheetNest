@@ -1,4 +1,4 @@
-namespace DeepNestSharp.RasterNest
+﻿namespace DeepNestSharp.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -18,21 +18,28 @@ namespace DeepNestSharp.RasterNest
   /// <summary>
   /// EXACT-geometry compaction pass for spacing-0 nests. The raster engine can only place parts on its
   /// pixel grid, and its conservative masks keep two parts that share an edge (e.g. interlocking
-  /// triangles) 1-2 pixels apart — a visible ~1-2 mm gap that no affordable resolution removes. This pass
+  /// triangles) 1-2 pixels apart â€” a visible ~1-2 mm gap that no affordable resolution removes. This pass
   /// slides each placed part down then left in EXACT polygon space (Clipper, the same library the NFP
   /// engine uses) until it touches its neighbours or the sheet margin, eliminating the raster
   /// quantization entirely. A small safety backoff (0.001") is kept so numeric noise can never produce
-  /// real material interference. Translation only — rotations are never changed.
+  /// real material interference. Translation only â€” rotations are never changed.
   /// </summary>
   internal static class RasterCompact
   {
-    private const double Scale = 1e6;              // Clipper integer units per inch (120" sheet ≈ 1.2e8 « long range)
-    private const double EpsArea = 1e-6 * Scale * Scale; // ignore sub-1e-6 in² contact slivers as "touching"
-    private const double Backoff = 0.001;          // safety gap left after contact (0.025 mm — far below kerf)
+    private const double Scale = 1e6;              // Clipper integer units per inch (120" sheet â‰ˆ 1.2e8 Â« long range)
+    private const double EpsArea = 1e-6 * Scale * Scale; // ignore sub-1e-6 inÂ² contact slivers as "touching"
+    private const double Backoff = 0.001;          // extra slack left after a slide (0.025 mm)
+
+    /// <summary>
+    /// Minimum gap between common-line parts: coincident (0-gap) edges get MERGED/DELETED by the CAM,
+    /// so CC parts keep this tiny separation instead â€” â‰ˆ0.076 mm, far below the laser kerf
+    /// (~0.15-0.2 mm) yet clearly above any CAM coincidence tolerance.
+    /// </summary>
+    internal const double CommonLineGap = 0.003;
 
     /// <summary>
     /// Compact one sheet's placements in place (mutates item X/Y). Only spacing-0 (common-line) parts
-    /// slide; parts with a spacing keep their position AND their clearance — the sliding parts test
+    /// slide; parts with a spacing keep their position AND their clearance â€” the sliding parts test
     /// against their neighbours' outlines inflated by the neighbour's half-spacing.
     /// </summary>
     public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin)
@@ -42,10 +49,82 @@ namespace DeepNestSharp.RasterNest
         return;
       }
 
-      // Obstacle geometry: a spaced part's outline grown by its half-spacing (round join = the same
-      // Euclidean clearance the raster halo enforces). Common-line parts use their raw outline.
-      var paths = items.Select(it => it.Spacing > 0 ? Inflate(ToPaths(it), it.Spacing / 2.0) : ToPaths(it)).ToArray();
-      var bounds = paths.Select(BoundsOf).ToArray();
+      // Clearance is PER PAIR: spacing pairs need (sA+sB)/2 â€” expressed by half-inflated shells â€” and
+      // CC-CC pairs need the CAM-safe mini-gap (coincident edges get merged/deleted by the CAM). The
+      // mini-gap must NOT leak into CC-vs-spaced pairs (the raster already placed those at exactly
+      // s/2, and inflating would make every one look violated), hence TWO shells per item.
+      var pathsRaw = items.Select(ToPaths).ToArray();
+      var pathsHalf = items.Select(it => it.Spacing > 0 ? Inflate(ToPaths(it), it.Spacing / 2.0) : ToPaths(it)).ToArray();
+      var pathsCC = items.Select(it => it.Spacing <= 0 ? Inflate(ToPaths(it), CommonLineGap / 2.0) : null).ToArray();
+      var bounds = items.Select((it, i) => BoundsOf(pathsCC[i] ?? pathsHalf[i])).ToArray();
+
+      // HARD INVARIANT: no move may ever create a REAL overlap. The engine hands us an overlap-free
+      // layout; every push/slide below is additionally checked against the raw outlines of ALL parts.
+      bool RawClearAll(int m, double ox, double oy)
+      {
+        long tx = (long)Math.Round(ox * Scale);
+        long ty = (long)Math.Round(oy * Scale);
+        var moved = ox == 0 && oy == 0 ? pathsRaw[m] : Translate(pathsRaw[m], tx, ty);
+        var mb = BoundsOf(moved);
+        for (int k = 0; k < items.Count; k++)
+        {
+          if (k == m || !BoxesTouch(mb, bounds[k]))
+          {
+            continue;
+          }
+
+          if (Intersects(moved, pathsRaw[k]))
+          {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      bool BothCC(int i, int j) => items[i].Spacing <= 0 && items[j].Spacing <= 0;
+
+      bool ValidOffset(int i, double ox, double oy)
+      {
+        long tx = (long)Math.Round(ox * Scale);
+        long ty = (long)Math.Round(oy * Scale);
+        var movedHalf = ox == 0 && oy == 0 ? pathsHalf[i] : Translate(pathsHalf[i], tx, ty);
+        var movedCC = pathsCC[i] == null ? null : ox == 0 && oy == 0 ? pathsCC[i] : Translate(pathsCC[i], tx, ty);
+        var mb = BoundsOf(movedCC ?? movedHalf);
+        for (int j = 0; j < items.Count; j++)
+        {
+          if (j == i || !BoxesTouch(mb, bounds[j]))
+          {
+            continue;
+          }
+
+          bool hit = BothCC(i, j)
+            ? Intersects(movedCC, pathsCC[j])
+            : Intersects(movedHalf, pathsHalf[j]);
+          if (hit)
+          {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      void ApplyMove(int i, double ox, double oy)
+      {
+        long tx = (long)Math.Round(ox * Scale);
+        long ty = (long)Math.Round(oy * Scale);
+        items[i].X += ox;
+        items[i].Y += oy;
+        pathsRaw[i] = Translate(pathsRaw[i], tx, ty);
+        pathsHalf[i] = Translate(pathsHalf[i], tx, ty);
+        if (pathsCC[i] != null)
+        {
+          pathsCC[i] = Translate(pathsCC[i], tx, ty);
+        }
+
+        bounds[i] = BoundsOf(pathsCC[i] ?? pathsHalf[i]);
+      }
 
       // Compact toward the same corner the nester packs to: the pack grows along the sheet's LONGER
       // axis, so push primarily along that axis (keeps the remnant a clean short-dimension strip).
@@ -60,6 +139,202 @@ namespace DeepNestSharp.RasterNest
           : movable.OrderBy(i => items[i].Y + items[i].Poly.MinY).ThenBy(i => items[i].X + items[i].Poly.MinX))
         .ToArray();
 
+      // SEPARATION pre-pass: the raster can place CC parts literally touching (gap 0), and a touching
+      // CC pair may be sandwiched against exactly-spaced neighbours — so violations are resolved as an
+      // iterative PAIR relaxation: each violating pair pushes its outer member the minimum distance
+      // along the dominant axis between their centres (sliding along a shared edge separates nothing),
+      // and follow-up iterations cascade the shove through the chain. Spaced parts may shift outward a
+      // few thousandths; their own clearances only grow.
+      bool PairClear(int a, int b, double ox, double oy)
+      {
+        bool cc = BothCC(a, b);
+        var pa = cc ? pathsCC[a] : pathsHalf[a];
+        var pb = cc ? pathsCC[b] : pathsHalf[b];
+        var moved = ox == 0 && oy == 0 ? pa : Translate(pa, (long)Math.Round(ox * Scale), (long)Math.Round(oy * Scale));
+        return !BoxesTouch(BoundsOf(moved), BoundsOf(pb)) || !Intersects(moved, pb);
+      }
+
+      // A chain of touching parts frees ONE link per iteration (a part capped at raw contact must wait
+      // for its blocker to move first), so the budget scales with the part count; the loop also stops
+      // as soon as an iteration produces no movement (truly jammed).
+      int maxIterations = System.Math.Min(128, items.Count + 8);
+      for (int iter = 0; iter < maxIterations; iter++)
+      {
+        bool anyViolation = false;
+        bool movedAny = false;
+        for (int a = 0; a < items.Count; a++)
+        {
+          for (int b = a + 1; b < items.Count; b++)
+          {
+            if (!BoxesTouch(bounds[a], bounds[b]) || PairClear(a, b, 0, 0))
+            {
+              continue;
+            }
+
+            anyViolation = true;
+
+            // The push must act along the CONTACT NORMAL, which is NOT necessarily the axis the
+            // centres differ most on (a staircase of wide flat parts touches top-to-bottom while the
+            // centres are offset mostly in X — pushing X just slides along the shared edge forever).
+            // Try BOTH axes and keep whichever separates the pair with the SHORTEST push.
+            double cxa = items[a].X + ((items[a].Poly.MinX + items[a].Poly.MaxX) / 2.0);
+            double cya = items[a].Y + ((items[a].Poly.MinY + items[a].Poly.MaxY) / 2.0);
+            double cxb = items[b].X + ((items[b].Poly.MinX + items[b].Poly.MaxX) / 2.0);
+            double cyb = items[b].Y + ((items[b].Poly.MinY + items[b].Poly.MaxY) / 2.0);
+
+            int pushed = -1;
+            double dx = 0, dy = 0, hi = double.MaxValue;
+
+            // Candidate pushes: the pair's outer member outward (+X/+Y) and its INNER member the other
+            // way (−X/−Y) — a chain jammed against the sheet's far edge can only open backwards into
+            // free space. Keep whichever valid push is shortest.
+            foreach (var (axisX, positive) in new[] { (true, true), (false, true), (true, false), (false, false) })
+            {
+              int mover = axisX
+                ? (positive ? (cxb >= cxa ? b : a) : (cxb >= cxa ? a : b))
+                : (positive ? (cyb >= cya ? b : a) : (cyb >= cya ? a : b));
+              int anchor2 = mover == a ? b : a;
+              double sign = positive ? 1 : -1;
+              double ddx = axisX ? sign : 0;
+              double ddy = axisX ? 0 : sign;
+              var mi = items[mover];
+              double roof = axisX
+                ? (positive ? sheetW - margin - (mi.X + mi.Poly.MaxX) : (mi.X + mi.Poly.MinX) - margin)
+                : (positive ? sheetH - margin - (mi.Y + mi.Poly.MaxY) : (mi.Y + mi.Poly.MinY) - margin);
+
+              double axisHi = -1;
+              foreach (double probe in new[] { 0.01, 0.05, 0.1, 0.25 })
+              {
+                if (probe > roof)
+                {
+                  break;
+                }
+
+                if (PairClear(mover, anchor2, ddx * probe, ddy * probe))
+                {
+                  axisHi = probe;
+                  break;
+                }
+              }
+
+              if (axisHi < 0)
+              {
+                continue;
+              }
+
+              double lo2 = 0;
+              for (int k = 0; k < 18; k++)
+              {
+                double mid = (lo2 + axisHi) / 2.0;
+                if (PairClear(mover, anchor2, ddx * mid, ddy * mid))
+                {
+                  axisHi = mid;
+                }
+                else
+                {
+                  lo2 = mid;
+                }
+              }
+
+              if (axisHi < hi)
+              {
+                hi = axisHi;
+                pushed = mover;
+                dx = ddx;
+                dy = ddy;
+              }
+            }
+
+            if (pushed < 0)
+            {
+              continue; // no room to open this pair — leave it for the operator
+            }
+
+            // The push may not RAM a third part: cap it at raw contact (minus a hair). The pair then
+            // stays partially violated and the NEXT iteration pushes the blocking part in turn.
+            if (!RawClearAll(pushed, dx * hi, dy * hi))
+            {
+              double lo2 = 0, hi2 = hi;
+              for (int k = 0; k < 18; k++)
+              {
+                double mid = (lo2 + hi2) / 2.0;
+                if (RawClearAll(pushed, dx * mid, dy * mid))
+                {
+                  lo2 = mid;
+                }
+                else
+                {
+                  hi2 = mid;
+                }
+              }
+
+              hi = lo2 - 0.0005;
+            }
+
+            if (hi <= 1e-6)
+            {
+              continue; // jammed solid — no overlap is created, the gap just stays sub-minimal here
+            }
+
+            ApplyMove(pushed, dx * hi, dy * hi);
+            movedAny = true;
+          }
+        }
+
+        if (!anyViolation || !movedAny)
+        {
+          break;
+        }
+      }
+
+      // Slide item i as far as possible along (dirX, dirY); returns true if it moved.
+      bool Slide(int i, int dirX, int dirY)
+      {
+        var it = items[i];
+
+        // Furthest the part could go: down to the sheet margin (sliding only ever shrinks the extent,
+        // so the far edges can't be violated).
+        double max = dirX != 0 ? (it.X + it.Poly.MinX) - margin : (it.Y + it.Poly.MinY) - margin;
+        if (max <= Backoff)
+        {
+          return false;
+        }
+
+        double slide;
+        if (ValidOffset(i, dirX * max, dirY * max))
+        {
+          slide = max;
+        }
+        else
+        {
+          // Largest collision-free slide: binary search (30 iterations â‰ˆ 1e-7" over a 120" sheet).
+          double lo = 0, hi = max;
+          for (int k = 0; k < 30; k++)
+          {
+            double mid = (lo + hi) / 2.0;
+            if (ValidOffset(i, dirX * mid, dirY * mid))
+            {
+              lo = mid;
+            }
+            else
+            {
+              hi = mid;
+            }
+          }
+
+          slide = lo;
+        }
+
+        slide -= Backoff;
+        if (slide <= 1e-9)
+        {
+          return false;
+        }
+
+        ApplyMove(i, dirX * slide, dirY * slide);
+        return true;
+      }
+
       for (int round = 0; round < 2; round++)
       {
         bool moved = false;
@@ -67,13 +342,13 @@ namespace DeepNestSharp.RasterNest
         {
           if (growX)
           {
-            moved |= Slide(items, paths, bounds, i, -1, 0, margin); // left (growth axis)
-            moved |= Slide(items, paths, bounds, i, 0, -1, margin); // down
+            moved |= Slide(i, -1, 0); // left (growth axis)
+            moved |= Slide(i, 0, -1); // down
           }
           else
           {
-            moved |= Slide(items, paths, bounds, i, 0, -1, margin); // down (growth axis)
-            moved |= Slide(items, paths, bounds, i, -1, 0, margin); // left
+            moved |= Slide(i, 0, -1); // down (growth axis)
+            moved |= Slide(i, -1, 0); // left
           }
         }
 
@@ -84,80 +359,9 @@ namespace DeepNestSharp.RasterNest
       }
     }
 
-    /// <summary>Slide item i as far as possible along (dirX, dirY); returns true if it moved.</summary>
-    private static bool Slide(IList<CompactItem> items, List<List<IntPoint>>[] paths, IntRect[] bounds, int i, int dirX, int dirY, double margin)
-    {
-      var it = items[i];
-
-      // Furthest the part could go: down to the sheet margin (sliding only ever shrinks the extent, so
-      // the far edges can't be violated).
-      double max = dirX != 0 ? (it.X + it.Poly.MinX) - margin : (it.Y + it.Poly.MinY) - margin;
-      if (max <= Backoff)
-      {
-        return false;
-      }
-
-      bool Valid(double s)
-      {
-        var moved = Translate(paths[i], (long)Math.Round(dirX * s * Scale), (long)Math.Round(dirY * s * Scale));
-        var mb = BoundsOf(moved);
-        for (int j = 0; j < paths.Length; j++)
-        {
-          if (j == i || !BoxesTouch(mb, bounds[j]))
-          {
-            continue;
-          }
-
-          if (Intersects(moved, paths[j]))
-          {
-            return false;
-          }
-        }
-
-        return true;
-      }
-
-      double slide;
-      if (Valid(max))
-      {
-        slide = max;
-      }
-      else
-      {
-        // Largest collision-free slide: binary search (30 iterations ≈ 1e-7" over a 120" sheet).
-        double lo = 0, hi = max;
-        for (int k = 0; k < 30; k++)
-        {
-          double mid = (lo + hi) / 2;
-          if (Valid(mid))
-          {
-            lo = mid;
-          }
-          else
-          {
-            hi = mid;
-          }
-        }
-
-        slide = lo;
-      }
-
-      slide -= Backoff;
-      if (slide <= 1e-9)
-      {
-        return false;
-      }
-
-      it.X += dirX * slide;
-      it.Y += dirY * slide;
-      paths[i] = Translate(paths[i], (long)Math.Round(dirX * slide * Scale), (long)Math.Round(dirY * slide * Scale));
-      bounds[i] = BoundsOf(paths[i]);
-      return true;
-    }
-
     /// <summary>
     /// Grow the OUTER contour by <paramref name="inches"/> (round join = uniform Euclidean clearance,
-    /// matching the raster halo). Holes are kept as-is — conservative for spacing purposes.
+    /// matching the raster halo). Holes are kept as-is â€” conservative for spacing purposes.
     /// </summary>
     private static List<List<IntPoint>> Inflate(List<List<IntPoint>> paths, double inches)
     {

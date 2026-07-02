@@ -5,10 +5,10 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="800">
-  <Grid x:Name="host" Background="#2D2D30" ClipToBounds="True"
+  <Grid x:Name="host" Background="#2D2D30" ClipToBounds="True" Focusable="True"
         MouseWheel="OnMouseWheel"
         MouseLeftButtonDown="OnPanStart" MouseMove="OnPanMove" MouseLeftButtonUp="OnPanEnd"
-        MouseRightButtonDown="OnResetView">
+        MouseRightButtonDown="OnResetView" PreviewKeyDown="OnViewerKeyDown">
     <!-- Canvas is drawn in sheet coordinates (Y already flipped); zoom/pan via RenderTransform.
          Anchor top-left so its origin is the host's (0,0); otherwise WPF centres a fixed-size
          Canvas and FitToView's translate would double-offset it (sheet drifts bottom-right). -->
@@ -25,9 +25,29 @@
                Text="Run a nest to see the result here."
                Foreground="#9A9A9A" FontSize="14"
                HorizontalAlignment="Center" VerticalAlignment="Center" />
-    <TextBlock Text="scroll = zoom  ·  drag = pan  ·  right-click = fit"
+    <TextBlock x:Name="hintText" Text="scroll = zoom  ·  drag = pan  ·  right-click = fit"
                Foreground="#6E6E6E" FontSize="11" IsHitTestVisible="False"
                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8" />
+
+    <!-- Manual nesting: select, drag and rotate parts to refine the nest by hand. -->
+    <Border x:Name="editBar" Background="#D2202020" CornerRadius="5" Padding="5,3"
+            HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Visibility="Collapsed">
+      <StackPanel Orientation="Horizontal">
+        <ToggleButton x:Name="editToggle" Content="&#9995; Edit nest" Padding="8,3" FontWeight="SemiBold"
+                      Checked="OnEditModeChanged" Unchecked="OnEditModeChanged"
+                      ToolTip="Manual nesting: click a part to select it, drag to move, rotate with the buttons. A part cannot be dropped on top of another. Edits apply to every copy of this layout and flow into the DXF export." />
+        <Button x:Name="undoBtn" Content="&#8630;" Margin="6,0,0,0" Padding="8,3" FontSize="14" IsEnabled="False"
+                Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)" />
+        <Button x:Name="redoBtn" Content="&#8631;" Margin="3,0,0,0" Padding="8,3" FontSize="14" IsEnabled="False"
+                Click="OnRedoClick" ToolTip="Redo (Ctrl+Y)" />
+        <StackPanel x:Name="rotateButtons" Orientation="Horizontal" Visibility="Collapsed">
+          <Button Content="&#8634; 90" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw90" ToolTip="Rotate selected part 90° counter-clockwise" />
+          <Button Content="&#8635; 90" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw90" ToolTip="Rotate selected part 90° clockwise" />
+          <Button Content="&#8634; 5" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw5" ToolTip="Rotate selected part 5° counter-clockwise" />
+          <Button Content="&#8635; 5" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw5" ToolTip="Rotate selected part 5° clockwise" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
 
     <!-- Production plan summary: groups identical sheets ("cut 24 of layout A + 1 of layout B"). -->
     <Border x:Name="summaryBox" Background="#DC1B5E20" CornerRadius="5" Padding="10,5"

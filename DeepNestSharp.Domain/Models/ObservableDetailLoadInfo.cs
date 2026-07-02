@@ -109,6 +109,26 @@
       set => SetProperty(nameof(CommonLine), () => detailLoadInfo.CommonLine, v => detailLoadInfo.CommonLine = v, value);
     }
 
+    /// <summary>Human-readable nesting summary for the part card (spacing / common line / rotation).</summary>
+    public string NestingLabel
+    {
+      get
+      {
+        string spacing = detailLoadInfo.CommonLine ? "common line"
+          : detailLoadInfo.Spacing < 0 ? "spacing: default"
+          : $"spacing {detailLoadInfo.Spacing:0.###}";
+        string rot = detailLoadInfo.Rotations switch
+        {
+          1 => "no turn",
+          2 => "0/180°",
+          4 => "90° steps",
+          > 4 => "free",
+          _ => "rot: auto",
+        };
+        return $"{spacing} · {rot}";
+      }
+    }
+
     public int NetArea
     {
       get

@@ -16,7 +16,7 @@
 
     public int Extra { get; set; } = 0;
 
-    public int Rotations { get; set; } = 4; // per-part: 1 fixed, 2 = 0/180, 4 = 90° steps (default), 36 free
+    public int Rotations { get; set; } = -1; // per-part: 1 fixed, 2 = 0/180, 4 = 90° steps, 36 free; -1 = unset (geometry-based suggestion in Edit Part)
 
     public int Priority { get; set; } = 5;   // 0-10, higher nests first; 5 = normal
 

@@ -35,6 +35,7 @@ namespace DeepNestSharp.RasterNest
       IReadOnlyList<RasterPartInfo> partInfos,
       int sheetWin,
       int sheetHin,
+      int sheetCount,
       PlacementTypeEnum placementType,
       int rotations,
       double spacing,
@@ -42,6 +43,7 @@ namespace DeepNestSharp.RasterNest
       double pxPerInch,
       out string error)
     {
+      int maxSheets = System.Math.Max(0, sheetCount);
       error = null;
       var helper = new NestExecutionHelper();
 
@@ -79,15 +81,18 @@ namespace DeepNestSharp.RasterNest
       int sh = (int)(sheetHin * pxPerInch);
 
       // PER-PART spacing → each part's mask dilates by its own spacing/2, so two parts end up
-      // (spacingA + spacingB)/2 apart; common-line parts (spacing 0) pack touching. No minimum halo:
-      // Rasterize is CONSERVATIVE (the mask always fully covers the true geometry), so non-colliding
-      // masks can never overlap real material even when touching. Clamps keep an over-large value
-      // (units mistake) from blowing the mask size up to gigabytes.
+      // (spacingA + spacingB)/2 apart. COMMON-LINE parts keep a MINIMUM 1px halo: placements born
+      // literally touching can jam in chains anchored against both sheet edges that no later
+      // separation can open — born 2px apart they always have slack, and the exact compaction then
+      // closes them down to the CAM-safe mini-gap (RasterCompact.CommonLineGap). Clamps keep an
+      // over-large value (units mistake) from blowing the mask size up to gigabytes.
       int marginPx = (int)System.Math.Round(margin * pxPerInch);
       int halfSheet = System.Math.Max(1, System.Math.Min(sw, sh) / 2);
       marginPx = System.Math.Max(0, System.Math.Min(marginPx, halfSheet));
       var halos = parsed
-        .Select(p => System.Math.Max(0, System.Math.Min((int)System.Math.Round((p.SpacingIn / 2.0) * pxPerInch), halfSheet)))
+        .Select(p => p.SpacingIn <= 0
+          ? 1
+          : System.Math.Max(1, System.Math.Min((int)System.Math.Round((p.SpacingIn / 2.0) * pxPerInch), halfSheet)))
         .ToArray();
 
       // Straighten angle per part (min-area bounding box) — used by the straightened profiles. Only for
@@ -97,42 +102,223 @@ namespace DeepNestSharp.RasterNest
 
       var candidates = BuildCandidates(parsed.Select(p => p.Allowed).ToArray(), straighten);
 
-      // Nest every candidate profile in parallel (each is an independent, single-threaded packing).
-      var results = new (JobResult Job, List<PartType> Types)[candidates.Count];
-      System.Threading.Tasks.Parallel.For(0, candidates.Count, ci =>
-      {
-        var candidateTypes = parsed
-          .Select((p, i) => new PartType
-          {
-            Source = p.Src,
-            Poly = p.Nfp,
-            Quantity = p.Qty,
-            Priority = p.Priority,
-            RotationsDeg = candidates[ci][i],
-            HaloPx = halos[i],
-          })
-          .ToList();
-        results[ci] = (RasterJobNester.Nest(candidateTypes, sw, sh, pxPerInch, marginPx), candidateTypes);
-      });
-
       bool growX = sw > sh; // pack grows along the longer sheet axis (keeps the remnant a short-dim strip)
-      int best = 0;
-      for (int ci = 1; ci < results.Length; ci++)
+
+      // Nest a set of quantities (one per parsed part, by index) with EVERY candidate profile in
+      // parallel, on at most <paramref name="allowedSheets"/> sheets (the Sheets tab quantity — what
+      // doesn't fit is reported unplaced). Used for the full job, the pattern search and the leftover.
+      (JobResult Job, List<PartType> Types)[] NestAll(int[] quantities, int allowedSheets)
       {
-        if (IsBetter(results[ci], results[best], growX))
+        var results = new (JobResult Job, List<PartType> Types)[candidates.Count];
+        System.Threading.Tasks.Parallel.For(0, candidates.Count, ci =>
         {
-          best = ci;
-        }
+          var candidateTypes = parsed
+            .Select((p, i) => new PartType
+            {
+              Source = p.Src,
+              Poly = p.Nfp,
+              Quantity = quantities[i],
+              Priority = p.Priority,
+              RotationsDeg = candidates[ci][i],
+              HaloPx = halos[i],
+            })
+            .ToList();
+          results[ci] = (RasterJobNester.Nest(candidateTypes, sw, sh, pxPerInch, marginPx, allowedSheets), candidateTypes);
+        });
+
+        return results;
       }
 
-      var job = results[best].Job;
-      var types = results[best].Types;
+      // Best result across the candidates: fewest unplaced → fewest sheets → shortest strip → tidiest.
+      (JobResult Job, List<PartType> Types) NestBest(int[] quantities, int allowedSheets)
+      {
+        var results = NestAll(quantities, allowedSheets);
+        int bestIdx = 0;
+        for (int ci = 1; ci < results.Length; ci++)
+        {
+          if (IsBetter(results[ci], results[bestIdx], growX))
+          {
+            bestIdx = ci;
+          }
+        }
 
-      // Industrial pattern replication: repeat sheet 0's layout as many whole times as the demand
-      // allows and RE-NEST the leftover parts on their own sheet(s). The shop then cuts "k× the same
-      // layout + 1 remainder" — and the remainder is a real dense nest, not a display trick. Only kept
-      // when it needs no more sheets than the greedy result.
-      job = TryReplicatePattern(job, types, sw, sh, pxPerInch, marginPx);
+        return results[bestIdx];
+      }
+
+      JobResult job;
+      List<PartType> types;
+
+      // PATTERN MODE for big single-part production runs: the plan is inherently "k × best pattern
+      // sheet + remainder", so the pattern is found by nesting only ~2.5 sheets' worth of parts per
+      // candidate (greedy-nesting ALL of them per candidate took minutes for an 800-part run) and,
+      // for a single geometry, the EXACT ranking is simply "most parts per pattern sheet".
+      double partArea = System.Math.Abs(parsed[0].Nfp.NetArea);
+      int patternCap = partArea <= 0 ? int.MaxValue : (int)System.Math.Ceiling(2.5 * sheetWin * sheetHin / partArea);
+      if (parsed.Count == 1 && parsed[0].Qty > patternCap && patternCap >= 2)
+      {
+        int fullQty = parsed[0].Qty;
+        var probes = NestAll(new[] { patternCap }, System.Math.Min(3, System.Math.Max(1, maxSheets)));
+
+        int bestIdx = -1;
+        int bestCount = -1;
+        int bestVariety = int.MaxValue;
+        for (int ci = 0; ci < probes.Length; ci++)
+        {
+          if (probes[ci].Job.NotPlaced > 0 && probes[ci].Job.Sheets == 0)
+          {
+            continue; // part doesn't fit the sheet at all under this profile
+          }
+
+          var s0 = probes[ci].Job.Placements.Where(p => p.Sheet == 0).ToList();
+          int variety = s0.Select(p => p.RotationDeg).Distinct().Count();
+          if (s0.Count > bestCount || (s0.Count == bestCount && variety < bestVariety))
+          {
+            bestIdx = ci;
+            bestCount = s0.Count;
+            bestVariety = variety;
+          }
+        }
+
+        if (bestIdx >= 0 && bestCount > 0)
+        {
+          var pattern = probes[bestIdx];
+          var sheet0 = pattern.Job.Placements.Where(p => p.Sheet == 0).ToList();
+          int k = System.Math.Min(fullQty / bestCount, maxSheets);
+          int leftover = fullQty - (k * bestCount);
+          int tailSheets = maxSheets - k;
+          JobResult tail = leftover > 0 && tailSheets > 0 ? NestBest(new[] { leftover }, tailSheets).Job : null;
+          int notPlaced = tail != null ? tail.NotPlaced : leftover;
+
+          job = ComposeReplicated(sheet0, k, tail, notPlaced);
+          types = pattern.Types;
+        }
+        else
+        {
+          (job, types) = NestBest(new[] { fullQty }, maxSheets);
+        }
+      }
+      else
+      {
+        (job, types) = NestBest(parsed.Select(p => p.Qty).ToArray(), maxSheets);
+
+        // Industrial pattern replication: repeat sheet 0's layout as many whole times as the demand
+        // allows and RE-NEST the leftover parts on their own sheet(s). The shop then cuts "k× the same
+        // layout + 1 remainder" — and the remainder is a real dense nest, not a display trick. Only
+        // kept when it needs no more sheets than the greedy result.
+        job = TryReplicatePattern(job, types, parsed.Count, maxSheets, NestBest);
+      }
+
+      // The user-visible remnant lives on the LAST sheet: re-pack it minimizing the used strip. The
+      // greedy's lowest-corner rule happily stacks parts ON TOP of the pack even when that stretches
+      // the strip — turning the last few parts 90° at the strip's end is often shorter (user-reported:
+      // 20 rails at 108.75" vs 101.5"). Applied only when it strictly shortens the strip.
+      if (job.Sheets > 0)
+      {
+        double ExtentIn(IEnumerable<JobPlacement> pls)
+        {
+          double max = 0;
+          foreach (var p in pls)
+          {
+            var e = parsed.First(q => q.Src == p.Source);
+            var r = p.RotationDeg == 0 ? e.Nfp : e.Nfp.Rotate(p.RotationDeg);
+            double size = growX ? (r.MaxX - r.MinX) : (r.MaxY - r.MinY);
+            max = System.Math.Max(max, (growX ? p.Xpx : p.Ypx) + (size * pxPerInch));
+          }
+
+          return max;
+        }
+
+        int last = job.Sheets - 1;
+        var tailPl = job.Placements.Where(p => p.Sheet == last).ToList();
+        var tailSources = tailPl.Select(p => p.Source).Distinct().ToList();
+
+        // Only a GENUINE remainder is repacked: reshaping a replicated pattern copy would break the
+        // "cut k× the same layout" plan, and full sheets are already dense.
+        bool genuineTail = job.Sheets == 1;
+        if (!genuineTail)
+        {
+          var c0 = job.Placements.Where(p => p.Sheet == 0).GroupBy(p => p.Source).ToDictionary(g => g.Key, g => g.Count());
+          var cL = tailPl.GroupBy(p => p.Source).ToDictionary(g => g.Key, g => g.Count());
+          genuineTail = c0.Count != cL.Count || c0.Any(kv => !cL.TryGetValue(kv.Key, out int v) || v != kv.Value);
+        }
+
+        // Single-part tails admit an exhaustive orientation-split sweep: n−k parts in one axis pair +
+        // k in the other, greedy-packed in that order, for every k — that finds "16 flat + 4 turned"
+        // arrangements no single greedy pass can (its lowest-corner rule prefers stacking on top).
+        if (genuineTail && tailPl.Count >= 2 && tailPl.Count <= 80 && tailSources.Count == 1)
+        {
+          // Axis pairs come from the part's PERMITTED rotations (Edit Part), not from whichever
+          // profile won the job — the winner may have restricted itself to one axis.
+          int tailIdx = parsed.FindIndex(q => q.Src == tailSources[0]);
+          var pe = parsed[tailIdx];
+          var t0 = new PartType { Source = pe.Src, Poly = pe.Nfp, HaloPx = halos[tailIdx] };
+          int[] setA = pe.Allowed >= 4 ? new[] { 90, 270 } : new int[0];
+          int[] setB = pe.Allowed >= 2 ? new[] { 0, 180 } : new int[0];
+
+          // Rotation-symmetric parts (circles, squares) gain nothing from turning — the sweep would
+          // burn ~2n nests for identical layouts. Compare the 0° and 90° masks once and skip if equal.
+          bool rotationMatters = false;
+          if (setA.Length > 0 && setB.Length > 0)
+          {
+            var m0 = RasterUtil.Dilate(RasterUtil.Rasterize(pe.Nfp, pxPerInch), t0.HaloPx);
+            var m90 = RasterUtil.Dilate(RasterUtil.Rasterize(pe.Nfp.Rotate(90), pxPerInch), t0.HaloPx);
+            rotationMatters = m0.W != m90.W || m0.H != m90.H
+              || !System.MemoryExtensions.SequenceEqual<bool>(m0.Bits, m90.Bits);
+          }
+
+          if (setA.Length > 0 && setB.Length > 0 && rotationMatters)
+          {
+            int n = tailPl.Count;
+            JobResult bestTail = null;
+            double bestExtent = ExtentIn(tailPl) - 0.5;
+
+            foreach (var (firstSet, secondSet) in new[] { (setA, setB), (setB, setA) })
+            {
+              for (int k = 0; k <= n; k++)
+              {
+                var splitTypes = new List<PartType>();
+                if (n - k > 0)
+                {
+                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = n - k, RotationsDeg = firstSet, HaloPx = t0.HaloPx, Priority = 6 });
+                }
+
+                if (k > 0)
+                {
+                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = k, RotationsDeg = secondSet, HaloPx = t0.HaloPx, Priority = 5 });
+                }
+
+                var attempt = RasterJobNester.Nest(splitTypes, sw, sh, pxPerInch, marginPx, 1);
+                if (attempt.NotPlaced == 0 && attempt.Placements.Count == n)
+                {
+                  double extent = ExtentIn(attempt.Placements);
+                  if (extent < bestExtent)
+                  {
+                    bestExtent = extent;
+                    bestTail = attempt;
+                  }
+                }
+              }
+            }
+
+            if (bestTail != null)
+            {
+              var keep = job.Placements.Where(p => p.Sheet != last).ToList();
+              foreach (var p in bestTail.Placements)
+              {
+                keep.Add(new JobPlacement { Source = p.Source, Sheet = last, Xpx = p.Xpx, Ypx = p.Ypx, RotationDeg = p.RotationDeg });
+              }
+
+              job = new JobResult
+              {
+                Placements = keep,
+                Sheets = job.Sheets,
+                NotPlaced = job.NotPlaced,
+                NoOverlap = job.NoOverlap && bestTail.NoOverlap,
+              };
+            }
+          }
+        }
+      }
 
       var collection = new SheetPlacementCollection();
       int id = 0;
@@ -186,30 +372,31 @@ namespace DeepNestSharp.RasterNest
         return null;
       }
 
-      // Surface any parts that could not be placed (too big for the sheet in every rotation) so the
-      // results grid's Unplaced count is honest — don't report 100% placed while silently losing parts.
+      // Surface any parts that could not be placed (sheet quota exhausted, or too big for the sheet in
+      // every rotation) so the Unplaced count is honest. Counted against the ORIGINAL demand — in
+      // pattern mode `types` carries the capped probe quantity, not the real one.
       var placedPerSource = job.Placements.GroupBy(p => p.Source).ToDictionary(g => g.Key, g => g.Count());
       var unplaced = new List<INfp>();
-      foreach (var t in types)
+      foreach (var p in parsed)
       {
-        placedPerSource.TryGetValue(t.Source, out int placedCount);
-        for (int i = placedCount; i < t.Quantity; i++)
+        placedPerSource.TryGetValue(p.Src, out int placedCount);
+        for (int i = placedCount; i < p.Qty; i++)
         {
-          unplaced.Add(t.Poly);
+          unplaced.Add(p.Nfp);
         }
       }
 
-      int totalParts = types.Sum(t => t.Quantity);
+      int totalParts = parsed.Sum(p => p.Qty);
       return new NestResult(totalParts, collection, unplaced, placementType, 0, 0);
     }
 
     /// <summary>
     /// Turns a greedy multi-sheet result into "k identical pattern sheets + a freshly nested
     /// remainder" when that costs no extra sheets. Identical sheets group naturally in the production
-    /// plan, and the remainder is a REAL nest (parts packed into the corner) instead of a sparse
-    /// subset of the master layout.
+    /// plan, and the remainder is a REAL nest — re-optimized with the full best-of candidate search
+    /// (via <paramref name="nestBest"/>), so it comes out as tidy as a first-class job.
     /// </summary>
-    private static JobResult TryReplicatePattern(JobResult greedy, List<PartType> types, int sw, int sh, double pxPerInch, int marginPx)
+    private static JobResult TryReplicatePattern(JobResult greedy, List<PartType> types, int partCount, int maxSheets, System.Func<int[], int, (JobResult Job, List<PartType> Types)> nestBest)
     {
       if (greedy.Sheets < 2 || greedy.NotPlaced > 0)
       {
@@ -236,30 +423,31 @@ namespace DeepNestSharp.RasterNest
         return greedy; // nothing repeats — the greedy result is already the plan
       }
 
-      // Leftover demand after k pattern sheets, nested fresh (fast — it is a fraction of the job).
-      var leftoverTypes = new List<PartType>();
+      // Leftover demand after k pattern sheets (Source == parsed index), re-nested with the full
+      // best-of search so the remainder sheet is as clean as possible.
+      var leftoverQty = new int[partCount];
+      bool anyLeft = false;
       foreach (var t in types)
       {
         comp.TryGetValue(t.Source, out int used);
         int rest = t.Quantity - (k * used);
         if (rest > 0)
         {
-          leftoverTypes.Add(new PartType
-          {
-            Source = t.Source,
-            Poly = t.Poly,
-            Quantity = rest,
-            RotationsDeg = t.RotationsDeg,
-            Priority = t.Priority,
-            HaloPx = t.HaloPx,
-          });
+          leftoverQty[t.Source] = rest;
+          anyLeft = true;
         }
       }
 
       JobResult tail = null;
-      if (leftoverTypes.Count > 0)
+      if (anyLeft)
       {
-        tail = RasterJobNester.Nest(leftoverTypes, sw, sh, pxPerInch, marginPx);
+        int tailSheets = maxSheets - k;
+        if (tailSheets <= 0)
+        {
+          return greedy;
+        }
+
+        tail = nestBest(leftoverQty, tailSheets).Job;
         if (tail.NotPlaced > 0)
         {
           return greedy;
@@ -272,6 +460,12 @@ namespace DeepNestSharp.RasterNest
         return greedy; // repeating the pattern would waste material — keep the greedy nest
       }
 
+      return ComposeReplicated(sheet0, k, tail, 0);
+    }
+
+    /// <summary>Builds the final job as k copies of the pattern sheet followed by the tail's sheets.</summary>
+    private static JobResult ComposeReplicated(List<JobPlacement> sheet0, int k, JobResult tail, int notPlaced)
+    {
       var placements = new List<JobPlacement>();
       for (int c = 0; c < k; c++)
       {
@@ -292,9 +486,9 @@ namespace DeepNestSharp.RasterNest
       return new JobResult
       {
         Placements = placements,
-        Sheets = totalSheets,
-        NotPlaced = 0,
-        NoOverlap = greedy.NoOverlap && (tail?.NoOverlap ?? true),
+        Sheets = k + (tail?.Sheets ?? 0),
+        NotPlaced = notPlaced,
+        NoOverlap = tail?.NoOverlap ?? true,
       };
     }
 
@@ -315,7 +509,25 @@ namespace DeepNestSharp.RasterNest
         return a.Job.Sheets < b.Job.Sheets;
       }
 
-      return LastSheetExtentPx(a, growX) < LastSheetExtentPx(b, growX) - 0.5;
+      double extentA = LastSheetExtentPx(a, growX);
+      double extentB = LastSheetExtentPx(b, growX);
+      if (System.Math.Abs(extentA - extentB) > 0.5)
+      {
+        return extentA < extentB;
+      }
+
+      // Material dead-tie: prefer the TIDIER layout — fewer distinct rotations per part type. The greedy
+      // mixed-rotation profile often ties the uniform one exactly (same sheets, same strip) while
+      // scattering a few odd-rotated parts around; at equal material the uniform nest is what a shop wants.
+      return RotationVariety(a.Job) < RotationVariety(b.Job);
+    }
+
+    /// <summary>How many distinct rotations each part type uses, summed — lower = more uniform nest.</summary>
+    private static int RotationVariety(JobResult job)
+    {
+      return job.Placements
+        .GroupBy(p => p.Source)
+        .Sum(g => g.Select(p => p.RotationDeg).Distinct().Count());
     }
 
     /// <summary>Highest occupied position (px, real part extents) along the growth axis on the last sheet.</summary>

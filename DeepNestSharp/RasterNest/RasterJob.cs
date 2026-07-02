@@ -74,7 +74,7 @@ namespace DeepNestSharp.RasterNest
   /// </summary>
   internal static class RasterJobNester
   {
-    public static JobResult Nest(List<PartType> types, int sheetW, int sheetH, double pxPerInch, int marginPx)
+    public static JobResult Nest(List<PartType> types, int sheetW, int sheetH, double pxPerInch, int marginPx, int maxSheets = int.MaxValue)
     {
       // Dilate each part by ITS OWN spacing halo (PartType.HaloPx) so two parts end up exactly
       // (haloA + haloB) apart — per-part spacing / common-line (halo 0 = copies pack touching).
@@ -85,6 +85,30 @@ namespace DeepNestSharp.RasterNest
           .Select(r => RasterUtil.Dilate(RasterUtil.Rasterize(r == 0 ? t.Poly : t.Poly.Rotate(r), pxPerInch), t.HaloPx))
           .ToArray();
         t.Packed = t.Masks.Select(PackedMask.From).ToArray();
+
+        // Rotation-symmetric parts (circles, squares…) yield IDENTICAL masks for several rotations —
+        // scanning the duplicates is pure waste (4× for a circle). Keep one rotation per distinct mask.
+        var keep = new List<int>();
+        for (int i = 0; i < t.Packed.Length; i++)
+        {
+          bool dup = false;
+          for (int j = 0; j < keep.Count && !dup; j++)
+          {
+            dup = MasksEqual(t.Packed[i], t.Packed[keep[j]]);
+          }
+
+          if (!dup)
+          {
+            keep.Add(i);
+          }
+        }
+
+        if (keep.Count < t.Packed.Length)
+        {
+          t.RotationsDeg = keep.Select(i => t.RotationsDeg[i]).ToArray();
+          t.Masks = keep.Select(i => t.Masks[i]).ToArray();
+          t.Packed = keep.Select(i => t.Packed[i]).ToArray();
+        }
       }
 
       // Pad the grid by the LARGEST halo on every side so any part's spacing-halo can extend PAST the
@@ -164,6 +188,11 @@ namespace DeepNestSharp.RasterNest
           // mask corner must stay ≥ margin + pad − halo from the grid edge (per type).
           int insetPx = marginInset + pad - t.HaloPx;
 
+          if (si == sheets.Count && sheets.Count >= maxSheets)
+          {
+            break; // no more sheets available — this part stays unplaced
+          }
+
           if (si == sheets.Count && rowHints.Count == si)
           {
             // Prospective new sheet: hints start at the margin row for every type/rotation. Kept even if
@@ -221,6 +250,11 @@ namespace DeepNestSharp.RasterNest
       };
     }
 
+    private static bool MasksEqual(PackedMask a, PackedMask b)
+    {
+      return a.W == b.W && a.H == b.H && System.MemoryExtensions.SequenceEqual<ulong>(a.Words, b.Words);
+    }
+
     private static bool TryPlaceBest(ulong[] occ, int wpr, int sheetW, int sheetH, int insetPx, PartType t, int[] rowHints, bool growX, out int bx, out int by, out int bRot)
     {
       bx = -1;
@@ -248,7 +282,13 @@ namespace DeepNestSharp.RasterNest
         {
           rowHints[ri] = growX ? x : y; // the same row/column can still hold more copies
           long idx = growX ? ((long)x * sheetH) + y : ((long)y * sheetW) + x;
-          if (idx < bestIndex)
+
+          // Tie on position: prefer the rotation that is NARROWER along the growth axis, so the part
+          // tucks into the pack instead of sticking out sideways (e.g. a slim bracket placed on top of
+          // a tall part goes vertical, keeping the used strip — and the remnant — at the pack's width).
+          int growthDim = growX ? m.W : m.H;
+          int bestGrowthDim = bRot >= 0 ? (growX ? t.Packed[bRot].W : t.Packed[bRot].H) : int.MaxValue;
+          if (idx < bestIndex || (idx == bestIndex && growthDim < bestGrowthDim))
           {
             bestIndex = idx;
             bx = x;

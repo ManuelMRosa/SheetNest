@@ -21,13 +21,15 @@ namespace DeepNestSharp.Ui.Views
 
     public IMainViewModel ViewModel => (IMainViewModel)DataContext;
 
+    // US stock sheet sizes, width = the LONG side (matches the machine bed orientation; the nester
+    // grows the pack along the long axis so the remnant is a full short-dimension strip).
     private static readonly SheetPreset[] SheetPresets =
     {
-      new SheetPreset("48 × 96 in", 48, 96),
-      new SheetPreset("48 × 120 in", 48, 120),
-      new SheetPreset("60 × 120 in", 60, 120),
-      new SheetPreset("60 × 144 in", 60, 144),
-      new SheetPreset("120 × 60 in", 120, 60),
+      new SheetPreset("96 × 48 in   (8 × 4 ft)", 96, 48),
+      new SheetPreset("120 × 48 in   (10 × 4 ft)", 120, 48),
+      new SheetPreset("120 × 60 in   (10 × 5 ft)", 120, 60),
+      new SheetPreset("144 × 48 in   (12 × 4 ft)", 144, 48),
+      new SheetPreset("144 × 60 in   (12 × 5 ft)", 144, 60),
     };
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -70,6 +72,14 @@ namespace DeepNestSharp.Ui.Views
       {
         var sheet = (this.sheetsListView.SelectedItem
                      ?? (this.sheetsListView.Items.Count > 0 ? this.sheetsListView.Items[0] : null)) as ISheetLoadInfo;
+
+        // No sheet yet? Picking a stock size should just create one — not silently do nothing.
+        if (sheet == null && ViewModel.ActiveDocument is NestProjectViewModel doc && doc.AddSheetCommand.CanExecute(null))
+        {
+          doc.AddSheetCommand.Execute(null);
+          sheet = doc.ProjectInfo.SheetLoadInfos.LastOrDefault();
+        }
+
         if (sheet != null)
         {
           sheet.Width = preset.Width;
@@ -173,6 +183,7 @@ namespace DeepNestSharp.Ui.Views
       var sheet = project.SheetLoadInfos.FirstOrDefault();
       int sheetW = sheet?.Width ?? 0;
       int sheetH = sheet?.Height ?? 0;
+      int sheetQty = sheet?.Quantity ?? 0;   // the Sheets tab Qty = how many sheets the job may use
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var placementType = config.PlacementType;
       int rotations = config.Rotations;
@@ -192,7 +203,7 @@ namespace DeepNestSharp.Ui.Views
           // 24 px/inch (was 8): triples the raster resolution so the safety halo + spacing gaps shrink from
           // ~0.125"+ down to ~0.04" — much tighter nesting with the placement still overlap-free (verified
           // in GpuNestLab). Slower, but the closed-marking optimization keeps it fast enough for real jobs.
-          var r = RasterNestService.Nest(parts, sheetW, sheetH, placementType, rotations, spacing, margin, 24.0, out string err);
+          var r = RasterNestService.Nest(parts, sheetW, sheetH, sheetQty, placementType, rotations, spacing, margin, 24.0, out string err);
           return (r, err);
         });
 
@@ -202,12 +213,35 @@ namespace DeepNestSharp.Ui.Views
           return;
         }
 
+        // Hand the per-part spacings to the viewer BEFORE showing the result, so manual nesting
+        // (drag/rotate/nudge) enforces the same clearances the nester used — common-line parts may
+        // touch, spaced parts keep (spacingA + spacingB) / 2.
+        if (this.dxfViewer != null)
+        {
+          this.dxfViewer.DefaultPartSpacing = System.Math.Max(0, spacing);
+          this.dxfViewer.PartSpacings = parts.ToDictionary(
+            p => p.Path,
+            p => p.Spacing >= 0 ? p.Spacing : System.Math.Max(0, spacing),
+            System.StringComparer.OrdinalIgnoreCase);
+        }
+
         // Show it in the results list + viewer + status bar so utilization / placed / sheets / fitness /
         // time all appear. The result must be IN TopNestResults first, otherwise the list's two-way
         // SelectedItem binding resets the selection (and the stats) back to null.
         var vm = ViewModel.NestMonitorViewModel;
         vm.TopNestResults.SetSingleResult(result);
         vm.SelectedItem = result;
+
+        // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.
+        int unplacedCount = result.UnplacedParts?.Count ?? 0;
+        if (unplacedCount > 0)
+        {
+          ViewModel.MessageService.DisplayMessageBox(
+            $"{unplacedCount} part(s) did not fit on the {sheetQty} available sheet(s).\n\n" +
+            "Increase the sheet Qty in the Sheets tab (or add another sheet) and nest again.",
+            "Not enough sheets",
+            DeepNestLib.MessageBoxIcon.Warning);
+        }
       }
       finally
       {

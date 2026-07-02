@@ -195,6 +195,7 @@
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                       <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
                       <TextBlock Text="{Binding NetArea, Mode=OneWay, StringFormat='{}{0:0} area'}" FontSize="10" Foreground="#888" />
+                      <TextBlock Text="{Binding NestingLabel, Mode=OneWay}" FontSize="10" Foreground="#2E7D32" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                     <xctk:IntegerUpDown Grid.Column="2" Minimum="0" Width="50" VerticalAlignment="Center" Margin="4,0"
                                         Value="{Binding Quantity, Mode=TwoWay}" ToolTip="Quantity (required — spares are set in Edit Part)" />
@@ -214,40 +215,44 @@
         <TabItem Header="Sheets">
           <DockPanel>
             <Button DockPanel.Dock="Bottom" Content="+ Add Sheet" Command="{Binding ActiveDocument.AddSheetCommand}" Margin="4" Padding="6,4" />
-            <DockPanel DockPanel.Dock="Top" Margin="4,4,4,2">
-              <TextBlock Text="Preset:" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <StackPanel DockPanel.Dock="Top" Margin="4,4,4,6">
+              <TextBlock Text="Stock size" FontWeight="SemiBold" Margin="0,0,0,3" />
               <ComboBox x:Name="sheetPresetCombo" DisplayMemberPath="Name" SelectionChanged="OnSheetPresetSelected"
-                        ToolTip="Apply a standard stock size to the selected sheet." />
-            </DockPanel>
+                        ToolTip="Standard stock sizes (width = the long side, matching the machine bed). Applies to the selected sheet — or creates one if the list is empty." />
+              <TextBlock Text="width = long side · applies to the selected sheet" FontSize="10" Foreground="#888" Margin="0,2,0,0" />
+            </StackPanel>
             <ListView x:Name="sheetsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.SheetLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedSheetLoadInfo}">
               <ListView.View>
                 <GridView>
-                  <GridViewColumn Header="Width" Width="90">
+                  <GridViewColumn Header="Width (in)" Width="90">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <xctk:IntegerUpDown Minimum="0" Width="80" Value="{Binding Width, Mode=TwoWay}" />
+                        <xctk:IntegerUpDown Minimum="0" Width="80" Value="{Binding Width, Mode=TwoWay}"
+                                            ToolTip="Sheet width — use the LONG side here" />
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
-                  <GridViewColumn Header="Height" Width="90">
+                  <GridViewColumn Header="Height (in)" Width="90">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <xctk:IntegerUpDown Minimum="0" Width="80" Value="{Binding Height, Mode=TwoWay}" />
+                        <xctk:IntegerUpDown Minimum="0" Width="80" Value="{Binding Height, Mode=TwoWay}"
+                                            ToolTip="Sheet height — the short side" />
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
                   <GridViewColumn Header="Qty" Width="60">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <xctk:IntegerUpDown Minimum="0" Width="50" Value="{Binding Quantity, Mode=TwoWay}" />
+                        <xctk:IntegerUpDown Minimum="0" Width="50" Value="{Binding Quantity, Mode=TwoWay}"
+                                            ToolTip="Sheets of this size available for the job" />
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
-                  <GridViewColumn Header="" Width="60">
+                  <GridViewColumn Header="" Width="40">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <Button Content="Remove"
+                        <Button Content="&#10005;" Padding="7,2" ToolTip="Remove sheet"
                                 Command="{Binding DataContext.ActiveDocument.RemoveSheetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}" />
                       </DataTemplate>

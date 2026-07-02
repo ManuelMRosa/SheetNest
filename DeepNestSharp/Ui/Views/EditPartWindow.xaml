@@ -69,6 +69,8 @@
           <TextBlock Text="Orientations permitted:" Margin="0,0,0,4" />
           <uc:RotationSelector x:Name="rotationSelector" HorizontalAlignment="Stretch"
                                ToolTip="Rotations the nester may apply to THIS part (e.g. restrict for grain direction)." />
+          <TextBlock x:Name="geoHint" FontSize="10" Foreground="#2E7D32" Margin="0,3,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
+          <TextBlock x:Name="warnHint" FontSize="11" FontWeight="SemiBold" Foreground="#C62828" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
 
           <TextBlock Text="Part spacing:" Margin="0,14,0,4" />
           <StackPanel Orientation="Horizontal">

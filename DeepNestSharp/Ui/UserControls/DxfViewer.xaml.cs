@@ -38,6 +38,8 @@ namespace DeepNestSharp.Ui.UserControls
     private static readonly Brush PartStroke = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x10));
     private static readonly Brush PartFill = new SolidColorBrush(Color.FromArgb(0x33, 0x33, 0x99, 0xDD));
     private static readonly Brush HoleFill = new SolidColorBrush(Color.FromRgb(0xFA, 0xFA, 0xFA));
+    private static readonly Brush SelectedFill = new SolidColorBrush(Color.FromArgb(0x77, 0x2E, 0x7D, 0x32));
+    private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromArgb(0x77, 0xD3, 0x2F, 0x2F));
 
     // Distinct sheet layouts and how many physical sheets use each (the production plan).
     private readonly List<SheetGroup> groups = new List<SheetGroup>();
@@ -48,6 +50,82 @@ namespace DeepNestSharp.Ui.UserControls
     private Point panStart;
     private double panTranslateX;
     private double panTranslateY;
+
+    // Manual nesting state: rendered path per placement, current selection, drag bookkeeping, and
+    // the placements currently overlapping something (drawn red).
+    private readonly List<(System.Windows.Shapes.Path Path, IPartPlacement Pp)> partPaths = new List<(System.Windows.Shapes.Path, IPartPlacement)>();
+    private readonly HashSet<IPartPlacement> invalid = new HashSet<IPartPlacement>();
+    private IPartPlacement selectedPp;
+    private bool isDraggingPart;
+    private bool dragInvalid;
+    private Point dragStartCanvas;
+    private double dragStartX;
+    private double dragStartY;
+    private double currentSheetW;
+    private double currentSheetH;
+
+    // Undo/redo history of manual edits (cleared when a new result arrives).
+    private readonly Stack<EditRecord> undoStack = new Stack<EditRecord>();
+    private readonly Stack<EditRecord> redoStack = new Stack<EditRecord>();
+
+    /// <summary>Effective per-part spacing (inches) keyed by the part's source DXF path — set by the
+    /// window right before a nest result is shown, so manual edits enforce the same clearances the
+    /// nester used: two parts must stay (spacingA + spacingB)/2 apart; common-line parts (0) may touch.</summary>
+    public IDictionary<string, double> PartSpacings { get; set; }
+
+    /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
+    public double DefaultPartSpacing { get; set; }
+
+    private double SpacingOf(IPartPlacement pp)
+    {
+      string key = pp?.Part?.Name;
+      if (key != null && this.PartSpacings != null && this.PartSpacings.TryGetValue(key, out double s))
+      {
+        return Math.Max(0, s);
+      }
+
+      return Math.Max(0, this.DefaultPartSpacing);
+    }
+
+    /// <summary>One manual edit: the placement at Index on the layout's representative sheet went
+    /// from Before to After (full snapshots, so undo/redo just re-applies either side).</summary>
+    private sealed class EditRecord
+    {
+      public int GroupIndex;
+      public int Index;
+      public PlacementSnapshot Before;
+      public PlacementSnapshot After;
+      public bool Nudge; // consecutive arrow-key nudges of the same part merge into ONE undo step
+    }
+
+    private struct PlacementSnapshot
+    {
+      public INfp Part;
+      public double X;
+      public double Y;
+      public double Rotation;
+      public int Source;
+      public int Id;
+
+      public static PlacementSnapshot Of(IPartPlacement pp) => new PlacementSnapshot
+      {
+        Part = pp.Part,
+        X = pp.X,
+        Y = pp.Y,
+        Rotation = pp.Rotation,
+        Source = pp.Source,
+        Id = pp.Id,
+      };
+
+      public PartPlacement ToPlacement() => new PartPlacement(this.Part)
+      {
+        X = this.X,
+        Y = this.Y,
+        Rotation = this.Rotation,
+        Source = this.Source,
+        Id = this.Id,
+      };
+    }
 
     public DxfViewer()
     {
@@ -86,6 +164,10 @@ namespace DeepNestSharp.Ui.UserControls
     private static void OnResultPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
       var v = (DxfViewer)d;
+      v.selectedPp = null;
+      v.invalid.Clear();
+      v.undoStack.Clear();
+      v.redoStack.Clear();
       v.BuildGroups();
       if (v.SheetIndex != 0)
       {
@@ -120,12 +202,13 @@ namespace DeepNestSharp.Ui.UserControls
         string sig = Signature(sp);
         if (!bySignature.TryGetValue(sig, out var g))
         {
-          g = new SheetGroup { Representative = sp, Count = 0, Name = $"Layout {byLayout.Count + 1}" };
+          g = new SheetGroup { Representative = sp, Count = 0, Name = $"Layout {byLayout.Count + 1}", Members = new List<ISheetPlacement>() };
           bySignature[sig] = g;
           byLayout.Add(g);
         }
 
         g.Count++;
+        g.Members.Add(sp);
       }
 
       if (byLayout.Count <= 3 || result.UsedSheets.Count <= 1)
@@ -364,8 +447,22 @@ namespace DeepNestSharp.Ui.UserControls
     {
       int totalSheets = this.groups.Sum(g => g.Count);
       int placed = this.Result?.TotalPlacedCount ?? 0;
-      var plan = this.groups.Select(g => $"{g.Count} × {g.Name.ToLowerInvariant()} ({g.Representative.PartPlacements.Count} parts each)");
+      var plan = this.groups.Select(g =>
+        $"{g.Count} × {g.Name.ToLowerInvariant()} ({g.Representative.PartPlacements.Count} parts, {UtilizationOf(g.Representative):F1}%)");
       return "CUT:   " + string.Join("    +    ", plan) + $"\n{placed} parts total  ·  {totalSheets} sheets";
+    }
+
+    /// <summary>Material utilization of ONE sheet layout: net part area on it / its sheet area (%).</summary>
+    private static double UtilizationOf(ISheetPlacement sp)
+    {
+      double sheetArea = sp?.Sheet == null ? 0 : sp.Sheet.WidthCalculated * sp.Sheet.HeightCalculated;
+      if (sheetArea <= 0)
+      {
+        return 0;
+      }
+
+      double partsArea = sp.PartPlacements.Sum(p => Math.Abs(p.Part.NetArea));
+      return partsArea / sheetArea * 100.0;
     }
 
     private static void OnSheetIndexPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -396,11 +493,16 @@ namespace DeepNestSharp.Ui.UserControls
       public int Count { get; set; }
 
       public string Name { get; set; }
+
+      /// <summary>The physical sheets sharing this layout (null for synthetic plan groups) — manual
+      /// edits to the representative are mirrored onto every member so all copies stay identical.</summary>
+      public List<ISheetPlacement> Members { get; set; }
     }
 
     private void Render()
     {
       this.canvas.Children.Clear();
+      this.partPaths.Clear();
 
       var result = this.Result;
       if (result == null || this.groups.Count == 0)
@@ -408,8 +510,11 @@ namespace DeepNestSharp.Ui.UserControls
         this.emptyHint.Visibility = Visibility.Visible;
         this.summaryBox.Visibility = Visibility.Collapsed;
         this.sheetNav.Visibility = Visibility.Collapsed;
+        this.editBar.Visibility = Visibility.Collapsed;
         return;
       }
+
+      this.editBar.Visibility = Visibility.Visible;
 
       int idx = Math.Max(0, Math.Min(this.SheetIndex, this.groups.Count - 1));
       var group = this.groups[idx];
@@ -426,13 +531,23 @@ namespace DeepNestSharp.Ui.UserControls
       // Show the production plan, and navigate by distinct LAYOUT (not by physical sheet).
       this.summaryText.Text = this.BuildSummary();
       this.summaryBox.Visibility = (result.UsedSheets?.Count ?? 0) > 1 ? Visibility.Visible : Visibility.Collapsed;
-      this.sheetLabel.Text = $"{group.Name}  ·  {sheetPlacement.PartPlacements.Count} parts  ·  cut ×{group.Count}";
+      this.sheetLabel.Text = $"{group.Name}  ·  {sheetPlacement.PartPlacements.Count} parts  ·  {UtilizationOf(sheetPlacement):F1}%  ·  cut ×{group.Count}";
       this.sheetNav.Visibility = this.groups.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
 
       double w = sheet.WidthCalculated;
       double h = sheet.HeightCalculated;
+      this.currentSheetW = w;
+      this.currentSheetH = h;
       this.canvas.Width = w;
       this.canvas.Height = h;
+
+      // Selection belongs to a specific sheet's placements — drop it when another sheet is shown.
+      if (this.selectedPp != null && !sheetPlacement.PartPlacements.Contains(this.selectedPp))
+      {
+        this.selectedPp = null;
+      }
+
+      this.UpdateEditButtons();
 
       // Hairline strokes: constant ~1px on screen at any zoom (stroke is in canvas units, which the
       // RenderTransform scales, so divide by the current scale).
@@ -467,20 +582,27 @@ namespace DeepNestSharp.Ui.UserControls
             continue;
           }
 
-          this.canvas.Children.Add(new System.Windows.Shapes.Path
+          var path = new System.Windows.Shapes.Path
           {
             Data = geometry,
-            Fill = PartFill,
+            Fill = this.FillFor(pp),
             Stroke = PartStroke,
             StrokeThickness = stroke,
             StrokeLineJoin = PenLineJoin.Round,
-          });
+          };
+          this.canvas.Children.Add(path);
+          this.partPaths.Add((path, pp));
         }
         catch
         {
           // Skip a part that can't be rendered rather than blanking the whole view.
         }
       }
+    }
+
+    private Brush FillFor(IPartPlacement pp)
+    {
+      return this.invalid.Contains(pp) ? InvalidFill : pp == this.selectedPp ? SelectedFill : PartFill;
     }
 
     /// <summary>
@@ -598,8 +720,71 @@ namespace DeepNestSharp.Ui.UserControls
       e.Handled = true;
     }
 
+    private bool EditMode => this.editToggle.IsChecked == true;
+
+    private void OnEditModeChanged(object sender, RoutedEventArgs e)
+    {
+      this.SelectPart(null);
+      if (this.hintText != null)
+      {
+        this.hintText.Text = this.EditMode
+          ? "click = select part  ·  drag = move  ·  buttons = rotate  ·  overlaps show red"
+          : "scroll = zoom  ·  drag = pan  ·  right-click = fit";
+      }
+    }
+
+    private void SelectPart(IPartPlacement pp)
+    {
+      this.selectedPp = pp;
+      foreach (var (path, p) in this.partPaths)
+      {
+        path.Fill = this.FillFor(p);
+      }
+
+      this.UpdateEditButtons();
+    }
+
+    private void UpdateEditButtons()
+    {
+      if (this.rotateButtons != null)
+      {
+        this.rotateButtons.Visibility = this.EditMode && this.selectedPp != null ? Visibility.Visible : Visibility.Collapsed;
+      }
+
+      if (this.undoBtn != null)
+      {
+        this.undoBtn.IsEnabled = this.undoStack.Count > 0;
+        this.redoBtn.IsEnabled = this.redoStack.Count > 0;
+      }
+    }
+
     private void OnPanStart(object sender, MouseButtonEventArgs e)
     {
+      this.host.Focus(); // so Ctrl+Z / Ctrl+Y reach the viewer
+
+      if (this.EditMode)
+      {
+        // Topmost part under the cursor gets selected and dragged; empty space falls through to pan.
+        Point pt = e.GetPosition(this.canvas);
+        for (int i = this.partPaths.Count - 1; i >= 0; i--)
+        {
+          if (this.partPaths[i].Path.Data != null && this.partPaths[i].Path.Data.FillContains(pt))
+          {
+            this.SelectPart(this.partPaths[i].Pp);
+            this.isDraggingPart = true;
+            this.dragInvalid = false;
+            this.dragStartCanvas = pt;
+            this.dragStartX = this.selectedPp.X;
+            this.dragStartY = this.selectedPp.Y;
+            this.host.CaptureMouse();
+            this.host.Cursor = Cursors.Hand;
+            return;
+          }
+        }
+
+        this.SelectPart(null);
+      }
+
       this.isPanning = true;
       this.panStart = e.GetPosition(this.host);
       this.panTranslateX = this.translate.X;
@@ -610,6 +795,21 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void OnPanMove(object sender, MouseEventArgs e)
     {
+      if (this.isDraggingPart && this.selectedPp != null)
+      {
+        // Canvas units are sheet units; canvas Y runs downward, sheet Y upward.
+        Point pt = e.GetPosition(this.canvas);
+        this.selectedPp.X = this.dragStartX + (pt.X - this.dragStartCanvas.X);
+        this.selectedPp.Y = this.dragStartY - (pt.Y - this.dragStartCanvas.Y);
+        this.RefreshSelectedPath();
+
+        // Live feedback: red while the current position overlaps a part or leaves the sheet
+        // (dropping there is refused — the part snaps back).
+        this.dragInvalid = !this.IsPositionValid(this.selectedPp, this.selectedPp);
+        this.SetSelectedFill(this.dragInvalid ? InvalidFill : SelectedFill);
+        return;
+      }
+
       if (!this.isPanning)
       {
         return;
@@ -620,8 +820,100 @@ namespace DeepNestSharp.Ui.UserControls
       this.translate.Y = this.panTranslateY + (p.Y - this.panStart.Y);
     }
 
+    /// <summary>
+    /// Finds the valid position nearest the drop point along the drag path (coarse scan from the drop
+    /// backward, then binary refinement toward the drop) and leaves the part there. t=0 (the drag
+    /// start) is always valid, so the part never ends up in an illegal spot.
+    /// </summary>
+    private void ResolveDropToContact()
+    {
+      double sx = this.dragStartX;
+      double sy = this.dragStartY;
+      double ex = this.selectedPp.X;
+      double ey = this.selectedPp.Y;
+
+      bool ValidAt(double t)
+      {
+        this.selectedPp.X = sx + (t * (ex - sx));
+        this.selectedPp.Y = sy + (t * (ey - sy));
+        return this.IsPositionValid(this.selectedPp, this.selectedPp);
+      }
+
+      const int CoarseSteps = 48;
+      double lo = 0; // known valid
+      double hi = 1; // known invalid (that's why we're here)
+      for (int i = CoarseSteps - 1; i >= 1; i--)
+      {
+        double t = (double)i / CoarseSteps;
+        if (ValidAt(t))
+        {
+          lo = t;
+          hi = (double)(i + 1) / CoarseSteps;
+          break;
+        }
+      }
+
+      for (int i = 0; i < 20; i++)
+      {
+        double mid = (lo + hi) / 2.0;
+        if (ValidAt(mid))
+        {
+          lo = mid;
+        }
+        else
+        {
+          hi = mid;
+        }
+      }
+
+      ValidAt(lo); // land on the best known-valid position
+      this.RefreshSelectedPath();
+    }
+
+    private void RefreshSelectedPath()
+    {
+      for (int i = 0; i < this.partPaths.Count; i++)
+      {
+        if (this.partPaths[i].Pp == this.selectedPp)
+        {
+          this.partPaths[i].Path.Data = BuildPlacedGeometry(this.selectedPp, this.currentSheetH);
+          return;
+        }
+      }
+    }
+
     private void OnPanEnd(object sender, MouseButtonEventArgs e)
     {
+      if (this.isDraggingPart)
+      {
+        this.isDraggingPart = false;
+        this.host.ReleaseMouseCapture();
+        this.host.Cursor = null;
+
+        if (this.dragInvalid)
+        {
+          // Dropped too close / on top of a neighbour: slide back along the drag path only as far as
+          // needed, so the part settles at its required clearance — touching for common-line parts,
+          // (spacingA + spacingB)/2 otherwise. Worst case it returns to where the drag began.
+          this.dragInvalid = false;
+          this.ResolveDropToContact();
+        }
+
+        bool moved = Math.Abs(this.selectedPp.X - this.dragStartX) > 1e-9 || Math.Abs(this.selectedPp.Y - this.dragStartY) > 1e-9;
+        if (moved)
+        {
+          var after = PlacementSnapshot.Of(this.selectedPp);
+          var before = after;
+          before.X = this.dragStartX;
+          before.Y = this.dragStartY;
+          this.PushEdit(before, after, nudge: false);
+        }
+
+        this.SetSelectedFill(SelectedFill);
+        this.CommitManualEdit();
+        return;
+      }
+
       this.isPanning = false;
       this.host.ReleaseMouseCapture();
       this.host.Cursor = Cursors.Arrow;
@@ -633,5 +925,526 @@ namespace DeepNestSharp.Ui.UserControls
       e.Handled = true;
     }
 
+    private void OnRotateCw90(object sender, RoutedEventArgs e) => this.RotateSelected(90);
+
+    private void OnRotateCcw90(object sender, RoutedEventArgs e) => this.RotateSelected(-90);
+
+    private void OnRotateCw5(object sender, RoutedEventArgs e) => this.RotateSelected(5);
+
+    private void OnRotateCcw5(object sender, RoutedEventArgs e) => this.RotateSelected(-5);
+
+    /// <summary>
+    /// Rotates the selected part in place about its bounding-box centre. The placement is REPLACED
+    /// (PartPlacement.Part is immutable) with one whose Part is the newly rotated polygon and whose
+    /// Rotation is updated — keeping the invariant the DXF export relies on (rotate original by
+    /// Rotation, then shift by X/Y).
+    /// </summary>
+    private void RotateSelected(double deltaDeg)
+    {
+      var pp = this.selectedPp;
+      var group = this.CurrentGroup();
+      if (pp == null || group == null)
+      {
+        return;
+      }
+
+      var sp = group.Representative;
+      int index = -1;
+      for (int i = 0; i < sp.PartPlacements.Count; i++)
+      {
+        if (sp.PartPlacements[i] == pp)
+        {
+          index = i;
+          break;
+        }
+      }
+
+      if (index < 0 || !(sp.PartPlacements is IList<IPartPlacement> list) || list.IsReadOnly)
+      {
+        return;
+      }
+
+      double cx = ((pp.Part.MinX + pp.Part.MaxX) / 2.0) + pp.X;
+      double cy = ((pp.Part.MinY + pp.Part.MaxY) / 2.0) + pp.Y;
+      var newPart = pp.Part.Rotate(deltaDeg);
+      var replacement = new PartPlacement(newPart)
+      {
+        X = cx - ((newPart.MinX + newPart.MaxX) / 2.0),
+        Y = cy - ((newPart.MinY + newPart.MaxY) / 2.0),
+        Rotation = (((pp.Rotation + deltaDeg) % 360.0) + 360.0) % 360.0,
+        Source = pp.Source,
+        Id = pp.Id,
+      };
+
+      // Overlaps are not allowed: refuse the rotation (brief red flash) if the turned part would
+      // collide with a neighbour or leave the sheet.
+      if (!this.IsPositionValid(replacement, pp))
+      {
+        this.FlashSelectedInvalid();
+        return;
+      }
+
+      this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
+      list[index] = replacement;
+      this.invalid.Remove(pp);
+      for (int i = 0; i < this.partPaths.Count; i++)
+      {
+        if (this.partPaths[i].Pp == pp)
+        {
+          this.partPaths[i] = (this.partPaths[i].Path, replacement);
+          break;
+        }
+      }
+
+      this.selectedPp = replacement;
+      this.RefreshSelectedPath();
+      this.CommitManualEdit();
+    }
+
+    /// <summary>True when the candidate placement neither overlaps any other part nor leaves the sheet.
+    /// <paramref name="exclude"/> is the placement the candidate replaces (skipped in the pair tests).</summary>
+    private bool IsPositionValid(IPartPlacement candidate, IPartPlacement exclude)
+    {
+      if (this.OutOfSheet(candidate))
+      {
+        return false;
+      }
+
+      var group = this.CurrentGroup();
+      if (group == null)
+      {
+        return true;
+      }
+
+      foreach (var other in group.Representative.PartPlacements)
+      {
+        if (other == exclude || other == candidate)
+        {
+          continue;
+        }
+
+        if (this.TooClose(candidate, other))
+        {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>
+    /// True when the two parts are closer than their required clearance: (spacingA + spacingB) / 2,
+    /// the same rule the nester enforces. Common-line parts (spacing 0) may touch — only real overlap
+    /// fails. Tested as: A's outline grown by the clearance intersects B.
+    /// </summary>
+    private bool TooClose(IPartPlacement a, IPartPlacement b)
+    {
+      double clearance = (this.SpacingOf(a) + this.SpacingOf(b)) / 2.0;
+      if (clearance <= 0)
+      {
+        // Common-line pair: keep the CAM-safe mini-gap (coincident lines get merged/deleted by CAM).
+        clearance = RasterNest.RasterCompact.CommonLineGap;
+      }
+
+      var pa = a.PlacedPart;
+      var pb = b.PlacedPart;
+      if (pa.MaxX + clearance <= pb.MinX || pb.MaxX <= pa.MinX - clearance
+          || pa.MaxY + clearance <= pb.MinY || pb.MaxY <= pa.MinY - clearance)
+      {
+        return false;
+      }
+
+      var pathsA = ToClipperPaths(pa);
+      if (clearance > 0)
+      {
+        pathsA = InflateOuter(pathsA, clearance);
+      }
+
+      return PathsOverlap(pathsA, ToClipperPaths(pb));
+    }
+
+    private void SetSelectedFill(Brush fill)
+    {
+      foreach (var (path, p) in this.partPaths)
+      {
+        if (p == this.selectedPp)
+        {
+          path.Fill = fill;
+          return;
+        }
+      }
+    }
+
+    private void FlashSelectedInvalid()
+    {
+      this.SetSelectedFill(InvalidFill);
+      var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+      timer.Tick += (s, e) =>
+      {
+        timer.Stop();
+        this.SetSelectedFill(this.selectedPp != null ? SelectedFill : PartFill);
+      };
+      timer.Start();
+    }
+
+    private void PushEdit(PlacementSnapshot before, PlacementSnapshot after, bool nudge)
+    {
+      var group = this.CurrentGroup();
+      if (group == null)
+      {
+        return;
+      }
+
+      int index = -1;
+      for (int i = 0; i < group.Representative.PartPlacements.Count; i++)
+      {
+        if (group.Representative.PartPlacements[i] == this.selectedPp)
+        {
+          index = i;
+          break;
+        }
+      }
+
+      if (index < 0)
+      {
+        return;
+      }
+
+      int groupIndex = Math.Max(0, Math.Min(this.SheetIndex, this.groups.Count - 1));
+
+      // A run of arrow-key nudges on the same part is ONE undo step (else Ctrl+Z crawls pixel by pixel).
+      if (nudge && this.undoStack.Count > 0)
+      {
+        var top = this.undoStack.Peek();
+        if (top.Nudge && top.GroupIndex == groupIndex && top.Index == index)
+        {
+          top.After = after;
+          this.redoStack.Clear();
+          this.UpdateEditButtons();
+          return;
+        }
+      }
+
+      this.undoStack.Push(new EditRecord
+      {
+        GroupIndex = groupIndex,
+        Index = index,
+        Before = before,
+        After = after,
+        Nudge = nudge,
+      });
+      this.redoStack.Clear();
+      this.UpdateEditButtons();
+    }
+
+    private void OnUndoClick(object sender, RoutedEventArgs e) => this.Undo();
+
+    private void OnRedoClick(object sender, RoutedEventArgs e) => this.Redo();
+
+    private void OnViewerKeyDown(object sender, KeyEventArgs e)
+    {
+      if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z)
+      {
+        this.Undo();
+        e.Handled = true;
+      }
+      else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Y)
+      {
+        this.Redo();
+        e.Handled = true;
+      }
+      else if (this.EditMode && this.selectedPp != null
+               && (e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down))
+      {
+        // Fine positioning: arrows nudge the selected part (Shift = coarser). Screen-up is +Y in sheet
+        // coordinates (the canvas is Y-flipped). A nudge into another part's clearance is simply refused.
+        double step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 0.25 : 0.05;
+        double dx = e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0;
+        double dy = e.Key == Key.Up ? step : e.Key == Key.Down ? -step : 0;
+        this.NudgeSelected(dx, dy);
+        e.Handled = true;
+      }
+    }
+
+    private void NudgeSelected(double dx, double dy)
+    {
+      var pp = this.selectedPp;
+      if (pp == null)
+      {
+        return;
+      }
+
+      var before = PlacementSnapshot.Of(pp);
+      pp.X += dx;
+      pp.Y += dy;
+
+      if (!this.IsPositionValid(pp, pp))
+      {
+        pp.X = before.X;
+        pp.Y = before.Y;
+        this.FlashSelectedInvalid();
+        return;
+      }
+
+      this.RefreshSelectedPath();
+      this.PushEdit(before, PlacementSnapshot.Of(pp), nudge: true);
+      this.CommitManualEdit();
+    }
+
+    private void Undo()
+    {
+      if (this.undoStack.Count == 0)
+      {
+        return;
+      }
+
+      var record = this.undoStack.Pop();
+      this.redoStack.Push(record);
+      this.ApplyRecord(record, useBefore: true);
+    }
+
+    private void Redo()
+    {
+      if (this.redoStack.Count == 0)
+      {
+        return;
+      }
+
+      var record = this.redoStack.Pop();
+      this.undoStack.Push(record);
+      this.ApplyRecord(record, useBefore: false);
+    }
+
+    private void ApplyRecord(EditRecord record, bool useBefore)
+    {
+      if (record.GroupIndex >= this.groups.Count)
+      {
+        return;
+      }
+
+      var group = this.groups[record.GroupIndex];
+      var sp = group.Representative;
+      if (record.Index >= sp.PartPlacements.Count || !(sp.PartPlacements is IList<IPartPlacement> list) || list.IsReadOnly)
+      {
+        return;
+      }
+
+      var snapshot = useBefore ? record.Before : record.After;
+      var placement = snapshot.ToPlacement();
+      list[record.Index] = placement;
+      this.selectedPp = placement;
+      this.invalid.Clear();
+
+      // Mirror onto the layout's copies, then show the sheet the edit belongs to.
+      if (group.Members != null)
+      {
+        foreach (var member in group.Members)
+        {
+          if (member != sp && member.PartPlacements.Count == sp.PartPlacements.Count
+              && member.PartPlacements is IList<IPartPlacement> mlist && !mlist.IsReadOnly)
+          {
+            for (int i = 0; i < sp.PartPlacements.Count; i++)
+            {
+              mlist[i] = sp.PartPlacements[i];
+            }
+          }
+        }
+      }
+
+      if (this.SheetIndex != record.GroupIndex)
+      {
+        this.SheetIndex = record.GroupIndex; // triggers a full re-render on that sheet
+      }
+      else
+      {
+        this.Render();
+      }
+
+      this.UpdateEditButtons();
+    }
+
+    private SheetGroup CurrentGroup()
+    {
+      int idx = Math.Max(0, Math.Min(this.SheetIndex, this.groups.Count - 1));
+      return this.groups.Count == 0 ? null : this.groups[idx];
+    }
+
+    /// <summary>
+    /// After a manual move/rotate: mirror the representative's placements onto every physical copy of
+    /// this layout (so "cut ×24" copies stay identical and the export matches), then re-evaluate which
+    /// parts overlap or hang off the sheet (drawn red — the operator decides what to do about it).
+    /// </summary>
+    private void CommitManualEdit()
+    {
+      var group = this.CurrentGroup();
+      if (group == null)
+      {
+        return;
+      }
+
+      if (group.Members != null)
+      {
+        var rep = group.Representative;
+        foreach (var member in group.Members)
+        {
+          if (member == rep || member.PartPlacements.Count != rep.PartPlacements.Count)
+          {
+            continue;
+          }
+
+          if (member.PartPlacements is IList<IPartPlacement> mlist && !mlist.IsReadOnly)
+          {
+            for (int i = 0; i < rep.PartPlacements.Count; i++)
+            {
+              mlist[i] = rep.PartPlacements[i]; // share the exact placements — copies stay in lockstep
+            }
+          }
+        }
+      }
+
+      this.RefreshInvalid();
+    }
+
+    /// <summary>Re-check the moved part (and anything previously flagged) for overlaps/out-of-sheet.</summary>
+    private void RefreshInvalid()
+    {
+      var group = this.CurrentGroup();
+      if (group == null)
+      {
+        return;
+      }
+
+      var placements = group.Representative.PartPlacements;
+      var toCheck = new HashSet<IPartPlacement>(this.invalid);
+      if (this.selectedPp != null)
+      {
+        toCheck.Add(this.selectedPp);
+      }
+
+      foreach (var c in toCheck.ToList())
+      {
+        if (!placements.Contains(c))
+        {
+          this.invalid.Remove(c);
+          continue;
+        }
+
+        bool bad = this.OutOfSheet(c);
+        foreach (var other in placements)
+        {
+          if (other == c)
+          {
+            continue;
+          }
+
+          if (this.TooClose(c, other))
+          {
+            bad = true;
+            this.invalid.Add(other); // both sides of an overlap show red
+          }
+        }
+
+        if (bad)
+        {
+          this.invalid.Add(c);
+        }
+        else
+        {
+          this.invalid.Remove(c);
+        }
+      }
+
+      foreach (var (path, p) in this.partPaths)
+      {
+        path.Fill = this.FillFor(p);
+      }
+    }
+
+    private bool OutOfSheet(IPartPlacement pp)
+    {
+      const double Tol = 0.002;
+      var placed = pp.PlacedPart;
+      return placed.MinX < -Tol || placed.MinY < -Tol
+        || placed.MaxX > this.currentSheetW + Tol || placed.MaxY > this.currentSheetH + Tol;
+    }
+
+    private const double ClipScale = 1e6;
+
+    private static List<List<ClipperLib.IntPoint>> ToClipperPaths(INfp nfp)
+    {
+      var paths = new List<List<ClipperLib.IntPoint>>();
+      void Add(INfp contour)
+      {
+        if (contour?.Points == null || contour.Points.Length < 3)
+        {
+          return;
+        }
+
+        var path = new List<ClipperLib.IntPoint>(contour.Points.Length);
+        foreach (var p in contour.Points)
+        {
+          path.Add(new ClipperLib.IntPoint((long)Math.Round(p.X * ClipScale), (long)Math.Round(p.Y * ClipScale)));
+        }
+
+        paths.Add(path);
+      }
+
+      Add(nfp);
+      if (nfp.Children != null)
+      {
+        foreach (var child in nfp.Children)
+        {
+          Add(child);
+        }
+      }
+
+      return paths;
+    }
+
+    /// <summary>Grow the outer contour by <paramref name="inches"/> (round join = uniform Euclidean
+    /// clearance, matching the nesting engine's halo). Holes kept as-is.</summary>
+    private static List<List<ClipperLib.IntPoint>> InflateOuter(List<List<ClipperLib.IntPoint>> paths, double inches)
+    {
+      if (paths.Count == 0)
+      {
+        return paths;
+      }
+
+      var outer = new List<ClipperLib.IntPoint>(paths[0]);
+      if (!ClipperLib.Clipper.Orientation(outer))
+      {
+        outer.Reverse();
+      }
+
+      var offset = new ClipperLib.ClipperOffset();
+      offset.AddPath(outer, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
+      var grown = new List<List<ClipperLib.IntPoint>>();
+      offset.Execute(ref grown, inches * ClipScale);
+
+      var result = new List<List<ClipperLib.IntPoint>>(grown);
+      for (int i = 1; i < paths.Count; i++)
+      {
+        result.Add(paths[i]);
+      }
+
+      return result.Count > 0 ? result : paths;
+    }
+
+    private static bool PathsOverlap(List<List<ClipperLib.IntPoint>> a, List<List<ClipperLib.IntPoint>> b)
+    {
+      const double EpsArea = 1e-6 * ClipScale * ClipScale;
+      var clipper = new ClipperLib.Clipper();
+      clipper.AddPaths(a, ClipperLib.PolyType.ptSubject, true);
+      clipper.AddPaths(b, ClipperLib.PolyType.ptClip, true);
+      var solution = new List<List<ClipperLib.IntPoint>>();
+      clipper.Execute(ClipperLib.ClipType.ctIntersection, solution, ClipperLib.PolyFillType.pftEvenOdd, ClipperLib.PolyFillType.pftEvenOdd);
+      double area = 0;
+      foreach (var path in solution)
+      {
+        area += Math.Abs(ClipperLib.Clipper.Area(path));
+      }
+
+      return area > EpsArea;
+    }
   }
 }
