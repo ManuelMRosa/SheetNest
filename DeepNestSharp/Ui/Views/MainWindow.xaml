@@ -88,7 +88,7 @@
           <GroupBox Header="Input" Margin="4,2">
             <StackPanel Orientation="Horizontal">
               <Button Style="{StaticResource RibbonButton}" Content="Add Part" Click="OnAddPartClicked" ToolTip="Load a part from DXF/SVG" />
-              <Button Style="{StaticResource RibbonButton}" Content="Add Sheet" Command="{Binding ActiveDocument.AddSheetCommand}" ToolTip="Add a stock sheet size" />
+              <Button Style="{StaticResource RibbonButton}" Content="Add Sheet" Click="OnAddSheetMenu" ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
               <Button Style="{StaticResource RibbonButton}" Content="Clear Parts" Command="{Binding ActiveDocument.ClearPartsCommand}" ToolTip="Remove all parts" />
             </StackPanel>
           </GroupBox>
@@ -215,13 +215,10 @@
         </TabItem>
         <TabItem Header="Sheets">
           <DockPanel>
-            <Button DockPanel.Dock="Bottom" Content="+ Add Sheet" Command="{Binding ActiveDocument.AddSheetCommand}" Margin="4" Padding="6,4" />
-            <StackPanel DockPanel.Dock="Top" Margin="4,4,4,6">
-              <TextBlock Text="Stock size" FontWeight="SemiBold" Margin="0,0,0,3" />
-              <ComboBox x:Name="sheetPresetCombo" DisplayMemberPath="Name" SelectionChanged="OnSheetPresetSelected"
-                        ToolTip="Standard stock sizes (width = the long side, matching the machine bed). Applies to the selected sheet — or creates one if the list is empty." />
-              <TextBlock Text="width = long side · applies to the selected sheet" FontSize="10" Foreground="#888" Margin="0,2,0,0" />
-            </StackPanel>
+            <Button DockPanel.Dock="Bottom" Content="+ Add Sheet" Click="OnAddSheetMenu" Margin="4" Padding="6,4"
+                    ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
+            <TextBlock DockPanel.Dock="Top" Margin="4,4,4,6" FontSize="10" Foreground="#888"
+                       Text="width = long side · every listed sheet participates; the nester picks the size that wastes least" TextWrapping="Wrap" />
             <ListView x:Name="sheetsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.SheetLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedSheetLoadInfo}">
               <ListView.View>

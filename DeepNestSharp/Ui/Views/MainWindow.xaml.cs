@@ -66,31 +66,51 @@ namespace DeepNestSharp.Ui.Views
         cfg.Spacing = 0.25;
       }
 
-      this.sheetPresetCombo.ItemsSource = SheetPresets;
     }
 
-    private void OnSheetPresetSelected(object sender, SelectionChangedEventArgs e)
+    /// <summary>Add Sheet opens a menu: the standard stock sizes plus "Custom size…" (Radan-style).</summary>
+    private void OnAddSheetMenu(object sender, RoutedEventArgs e)
     {
-      if (this.sheetPresetCombo.SelectedItem is SheetPreset preset)
+      var menu = new ContextMenu();
+      foreach (var preset in SheetPresets)
       {
-        var sheet = (this.sheetsListView.SelectedItem
-                     ?? (this.sheetsListView.Items.Count > 0 ? this.sheetsListView.Items[0] : null)) as ISheetLoadInfo;
+        var size = preset;
+        var item = new MenuItem { Header = size.Name };
+        item.Click += (_, __) => this.AddSheetOfSize(size.Width, size.Height, 1);
+        menu.Items.Add(item);
+      }
 
-        // No sheet yet? Picking a stock size should just create one — not silently do nothing.
-        if (sheet == null && ViewModel.ActiveDocument is NestProjectViewModel doc && doc.AddSheetCommand.CanExecute(null))
+      menu.Items.Add(new Separator());
+      var custom = new MenuItem { Header = "Custom size…" };
+      custom.Click += (_, __) =>
+      {
+        var dialog = new AddSheetWindow { Owner = this };
+        if (dialog.ShowDialog() == true)
         {
-          doc.AddSheetCommand.Execute(null);
-          sheet = doc.ProjectInfo.SheetLoadInfos.LastOrDefault();
+          this.AddSheetOfSize(dialog.SheetWidth, dialog.SheetHeight, dialog.SheetQuantity);
         }
+      };
+      menu.Items.Add(custom);
 
+      menu.PlacementTarget = sender as UIElement;
+      menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+      menu.IsOpen = true;
+    }
+
+    private void AddSheetOfSize(int width, int height, int quantity)
+    {
+      if (ViewModel.ActiveDocument is NestProjectViewModel doc && doc.AddSheetCommand.CanExecute(null))
+      {
+        doc.AddSheetCommand.Execute(null);
+        var sheet = doc.ProjectInfo.SheetLoadInfos.LastOrDefault();
         if (sheet != null)
         {
-          sheet.Width = preset.Width;
-          sheet.Height = preset.Height;
-          this.sheetsListView.Items.Refresh();
+          sheet.Width = width;
+          sheet.Height = height;
+          sheet.Quantity = quantity;
         }
 
-        this.sheetPresetCombo.SelectedIndex = -1; // reset so picking the same preset again works
+        this.sheetsListView.Items.Refresh();
       }
     }
 
