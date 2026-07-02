@@ -28,13 +28,14 @@ namespace DeepNestSharp.Ui.UserControls
       typeof(RotationSelector),
       new FrameworkPropertyMetadata(AnglesEnum.None, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnValueChanged));
 
-    // The seven Radan orientation permissions (photo IMG_1722), with Radan's icon language: the part
-    // shape fixed / the part turned / a quarter-turn arrow / ↔ / ↕ / four-way arrows / a circle.
+    // The seven Radan orientation permissions (photo IMG_1722), with Radan's icon language: ALL of
+    // them are arrows — a single up arrow (only 0°), a single side arrow (only 90°), a bent
+    // quarter-turn arrow (0+90), ↔ (0+180), ↕ (90+270), a four-way cross — and a circle for "any".
     // Codes are RasterNestService's permitted-orientation codes.
     private enum IconKind
     {
-      PartUpright,
-      PartTurned,
+      ArrowUp,
+      ArrowRight,
       QuarterTurn,
       ArrowH,
       ArrowV,
@@ -44,8 +45,8 @@ namespace DeepNestSharp.Ui.UserControls
 
     private static readonly (string Label, int Rotations, IconKind Icon, AnglesEnum Strict, string Tip)[] Options = new[]
     {
-      ("As drawn", 1, IconKind.PartUpright, AnglesEnum.None, "Only 0° — the part stays exactly as drawn (respects grain)."),
-      ("90° only", RasterNest.RasterNestService.RotOnly90, IconKind.PartTurned, AnglesEnum.None, "Only 90° — the part is always turned once."),
+      ("As drawn", 1, IconKind.ArrowUp, AnglesEnum.None, "Only 0° — the part stays exactly as drawn (respects grain)."),
+      ("90° only", RasterNest.RasterNestService.RotOnly90, IconKind.ArrowRight, AnglesEnum.None, "Only 90° — the part is always turned once."),
       ("0°+90°", RasterNest.RasterNestService.RotZeroAnd90, IconKind.QuarterTurn, AnglesEnum.None, "0° and 90° permitted."),
       ("0°+180°", 2, IconKind.ArrowH, AnglesEnum.AsPreviewed, "0° and 180° — respects material grain but can flip."),
       ("90°+270°", RasterNest.RasterNestService.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270° — always turned, either way."),
@@ -53,7 +54,6 @@ namespace DeepNestSharp.Ui.UserControls
       ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
     };
 
-    private static readonly Brush IconStroke = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A));
     private static readonly Brush IconFill = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
 
     private readonly List<ToggleButton> buttons = new List<ToggleButton>();
@@ -62,9 +62,8 @@ namespace DeepNestSharp.Ui.UserControls
     {
       InitializeComponent();
 
-      if (IconStroke.CanFreeze)
+      if (IconFill.CanFreeze)
       {
-        IconStroke.Freeze();
         IconFill.Freeze();
       }
 
@@ -166,12 +165,14 @@ namespace DeepNestSharp.Ui.UserControls
 
       switch (kind)
       {
-        case IconKind.PartUpright:
-          canvas.Children.Add(LShape(turned: false));
+        case IconKind.ArrowUp:
+          canvas.Children.Add(Shaft(12, 17, 12, 8));
+          canvas.Children.Add(Head(new Point(12, 5), -90));
           break;
 
-        case IconKind.PartTurned:
-          canvas.Children.Add(LShape(turned: true));
+        case IconKind.ArrowRight:
+          canvas.Children.Add(Shaft(7, 12, 16, 12));
+          canvas.Children.Add(Head(new Point(19, 12), 0));
           break;
 
         case IconKind.QuarterTurn:
@@ -211,25 +212,6 @@ namespace DeepNestSharp.Ui.UserControls
       }
 
       return canvas;
-    }
-
-    /// <summary>Small L-shaped part, upright or turned 90° clockwise — Radan's "the part, as placed" glyphs.</summary>
-    private static Polygon LShape(bool turned)
-    {
-      var upright = new[] { (8.0, 5.0), (13.0, 5.0), (13.0, 12.0), (18.0, 12.0), (18.0, 19.0), (8.0, 19.0) };
-      var pts = new PointCollection();
-      foreach (var (x, y) in upright)
-      {
-        pts.Add(turned ? new Point(24 - y, x) : new Point(x, y));
-      }
-
-      return new Polygon
-      {
-        Points = pts,
-        Stroke = IconStroke,
-        StrokeThickness = 1.3,
-        Fill = new SolidColorBrush(Color.FromRgb(0xDB, 0xEC, 0xDB)),
-      };
     }
 
     private static Line Shaft(double x1, double y1, double x2, double y2)
