@@ -119,9 +119,12 @@
           : $"spacing {detailLoadInfo.Spacing:0.###}";
         string rot = detailLoadInfo.Rotations switch
         {
-          1 => "no turn",
+          1 => "as drawn",
           2 => "0/180°",
-          4 => "90° steps",
+          4 => "4-way",
+          1001 => "90° only",   // Radan orientation codes (see RasterNestService.PermittedSet)
+          1002 => "0°+90°",
+          1003 => "90°+270°",
           > 4 => "free",
           _ => "rot: auto",
         };

@@ -28,12 +28,18 @@ namespace DeepNestSharp.Ui.UserControls
       typeof(RotationSelector),
       new FrameworkPropertyMetadata(AnglesEnum.None, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnValueChanged));
 
-    private static readonly (string Label, int Rotations, AnglesEnum Strict, string Tip)[] Options = new[]
+    // The seven Radan orientation permissions (photo IMG_1722): only 0° / only 90° / 0+90 / 0+180 /
+    // 90+270 / all four / any. Codes are RasterNestService's permitted-orientation codes; Angles is
+    // the icon's arrowhead set (null = any → curved arrow).
+    private static readonly (string Label, int Rotations, int[] Angles, AnglesEnum Strict, string Tip)[] Options = new[]
     {
-      ("No turn", 1, AnglesEnum.None, "No rotation — parts stay exactly as drawn (respects grain)."),
-      ("Flip", 2, AnglesEnum.AsPreviewed, "Allow 0° and 180° only — respects material grain but can flip."),
-      ("90°", 4, AnglesEnum.None, "Allow 0 / 90 / 180 / 270°."),
-      ("Free", 36, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
+      ("As drawn", 1, new[] { 0 }, AnglesEnum.None, "Only 0° — the part stays exactly as drawn (respects grain)."),
+      ("90° only", RasterNest.RasterNestService.RotOnly90, new[] { 90 }, AnglesEnum.None, "Only 90° — the part is always turned once."),
+      ("0°+90°", RasterNest.RasterNestService.RotZeroAnd90, new[] { 0, 90 }, AnglesEnum.None, "0° and 90° permitted."),
+      ("Flip", 2, new[] { 0, 180 }, AnglesEnum.AsPreviewed, "0° and 180° — respects material grain but can flip."),
+      ("90°+270°", RasterNest.RasterNestService.Rot90And270, new[] { 90, 270 }, AnglesEnum.None, "90° and 270° — always turned, either way."),
+      ("4-way", 4, new[] { 0, 90, 180, 270 }, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°)."),
+      ("Free", 36, null, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
     };
 
     private static readonly Brush IconStroke = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A));
@@ -59,7 +65,7 @@ namespace DeepNestSharp.Ui.UserControls
           Style = (Style)this.Resources["RotationOptionStyle"],
           ToolTip = opt.Tip,
           Tag = i,
-          Content = BuildContent(opt.Label, opt.Rotations),
+          Content = BuildContent(opt.Label, opt.Angles),
         };
         btn.Click += this.OnOptionClick;
         this.buttons.Add(btn);
@@ -103,31 +109,35 @@ namespace DeepNestSharp.Ui.UserControls
       }
     }
 
-    /// <summary>Maps the current Rotations + StrictAngles back to one of the four options.</summary>
+    /// <summary>Maps the current Rotations code back to one of the seven options (legacy values —
+    /// e.g. a persisted 8 = 45° steps — snap to the closest option).</summary>
     private int SelectedIndex()
     {
-      if (this.StrictAngles == AnglesEnum.AsPreviewed)
+      for (int i = 0; i < Options.Length; i++)
       {
-        return 1; // Flip
+        if (Options[i].Rotations == this.Rotations)
+        {
+          return i;
+        }
       }
 
       if (this.Rotations <= 1)
       {
-        return 0; // No turn
+        return 0; // As drawn
       }
 
       if (this.Rotations <= 4)
       {
-        return 2; // 90°
+        return 5; // 4-way
       }
 
-      return 3; // Free
+      return Options.Length - 1; // Free
     }
 
-    private static FrameworkElement BuildContent(string label, int rotations)
+    private static FrameworkElement BuildContent(string label, int[] angles)
     {
       var panel = new StackPanel { Orientation = Orientation.Vertical };
-      panel.Children.Add(BuildIcon(rotations));
+      panel.Children.Add(BuildIcon(angles));
       panel.Children.Add(new TextBlock
       {
         Text = label,
@@ -138,7 +148,7 @@ namespace DeepNestSharp.Ui.UserControls
       return panel;
     }
 
-    private static UIElement BuildIcon(int rotations)
+    private static UIElement BuildIcon(int[] angles)
     {
       const double size = 24;
       const double c = size / 2;
@@ -161,17 +171,15 @@ namespace DeepNestSharp.Ui.UserControls
       Canvas.SetTop(dot, c - 1.0);
       canvas.Children.Add(dot);
 
-      if (rotations >= 36)
+      if (angles == null)
       {
         canvas.Children.Add(BuildCurvedArrow(c, r));
       }
       else
       {
-        int n = Math.Max(1, rotations);
-        for (int i = 0; i < n; i++)
+        foreach (int angle in angles)
         {
-          double angDeg = -90 + (i * (360.0 / n));
-          canvas.Children.Add(BuildArrowhead(c, r, angDeg));
+          canvas.Children.Add(BuildArrowhead(c, r, angle - 90));
         }
       }
 

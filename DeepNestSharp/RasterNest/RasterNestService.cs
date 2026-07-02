@@ -47,7 +47,7 @@ namespace DeepNestSharp.RasterNest
       error = null;
       var helper = new NestExecutionHelper();
 
-      var parsed = new List<(int Src, INfp Nfp, int Qty, int Allowed, int Priority, double SpacingIn)>();
+      var parsed = new List<(int Src, INfp Nfp, int Qty, int[] Allowed, int Priority, double SpacingIn)>();
       int src = 0;
       foreach (var part in partInfos)
       {
@@ -60,7 +60,7 @@ namespace DeepNestSharp.RasterNest
         if (det != null && det.TryConvertToNfp(src, out INfp nfp) && nfp.Points.Length > 2)
         {
           double effSpacing = part.Spacing >= 0 ? part.Spacing : System.Math.Max(0, spacing);
-          parsed.Add((src, nfp, part.Quantity, part.Rotations > 0 ? part.Rotations : rotations, part.Priority, effSpacing));
+          parsed.Add((src, nfp, part.Quantity, PermittedSet(part.Rotations > 0 ? part.Rotations : rotations), part.Priority, effSpacing));
           src++;
         }
       }
@@ -99,10 +99,10 @@ namespace DeepNestSharp.RasterNest
           : System.Math.Max(1, System.Math.Min((int)System.Math.Round((p.SpacingIn / 2.0) * px), halfSheet)))
         .ToArray();
 
-      // Straighten angle per part (min-area bounding box) — used by the straightened profiles. Only for
-      // parts allowed 90°-step rotation or freer; parts restricted to 0/180 (grain) or fixed keep their
-      // drawn orientation.
-      var straighten = parsed.Select(p => p.Allowed >= 4 ? MinBoundingBoxAngle(p.Nfp) : 0).ToArray();
+      // Straighten angle per part (min-area bounding box) — used by the straightened profiles. It
+      // introduces OFF-AXIS angles, so (Radan semantics) only parts whose permission is 45°-step or
+      // freer get it: "four orientations permitted" means literally those four of the drawing.
+      var straighten = parsed.Select(p => p.Allowed.Length >= 8 ? MinBoundingBoxAngle(p.Nfp) : 0).ToArray();
 
       var candidates = BuildCandidates(parsed.Select(p => p.Allowed).ToArray(), straighten);
 
@@ -281,8 +281,8 @@ namespace DeepNestSharp.RasterNest
             int tailIdx = parsed.FindIndex(q => q.Src == tailSources[0]);
             var pe = parsed[tailIdx];
             var t0 = new PartType { Source = pe.Src, Poly = pe.Nfp, HaloPx = halos[tailIdx] };
-            int[] setA = pe.Allowed >= 4 ? new[] { 90, 270 } : new int[0];
-            int[] setB = pe.Allowed >= 2 ? new[] { 0, 180 } : new int[0];
+            int[] setA = pe.Allowed.Where(a => a == 90 || a == 270).ToArray();
+            int[] setB = pe.Allowed.Where(a => a == 0 || a == 180).ToArray();
 
             // Rotation-symmetric parts (circles, squares) gain nothing from turning — the sweep would
             // burn ~2n nests for identical layouts. Compare the 0° and 90° masks once and skip if equal.
@@ -743,27 +743,73 @@ namespace DeepNestSharp.RasterNest
     }
 
     /// <summary>
+    /// Radan-style permitted-orientation codes → explicit angle sets. Legacy count codes keep their
+    /// historical meaning (1 = as drawn, 2 = 0/180, 4 = four square orientations, 8 = 45° steps,
+    /// bigger = any); the 100x codes are the orientation choices Radan offers that a plain count
+    /// cannot express. "Any" maps to 15° steps — a superset of every candidate profile the nester
+    /// actually tries (measured long ago: finer steps only slow the greedy down and pack worse).
+    /// </summary>
+    internal const int RotOnly90 = 1001;      // only 90° — always turned once
+    internal const int RotZeroAnd90 = 1002;   // 0° and 90°
+    internal const int Rot90And270 = 1003;    // 90° and 270°
+
+    internal static int[] PermittedSet(int code)
+    {
+      switch (code)
+      {
+        case RotOnly90: return new[] { 90 };
+        case RotZeroAnd90: return new[] { 0, 90 };
+        case Rot90And270: return new[] { 90, 270 };
+      }
+
+      if (code <= 1)
+      {
+        return new[] { 0 };
+      }
+
+      if (code == 2)
+      {
+        return new[] { 0, 180 };
+      }
+
+      if (code <= 7)
+      {
+        return new[] { 0, 90, 180, 270 };
+      }
+
+      return code == 8 ? AnglesN(8) : AnglesN(24);
+    }
+
+    /// <summary>
     /// Candidate rotation profiles for the whole job. Each entry is one rotation set PER PART, always a
-    /// subset of what that part's permitted rotations allow (a fixed/grain part keeps its own set in
+    /// subset of what that part's permitted orientations allow (a fixed/grain part keeps its own set in
     /// every profile). Duplicates collapse, so a job of fixed/flip-only parts runs exactly once.
     /// </summary>
-    private static List<int[][]> BuildCandidates(int[] allowed, int[] straighten)
+    private static List<int[][]> BuildCandidates(int[][] allowed, int[] straighten)
     {
       int n = allowed.Length;
       var candidates = new List<int[][]>();
       var seen = new HashSet<string>();
 
-      int[] Base(int a) => a <= 1 ? new[] { 0 } : a == 2 ? new[] { 0, 180 } : new[] { 0, 90, 180, 270 };
-      int[] Flip(int a) => a >= 4 ? new[] { 0, 180 } : Base(a);
-      int[] FlipOffset(int a) => a >= 4 ? new[] { 90, 270 } : Base(a);
-      int[] Eight(int a) => a >= 8 ? AnglesN(8) : Base(a);
+      // Profile ∩ permitted; an empty intersection falls back to the part's square orientations (or,
+      // failing that, its own full set) so no profile ever violates a part's permission.
+      int[] Inter(int[] set, int[] profile)
+      {
+        var r = set.Where(profile.Contains).ToArray();
+        return r.Length > 0 ? r : null;
+      }
 
-      void Add(System.Func<int, int[]> setFor, bool applyStraighten)
+      int[] Base(int[] s) => Inter(s, new[] { 0, 90, 180, 270 }) ?? s;
+      int[] Flip(int[] s) => Inter(s, new[] { 0, 180 }) ?? Base(s);
+      int[] FlipOffset(int[] s) => Inter(s, new[] { 90, 270 }) ?? Base(s);
+      int[] Eight(int[] s) => Inter(s, AnglesN(8)) ?? Base(s);
+
+      void Add(System.Func<int[], int[]> setFor, bool applyStraighten)
       {
         var cand = new int[n][];
         for (int i = 0; i < n; i++)
         {
-          int off = applyStraighten && allowed[i] >= 4 ? straighten[i] : 0;
+          int off = applyStraighten && allowed[i].Length >= 8 ? straighten[i] : 0;
           cand[i] = setFor(allowed[i]).Select(r => (((r + off) % 360) + 360) % 360).Distinct().ToArray();
         }
 
