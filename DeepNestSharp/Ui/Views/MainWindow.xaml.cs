@@ -23,12 +23,13 @@ namespace DeepNestSharp.Ui.Views
 
     // US stock sheet sizes, width = the LONG side (matches the machine bed orientation; the nester
     // grows the pack along the long axis so the remnant is a full short-dimension strip).
+    // Ordered by the SHORT side first (all the 48s together, then the 60s), then by length.
     private static readonly SheetPreset[] SheetPresets =
     {
       new SheetPreset("96 × 48 in   (8 × 4 ft)", 96, 48),
       new SheetPreset("120 × 48 in   (10 × 4 ft)", 120, 48),
-      new SheetPreset("120 × 60 in   (10 × 5 ft)", 120, 60),
       new SheetPreset("144 × 48 in   (12 × 4 ft)", 144, 48),
+      new SheetPreset("120 × 60 in   (10 × 5 ft)", 120, 60),
       new SheetPreset("144 × 60 in   (12 × 5 ft)", 144, 60),
     };
 
@@ -72,8 +73,15 @@ namespace DeepNestSharp.Ui.Views
     private void OnAddSheetMenu(object sender, RoutedEventArgs e)
     {
       var menu = new ContextMenu();
+      int lastShortSide = -1;
       foreach (var preset in SheetPresets)
       {
+        if (lastShortSide >= 0 && preset.Height != lastShortSide)
+        {
+          menu.Items.Add(new Separator()); // visual break between the 48-wide and 60-wide groups
+        }
+
+        lastShortSide = preset.Height;
         var size = preset;
         var item = new MenuItem { Header = size.Name };
         item.Click += (_, __) => this.AddSheetOfSize(size.Width, size.Height, 1);
