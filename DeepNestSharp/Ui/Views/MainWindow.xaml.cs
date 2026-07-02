@@ -255,6 +255,50 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
+    private void OnNestReportPdf(object sender, RoutedEventArgs e)
+    {
+      var selected = ViewModel.NestMonitorViewModel?.SelectedItem;
+      if (selected == null || selected.UsedSheets == null || selected.UsedSheets.Count == 0)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "Run a nest and select a result first, then save the report.",
+          "Nest report",
+          DeepNestLib.MessageBoxIcon.Information);
+        return;
+      }
+
+      // Report exactly what the viewer shows: one entry per distinct layout with its cut count.
+      var plan = this.dxfViewer.GetProductionPlan();
+      if (plan == null || plan.Count == 0)
+      {
+        plan = selected.UsedSheets.Select(s => ((DeepNestLib.Placement.ISheetPlacement)s, 1, "Sheet")).ToList();
+      }
+
+      var dialog = new Microsoft.Win32.SaveFileDialog
+      {
+        Filter = "PDF files (*.pdf)|*.pdf",
+        FileName = "nest report.pdf",
+        Title = "Save nest report",
+      };
+      if (dialog.ShowDialog(this) != true)
+      {
+        return;
+      }
+
+      try
+      {
+        Reports.NestReportPdf.Write(dialog.FileName, plan, selected.UnplacedParts?.Count ?? 0);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dialog.FileName) { UseShellExecute = true });
+      }
+      catch (System.Exception ex)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          $"Could not write the report: {ex.Message}",
+          "Nest report",
+          DeepNestLib.MessageBoxIcon.Error);
+      }
+    }
+
     private async void OnExportDxf(object sender, RoutedEventArgs e)
     {
       var selected = ViewModel.NestMonitorViewModel?.SelectedItem;

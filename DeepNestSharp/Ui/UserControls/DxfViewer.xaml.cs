@@ -237,6 +237,16 @@ namespace DeepNestSharp.Ui.UserControls
       return this.groups.Select(g => g.Representative).Where(s => s != null).ToList();
     }
 
+    /// <summary>The full production plan — one entry per distinct layout with its cut count. Used by
+    /// the PDF nest report so it mirrors exactly what the viewer shows ("cut N × this layout").</summary>
+    public IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> GetProductionPlan()
+    {
+      return this.groups
+        .Where(g => g.Representative != null)
+        .Select(g => (g.Representative, g.Count, g.Name))
+        .ToList();
+    }
+
     /// <summary>
     /// Cutting-stock plan (Gilmore–Gomory style, simplified). Uses the distinct sheet layouts the
     /// nester already found as a pool of candidate patterns, then greedily picks the combination that

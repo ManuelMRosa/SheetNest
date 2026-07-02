@@ -111,6 +111,7 @@
           <GroupBox Header="Export" Margin="4,2">
             <StackPanel Orientation="Horizontal">
               <Button Style="{StaticResource RibbonButton}" Content="Export DXF" Click="OnExportDxf" ToolTip="Export the selected nest result to DXF" />
+              <Button Style="{StaticResource RibbonButton}" Content="Report PDF" Click="OnNestReportPdf" ToolTip="Save a PDF nest report: cutting plan, layouts, quantities and utilization" />
             </StackPanel>
           </GroupBox>
         </StackPanel>
