@@ -28,18 +28,29 @@ namespace DeepNestSharp.Ui.UserControls
       typeof(RotationSelector),
       new FrameworkPropertyMetadata(AnglesEnum.None, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnValueChanged));
 
-    // The seven Radan orientation permissions (photo IMG_1722): only 0° / only 90° / 0+90 / 0+180 /
-    // 90+270 / all four / any. Codes are RasterNestService's permitted-orientation codes; Angles is
-    // the icon's arrowhead set (null = any → curved arrow).
-    private static readonly (string Label, int Rotations, int[] Angles, AnglesEnum Strict, string Tip)[] Options = new[]
+    // The seven Radan orientation permissions (photo IMG_1722), with Radan's icon language: the part
+    // shape fixed / the part turned / a quarter-turn arrow / ↔ / ↕ / four-way arrows / a circle.
+    // Codes are RasterNestService's permitted-orientation codes.
+    private enum IconKind
     {
-      ("As drawn", 1, new[] { 0 }, AnglesEnum.None, "Only 0° — the part stays exactly as drawn (respects grain)."),
-      ("90° only", RasterNest.RasterNestService.RotOnly90, new[] { 90 }, AnglesEnum.None, "Only 90° — the part is always turned once."),
-      ("0°+90°", RasterNest.RasterNestService.RotZeroAnd90, new[] { 0, 90 }, AnglesEnum.None, "0° and 90° permitted."),
-      ("Flip", 2, new[] { 0, 180 }, AnglesEnum.AsPreviewed, "0° and 180° — respects material grain but can flip."),
-      ("90°+270°", RasterNest.RasterNestService.Rot90And270, new[] { 90, 270 }, AnglesEnum.None, "90° and 270° — always turned, either way."),
-      ("4-way", 4, new[] { 0, 90, 180, 270 }, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°)."),
-      ("Free", 36, null, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
+      PartUpright,
+      PartTurned,
+      QuarterTurn,
+      ArrowH,
+      ArrowV,
+      FourArrows,
+      AnyCircle,
+    }
+
+    private static readonly (string Label, int Rotations, IconKind Icon, AnglesEnum Strict, string Tip)[] Options = new[]
+    {
+      ("As drawn", 1, IconKind.PartUpright, AnglesEnum.None, "Only 0° — the part stays exactly as drawn (respects grain)."),
+      ("90° only", RasterNest.RasterNestService.RotOnly90, IconKind.PartTurned, AnglesEnum.None, "Only 90° — the part is always turned once."),
+      ("0°+90°", RasterNest.RasterNestService.RotZeroAnd90, IconKind.QuarterTurn, AnglesEnum.None, "0° and 90° permitted."),
+      ("0°+180°", 2, IconKind.ArrowH, AnglesEnum.AsPreviewed, "0° and 180° — respects material grain but can flip."),
+      ("90°+270°", RasterNest.RasterNestService.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270° — always turned, either way."),
+      ("4-way", 4, IconKind.FourArrows, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°)."),
+      ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
     };
 
     private static readonly Brush IconStroke = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x3A));
@@ -65,7 +76,7 @@ namespace DeepNestSharp.Ui.UserControls
           Style = (Style)this.Resources["RotationOptionStyle"],
           ToolTip = opt.Tip,
           Tag = i,
-          Content = BuildContent(opt.Label, opt.Angles),
+          Content = BuildContent(opt.Label, opt.Icon),
         };
         btn.Click += this.OnOptionClick;
         this.buttons.Add(btn);
@@ -134,10 +145,10 @@ namespace DeepNestSharp.Ui.UserControls
       return Options.Length - 1; // Free
     }
 
-    private static FrameworkElement BuildContent(string label, int[] angles)
+    private static FrameworkElement BuildContent(string label, IconKind icon)
     {
       var panel = new StackPanel { Orientation = Orientation.Vertical };
-      panel.Children.Add(BuildIcon(angles));
+      panel.Children.Add(BuildIcon(icon));
       panel.Children.Add(new TextBlock
       {
         Text = label,
@@ -148,95 +159,105 @@ namespace DeepNestSharp.Ui.UserControls
       return panel;
     }
 
-    private static UIElement BuildIcon(int[] angles)
+    private static UIElement BuildIcon(IconKind kind)
     {
       const double size = 24;
-      const double c = size / 2;
-      const double r = 8;
       var canvas = new Canvas { Width = size, Height = size, HorizontalAlignment = HorizontalAlignment.Center };
 
-      var circle = new Ellipse
+      switch (kind)
       {
-        Width = 2 * r,
-        Height = 2 * r,
-        Stroke = IconStroke,
-        StrokeThickness = 1.4,
-      };
-      Canvas.SetLeft(circle, c - r);
-      Canvas.SetTop(circle, c - r);
-      canvas.Children.Add(circle);
+        case IconKind.PartUpright:
+          canvas.Children.Add(LShape(turned: false));
+          break;
 
-      var dot = new Ellipse { Width = 2.0, Height = 2.0, Fill = IconStroke };
-      Canvas.SetLeft(dot, c - 1.0);
-      Canvas.SetTop(dot, c - 1.0);
-      canvas.Children.Add(dot);
+        case IconKind.PartTurned:
+          canvas.Children.Add(LShape(turned: true));
+          break;
 
-      if (angles == null)
-      {
-        canvas.Children.Add(BuildCurvedArrow(c, r));
-      }
-      else
-      {
-        foreach (int angle in angles)
-        {
-          canvas.Children.Add(BuildArrowhead(c, r, angle - 90));
-        }
+        case IconKind.QuarterTurn:
+          // Bent arrow: up then right — a quarter turn.
+          canvas.Children.Add(Shaft(8, 18, 8, 10));
+          canvas.Children.Add(Shaft(7.1, 10, 14, 10));
+          canvas.Children.Add(Head(new Point(18, 10), 0));
+          break;
+
+        case IconKind.ArrowH:
+          canvas.Children.Add(Shaft(7, 12, 17, 12));
+          canvas.Children.Add(Head(new Point(19, 12), 0));
+          canvas.Children.Add(Head(new Point(5, 12), 180));
+          break;
+
+        case IconKind.ArrowV:
+          canvas.Children.Add(Shaft(12, 7, 12, 17));
+          canvas.Children.Add(Head(new Point(12, 5), -90));
+          canvas.Children.Add(Head(new Point(12, 19), 90));
+          break;
+
+        case IconKind.FourArrows:
+          canvas.Children.Add(Shaft(7, 12, 17, 12));
+          canvas.Children.Add(Shaft(12, 7, 12, 17));
+          canvas.Children.Add(Head(new Point(19, 12), 0));
+          canvas.Children.Add(Head(new Point(5, 12), 180));
+          canvas.Children.Add(Head(new Point(12, 5), -90));
+          canvas.Children.Add(Head(new Point(12, 19), 90));
+          break;
+
+        case IconKind.AnyCircle:
+          var circle = new Ellipse { Width = 15, Height = 15, Stroke = IconFill, StrokeThickness = 1.8 };
+          Canvas.SetLeft(circle, 4.5);
+          Canvas.SetTop(circle, 4.5);
+          canvas.Children.Add(circle);
+          break;
       }
 
       return canvas;
     }
 
-    private static Polygon BuildArrowhead(double c, double r, double angleDeg)
+    /// <summary>Small L-shaped part, upright or turned 90° clockwise — Radan's "the part, as placed" glyphs.</summary>
+    private static Polygon LShape(bool turned)
     {
+      var upright = new[] { (8.0, 5.0), (13.0, 5.0), (13.0, 12.0), (18.0, 12.0), (18.0, 19.0), (8.0, 19.0) };
+      var pts = new PointCollection();
+      foreach (var (x, y) in upright)
+      {
+        pts.Add(turned ? new Point(24 - y, x) : new Point(x, y));
+      }
+
+      return new Polygon
+      {
+        Points = pts,
+        Stroke = IconStroke,
+        StrokeThickness = 1.3,
+        Fill = new SolidColorBrush(Color.FromRgb(0xDB, 0xEC, 0xDB)),
+      };
+    }
+
+    private static Line Shaft(double x1, double y1, double x2, double y2)
+    {
+      return new Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = IconFill, StrokeThickness = 1.8 };
+    }
+
+    private static Polygon Head(Point tip, double angleDeg)
+    {
+      const double len = 5.0;
+      const double halfW = 2.8;
       double a = angleDeg * Math.PI / 180.0;
       double dx = Math.Cos(a);
       double dy = Math.Sin(a);
       double px = -dy;
       double py = dx;
-
-      double tipR = r + 3.0;
-      double baseR = r - 0.5;
-      const double halfW = 2.2;
-
-      var tip = new Point(c + (tipR * dx), c + (tipR * dy));
-      var b1 = new Point(c + (baseR * dx) + (halfW * px), c + (baseR * dy) + (halfW * py));
-      var b2 = new Point(c + (baseR * dx) - (halfW * px), c + (baseR * dy) - (halfW * py));
+      var b = new Point(tip.X - (len * dx), tip.Y - (len * dy));
 
       return new Polygon
       {
-        Points = new PointCollection { tip, b1, b2 },
+        Points = new PointCollection
+        {
+          tip,
+          new Point(b.X + (halfW * px), b.Y + (halfW * py)),
+          new Point(b.X - (halfW * px), b.Y - (halfW * py)),
+        },
         Fill = IconFill,
       };
-    }
-
-    private static Canvas BuildCurvedArrow(double c, double r)
-    {
-      double ar = r + 1.0;
-      double startDeg = -60;
-      double endDeg = 230;
-      Point Pt(double deg) => new Point(c + (ar * Math.Cos(deg * Math.PI / 180.0)), c + (ar * Math.Sin(deg * Math.PI / 180.0)));
-
-      var fig = new PathFigure { StartPoint = Pt(startDeg), IsClosed = false };
-      fig.Segments.Add(new ArcSegment(Pt(endDeg), new Size(ar, ar), 0, true, SweepDirection.Clockwise, true));
-      var geo = new PathGeometry();
-      geo.Figures.Add(fig);
-
-      var path = new Path { Data = geo, Stroke = IconFill, StrokeThickness = 1.6 };
-
-      var holder = new Canvas();
-      holder.Children.Add(path);
-      double tan = endDeg + 90;
-      double a = tan * Math.PI / 180.0;
-      var end = Pt(endDeg);
-      double dx = Math.Cos(a);
-      double dy = Math.Sin(a);
-      double px = -dy;
-      double py = dx;
-      var tip = new Point(end.X + (4 * dx), end.Y + (4 * dy));
-      var b1 = new Point(end.X + (3 * px), end.Y + (3 * py));
-      var b2 = new Point(end.X - (3 * px), end.Y - (3 * py));
-      holder.Children.Add(new Polygon { Points = new PointCollection { tip, b1, b2 }, Fill = IconFill });
-      return holder;
     }
   }
 }
