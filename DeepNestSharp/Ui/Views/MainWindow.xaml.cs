@@ -58,7 +58,10 @@ namespace DeepNestSharp.Ui.Views
       // which blows up the raster spacing-halo so large it dissolves interlockable concavities (triangles
       // stop rotating) and leaves huge gaps in every nest. Replace only the EXACT legacy default with a
       // sane 0.25"; any other persisted value is a deliberate user setting and must not be clobbered.
-      if (cfg.Spacing == 10.0)
+      // A persisted 0 is ALSO normalized to 0.25" (the shop rule: spacing ≥ 2× material thickness, so
+      // 0.25 covers up to 1/8" plate): a global default of "every part touches" is never what a laser
+      // job wants — true common-line cutting is a deliberate per-part choice in Edit Part.
+      if (cfg.Spacing == 10.0 || cfg.Spacing <= 0.0)
       {
         cfg.Spacing = 0.25;
       }

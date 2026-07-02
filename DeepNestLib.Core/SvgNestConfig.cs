@@ -38,7 +38,9 @@ namespace DeepNestLib
     public int Rotations { get; set; } = 4;
 
     /// <inheritdoc />
-    public double SheetSpacing { get; set; } = 0;
+    /// <remarks>Default 0.25" — laser shops keep parts off the sheet edge (clamping/heat zone);
+    /// 0.25 matches the 2× material-thickness rule for 1/8" plate.</remarks>
+    public double SheetSpacing { get; set; } = 0.25;
 
     /// <inheritdoc />
     public bool UseHoles { get; set; } = false;

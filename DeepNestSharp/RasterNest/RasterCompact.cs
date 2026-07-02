@@ -360,6 +360,44 @@
     }
 
     /// <summary>
+    /// True when every common-line pair keeps at least <paramref name="floor"/> inches of clearance.
+    /// Used to vet tight-packed (halo-0) layouts after compaction: a chain born touching can jam
+    /// mid-separation, and a pair left under the floor would reintroduce the coincident-line CAM
+    /// hazard the mini-gap exists to prevent.
+    /// </summary>
+    internal static bool CommonLineGapsOk(IList<CompactItem> items, double floor)
+    {
+      var raw = items.Select(ToPaths).ToArray();
+      var grown = items.Select((it, i) => it.Spacing <= 0 ? Inflate(raw[i], floor) : null).ToArray();
+      var rawBounds = raw.Select(BoundsOf).ToArray();
+      long pad = (long)Math.Round(floor * Scale) + 1;
+      for (int i = 0; i < items.Count; i++)
+      {
+        if (items[i].Spacing > 0)
+        {
+          continue;
+        }
+
+        var bi = rawBounds[i];
+        var padded = new IntRect(bi.left - pad, bi.top - pad, bi.right + pad, bi.bottom + pad);
+        for (int j = i + 1; j < items.Count; j++)
+        {
+          if (items[j].Spacing > 0 || !BoxesTouch(padded, rawBounds[j]))
+          {
+            continue;
+          }
+
+          if (Intersects(grown[i], raw[j]))
+          {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>
     /// Grow the OUTER contour by <paramref name="inches"/> (round join = uniform Euclidean clearance,
     /// matching the raster halo). Holes are kept as-is â€” conservative for spacing purposes.
     /// </summary>

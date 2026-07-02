@@ -25,7 +25,8 @@
       var dxf = sheetdxf;
       var id = sheet.Id;
 
-      if (dxf.Entities.Count != 1)
+      // (Guard was `!= 1` when the sheet outline was always entity #0 — now any entity means content.)
+      if (dxf.Entities.Count > 0)
       {
         await Task.Run(() =>
         {
@@ -53,7 +54,7 @@
           var dxf = dxfexports.ElementAt(i).Key;
           var id = dxfexports.ElementAt(i).Value;
 
-          if (dxf.Entities.Count != 1)
+          if (dxf.Entities.Count > 0)
           {
             FileInfo fi = new FileInfo(path);
             await Task.Run(() =>
@@ -76,9 +77,11 @@
       }
     }
 
-    private static DxfFile GenerateDxfFileWithSheetOutline(ISheet sheet)
+    private static DxfFile GenerateEmptyDxfFile()
     {
-      // Generate Sheet Outline in Dxf
+      // PARTS ONLY — no sheet outline: the plate rectangle used to be written as a first entity, but
+      // downstream CAM treats every entity as geometry to cut, and reimporting such a file looks like
+      // one giant nested-sheet part. The sheet size lives in the CAM/job setup, not in the cut file.
       var sheetdxf = new DxfFile();
 
       // Write DXF R2000 (AC1015) instead of the default R12: R12 symbol/table names can't contain
@@ -86,28 +89,6 @@
       // spaces in names and preserves LWPOLYLINE/arcs more faithfully. Universally supported.
       sheetdxf.Header.Version = DxfAcadVersion.R2000;
       sheetdxf.Views.Clear();
-
-      List<DxfVertex> sheetverts = new List<DxfVertex>();
-
-      // Bottom Left Point
-      sheetverts.Add(new DxfVertex(new DxfPoint(0, 0, 0)));
-
-      // Bottom Right Point
-      sheetverts.Add(new DxfVertex(new DxfPoint(sheet.WidthCalculated, 0, 0)));
-
-      // Top Right Point
-      sheetverts.Add(new DxfVertex(new DxfPoint(sheet.WidthCalculated, sheet.HeightCalculated, 0)));
-
-      // Top Left Point
-      sheetverts.Add(new DxfVertex(new DxfPoint(0, sheet.HeightCalculated, 0)));
-
-      DxfPolyline sheetentity = new DxfPolyline(sheetverts)
-      {
-        IsClosed = true,
-        Layer = $"Plate_H{sheet.HeightCalculated}_W{sheet.WidthCalculated}",
-      };
-
-      sheetdxf.Entities.Add(sheetentity);
 
       return sheetdxf;
     }
@@ -367,7 +348,7 @@
     {
       try
       {
-        DxfFile sheetdxf = GenerateDxfFileWithSheetOutline(sheet);
+        DxfFile sheetdxf = GenerateEmptyDxfFile();
         var entities = GetOffsetDxfEntities(polygons.Where(o => o.Sheet.Id == sheet.Id), sheet, i, differentiateChildren);
 
         if (doMergeLines)
