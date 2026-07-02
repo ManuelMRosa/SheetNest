@@ -97,6 +97,18 @@
       set => SetProperty(nameof(Priority), () => detailLoadInfo.Priority, v => detailLoadInfo.Priority = v, value);
     }
 
+    public double Spacing
+    {
+      get => detailLoadInfo.Spacing;
+      set => SetProperty(nameof(Spacing), () => detailLoadInfo.Spacing, v => detailLoadInfo.Spacing = v, value);
+    }
+
+    public bool CommonLine
+    {
+      get => detailLoadInfo.CommonLine;
+      set => SetProperty(nameof(CommonLine), () => detailLoadInfo.CommonLine, v => detailLoadInfo.CommonLine = v, value);
+    }
+
     public int NetArea
     {
       get

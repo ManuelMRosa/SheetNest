@@ -9,9 +9,10 @@ namespace DeepNestSharp.RasterNest
   /// <summary>A placed part being compacted: its rotated polygon and the placement offset (inches).</summary>
   internal sealed class CompactItem
   {
-    public INfp Poly;   // rotated part geometry (absolute points = Poly points + (X, Y))
+    public INfp Poly;       // rotated part geometry (absolute points = Poly points + (X, Y))
     public double X;
     public double Y;
+    public double Spacing;  // this part's spacing (in); 0 = common-line part (slides to true contact)
   }
 
   /// <summary>
@@ -29,22 +30,34 @@ namespace DeepNestSharp.RasterNest
     private const double EpsArea = 1e-6 * Scale * Scale; // ignore sub-1e-6 in² contact slivers as "touching"
     private const double Backoff = 0.001;          // safety gap left after contact (0.025 mm — far below kerf)
 
-    /// <summary>Compact one sheet's placements in place (mutates item X/Y).</summary>
+    /// <summary>
+    /// Compact one sheet's placements in place (mutates item X/Y). Only spacing-0 (common-line) parts
+    /// slide; parts with a spacing keep their position AND their clearance — the sliding parts test
+    /// against their neighbours' outlines inflated by the neighbour's half-spacing.
+    /// </summary>
     public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin)
     {
-      if (items == null || items.Count < 1)
+      if (items == null || items.Count < 1 || !items.Any(it => it.Spacing <= 0))
       {
         return;
       }
 
-      var paths = items.Select(ToPaths).ToArray();
+      // Obstacle geometry: a spaced part's outline grown by its half-spacing (round join = the same
+      // Euclidean clearance the raster halo enforces). Common-line parts use their raw outline.
+      var paths = items.Select(it => it.Spacing > 0 ? Inflate(ToPaths(it), it.Spacing / 2.0) : ToPaths(it)).ToArray();
       var bounds = paths.Select(BoundsOf).ToArray();
 
-      // Bottom rows settle first so upper parts can lean on their final positions; two rounds lets a part
-      // freed by a neighbour's move take the extra slack.
-      var order = Enumerable.Range(0, items.Count)
-        .OrderBy(i => items[i].Y + items[i].Poly.MinY)
-        .ThenBy(i => items[i].X + items[i].Poly.MinX)
+      // Compact toward the same corner the nester packs to: the pack grows along the sheet's LONGER
+      // axis, so push primarily along that axis (keeps the remnant a clean short-dimension strip).
+      bool growX = sheetW > sheetH;
+
+      // Only common-line (spacing-0) parts move. Parts nearest the target corner settle first so the
+      // others can lean on their final positions; two rounds lets a part freed by a neighbour's move
+      // take the extra slack.
+      var movable = Enumerable.Range(0, items.Count).Where(i => items[i].Spacing <= 0);
+      var order = (growX
+          ? movable.OrderBy(i => items[i].X + items[i].Poly.MinX).ThenBy(i => items[i].Y + items[i].Poly.MinY)
+          : movable.OrderBy(i => items[i].Y + items[i].Poly.MinY).ThenBy(i => items[i].X + items[i].Poly.MinX))
         .ToArray();
 
       for (int round = 0; round < 2; round++)
@@ -52,8 +65,16 @@ namespace DeepNestSharp.RasterNest
         bool moved = false;
         foreach (int i in order)
         {
-          moved |= Slide(items, paths, bounds, i, 0, -1, margin); // down
-          moved |= Slide(items, paths, bounds, i, -1, 0, margin); // left
+          if (growX)
+          {
+            moved |= Slide(items, paths, bounds, i, -1, 0, margin); // left (growth axis)
+            moved |= Slide(items, paths, bounds, i, 0, -1, margin); // down
+          }
+          else
+          {
+            moved |= Slide(items, paths, bounds, i, 0, -1, margin); // down (growth axis)
+            moved |= Slide(items, paths, bounds, i, -1, 0, margin); // left
+          }
         }
 
         if (!moved)
@@ -132,6 +153,37 @@ namespace DeepNestSharp.RasterNest
       paths[i] = Translate(paths[i], (long)Math.Round(dirX * slide * Scale), (long)Math.Round(dirY * slide * Scale));
       bounds[i] = BoundsOf(paths[i]);
       return true;
+    }
+
+    /// <summary>
+    /// Grow the OUTER contour by <paramref name="inches"/> (round join = uniform Euclidean clearance,
+    /// matching the raster halo). Holes are kept as-is — conservative for spacing purposes.
+    /// </summary>
+    private static List<List<IntPoint>> Inflate(List<List<IntPoint>> paths, double inches)
+    {
+      if (inches <= 0 || paths.Count == 0)
+      {
+        return paths;
+      }
+
+      var outer = new List<IntPoint>(paths[0]);
+      if (!Clipper.Orientation(outer))
+      {
+        outer.Reverse(); // positive offset expands only positively-oriented paths
+      }
+
+      var offset = new ClipperOffset();
+      offset.AddPath(outer, JoinType.jtRound, EndType.etClosedPolygon);
+      var grown = new List<List<IntPoint>>();
+      offset.Execute(ref grown, inches * Scale);
+
+      var result = new List<List<IntPoint>>(grown);
+      for (int i = 1; i < paths.Count; i++)
+      {
+        result.Add(paths[i]);
+      }
+
+      return result.Count > 0 ? result : paths;
     }
 
     private static List<List<IntPoint>> ToPaths(CompactItem it)

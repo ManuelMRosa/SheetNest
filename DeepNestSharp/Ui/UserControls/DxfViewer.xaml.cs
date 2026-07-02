@@ -110,27 +110,40 @@ namespace DeepNestSharp.Ui.UserControls
         return;
       }
 
-      // Industrial plan: replicate the densest sheet pattern across the whole demand, then mop up the
-      // leftovers as a few remainder sheets — so one or two part types still read as "N× pattern + remainder".
-      if (result.UsedSheets.Count > 1 && this.TryBuildProductionPlan(result))
-      {
-        return;
-      }
-
-      // Fallback: group physical sheets by their exact layout.
+      // Group physical sheets by their exact layout. The raster engine already emits an industrial
+      // plan (k identical pattern sheets + a freshly nested remainder), so this grouping IS the plan —
+      // and every layout shown is a real dense nest.
+      var byLayout = new List<SheetGroup>();
       var bySignature = new Dictionary<string, SheetGroup>();
       foreach (var sp in result.UsedSheets)
       {
         string sig = Signature(sp);
         if (!bySignature.TryGetValue(sig, out var g))
         {
-          g = new SheetGroup { Representative = sp, Count = 0, Name = $"Layout {this.groups.Count + 1}" };
+          g = new SheetGroup { Representative = sp, Count = 0, Name = $"Layout {byLayout.Count + 1}" };
           bySignature[sig] = g;
-          this.groups.Add(g);
+          byLayout.Add(g);
         }
 
         g.Count++;
       }
+
+      if (byLayout.Count <= 3 || result.UsedSheets.Count <= 1)
+      {
+        this.groups.AddRange(byLayout);
+        return;
+      }
+
+      // Many near-equal layouts (the NFP/GA engine packs every sheet slightly differently): condense
+      // with the cutting-stock heuristic — but NEVER let the plan prescribe more physical sheets than
+      // the nest actually used (it once split a 20-part leftover into phantom 18+2 sheets).
+      if (this.TryBuildProductionPlan(result) && this.groups.Sum(g => g.Count) <= result.UsedSheets.Count)
+      {
+        return;
+      }
+
+      this.groups.Clear();
+      this.groups.AddRange(byLayout);
     }
 
     /// <summary>The distinct sheet layouts for the current result — one per production-plan group

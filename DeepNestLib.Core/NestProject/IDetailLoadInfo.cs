@@ -35,6 +35,18 @@
     /// <summary>Gets or sets the nesting priority 0-10 (higher nests first); 5 = normal.</summary>
     int Priority { get; set; }
 
+    /// <summary>
+    /// Gets or sets this part's spacing to neighbouring parts (drawing units). Two parts end up
+    /// (spacingA + spacingB) / 2 apart. Negative = use the job default.
+    /// </summary>
+    double Spacing { get; set; }
+
+    /// <summary>
+    /// Gets or sets common-line cutting: copies of this part nest TOUCHING each other (spacing 0),
+    /// so shared edges are cut once.
+    /// </summary>
+    bool CommonLine { get; set; }
+
     AnglesEnum StrictAngle { get; set; }
 
     bool IsExists { get; }

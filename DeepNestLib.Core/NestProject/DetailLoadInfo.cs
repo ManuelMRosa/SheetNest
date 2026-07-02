@@ -20,6 +20,10 @@
 
     public int Priority { get; set; } = 5;   // 0-10, higher nests first; 5 = normal
 
+    public double Spacing { get; set; } = -1; // per-part gap to neighbours (drawing units); -1 = job default
+
+    public bool CommonLine { get; set; } = false; // nest copies TOUCHING (shared edges cut once)
+
     [JsonIgnore]
     public bool IsExists => new FileInfo(this.Path).Exists;
 

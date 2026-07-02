@@ -14,7 +14,7 @@ namespace DeepNestSharp.Ui.Views
     private readonly IDetailLoadInfo part;
     private readonly int globalRotations;
 
-    public EditPartWindow(IDetailLoadInfo part, int globalRotations)
+    public EditPartWindow(IDetailLoadInfo part, int globalRotations, double defaultSpacing)
     {
       this.part = part;
       this.globalRotations = globalRotations;
@@ -25,6 +25,11 @@ namespace DeepNestSharp.Ui.Views
 
       this.requiredUpDown.Value = part.Quantity;
       this.extraUpDown.Value = part.Extra;
+
+      // Spacing is per-part; a part that has never been edited starts from the job default.
+      this.spacingUpDown.Value = part.Spacing >= 0 ? part.Spacing : defaultSpacing;
+      this.commonLineCheck.IsChecked = part.CommonLine;
+      this.spacingUpDown.IsEnabled = !part.CommonLine;
 
       // Rotation is per-part only (no global rotation UI); a part that has never been edited
       // starts from the engine's configured default.
@@ -63,10 +68,22 @@ namespace DeepNestSharp.Ui.Views
       return "Highest";
     }
 
+    private void OnCommonLineChanged(object sender, RoutedEventArgs e)
+    {
+      if (this.spacingUpDown != null)
+      {
+        // Common-line = spacing 0 by definition; the field stays visible (greyed) so the previous
+        // value is still there when the box is unticked.
+        this.spacingUpDown.IsEnabled = this.commonLineCheck.IsChecked != true;
+      }
+    }
+
     private void OnOk(object sender, RoutedEventArgs e)
     {
       this.part.Quantity = this.requiredUpDown.Value ?? this.part.Quantity;
       this.part.Extra = this.extraUpDown.Value ?? this.part.Extra;
+      this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
+      this.part.CommonLine = this.commonLineCheck.IsChecked == true;
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;

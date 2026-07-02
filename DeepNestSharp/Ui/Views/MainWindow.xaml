@@ -101,8 +101,7 @@
               <Button Content="&#9654;  NEST" Click="OnNest"
                       Margin="3,2" Padding="18,6" MinWidth="110" FontWeight="Bold" FontSize="15"
                       Background="#2E7D32" Foreground="White"
-                      ToolTip="Run the nest. Uses the GPU engine when GPU nesting is enabled in Settings, otherwise the CPU engine." />
-              <Button Style="{StaticResource RibbonButton}" Content="Stop" Command="{Binding NestMonitorViewModel.StopNestCommand}" ToolTip="Stop the running nest" />
+                      ToolTip="Run the nest." />
             </StackPanel>
           </GroupBox>
         </StackPanel>
@@ -138,16 +137,9 @@
         </Border>
         <Grid Grid.Row="1" Margin="0,4,0,0" DataContext="{Binding NestMonitorViewModel}">
           <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="150" />
           </Grid.RowDefinitions>
-          <DockPanel Grid.Row="0" LastChildFill="True">
-            <Button DockPanel.Dock="Left" Content="Stop" Command="{Binding StopNestCommand}" Padding="10,2" Margin="0,0,6,2" />
-            <ProgressBar Height="8" VerticalAlignment="Center" Minimum="0" Maximum="1"
-                         Value="{Binding Progress, Mode=OneWay}"
-                         Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
-          </DockPanel>
-          <ListView Grid.Row="1"
+          <ListView Grid.Row="0"
                     ItemsSource="{Binding TopNestResults}"
                     SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
                     SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}">
@@ -278,49 +270,24 @@
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
                   <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Part spacing" />
-                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
-                  <xctk:DoubleUpDown Width="100" Minimum="0" Increment="0.5"
-                                     Value="{Binding SvgNestConfig.Spacing}"
-                                     ToolTip="Minimum gap kept between parts (in the drawing's units)." />
-                </StackPanel>
+                <!-- Part spacing, rotation and common-line are set PER PART in the Edit Part dialog
+                     (pencil button / double-click a part). -->
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Sheet edge margin" />
-                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Sheet edge margin" />
+                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
                   <xctk:DoubleUpDown Width="100" Minimum="0" Increment="0.5"
                                      Value="{Binding SvgNestConfig.SheetSpacing}"
                                      ToolTip="Empty border kept clear around the sheet (in the drawing's units)." />
                 </StackPanel>
 
-                <!-- Rotation is set PER PART in the Edit Part dialog (pencil button / double-click a part). -->
-
-                <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Nests per run" />
-                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
-                  <xctk:IntegerUpDown x:Name="nestsPerRun" Width="80" HorizontalAlignment="Left"
-                                      Minimum="1" Maximum="50" ValueChanged="OnNestsPerRunChanged"
-                                      ToolTip="Run this many nests in the background, then keep the best one." />
-                  <TextBlock Text="runs in background, keeps the best" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="#888" />
-                </StackPanel>
               </Grid>
 
               <Expander Header="Advanced (all settings)" Margin="0,16,0,0" IsExpanded="False">
-                <StackPanel>
-                  <Border Background="#F5F8FF" BorderBrush="#CFE0FF" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,6,0,0">
-                    <StackPanel>
-                      <CheckBox x:Name="gpuNestingToggle" IsChecked="False" FontWeight="SemiBold"
-                                Content="Use GPU nesting"
-                                ToolTip="When ON, the NEST button uses the GPU (raster) engine; when OFF, it uses the CPU (NFP) engine. Auto-enabled when a GPU is detected." />
-                      <TextBlock x:Name="gpuStatusText" FontSize="11" Foreground="#666" Margin="22,3,0,0" TextWrapping="Wrap" />
-                    </StackPanel>
-                  </Border>
-                  <Border BorderBrush="#DDD" BorderThickness="1" Margin="0,8,0,0">
-                    <userControls:SvgNestConfigEditor MinHeight="300" />
-                  </Border>
-                </StackPanel>
+                <Border BorderBrush="#DDD" BorderThickness="1" Margin="0,6,0,0">
+                  <userControls:SvgNestConfigEditor MinHeight="300" />
+                </Border>
               </Expander>
             </StackPanel>
           </ScrollViewer>
