@@ -104,7 +104,7 @@ namespace DeepNestSharp.Reports
         JRow("Different layouts", layouts.Count.ToString(CultureInfo.InvariantCulture));
         if (unplacedCount > 0)
         {
-          JRow("NOT PLACED - short of material", unplacedCount.ToString(CultureInfo.InvariantCulture), warn: true);
+          JRow("Parts NOT placed", unplacedCount.ToString(CultureInfo.InvariantCulture), warn: true);
         }
 
         // CUTTING PLAN — one row per layout, table form: what to cut, on what, how many times.
@@ -113,19 +113,21 @@ namespace DeepNestSharp.Reports
         double ty = tableTop - 20;
         c.FillRect(40, ty - 5, 400, 19, 0.92, 0.92, 0.92);
         c.Text(48, ty, 10, bold: true, "Layout");
-        c.Text(120, ty, 10, bold: true, "Sheet size");
-        c.Text(220, ty, 10, bold: true, "Parts / sheet");
-        c.Text(310, ty, 10, bold: true, "Cut");
-        c.Text(365, ty, 10, bold: true, "Used");
+        c.Text(110, ty, 10, bold: true, "Page");
+        c.Text(155, ty, 10, bold: true, "Sheet size");
+        c.Text(240, ty, 10, bold: true, "Parts");
+        c.Text(300, ty, 10, bold: true, "Cut");
+        c.Text(370, ty, 10, bold: true, "Used");
         ty -= 19;
         for (int i = 0; i < layouts.Count && i < 16; i++)
         {
           var l = layouts[i];
-          c.Text(48, ty, 10, bold: false, $"Layout {i + 1}  (page {i + 2})");
-          c.Text(120, ty, 10, bold: false, $"{Num(l.Sheet.Sheet.WidthCalculated)} x {Num(l.Sheet.Sheet.HeightCalculated)} in");
-          c.Text(220, ty, 10, bold: false, l.Sheet.PartPlacements.Count.ToString(CultureInfo.InvariantCulture));
-          c.Text(310, ty, 10, bold: true, $"x {l.Count}");
-          c.Text(365, ty, 10, bold: false, $"{Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)} %");
+          c.Text(48, ty, 10, bold: false, $"Layout {i + 1}");
+          c.Text(110, ty, 10, bold: false, (i + 2).ToString(CultureInfo.InvariantCulture));
+          c.Text(155, ty, 10, bold: false, $"{Num(l.Sheet.Sheet.WidthCalculated)} x {Num(l.Sheet.Sheet.HeightCalculated)}");
+          c.Text(240, ty, 10, bold: false, l.Sheet.PartPlacements.Count.ToString(CultureInfo.InvariantCulture));
+          c.Text(300, ty, 10, bold: true, $"x {l.Count}");
+          c.Text(370, ty, 10, bold: false, $"{Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)} %");
           c.Line(40, ty - 5, 440, ty - 5, 0.3);
           ty -= 17;
         }
@@ -145,7 +147,7 @@ namespace DeepNestSharp.Reports
         py -= 19;
         foreach (var (file, qty) in partTotals.Take(18))
         {
-          c.Text(478, py, 10, bold: false, Trunc(file, 36));
+          c.Text(478, py, 10, bold: false, Trunc(file, 33));
           c.Text(700, py, 10, bold: false, qty.ToString("#,0", CultureInfo.InvariantCulture));
           c.Line(470, py - 5, 752, py - 5, 0.3);
           py -= 17;
@@ -212,7 +214,7 @@ namespace DeepNestSharp.Reports
         c.Text(600, 490, 12, bold: true, "Parts on this layout");
         foreach (var (file, qty) in onSheet.Take(26))
         {
-          c.Text(600, py, 10, bold: false, $"{qty} x  {Trunc(file, 26)}");
+          c.Text(600, py, 10, bold: false, $"{qty} x  {Trunc(file, 23)}");
           py -= 15;
         }
 
