@@ -21,16 +21,22 @@ namespace DeepNestSharp.Ui.Views
 
     public IMainViewModel ViewModel => (IMainViewModel)DataContext;
 
-    // US stock sheet sizes, width = the LONG side (matches the machine bed orientation; the nester
-    // grows the pack along the long axis so the remnant is a full short-dimension strip).
-    // Ordered by the SHORT side first (all the 48s together, then the 60s), then by length.
+    // US stock sheet sizes most used in sheet-metal fabrication (mill/service-center standards),
+    // width = the LONG side (matches the machine bed orientation; the nester grows the pack along
+    // the long axis so the remnant is a full short-dimension strip). Grouped by the SHORT side
+    // (36 / 48 / 60 / 72), then by length — the menu draws a separator between groups.
     private static readonly SheetPreset[] SheetPresets =
     {
+      new SheetPreset("96 × 36 in   (8 × 3 ft)", 96, 36),
+      new SheetPreset("120 × 36 in   (10 × 3 ft)", 120, 36),
       new SheetPreset("96 × 48 in   (8 × 4 ft)", 96, 48),
       new SheetPreset("120 × 48 in   (10 × 4 ft)", 120, 48),
       new SheetPreset("144 × 48 in   (12 × 4 ft)", 144, 48),
+      new SheetPreset("96 × 60 in   (8 × 5 ft)", 96, 60),
       new SheetPreset("120 × 60 in   (10 × 5 ft)", 120, 60),
       new SheetPreset("144 × 60 in   (12 × 5 ft)", 144, 60),
+      new SheetPreset("120 × 72 in   (10 × 6 ft)", 120, 72),
+      new SheetPreset("144 × 72 in   (12 × 6 ft)", 144, 72),
     };
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
