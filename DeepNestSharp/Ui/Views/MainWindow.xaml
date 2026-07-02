@@ -25,26 +25,6 @@
         <x:Type TypeName="nestproject:AnglesEnum" />
       </ObjectDataProvider.MethodParameters>
     </ObjectDataProvider>
-    <Style x:Key="SettingLabel" TargetType="TextBlock">
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Margin" Value="0,6,10,6" />
-    </Style>
-    <Style x:Key="RibbonButton" TargetType="Button">
-      <Setter Property="Margin" Value="3,2" />
-      <Setter Property="Padding" Value="10,5" />
-      <Setter Property="MinWidth" Value="64" />
-      <Setter Property="VerticalAlignment" Value="Stretch" />
-    </Style>
-    <Style x:Key="StatusValue" TargetType="TextBlock">
-      <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="Margin" Value="4,0,16,0" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style x:Key="StatusLabel" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="#555" />
-      <Setter Property="Margin" Value="12,0,2,0" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
   </Window.Resources>
 
   <Grid>
@@ -56,7 +36,7 @@
     </Grid.RowDefinitions>
 
     <!-- Menu bar with SheetNest logo -->
-    <DockPanel Grid.Row="0" Background="#FAFAFA">
+    <DockPanel Grid.Row="0" Background="{DynamicResource Brush.Window}">
       <Image DockPanel.Dock="Right" Source="/Branding/sheetnest-logo.png" Height="30"
              Margin="0,2,12,2" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
       <Menu Background="Transparent" VerticalAlignment="Center">
@@ -75,48 +55,25 @@
     </Menu>
     </DockPanel>
 
-    <!-- Ribbon -->
-    <TabControl Grid.Row="1" Background="#F3F3F3" Height="92">
-      <TabItem Header="Home">
-        <StackPanel Orientation="Horizontal">
-          <GroupBox Header="Project" Margin="4,2">
-            <StackPanel Orientation="Horizontal">
-              <Button Style="{StaticResource RibbonButton}" Content="New" Command="{Binding CreateNestProjectCommand}" ToolTip="Start a new nesting project" />
-              <Button Style="{StaticResource RibbonButton}" Content="Open" Command="{Binding LoadNestProjectCommand}" ToolTip="Open an existing project" />
-            </StackPanel>
-          </GroupBox>
-          <GroupBox Header="Input" Margin="4,2">
-            <StackPanel Orientation="Horizontal">
-              <Button Style="{StaticResource RibbonButton}" Content="Add Part" Click="OnAddPartClicked" ToolTip="Load a part from DXF/SVG" />
-              <Button Style="{StaticResource RibbonButton}" Content="Add Sheet" Click="OnAddSheetMenu" ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
-              <Button Style="{StaticResource RibbonButton}" Content="Clear Parts" Command="{Binding ActiveDocument.ClearPartsCommand}" ToolTip="Remove all parts" />
-            </StackPanel>
-          </GroupBox>
+    <!-- Single toolbar: everything one click away — no tab switching for the primary flow. -->
+    <Border Grid.Row="1" Background="{DynamicResource Brush.Panel}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="8,6">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Export DXF" Click="OnExportDxf" ToolTip="Export the selected nest result to DXF" />
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Report PDF" Click="OnNestReportPdf" ToolTip="Save a PDF nest report: cutting plan, layouts, quantities and utilization" />
         </StackPanel>
-      </TabItem>
-      <TabItem Header="Nest">
         <StackPanel Orientation="Horizontal">
-          <GroupBox Header="Run" Margin="4,2">
-            <StackPanel Orientation="Horizontal">
-              <Button Content="&#9654;  NEST" Click="OnNest"
-                      Margin="3,2" Padding="18,6" MinWidth="110" FontWeight="Bold" FontSize="15"
-                      Background="#2E7D32" Foreground="White"
-                      ToolTip="Run the nest." />
-            </StackPanel>
-          </GroupBox>
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="New" Command="{Binding CreateNestProjectCommand}" ToolTip="Start a new nesting project" />
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Open" Command="{Binding LoadNestProjectCommand}" ToolTip="Open an existing project" />
+          <Rectangle Style="{DynamicResource ToolbarSeparator}" />
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Add Part" Click="OnAddPartClicked" ToolTip="Load a part from DXF/SVG" />
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Add Sheet" Click="OnAddSheetMenu" ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Clear Parts" Command="{Binding ActiveDocument.ClearPartsCommand}" ToolTip="Remove all parts" />
+          <Rectangle Style="{DynamicResource ToolbarSeparator}" />
+          <Button Style="{DynamicResource PrimaryButton}" Margin="3,0" MinWidth="130" Content="&#9654;  NEST" Click="OnNest" ToolTip="Run the nest." />
         </StackPanel>
-      </TabItem>
-      <TabItem Header="Output">
-        <StackPanel Orientation="Horizontal">
-          <GroupBox Header="Export" Margin="4,2">
-            <StackPanel Orientation="Horizontal">
-              <Button Style="{StaticResource RibbonButton}" Content="Export DXF" Click="OnExportDxf" ToolTip="Export the selected nest result to DXF" />
-              <Button Style="{StaticResource RibbonButton}" Content="Report PDF" Click="OnNestReportPdf" ToolTip="Save a PDF nest report: cutting plan, layouts, quantities and utilization" />
-            </StackPanel>
-          </GroupBox>
-        </StackPanel>
-      </TabItem>
-    </TabControl>
+      </DockPanel>
+    </Border>
 
     <!-- Main work area -->
     <Grid Grid.Row="2">
@@ -132,7 +89,7 @@
           <RowDefinition Height="*" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" BorderBrush="#DDD" BorderThickness="1">
+        <Border Grid.Row="0" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
           <userControls:DxfViewer x:Name="dxfViewer" Result="{Binding NestMonitorViewModel.SelectedItem}"
                                   SheetIndex="0" />
         </Border>
@@ -149,7 +106,7 @@
                 <GridViewColumn Header="% Util." Width="70">
                   <GridViewColumn.CellTemplate>
                     <DataTemplate>
-                      <TextBlock Text="{Binding MaterialUtilization, StringFormat={}{0:P1}}" HorizontalAlignment="Center" FontWeight="Bold" Foreground="#2E7D32" />
+                      <TextBlock Text="{Binding MaterialUtilization, StringFormat={}{0:P1}}" HorizontalAlignment="Center" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" />
                     </DataTemplate>
                   </GridViewColumn.CellTemplate>
                 </GridViewColumn>
@@ -164,13 +121,13 @@
         </Grid>
       </Grid>
 
-      <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="#EEE" />
+      <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="{DynamicResource Brush.BorderSubtle}" />
 
       <!-- Right: Parts / Sheets / Settings -->
       <TabControl Grid.Column="2" Margin="0,4,4,4">
         <TabItem Header="Parts">
           <DockPanel>
-            <Button DockPanel.Dock="Bottom" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" Padding="6,4" />
+            <Button DockPanel.Dock="Bottom" Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" HorizontalAlignment="Stretch" />
             <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"
                       MouseDoubleClick="OnPartsListDoubleClick"
@@ -182,32 +139,36 @@
               </ListView.ItemContainerStyle>
               <ListView.ItemTemplate>
                 <DataTemplate>
-                  <Grid Margin="2,3">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Width="46" Height="46" Background="White" BorderBrush="#D5D5D5" BorderThickness="1" Margin="0,0,8,0">
-                      <Image Source="{Binding Converter={StaticResource PartPreview}}" Stretch="Uniform" Margin="3" />
-                    </Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
-                      <TextBlock Text="{Binding NetArea, Mode=OneWay, StringFormat='{}{0:0} area'}" FontSize="10" Foreground="#888" />
-                      <TextBlock Text="{Binding NestingLabel, Mode=OneWay}" FontSize="10" Foreground="#2E7D32" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
-                    <xctk:IntegerUpDown Grid.Column="2" Minimum="0" Width="50" VerticalAlignment="Center" Margin="4,0"
-                                        Value="{Binding Quantity, Mode=TwoWay}" ToolTip="Quantity (required — spares are set in Edit Part)" />
-                    <Button Grid.Column="3" Content="&#9998;" VerticalAlignment="Center" Padding="7,2" Margin="2,0,0,0"
-                            ToolTip="Edit part (quantity, orientations, priority)"
-                            Click="OnEditPart" Tag="{Binding}" />
-                    <Button Grid.Column="4" Content="&#10005;" VerticalAlignment="Center" Padding="7,2" Margin="2,0,0,0"
-                            ToolTip="Remove part"
-                            Command="{Binding DataContext.ActiveDocument.RemovePartCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            CommandParameter="{Binding}" />
-                  </Grid>
+                  <Border Margin="4,5" Padding="8" CornerRadius="4"
+                          Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <Border Grid.Column="0" Width="60" Height="60" Background="{DynamicResource Brush.Card}"
+                              BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" Margin="0,0,10,0">
+                        <Image Source="{Binding Converter={StaticResource PartPreview}}" Stretch="Uniform" Margin="4" />
+                      </Border>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+                        <TextBlock Style="{DynamicResource CaptionText}" Text="{Binding NetArea, Mode=OneWay, StringFormat='{}{0:0} area'}" Margin="0,1,0,0" />
+                        <TextBlock Text="{Binding NestingLabel, Mode=OneWay}" FontSize="11" Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                      </StackPanel>
+                      <xctk:IntegerUpDown Grid.Column="2" Minimum="0" Width="56" VerticalAlignment="Center" Margin="6,0"
+                                          Value="{Binding Quantity, Mode=TwoWay}" ToolTip="Quantity (required — spares are set in Edit Part)" />
+                      <Button Grid.Column="3" Style="{DynamicResource IconButton}" Content="&#9998;" VerticalAlignment="Center" Margin="2,0,0,0"
+                              ToolTip="Edit part (quantity, orientations, priority)"
+                              Click="OnEditPart" Tag="{Binding}" />
+                      <Button Grid.Column="4" Style="{DynamicResource IconButton}" Content="&#10005;" VerticalAlignment="Center" Margin="2,0,0,0"
+                              ToolTip="Remove part"
+                              Command="{Binding DataContext.ActiveDocument.RemovePartCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </Border>
                 </DataTemplate>
               </ListView.ItemTemplate>
             </ListView>
@@ -215,9 +176,9 @@
         </TabItem>
         <TabItem Header="Sheets">
           <DockPanel>
-            <Button DockPanel.Dock="Bottom" Content="+ Add Sheet" Click="OnAddSheetMenu" Margin="4" Padding="6,4"
+            <Button DockPanel.Dock="Bottom" Style="{DynamicResource ModernButton}" Content="+ Add Sheet" Click="OnAddSheetMenu" Margin="4" HorizontalAlignment="Stretch"
                     ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
-            <TextBlock DockPanel.Dock="Top" Margin="4,4,4,6" FontSize="10" Foreground="#888"
+            <TextBlock DockPanel.Dock="Top" Style="{DynamicResource CaptionText}" Margin="4,4,4,6"
                        Text="width = long side · every listed sheet participates; the nester picks the size that wastes least" TextWrapping="Wrap" />
             <ListView x:Name="sheetsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.SheetLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedSheetLoadInfo}">
@@ -250,7 +211,7 @@
                   <GridViewColumn Header="" Width="40">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <Button Content="&#10005;" Padding="7,2" ToolTip="Remove sheet"
+                        <Button Style="{DynamicResource IconButton}" Content="&#10005;" ToolTip="Remove sheet"
                                 Command="{Binding DataContext.ActiveDocument.RemoveSheetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding}" />
                       </DataTemplate>
@@ -278,7 +239,7 @@
                 <!-- Part spacing, rotation and common-line are set PER PART in the Edit Part dialog
                      (pencil button / double-click a part). -->
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Sheet edge margin" />
+                <TextBlock Grid.Row="0" Grid.Column="0" Style="{DynamicResource SettingLabel}" Text="Sheet edge margin" />
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
                   <xctk:DoubleUpDown Width="100" Minimum="0" Increment="0.5"
                                      Value="{Binding SvgNestConfig.SheetSpacing}"
@@ -288,7 +249,7 @@
               </Grid>
 
               <Expander Header="Advanced (all settings)" Margin="0,16,0,0" IsExpanded="False">
-                <Border BorderBrush="#DDD" BorderThickness="1" Margin="0,6,0,0">
+                <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Margin="0,6,0,0">
                   <userControls:SvgNestConfigEditor MinHeight="300" />
                 </Border>
               </Expander>
@@ -299,19 +260,19 @@
     </Grid>
 
     <!-- Status bar -->
-    <Border Grid.Row="3" Background="#ECECEC" BorderBrush="#CCC" BorderThickness="0,1,0,0">
+    <Border Grid.Row="3" Background="{DynamicResource Brush.StatusBar}" BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="0,1,0,0">
       <StackPanel Orientation="Horizontal" Height="28">
-        <TextBlock Style="{StaticResource StatusLabel}" Text="Utilization:" />
-        <TextBlock Style="{StaticResource StatusValue}" Foreground="#2E7D32" FontSize="14"
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Utilization:" />
+        <TextBlock Style="{DynamicResource StatusValue}" Foreground="{DynamicResource Brush.Accent}" FontSize="14"
                    Text="{Binding NestMonitorViewModel.SelectedItem.MaterialUtilization, StringFormat={}{0:P1}, FallbackValue=--}" />
-        <TextBlock Style="{StaticResource StatusLabel}" Text="Sheets:" />
-        <TextBlock Style="{StaticResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.UsedSheets.Count, FallbackValue=--}" />
-        <TextBlock Style="{StaticResource StatusLabel}" Text="Placed:" />
-        <TextBlock Style="{StaticResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
-        <TextBlock Style="{StaticResource StatusLabel}" Text="Unplaced:" />
-        <TextBlock Style="{StaticResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
-        <TextBlock Style="{StaticResource StatusLabel}" Text="Running:" />
-        <TextBlock Style="{StaticResource StatusValue}" Text="{Binding NestMonitorViewModel.IsRunning}" />
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Sheets:" />
+        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.UsedSheets.Count, FallbackValue=--}" />
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Placed:" />
+        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Unplaced:" />
+        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Running:" />
+        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.IsRunning}" />
       </StackPanel>
     </Border>
   </Grid>

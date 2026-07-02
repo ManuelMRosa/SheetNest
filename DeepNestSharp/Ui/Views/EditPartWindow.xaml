@@ -9,12 +9,12 @@
         SizeToContent="WidthAndHeight"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        Background="#F3F3F3">
+        Background="{StaticResource Brush.Panel}">
   <Window.Resources>
     <conv:PartPreviewConverter x:Key="PartPreview" />
   </Window.Resources>
 
-  <Grid Margin="12">
+  <Grid Margin="14">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
@@ -36,7 +36,7 @@
       </Grid.ColumnDefinitions>
 
       <StackPanel Grid.Column="0" Margin="0,0,12,0">
-        <Border Width="150" Height="130" Background="White" BorderBrush="#B5B5B5" BorderThickness="1">
+        <Border Width="150" Height="130" Background="{StaticResource Brush.Card}" BorderBrush="{StaticResource Brush.BorderStrong}" BorderThickness="1">
           <Image x:Name="previewImage" Stretch="Uniform" Margin="8" />
         </Border>
 
@@ -69,14 +69,14 @@
           <TextBlock Text="Orientations permitted:" Margin="0,0,0,4" />
           <uc:RotationSelector x:Name="rotationSelector" HorizontalAlignment="Stretch"
                                ToolTip="Rotations the nester may apply to THIS part (e.g. restrict for grain direction)." />
-          <TextBlock x:Name="geoHint" FontSize="10" Foreground="#2E7D32" Margin="0,3,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
-          <TextBlock x:Name="warnHint" FontSize="11" FontWeight="SemiBold" Foreground="#C62828" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
+          <TextBlock x:Name="geoHint" FontSize="10" Foreground="{StaticResource Brush.Accent}" Margin="0,3,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
+          <TextBlock x:Name="warnHint" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource Brush.Danger}" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
 
           <TextBlock Text="Part spacing:" Margin="0,14,0,4" />
           <StackPanel Orientation="Horizontal">
             <xctk:DoubleUpDown x:Name="spacingUpDown" Width="90" Minimum="0" Increment="0.05" FormatString="0.###"
                                ToolTip="Gap this part keeps to its neighbours (drawing units). Two parts end up (spacingA + spacingB) / 2 apart." />
-            <TextBlock Text="in the drawing's units" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#888" />
+            <TextBlock Text="in the drawing's units" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource Brush.TextMuted}" />
           </StackPanel>
 
           <CheckBox x:Name="commonLineCheck" Content="Common line cutting" Margin="0,10,0,0"
@@ -91,9 +91,9 @@
     </Grid>
 
     <!-- OK / Cancel -->
-    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0">
-      <Button Content="OK" Width="84" Padding="0,4" IsDefault="True" Click="OnOk" />
-      <Button Content="Cancel" Width="84" Padding="0,4" Margin="10,0,0,0" IsCancel="True" />
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+      <Button Style="{StaticResource PrimaryButton}" Content="OK" Width="96" FontSize="13" Padding="0,6" IsDefault="True" Click="OnOk" />
+      <Button Style="{StaticResource ModernButton}" Content="Cancel" Width="84" Margin="10,0,0,0" IsCancel="True" />
     </StackPanel>
   </Grid>
 </Window>
