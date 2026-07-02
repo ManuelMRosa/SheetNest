@@ -27,13 +27,15 @@ namespace DeepNestSharp.Reports
         throw new InvalidOperationException("Nothing to report — run a nest first.");
       }
 
-      double sheetW = layouts[0].Sheet.Sheet.WidthCalculated;
-      double sheetH = layouts[0].Sheet.Sheet.HeightCalculated;
-      double sheetArea = sheetW * sheetH;
+      // Mixed stock: every layout carries ITS OWN sheet size — never assume the first one's.
       int totalSheets = layouts.Sum(l => l.Count);
       int totalParts = layouts.Sum(l => l.Count * l.Sheet.PartPlacements.Count);
       double placedArea = layouts.Sum(l => l.Count * l.Sheet.PartPlacements.Sum(p => Math.Abs(p.Part.NetArea)));
-      double overallUtil = sheetArea <= 0 || totalSheets == 0 ? 0 : placedArea / (sheetArea * totalSheets) * 100.0;
+      double stockArea = layouts.Sum(l => l.Count * l.Sheet.Sheet.WidthCalculated * l.Sheet.Sheet.HeightCalculated);
+      double overallUtil = stockArea <= 0 ? 0 : placedArea / stockArea * 100.0;
+      string stockSummary = string.Join("  +  ", layouts
+        .GroupBy(l => (W: l.Sheet.Sheet.WidthCalculated, H: l.Sheet.Sheet.HeightCalculated))
+        .Select(g => $"{g.Sum(x => x.Count)} x {Num(g.Key.W)}x{Num(g.Key.H)} in"));
 
       // Total quantity per source part across the whole job.
       var partTotals = layouts
@@ -67,7 +69,7 @@ namespace DeepNestSharp.Reports
           y -= 20;
         }
 
-        Row("Sheet size", $"{Num(sheetW)} x {Num(sheetH)} in");
+        Row("Sheet stock used", stockSummary);
         Row("Sheets to cut", totalSheets.ToString(CultureInfo.InvariantCulture));
         Row("Distinct layouts", layouts.Count.ToString(CultureInfo.InvariantCulture));
         Row("Parts placed", totalParts.ToString(CultureInfo.InvariantCulture));
@@ -85,7 +87,8 @@ namespace DeepNestSharp.Reports
         {
           var l = layouts[i];
           c.Text(48, y, 11, bold: false,
-            $"{l.Count} x  Layout {i + 1}   ({l.Sheet.PartPlacements.Count} parts, {Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)}% utilization)");
+            $"{l.Count} x  Layout {i + 1}   ({Num(l.Sheet.Sheet.WidthCalculated)}x{Num(l.Sheet.Sheet.HeightCalculated)} in, "
+            + $"{l.Sheet.PartPlacements.Count} parts, {Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)}% utilization)");
           y -= 18;
         }
 
@@ -116,6 +119,8 @@ namespace DeepNestSharp.Reports
       for (int i = 0; i < layouts.Count; i++)
       {
         var (sp, count, _) = layouts[i];
+        double sheetW = sp.Sheet.WidthCalculated;
+        double sheetH = sp.Sheet.HeightCalculated;
         var c = new PageContent();
         Header(c, stamp);
 
