@@ -157,9 +157,10 @@ namespace DeepNestSharp.RasterNest
       int patternCap = partArea <= 0 ? int.MaxValue : (int)System.Math.Ceiling(2.5 * sheetWin * sheetHin / partArea);
       bool patternMode = parsed.Count == 1 && parsed[0].Qty > patternCap && patternCap >= 2;
 
-      // Full job selection (pattern mode + best-of candidates + replication + tail sweep) for the
-      // CURRENT `halos` array. A local function so the tight-pack retry below can re-run the whole
-      // selection with zero halos for the common-line parts.
+      // Full job selection (pattern mode + best-of candidates + replication) for the CURRENT
+      // `halos` array. A local function so the tight-pack retry below can re-run the whole
+      // selection with zero halos for the common-line parts. The tail sweep is NOT in here — it
+      // runs once on the finally adopted result (see TailSweep below).
       (JobResult Job, List<PartType> Types) SelectJob()
       {
         JobResult job;
@@ -221,10 +222,17 @@ namespace DeepNestSharp.RasterNest
           job = TryReplicatePattern(job, types, parsed.Count, maxSheets, NestBest);
         }
 
-        // The user-visible remnant lives on the LAST sheet: re-pack it minimizing the used strip. The
-        // greedy's lowest-corner rule happily stacks parts ON TOP of the pack even when that stretches
-        // the strip — turning the last few parts 90° at the strip's end is often shorter (user-reported:
-        // 20 rails at 108.75" vs 101.5"). Applied only when it strictly shortens the strip.
+        return (job, types);
+      }
+
+      // The user-visible remnant lives on the LAST sheet: re-pack it minimizing the used strip. The
+      // greedy's lowest-corner rule happily stacks parts ON TOP of the pack even when that stretches
+      // the strip — turning the last few parts 90° at the strip's end is often shorter (user-reported:
+      // 20 rails at 108.75" vs 101.5"). Applied only when it strictly shortens the strip. Runs ONCE on
+      // the finally ADOPTED result (the sweep never changes NotPlaced/Sheets — all the tight-pack
+      // retry compares — so sweeping inside every selection pass was pure wasted wall-time).
+      JobResult TailSweep(JobResult job)
+      {
         if (job.Sheets > 0)
         {
           double ExtentIn(IEnumerable<JobPlacement> pls)
@@ -285,31 +293,45 @@ namespace DeepNestSharp.RasterNest
               JobResult bestTail = null;
               double bestExtent = ExtentIn(tailPl) - 0.5;
 
+              // The 2×(n+1) split attempts are independent — nest them in PARALLEL, then scan in the
+              // original enumeration order so the winner is exactly the one the sequential loop kept
+              // (first strict improvement). This was the dominant sequential cost of a nest run.
+              var combos = new List<(int[] First, int[] Second, int K)>();
               foreach (var (firstSet, secondSet) in new[] { (setA, setB), (setB, setA) })
               {
                 for (int k = 0; k <= n; k++)
                 {
-                  var splitTypes = new List<PartType>();
-                  if (n - k > 0)
-                  {
-                    splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = n - k, RotationsDeg = firstSet, HaloPx = t0.HaloPx, Priority = 6 });
-                  }
+                  combos.Add((firstSet, secondSet, k));
+                }
+              }
 
-                  if (k > 0)
-                  {
-                    splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = k, RotationsDeg = secondSet, HaloPx = t0.HaloPx, Priority = 5 });
-                  }
+              var attempts = new (JobResult Job, double Extent)[combos.Count];
+              System.Threading.Tasks.Parallel.For(0, combos.Count, ci =>
+              {
+                var (firstSet, secondSet, k) = combos[ci];
+                var splitTypes = new List<PartType>();
+                if (n - k > 0)
+                {
+                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = n - k, RotationsDeg = firstSet, HaloPx = t0.HaloPx, Priority = 6 });
+                }
 
-                  var attempt = RasterJobNester.Nest(splitTypes, sw, sh, px, marginPx, 1);
-                  if (attempt.NotPlaced == 0 && attempt.Placements.Count == n)
-                  {
-                    double extent = ExtentIn(attempt.Placements);
-                    if (extent < bestExtent)
-                    {
-                      bestExtent = extent;
-                      bestTail = attempt;
-                    }
-                  }
+                if (k > 0)
+                {
+                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = k, RotationsDeg = secondSet, HaloPx = t0.HaloPx, Priority = 5 });
+                }
+
+                var attempt = RasterJobNester.Nest(splitTypes, sw, sh, px, marginPx, 1);
+                attempts[ci] = attempt.NotPlaced == 0 && attempt.Placements.Count == n
+                  ? (attempt, ExtentIn(attempt.Placements))
+                  : (null, double.MaxValue);
+              });
+
+              foreach (var (attemptJob, extent) in attempts)
+              {
+                if (attemptJob != null && extent < bestExtent)
+                {
+                  bestExtent = extent;
+                  bestTail = attemptJob;
                 }
               }
 
@@ -333,10 +355,42 @@ namespace DeepNestSharp.RasterNest
           }
         }
 
-        return (job, types);
+        return job;
+      }
+
+      // Gap vetting for tight-packed (halo-0) layouts — used by the retry adoption below AND to
+      // re-verify the swept tail: compact a COPY of each sheet exactly like the final build will,
+      // then require every common-line pair to keep at least half the CAM-safe mini-gap.
+      bool TightGapsOk(JobResult tj)
+      {
+        foreach (var sheetPl in tj.Placements.GroupBy(p => p.Sheet))
+        {
+          var vet = new List<CompactItem>();
+          foreach (var jp in sheetPl)
+          {
+            var entry = parsed.First(p => p.Src == jp.Source);
+            var rotated = jp.RotationDeg == 0 ? entry.Nfp : entry.Nfp.Rotate(jp.RotationDeg);
+            vet.Add(new CompactItem
+            {
+              Poly = rotated,
+              X = (jp.Xpx / px) - rotated.MinX,
+              Y = (jp.Ypx / px) - rotated.MinY,
+              Spacing = entry.SpacingIn,
+            });
+          }
+
+          RasterCompact.Compact(vet, sheetWin, sheetHin, System.Math.Max(0, margin));
+          if (!RasterCompact.CommonLineGapsOk(vet, RasterCompact.CommonLineGap / 2.0))
+          {
+            return false;
+          }
+        }
+
+        return true;
       }
 
       var sel = SelectJob();
+      bool tightAdopted = false;
 
       // TIGHT-PACK RETRY for common-line jobs. Placements are born >= 1px apart (the safe minimum —
       // see the halo comment above), which wastes up to a pixel per gap: enough to push the last
@@ -349,34 +403,6 @@ namespace DeepNestSharp.RasterNest
       var tightHalos = parsed.Select((p, i) => p.SpacingIn <= 0 ? 0 : halos[i]).ToArray();
       if (!tightHalos.SequenceEqual(halos) && (sel.Job.NotPlaced > 0 || sel.Job.Sheets > 1))
       {
-        bool TightGapsOk(JobResult tj)
-        {
-          foreach (var sheetPl in tj.Placements.GroupBy(p => p.Sheet))
-          {
-            var vet = new List<CompactItem>();
-            foreach (var jp in sheetPl)
-            {
-              var entry = parsed.First(p => p.Src == jp.Source);
-              var rotated = jp.RotationDeg == 0 ? entry.Nfp : entry.Nfp.Rotate(jp.RotationDeg);
-              vet.Add(new CompactItem
-              {
-                Poly = rotated,
-                X = (jp.Xpx / px) - rotated.MinX,
-                Y = (jp.Ypx / px) - rotated.MinY,
-                Spacing = entry.SpacingIn,
-              });
-            }
-
-            RasterCompact.Compact(vet, sheetWin, sheetHin, System.Math.Max(0, margin));
-            if (!RasterCompact.CommonLineGapsOk(vet, RasterCompact.CommonLineGap / 2.0))
-            {
-              return false;
-            }
-          }
-
-          return true;
-        }
-
         bool TryAdopt((JobResult Job, List<PartType> Types) attempt)
         {
           bool better = attempt.Job.NotPlaced < sel.Job.NotPlaced
@@ -384,6 +410,7 @@ namespace DeepNestSharp.RasterNest
           if (better && TightGapsOk(attempt.Job))
           {
             sel = attempt;
+            tightAdopted = true;
             return true;
           }
 
@@ -428,6 +455,14 @@ namespace DeepNestSharp.RasterNest
             halos = safeHalos;
           }
         }
+      }
+
+      // Tail sweep on the adopted result only. A tight (halo-0) job was gap-verified BEFORE the
+      // sweep; if the swept last sheet can't be verified too, keep the unswept, already-safe layout.
+      var swept = TailSweep(sel.Job);
+      if (!object.ReferenceEquals(swept, sel.Job) && (!tightAdopted || TightGapsOk(swept)))
+      {
+        sel = (swept, sel.Types);
       }
 
       var collection = new SheetPlacementCollection();
