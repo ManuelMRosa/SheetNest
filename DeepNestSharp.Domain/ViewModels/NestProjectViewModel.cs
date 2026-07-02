@@ -192,7 +192,11 @@
     private void Contextualise()
     {
       OnPropertyChanged(nameof(ProjectInfo));
-      this.executeNestCommand.NotifyCanExecuteChanged();
+
+      // Use the property (lazy-inits the command), not the field: with the redesigned UI the NEST button
+      // may run the raster engine and never touch ExecuteNestCommand, leaving the field null → NRE here
+      // on Add/Remove Part/Sheet. The property guarantees the command exists before we refresh it.
+      this.ExecuteNestCommand.NotifyCanExecuteChanged();
     }
 
     private async Task OnExecuteNest()

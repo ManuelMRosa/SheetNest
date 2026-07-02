@@ -44,6 +44,8 @@
 
     TopNestResultsCollection TopNestResults { get; }
 
+    void Reset();
+
     IZoomPreviewDrawingContext ZoomDrawingContext { get; }
     
     void Stop();

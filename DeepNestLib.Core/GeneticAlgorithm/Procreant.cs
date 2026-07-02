@@ -371,6 +371,11 @@
 
       if (newPopulation.Count <= fittestSurvivors)
       {
+        // Small/identical-part jobs exhaust the unique-arrangement space; TerminateClones then empties the
+        // population, which SvgNest reads as "search converged" and stops the run (keeping the results found
+        // so far). That is the intended stop signal — do NOT keep the population alive here, or the GA spins
+        // forever re-running the same nest with no new individuals (hang). (The real "0 nests" symptom was
+        // the absurd default Spacing=10 dissolving the parts; fixed in MainWindow_Loaded.)
         newPopulation = TerminateClones(newPopulation).ToList();
       }
 

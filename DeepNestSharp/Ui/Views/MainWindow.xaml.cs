@@ -47,6 +47,10 @@ namespace DeepNestSharp.Ui.Views
       // Sensible defaults: always use all cores; drop the removed "Squeeze" arrangement.
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       cfg.UseParallel = true;
+
+      // Per-part Priority (Edit Part dialog) must matter on the NFP engine too: priority parts nest
+      // first. Harmless when every part has normal priority (no part flagged -> unchanged behaviour).
+      cfg.UsePriority = true;
       if (cfg.PlacementType == PlacementTypeEnum.Squeeze)
       {
         cfg.PlacementType = PlacementTypeEnum.BoundingBox;
@@ -57,6 +61,15 @@ namespace DeepNestSharp.Ui.Views
       // big, so the Douglas-Peucker pass (4×tol = 2.88") erases tabs/detail and the nest then ignores
       // real spacing/edge gaps. 0.01" keeps the geometry true so spacing and sheet margin are honoured.
       cfg.CurveTolerance = 0.01;
+
+      // Part spacing default is 10 (legacy SVG-scale units) — that's TEN INCHES between parts on inch DXFs,
+      // which blows up the raster spacing-halo so large it dissolves interlockable concavities (triangles
+      // stop rotating) and leaves huge gaps in every nest. Replace only the EXACT legacy default with a
+      // sane 0.25"; any other persisted value is a deliberate user setting and must not be clobbered.
+      if (cfg.Spacing == 10.0)
+      {
+        cfg.Spacing = 0.25;
+      }
 
       this.sheetPresetCombo.ItemsSource = SheetPresets;
 
@@ -106,6 +119,54 @@ namespace DeepNestSharp.Ui.Views
       public int Height { get; }
     }
 
+    private async void OnAddPartClicked(object sender, RoutedEventArgs e)
+    {
+      var doc = ViewModel.ActiveDocument as NestProjectViewModel;
+      if (doc == null)
+      {
+        return;
+      }
+
+      int before = doc.ProjectInfo.DetailLoadInfos.Count;
+      await doc.AddPartCommand.ExecuteAsync(null);
+
+      // Radan-style insert flow: adding a single part opens Edit Part right away (quantity,
+      // orientations, priority). A multi-file add skips it — a dialog per file would be a nuisance.
+      var infos = doc.ProjectInfo.DetailLoadInfos;
+      if (infos.Count == before + 1 && infos[infos.Count - 1] is IDetailLoadInfo added)
+      {
+        OpenEditPart(added);
+      }
+    }
+
+    private void OnEditPart(object sender, RoutedEventArgs e)
+    {
+      if ((sender as FrameworkElement)?.Tag is IDetailLoadInfo part)
+      {
+        OpenEditPart(part);
+      }
+    }
+
+    private void OnPartsListDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+      if (this.partsListView.SelectedItem is IDetailLoadInfo part)
+      {
+        OpenEditPart(part);
+      }
+    }
+
+    private void OpenEditPart(IDetailLoadInfo part)
+    {
+      var dialog = new EditPartWindow(part, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Rotations)
+      {
+        Owner = this,
+      };
+      if (dialog.ShowDialog() == true)
+      {
+        this.partsListView.Items.Refresh(); // plain (non-observable) fields may have changed
+      }
+    }
+
     private void OnNestsPerRunChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<object> e)
     {
       if (e.NewValue is int v && v > 0)
@@ -140,7 +201,13 @@ namespace DeepNestSharp.Ui.Views
       // stays responsive (it was freezing because the whole nest ran on the UI thread).
       var parts = project.DetailLoadInfos
         .Where(o => o.IsIncluded && !string.IsNullOrWhiteSpace(o.Path))
-        .Select(o => (o.Path, o.Quantity))
+        .Select(o => new RasterPartInfo
+        {
+          Path = o.Path,
+          Quantity = o.Quantity + o.Extra,   // required + spares
+          Rotations = o.Rotations,           // -1 = follow the global Settings rotation
+          Priority = o.Priority,             // higher nests first
+        })
         .ToList();
       var sheet = project.SheetLoadInfos.FirstOrDefault();
       int sheetW = sheet?.Width ?? 0;
@@ -161,7 +228,10 @@ namespace DeepNestSharp.Ui.Views
       {
         var (result, error) = await Task.Run(() =>
         {
-          var r = RasterNestService.Nest(parts, sheetW, sheetH, placementType, rotations, spacing, margin, 8.0, out string err);
+          // 24 px/inch (was 8): triples the raster resolution so the safety halo + spacing gaps shrink from
+          // ~0.125"+ down to ~0.04" — much tighter nesting with the placement still overlap-free (verified
+          // in GpuNestLab). Slower, but the closed-marking optimization keeps it fast enough for real jobs.
+          var r = RasterNestService.Nest(parts, sheetW, sheetH, placementType, rotations, spacing, margin, 24.0, out string err);
           return (r, err);
         });
 

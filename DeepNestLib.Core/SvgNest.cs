@@ -465,8 +465,14 @@
 #if !NCRUNCH
       if (this.procreant.Population.Length == 0)
       {
+        // The search space is exhausted (e.g. few / identical parts) — stop. If we already produced nests,
+        // this is normal convergence: stop SILENTLY (a result is on screen). Only pop the message when no
+        // result was produced at all, which signals something actually went wrong.
         this.Stop();
-        this.messageService.DisplayMessageBox("Terminating the nest because we're just recalculating the same nests over and over again.", "Terminating Nest", MessageBoxIcon.Information);
+        if (State.TopNestResults == null || State.TopNestResults.Top == null)
+        {
+          this.messageService.DisplayMessageBox("Could not produce a nest — check that the parts fit the sheet (size, spacing, margin).", "Nesting Stopped", MessageBoxIcon.Information);
+        }
       }
 #endif
 

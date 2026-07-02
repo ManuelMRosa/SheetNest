@@ -9,14 +9,12 @@ namespace DeepNestSharp.Ui.UserControls
   using System.Windows.Media;
   using System.Windows.Threading;
   using DeepNestLib;
-  using DeepNestLib.IO;
   using DeepNestLib.Placement;
 
   /// <summary>
-  /// Faithful nest viewer. Instead of rendering the coarse/inflated polygons the nesting math uses,
-  /// it reloads each part's ORIGINAL DXF geometry (finely tessellated by DxfParser), transforms it to
-  /// the part's placement exactly like the verified DXF export (rotate then offset), and draws it on a
-  /// Y-flipped, auto-fit canvas. Result: the preview matches what AutoCAD shows.
+  /// Faithful nest viewer. Renders each placement's actual nested geometry (PlacedPart — already rotated
+  /// and shifted into absolute sheet coordinates) on a Y-flipped, auto-fit canvas, so the preview matches
+  /// the nest/export exactly.
   /// </summary>
   public partial class DxfViewer : UserControl
   {
@@ -40,9 +38,6 @@ namespace DeepNestSharp.Ui.UserControls
     private static readonly Brush PartStroke = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x10));
     private static readonly Brush PartFill = new SolidColorBrush(Color.FromArgb(0x33, 0x33, 0x99, 0xDD));
     private static readonly Brush HoleFill = new SolidColorBrush(Color.FromRgb(0xFA, 0xFA, 0xFA));
-
-    // Original (un-rotated) geometry per source file, so a result with many copies reads each once.
-    private static readonly Dictionary<string, INfp> GeometryCache = new Dictionary<string, INfp>();
 
     // Distinct sheet layouts and how many physical sheets use each (the production plan).
     private readonly List<SheetGroup> groups = new List<SheetGroup>();
@@ -476,50 +471,26 @@ namespace DeepNestSharp.Ui.UserControls
     }
 
     /// <summary>
-    /// Builds the WPF geometry for one placed part in sheet coordinates (Y flipped to screen space),
-    /// using the original DXF outline + holes when available, else the part's own points.
+    /// Builds the WPF geometry for one placed part (outline + holes) in sheet coordinates,
+    /// Y flipped to screen space, from the placement's own nested geometry.
     /// </summary>
     private static Geometry BuildPlacedGeometry(IPartPlacement pp, double sheetHeight)
     {
-      INfp original = TryGetOriginal(pp.Part?.Name, pp.Source);
-
-      double rot;
-      double dx;
-      double dy;
-      INfp source;
-
-      if (original != null && pp.PlacedPart != null)
+      // Render pp.PlacedPart DIRECTLY — it is the actual nested geometry (already rotated + shifted into
+      // absolute sheet coords), so the preview EXACTLY matches the nest/export (verified: the placed
+      // polygons never overlap). The previous approach reloaded the original DXF and re-centred it, which
+      // DRIFTED for non-90° angles / any frame mismatch between the two loaders, making parts LOOK
+      // overlapped and gapped even though the real nest was correct. (Trade-off: curves show the nested
+      // tessellation rather than a fresh fine re-tessellation; exact for straight-edged parts.)
+      INfp source = pp.PlacedPart;
+      if (source == null)
       {
-        // Render the true (un-inflated) outline CENTERED on the actual placed (spacing-inflated) part.
-        // This keeps the spacing margin even on every side and identical for every part, regardless of
-        // any coordinate-frame difference between the reloaded original and the nested geometry — which
-        // was making some parts touch and others gap.
-        rot = pp.Rotation * Math.PI / 180.0;
-        double rcos = Math.Cos(rot);
-        double rsin = Math.Sin(rot);
-        var (icx, icy) = CenterOf(pp.PlacedPart);          // inflated, absolute sheet coords
-        var (ocx, ocy) = CenterOf(original);               // original, un-rotated local coords
-        dx = icx - ((ocx * rcos) - (ocy * rsin));
-        dy = icy - ((ocx * rsin) + (ocy * rcos));
-        source = original;
+        return Geometry.Empty;
       }
-      else
-      {
-        // Fallback: PlacedPart is already rotated + in absolute sheet coords.
-        rot = 0;
-        dx = 0;
-        dy = 0;
-        source = pp.PlacedPart;
-      }
-
-      double cos = Math.Cos(rot);
-      double sin = Math.Sin(rot);
 
       Point Tx(double x, double y)
       {
-        double ax = (x * cos) - (y * sin) + dx;
-        double ay = (x * sin) + (y * cos) + dy;
-        return new Point(ax, sheetHeight - ay); // flip Y: DXF up -> screen down
+        return new Point(x, sheetHeight - y); // already absolute sheet coords; just flip Y (DXF up -> screen down)
       }
 
       var geometry = new StreamGeometry { FillRule = FillRule.EvenOdd };
@@ -537,39 +508,6 @@ namespace DeepNestSharp.Ui.UserControls
 
       geometry.Freeze();
       return geometry;
-    }
-
-    private static (double X, double Y) CenterOf(INfp nfp)
-    {
-      double minX = double.MaxValue;
-      double minY = double.MaxValue;
-      double maxX = double.MinValue;
-      double maxY = double.MinValue;
-      for (int i = 0; i < nfp.Length; i++)
-      {
-        var p = nfp[i];
-        if (p.X < minX)
-        {
-          minX = p.X;
-        }
-
-        if (p.X > maxX)
-        {
-          maxX = p.X;
-        }
-
-        if (p.Y < minY)
-        {
-          minY = p.Y;
-        }
-
-        if (p.Y > maxY)
-        {
-          maxY = p.Y;
-        }
-      }
-
-      return ((minX + maxX) / 2.0, (minY + maxY) / 2.0);
     }
 
     private static void AppendContour(StreamGeometryContext ctx, INfp contour, Func<double, double, Point> tx)
@@ -645,36 +583,6 @@ namespace DeepNestSharp.Ui.UserControls
       this.scale.ScaleY = newScale;
       this.UpdateStrokeWidths();
       e.Handled = true;
-    }
-
-    private static INfp TryGetOriginal(string name, int source)
-    {
-      if (string.IsNullOrEmpty(name) || !name.ToLowerInvariant().Contains(".dxf"))
-      {
-        return null;
-      }
-
-      if (GeometryCache.TryGetValue(name, out INfp cached))
-      {
-        return cached;
-      }
-
-      try
-      {
-        var raw = DxfParser.LoadDxfFile(name).GetAwaiter().GetResult();
-        if (raw != null && raw.TryConvertToNfp(source, out INfp nfp))
-        {
-          GeometryCache[name] = nfp;
-          return nfp;
-        }
-      }
-      catch
-      {
-        // fall through to null -> caller uses the in-memory part instead
-      }
-
-      GeometryCache[name] = null;
-      return null;
     }
 
     private void OnPanStart(object sender, MouseButtonEventArgs e)

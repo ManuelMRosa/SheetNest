@@ -14,6 +14,12 @@
 
     public int Quantity { get; set; } = 1;
 
+    public int Extra { get; set; } = 0;
+
+    public int Rotations { get; set; } = 4; // per-part: 1 fixed, 2 = 0/180, 4 = 90° steps (default), 36 free
+
+    public int Priority { get; set; } = 5;   // 0-10, higher nests first; 5 = normal
+
     [JsonIgnore]
     public bool IsExists => new FileInfo(this.Path).Exists;
 

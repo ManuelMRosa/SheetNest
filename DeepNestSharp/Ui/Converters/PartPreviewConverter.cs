@@ -36,7 +36,17 @@ namespace DeepNestSharp.Ui.Converters
       ImageSource image = null;
       try
       {
-        var raw = DxfParser.LoadDxfFile(path).GetAwaiter().GetResult();
+        // Task.Run so a locked-file retry (await Task.Delay) can't deadlock the UI thread we're blocking
+        // on. The wait is BOUNDED: the parser retries a locked file for seconds, and a thumbnail isn't
+        // worth freezing the UI that long — on timeout show no image and skip the cache, so the thumbnail
+        // can still appear on a later refresh once the file is free.
+        var load = System.Threading.Tasks.Task.Run(() => DxfParser.LoadDxfFile(path));
+        if (!load.Wait(1500))
+        {
+          return null;
+        }
+
+        var raw = load.GetAwaiter().GetResult();
         if (raw != null && raw.TryConvertToNfp(0, out INfp nfp))
         {
           image = Build(nfp);

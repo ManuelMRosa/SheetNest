@@ -11,6 +11,7 @@ namespace DeepNestSharp.RasterNest
     public int Quantity;
     public int[] RotationsDeg;
     public RasterMask[] Masks;
+    public int Priority = 5; // 0-10, higher nests first (Radan-style)
   }
 
   internal struct JobPlacement
@@ -48,8 +49,13 @@ namespace DeepNestSharp.RasterNest
           .ToArray();
       }
 
-      // Keep the (dilated) parts this far from the sheet edges so the real parts honour the margin.
-      int insetPx = System.Math.Max(0, marginPx - haloPx);
+      // Pad the grid by haloPx on every side so a part's spacing-halo can extend PAST the sheet edge into a
+      // virtual border (no neighbour to keep clear of out there). The real part then reaches the true edge at
+      // margin 0 (verified in GpuNestLab: flush, no overlap). insetPx = margin; real-part corner nets to x.
+      int pad = haloPx;
+      int gw = sheetW + (2 * pad);
+      int gh = sheetH + (2 * pad);
+      int insetPx = marginPx;
 
       var instances = new List<int>();
       for (int ti = 0; ti < types.Count; ti++)
@@ -60,7 +66,13 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
-      instances.Sort((a, b) => types[b].Masks[0].SolidCount.CompareTo(types[a].Masks[0].SolidCount));
+      // Higher-priority part types nest first (they get the best sheet positions and are never the ones
+      // left unplaced); within a priority tier, biggest-first as before.
+      instances.Sort((a, b) =>
+      {
+        int byPriority = types[b].Priority.CompareTo(types[a].Priority);
+        return byPriority != 0 ? byPriority : types[b].Masks[0].SolidCount.CompareTo(types[a].Masks[0].SolidCount);
+      });
 
       var sheets = new List<byte[]>();
       var sheetFree = new List<int>();
@@ -92,25 +104,26 @@ namespace DeepNestSharp.RasterNest
           }
           else
           {
-            occ = new byte[sheetW * sheetH];
+            occ = new byte[gw * gh];
           }
 
-          if (TryPlaceBest(occ, sheetW, sheetH, insetPx, t, out int x, out int y, out int rotIdx))
+          if (TryPlaceBest(occ, gw, gh, insetPx, t, out int x, out int y, out int rotIdx))
           {
             if (si == sheets.Count)
             {
               sheets.Add(occ);
-              sheetFree.Add(sheetW * sheetH);
+              sheetFree.Add(gw * gh);
               closed.Add(new bool[types.Count]);
               si = sheets.Count - 1;
             }
 
             var m = t.Masks[rotIdx];
-            Stamp(occ, sheetW, m, x, y);
+            Stamp(occ, gw, m, x, y);
             sheetFree[si] -= m.SolidCount;
 
-            // Record the REAL part's min-corner (inset by haloPx inside the dilated footprint).
-            placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x + haloPx, Ypx = y + haloPx, RotationDeg = t.RotationsDeg[rotIdx] });
+            // Real part corner in TRUE-sheet coords = mask corner x (real part sits +haloPx in the mask; the
+            // haloPx pad subtracts back out → x). Verified flush at margin 0 with no overlap.
+            placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x, Ypx = y, RotationDeg = t.RotationsDeg[rotIdx] });
             solidPlaced += m.SolidCount;
             done = true;
           }

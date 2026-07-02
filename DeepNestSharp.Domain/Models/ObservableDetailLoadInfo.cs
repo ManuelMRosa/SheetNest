@@ -79,6 +79,24 @@
       set => SetProperty(nameof(Quantity), () => detailLoadInfo.Quantity, v => detailLoadInfo.Quantity = v, value);
     }
 
+    public int Extra
+    {
+      get => detailLoadInfo.Extra;
+      set => SetProperty(nameof(Extra), () => detailLoadInfo.Extra, v => detailLoadInfo.Extra = v, value);
+    }
+
+    public int Rotations
+    {
+      get => detailLoadInfo.Rotations;
+      set => SetProperty(nameof(Rotations), () => detailLoadInfo.Rotations, v => detailLoadInfo.Rotations = v, value);
+    }
+
+    public int Priority
+    {
+      get => detailLoadInfo.Priority;
+      set => SetProperty(nameof(Priority), () => detailLoadInfo.Priority, v => detailLoadInfo.Priority = v, value);
+    }
+
     public int NetArea
     {
       get

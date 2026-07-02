@@ -408,6 +408,16 @@
       var newFile = new NestProjectViewModel(this, fileIoService);
       this.files.Add(newFile);
       this.ActiveDocument = newFile;
+      // Stop any in-flight nest BEFORE clearing: a running NestWorker would otherwise repopulate
+      // TopNestResults right after the Reset and the old project's nest would reappear (and could be
+      // exported) on the brand-new project. Only stop when running — Stop() sets IsStopping, which is
+      // only reset by a worker's finally, so calling it idle would break the next run.
+      if (this.NestMonitorViewModel.IsRunning)
+      {
+        this.NestMonitorViewModel.Stop();
+      }
+
+      this.NestMonitorViewModel.Reset(); // clear the previous nest result + preview so it doesn't linger
     }
 
     private bool CanExit()

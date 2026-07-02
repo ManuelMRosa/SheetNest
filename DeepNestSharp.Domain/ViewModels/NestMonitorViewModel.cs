@@ -147,6 +147,12 @@
                 SelectedIndex = 0;
               });
           }
+          else
+          {
+            // No results left (e.g. after New Project) — actually null the field and notify so the
+            // bound viewer clears. Previously this branch did nothing, so the old nest stayed on screen.
+            SetProperty(ref selectedItem, value);
+          }
         }
         else
         {
@@ -158,6 +164,13 @@
     }
 
     public TopNestResultsCollection TopNestResults => Context.State.TopNestResults;
+
+    /// <summary>Clear any displayed nest result + preview (e.g. when a new project is created).</summary>
+    public void Reset()
+    {
+      this.TopNestResults.SetSingleResult(null); // empty the results list
+      this.SelectedItem = null;                  // list now empty → nulls the field + notifies → viewer clears
+    }
 
     private NestingContext Context
     {
@@ -207,14 +220,17 @@
       else
       {
         this.nestWorker = new NestWorker(this);
+
+        // ExecuteAsync() is an async method, so the returned task is ALREADY running (hot). Do NOT call
+        // .Start() on it — that throws InvalidOperationException, which faults TryStartAsync → OnExecuteNest,
+        // leaving the AsyncRelayCommand stuck so its CanExecute returns false and the SECOND NEST click does
+        // nothing. (The first nest still ran because the hot task runs regardless of the throw.)
         this.nestWorkerTask = this.nestWorker.ExecuteAsync();
         this.nestWorkerConfiguredTaskAwaitable = this.nestWorkerTask.ConfigureAwait(false);
         this.nestWorkerConfiguredTaskAwaitable?.GetAwaiter().OnCompleted(() =>
         {
           this.IsRunning = false;
         });
-
-        this.nestWorkerTask.Start();
       }
 
       return true;
@@ -234,6 +250,31 @@
     public void UpdateNestsList()
     {
       OnPropertyChanged(nameof(TopNestResults));
+      EnsureResultSelected();
+    }
+
+    /// <summary>
+    /// Auto-select the best (top) result so its preview shows without a manual click — but never override a
+    /// result the user deliberately selected. The NFP engine only populated the list, leaving nothing
+    /// selected on 2nd+ runs (the list-reset cleared the selection); this makes the preview follow the nest.
+    /// </summary>
+    public void EnsureResultSelected()
+    {
+      if (mainViewModel.DispatcherService.InvokeRequired)
+      {
+        mainViewModel.DispatcherService.Invoke(EnsureResultSelected);
+        return;
+      }
+
+      if (this.TopNestResults != null && this.TopNestResults.Count > 0
+          && (this.SelectedItem == null || !System.Linq.Enumerable.Contains(this.TopNestResults, this.SelectedItem)))
+      {
+        // Assign the ITEM, not just the index: the selectedIndex backing field defaults to 0, so
+        // SelectedIndex = 0 can be a no-op (SetProperty raises nothing when unchanged) and the TwoWay-bound
+        // ListView would never apply the selection. Setting SelectedItem always notifies (null → result).
+        this.SelectedIndex = 0;
+        this.SelectedItem = System.Linq.Enumerable.First(this.TopNestResults);
+      }
     }
 
     private void Contextualise()

@@ -15,7 +15,6 @@
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
     <converters:PartPreviewConverter x:Key="PartPreview" />
-    <converters:OffcutPlacementConverter x:Key="OffcutPlacement" />
     <ObjectDataProvider x:Key="PlacementTypeValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
       <ObjectDataProvider.MethodParameters>
         <x:Type TypeName="placement:PlacementTypeEnum" />
@@ -64,7 +63,6 @@
       <MenuItem Header="_File">
         <MenuItem Header="New Project" Command="{Binding CreateNestProjectCommand}" />
         <MenuItem Header="Open Project..." Command="{Binding LoadNestProjectCommand}" />
-        <MenuItem Header="Open Result..." Command="{Binding LoadNestResultCommand}" />
         <Separator />
         <MenuItem Header="Save" Command="{Binding ActiveDocumentSaveCommand}" />
         <MenuItem Header="Save As..." Command="{Binding ActiveDocumentSaveAsCommand}" />
@@ -89,7 +87,7 @@
           </GroupBox>
           <GroupBox Header="Input" Margin="4,2">
             <StackPanel Orientation="Horizontal">
-              <Button Style="{StaticResource RibbonButton}" Content="Add Part" Command="{Binding ActiveDocument.AddPartCommand}" ToolTip="Load a part from DXF/SVG" />
+              <Button Style="{StaticResource RibbonButton}" Content="Add Part" Click="OnAddPartClicked" ToolTip="Load a part from DXF/SVG" />
               <Button Style="{StaticResource RibbonButton}" Content="Add Sheet" Command="{Binding ActiveDocument.AddSheetCommand}" ToolTip="Add a stock sheet size" />
               <Button Style="{StaticResource RibbonButton}" Content="Clear Parts" Command="{Binding ActiveDocument.ClearPartsCommand}" ToolTip="Remove all parts" />
             </StackPanel>
@@ -179,9 +177,10 @@
       <TabControl Grid.Column="2" Margin="0,4,4,4">
         <TabItem Header="Parts">
           <DockPanel>
-            <Button DockPanel.Dock="Bottom" Content="+ Add Part" Command="{Binding ActiveDocument.AddPartCommand}" Margin="4" Padding="6,4" />
+            <Button DockPanel.Dock="Bottom" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" Padding="6,4" />
             <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"
+                      MouseDoubleClick="OnPartsListDoubleClick"
                       ScrollViewer.HorizontalScrollBarVisibility="Disabled">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
@@ -196,6 +195,7 @@
                       <ColumnDefinition Width="*" />
                       <ColumnDefinition Width="Auto" />
                       <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Border Grid.Column="0" Width="46" Height="46" Background="White" BorderBrush="#D5D5D5" BorderThickness="1" Margin="0,0,8,0">
                       <Image Source="{Binding Converter={StaticResource PartPreview}}" Stretch="Uniform" Margin="3" />
@@ -205,8 +205,11 @@
                       <TextBlock Text="{Binding NetArea, Mode=OneWay, StringFormat='{}{0:0} area'}" FontSize="10" Foreground="#888" />
                     </StackPanel>
                     <xctk:IntegerUpDown Grid.Column="2" Minimum="0" Width="50" VerticalAlignment="Center" Margin="4,0"
-                                        Value="{Binding Quantity, Mode=TwoWay}" ToolTip="Quantity" />
-                    <Button Grid.Column="3" Content="&#10005;" VerticalAlignment="Center" Padding="7,2" Margin="2,0,0,0"
+                                        Value="{Binding Quantity, Mode=TwoWay}" ToolTip="Quantity (required — spares are set in Edit Part)" />
+                    <Button Grid.Column="3" Content="&#9998;" VerticalAlignment="Center" Padding="7,2" Margin="2,0,0,0"
+                            ToolTip="Edit part (quantity, orientations, priority)"
+                            Click="OnEditPart" Tag="{Binding}" />
+                    <Button Grid.Column="4" Content="&#10005;" VerticalAlignment="Center" Padding="7,2" Margin="2,0,0,0"
                             ToolTip="Remove part"
                             Command="{Binding DataContext.ActiveDocument.RemovePartCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}" />
@@ -277,8 +280,6 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Part spacing" />
@@ -295,18 +296,10 @@
                                      ToolTip="Empty border kept clear around the sheet (in the drawing's units)." />
                 </StackPanel>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Rotation" VerticalAlignment="Top" Margin="0,12,10,6" />
-                <userControls:RotationSelector Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch" Margin="0,6"
-                                               Rotations="{Binding SvgNestConfig.Rotations, Mode=TwoWay}"
-                                               StrictAngles="{Binding SvgNestConfig.StrictAngles, Mode=TwoWay}" />
+                <!-- Rotation is set PER PART in the Edit Part dialog (pencil button / double-click a part). -->
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Material" />
-                <CheckBox Grid.Row="3" Grid.Column="1" Margin="0,8" VerticalAlignment="Center" Content="Keep reusable offcut"
-                          IsChecked="{Binding SvgNestConfig.PlacementType, Converter={StaticResource OffcutPlacement}}"
-                          ToolTip="On: push parts to one side so the leftover is a clean, reusable rectangle. Off: pack as tight as possible." />
-
-                <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Nests per run" />
-                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource SettingLabel}" Text="Nests per run" />
+                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
                   <xctk:IntegerUpDown x:Name="nestsPerRun" Width="80" HorizontalAlignment="Left"
                                       Minimum="1" Maximum="50" ValueChanged="OnNestsPerRunChanged"
                                       ToolTip="Run this many nests in the background, then keep the best one." />
