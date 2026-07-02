@@ -183,10 +183,14 @@ namespace DeepNestSharp.Ui.Views
           Spacing = o.CommonLine ? 0.0 : o.Spacing,      // common-line = touch; -1 = job default
         })
         .ToList();
-      var sheet = project.SheetLoadInfos.FirstOrDefault();
-      int sheetW = sheet?.Width ?? 0;
-      int sheetH = sheet?.Height ?? 0;
-      int sheetQty = sheet?.Quantity ?? 0;   // the Sheets tab Qty = how many sheets the job may use
+      // EVERY sheet entry participates; the engine picks the size that wastes least material at each
+      // step (mixed stock — the bulk lands on the densest-packing size, the tail on the smallest
+      // sheet that takes it). List order only breaks ties.
+      var sheetStock = project.SheetLoadInfos
+        .Where(s => s.Width > 0 && s.Height > 0 && s.Quantity > 0)
+        .Select(s => (s.Width, s.Height, s.Quantity))
+        .ToList();
+      int sheetQty = sheetStock.Sum(s => s.Quantity);   // total sheets the job may use (for the warning)
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var placementType = config.PlacementType;
       int rotations = config.Rotations;
@@ -206,7 +210,7 @@ namespace DeepNestSharp.Ui.Views
           // 24 px/inch (was 8): triples the raster resolution so the safety halo + spacing gaps shrink from
           // ~0.125"+ down to ~0.04" — much tighter nesting with the placement still overlap-free (verified
           // in GpuNestLab). Slower, but the closed-marking optimization keeps it fast enough for real jobs.
-          var r = RasterNestService.Nest(parts, sheetW, sheetH, sheetQty, placementType, rotations, spacing, margin, 24.0, out string err);
+          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, 24.0, out string err);
           return (r, err);
         });
 

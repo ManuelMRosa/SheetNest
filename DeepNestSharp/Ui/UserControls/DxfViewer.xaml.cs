@@ -450,7 +450,12 @@ namespace DeepNestSharp.Ui.UserControls
       var items = sp.PartPlacements
         .Select(p => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{p.Source}:{Math.Round(p.X, 1)}:{Math.Round(p.Y, 1)}:{Math.Round(p.Rotation, 1)}"))
         .OrderBy(s => s, StringComparer.Ordinal);
-      return string.Join("|", items);
+
+      // Sheet size is part of the layout identity: with mixed stock, the same corner-packed parts on
+      // a 120x60 and on a 60x60 are DIFFERENT cuts and must not group as one.
+      return string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"{sp.Sheet.WidthCalculated}x{sp.Sheet.HeightCalculated}#{string.Join("|", items)}");
     }
 
     private string BuildSummary()

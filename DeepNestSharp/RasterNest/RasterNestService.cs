@@ -31,6 +31,186 @@ namespace DeepNestSharp.RasterNest
   /// </summary>
   internal static class RasterNestService
   {
+    /// <summary>
+    /// MIXED STOCK: every sheet entry participates, and the engine picks the OPTIMAL size at each
+    /// step — it probes ONE sheet of every size that still has quantity against the remaining parts,
+    /// keeps the size with the highest utilization (least wasted material), replicates that sheet
+    /// while the pattern holds, then re-evaluates. So the bulk lands on whichever size packs densest
+    /// and the tail drops onto the size it wastes least (e.g. a 3-part remainder goes on the 60x60
+    /// drop, not a fresh 120x60). List order only breaks exact ties. Whatever no listed sheet can
+    /// take is reported unplaced.
+    /// </summary>
+    public static INestResult Nest(
+      IReadOnlyList<RasterPartInfo> partInfos,
+      IReadOnlyList<(int Win, int Hin, int Qty)> sheets,
+      PlacementTypeEnum placementType,
+      int rotations,
+      double spacing,
+      double margin,
+      double pxPerInch,
+      out string error)
+    {
+      error = null;
+      var stock = (sheets ?? new List<(int, int, int)>()).Where(s => s.Win > 0 && s.Hin > 0 && s.Qty > 0).ToList();
+      if (stock.Count == 0)
+      {
+        error = "Add a sheet size first.";
+        return null;
+      }
+
+      if (stock.Count == 1)
+      {
+        return Nest(partInfos, stock[0].Win, stock[0].Hin, stock[0].Qty, placementType, rotations, spacing, margin, pxPerInch, out error);
+      }
+
+      var remaining = partInfos
+        .Where(p => p != null && !string.IsNullOrWhiteSpace(p.Path) && p.Quantity > 0)
+        .Select(p => new RasterPartInfo { Path = p.Path, Quantity = p.Quantity, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing })
+        .ToList();
+      int totalParts = remaining.Sum(p => p.Quantity);
+
+      var qtyLeft = stock.Select(s => s.Qty).ToArray();
+      var combined = new SheetPlacementCollection();
+
+      void Consume(IEnumerable<ISheetPlacement> sps)
+      {
+        var placedByPath = sps
+          .SelectMany(sp => sp.PartPlacements)
+          .GroupBy(p => p.Part.Name, System.StringComparer.OrdinalIgnoreCase)
+          .ToDictionary(g => g.Key, g => g.Count(), System.StringComparer.OrdinalIgnoreCase);
+        foreach (var p in remaining)
+        {
+          if (p.Path != null && placedByPath.TryGetValue(p.Path, out int done) && done > 0)
+          {
+            int used = System.Math.Min(p.Quantity, done);
+            p.Quantity -= used;
+            placedByPath[p.Path] = done - used;
+          }
+        }
+      }
+
+      while (remaining.Sum(p => p.Quantity) > 0 && qtyLeft.Sum() > 0)
+      {
+        // PROBE: one sheet of every size that still has stock, against the same remaining mix, in
+        // parallel (each probe is a full single-size pipeline, so per-sheet quality is unchanged).
+        var snapshot = remaining
+          .Where(p => p.Quantity > 0)
+          .Select(p => new RasterPartInfo { Path = p.Path, Quantity = p.Quantity, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing })
+          .ToList();
+        var probes = new INestResult[stock.Count];
+        System.Threading.Tasks.Parallel.For(0, stock.Count, i =>
+        {
+          if (qtyLeft[i] > 0)
+          {
+            probes[i] = Nest(snapshot, stock[i].Win, stock[i].Hin, 1, placementType, rotations, spacing, margin, pxPerInch, out _);
+          }
+        });
+
+        // Winner = least wasted material on the sheet it opens (highest utilization); ties fall to
+        // more parts placed, then to the user's list order.
+        int win = -1;
+        double bestUtil = 0;
+        int bestCount = 0;
+        for (int i = 0; i < stock.Count; i++)
+        {
+          if (probes[i] == null || probes[i].UsedSheets.Count == 0)
+          {
+            continue;
+          }
+
+          var sp = probes[i].UsedSheets[0];
+          int count = sp.PartPlacements.Count;
+          double util = sp.PartPlacements.Sum(p => System.Math.Abs(p.Part.NetArea)) / ((double)stock[i].Win * stock[i].Hin);
+          if (win < 0 || util > bestUtil + 1e-9 || (util > bestUtil - 1e-9 && count > bestCount))
+          {
+            win = i;
+            bestUtil = util;
+            bestCount = count;
+          }
+        }
+
+        if (win < 0 || bestCount == 0)
+        {
+          break; // nothing fits on any size that still has stock
+        }
+
+        // REPLICATE the winning sheet while the remaining parts support whole copies (industrial
+        // plan: k identical sheets), then loop — the tail gets re-evaluated against every size.
+        var winSheet = probes[win].UsedSheets[0];
+        var comp = winSheet.PartPlacements
+          .GroupBy(p => p.Part.Name, System.StringComparer.OrdinalIgnoreCase)
+          .ToDictionary(g => g.Key, g => g.Count(), System.StringComparer.OrdinalIgnoreCase);
+        int k = qtyLeft[win];
+        foreach (var kv in comp)
+        {
+          int have = remaining.Where(p => p.Path != null && p.Path.Equals(kv.Key, System.StringComparison.OrdinalIgnoreCase)).Sum(p => p.Quantity);
+          k = System.Math.Min(k, have / kv.Value);
+        }
+
+        if (k <= 1)
+        {
+          combined.Add(winSheet);
+          qtyLeft[win]--;
+          Consume(new[] { winSheet });
+        }
+        else
+        {
+          // Nest exactly k whole sheets' worth on the winning size (its own pipeline replicates).
+          var capped = new List<RasterPartInfo>();
+          foreach (var p in remaining.Where(p => p.Quantity > 0))
+          {
+            if (p.Path != null && comp.TryGetValue(p.Path, out int per))
+            {
+              int give = System.Math.Min(p.Quantity, per * k);
+              capped.Add(new RasterPartInfo { Path = p.Path, Quantity = give, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing });
+            }
+          }
+
+          var r = Nest(capped, stock[win].Win, stock[win].Hin, k, placementType, rotations, spacing, margin, pxPerInch, out _);
+          if (r == null || r.UsedSheets.Count == 0)
+          {
+            combined.Add(winSheet);
+            qtyLeft[win]--;
+            Consume(new[] { winSheet });
+          }
+          else
+          {
+            foreach (var sp in r.UsedSheets)
+            {
+              combined.Add(sp);
+            }
+
+            qtyLeft[win] -= r.UsedSheets.Count;
+            Consume(r.UsedSheets);
+          }
+        }
+      }
+
+      if (combined.Count == 0)
+      {
+        error = "Nothing could be placed (parts larger than every sheet?).";
+        return null;
+      }
+
+      // Honest unplaced list: what no listed sheet size could take.
+      var unplaced = new List<INfp>();
+      var unplacedHelper = new NestExecutionHelper();
+      int unplacedSrc = 0;
+      foreach (var p in remaining.Where(p => p.Quantity > 0))
+      {
+        var det = unplacedHelper.LoadRawDetail(new FileInfo(p.Path));
+        if (det != null && det.TryConvertToNfp(unplacedSrc++, out INfp nfp))
+        {
+          for (int i = 0; i < p.Quantity; i++)
+          {
+            unplaced.Add(nfp);
+          }
+        }
+      }
+
+      return new NestResult(totalParts, combined, unplaced, placementType, 0, 0);
+    }
+
     public static INestResult Nest(
       IReadOnlyList<RasterPartInfo> partInfos,
       int sheetWin,
