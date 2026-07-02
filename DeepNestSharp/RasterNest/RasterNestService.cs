@@ -171,7 +171,15 @@ namespace DeepNestSharp.RasterNest
         if (patternMode)
         {
           int fullQty = parsed[0].Qty;
-          var probes = NestAll(new[] { patternCap }, System.Math.Min(3, System.Math.Max(1, maxSheets)));
+
+          // The probes are ranked purely by SHEET-0 count, and the greedy fills sheet 0 identically
+          // as long as the probe quantity exceeds one sheet's capacity (the area bound guarantees
+          // 1.3 sheets' worth does) — so probing 2.5 sheets' worth was oversized, ~2× the work for
+          // the exact same pattern.
+          int probeQty = partArea <= 0
+            ? patternCap
+            : System.Math.Min(patternCap, (int)System.Math.Ceiling(1.3 * sheetWin * sheetHin / partArea));
+          var probes = NestAll(new[] { probeQty }, System.Math.Min(3, System.Math.Max(1, maxSheets)));
 
           int bestIdx = -1;
           int bestCount = -1;
@@ -361,10 +369,24 @@ namespace DeepNestSharp.RasterNest
       // Gap vetting for tight-packed (halo-0) layouts — used by the retry adoption below AND to
       // re-verify the swept tail: compact a COPY of each sheet exactly like the final build will,
       // then require every common-line pair to keep at least half the CAM-safe mini-gap.
-      bool TightGapsOk(JobResult tj)
+      bool TightGapsOk(JobResult tj, int onlySheet = -1)
       {
+        var seenLayouts = new HashSet<string>();
         foreach (var sheetPl in tj.Placements.GroupBy(p => p.Sheet))
         {
+          if (onlySheet >= 0 && sheetPl.Key != onlySheet)
+          {
+            continue;
+          }
+
+          // Replicated pattern sheets are placement-identical — vet each DISTINCT layout once (an
+          // 800-part run is 30 copies + 1 tail: 2 compactions instead of 31).
+          string layoutSig = string.Join("|", sheetPl.Select(p => $"{p.Source}:{p.Xpx}:{p.Ypx}:{p.RotationDeg}"));
+          if (!seenLayouts.Add(layoutSig))
+          {
+            continue;
+          }
+
           var vet = new List<CompactItem>();
           foreach (var jp in sheetPl)
           {
@@ -458,15 +480,21 @@ namespace DeepNestSharp.RasterNest
       }
 
       // Tail sweep on the adopted result only. A tight (halo-0) job was gap-verified BEFORE the
-      // sweep; if the swept last sheet can't be verified too, keep the unswept, already-safe layout.
+      // sweep; the sweep only reshapes the LAST sheet, so only that sheet needs re-verification —
+      // if it can't be verified, keep the unswept, already-safe layout.
       var swept = TailSweep(sel.Job);
-      if (!object.ReferenceEquals(swept, sel.Job) && (!tightAdopted || TightGapsOk(swept)))
+      if (!object.ReferenceEquals(swept, sel.Job) && (!tightAdopted || TightGapsOk(swept, swept.Sheets - 1)))
       {
         sel = (swept, sel.Types);
       }
 
       var collection = new SheetPlacementCollection();
       int id = 0;
+
+      // Replicated pattern sheets are placement-identical, and compaction is deterministic — compact
+      // each DISTINCT layout once and reuse the slid positions for every copy (30 identical sheets of
+      // an 800-part run were re-compacted 30 times for the exact same answer).
+      var compactCache = new Dictionary<string, (double X, double Y)[]>();
       foreach (var sheetGroup in sel.Job.Placements.GroupBy(p => p.Sheet).OrderBy(g => g.Key))
       {
         var sheet = Sheet.NewSheet(sheetGroup.Key + 1, sheetWin, sheetHin);
@@ -492,7 +520,20 @@ namespace DeepNestSharp.RasterNest
         // respected at their own half-spacing (parts end up in true contact, 0.001" safety gap).
         if (items.Any(it => it.Spacing <= 0))
         {
-          RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin));
+          string layoutSig = string.Join("|", jps.Select(p => $"{p.Source}:{p.Xpx}:{p.Ypx}:{p.RotationDeg}"));
+          if (compactCache.TryGetValue(layoutSig, out var slid))
+          {
+            for (int i = 0; i < items.Count; i++)
+            {
+              items[i].X = slid[i].X;
+              items[i].Y = slid[i].Y;
+            }
+          }
+          else
+          {
+            RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin));
+            compactCache[layoutSig] = items.Select(it => (it.X, it.Y)).ToArray();
+          }
         }
 
         var placements = new List<IPartPlacement>();
