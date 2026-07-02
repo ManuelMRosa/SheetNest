@@ -33,9 +33,6 @@ namespace DeepNestSharp.Reports
       double placedArea = layouts.Sum(l => l.Count * l.Sheet.PartPlacements.Sum(p => Math.Abs(p.Part.NetArea)));
       double stockArea = layouts.Sum(l => l.Count * l.Sheet.Sheet.WidthCalculated * l.Sheet.Sheet.HeightCalculated);
       double overallUtil = stockArea <= 0 ? 0 : placedArea / stockArea * 100.0;
-      string stockSummary = string.Join("  +  ", layouts
-        .GroupBy(l => (W: l.Sheet.Sheet.WidthCalculated, H: l.Sheet.Sheet.HeightCalculated))
-        .Select(g => $"{g.Sum(x => x.Count)} x {Num(g.Key.W)}x{Num(g.Key.H)} in"));
 
       // Total quantity per source part across the whole job.
       var partTotals = layouts
@@ -49,66 +46,114 @@ namespace DeepNestSharp.Reports
       string stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
       int pageCount = 1 + layouts.Count;
 
-      // ── Page 1: job summary ─────────────────────────────────────────────────────────────────
+      // ── Page 1: written for TWO readers — the material buyer (big unambiguous "what to buy"
+      // box, nothing to interpret) and the operator (cutting plan + part totals tables below). ──
       {
         var c = new PageContent();
         Header(c, stamp);
-        c.Text(40, 520, 16, bold: true, "Job summary");
 
-        double y = 488;
-        void Row(string label, string value, bool warn = false)
+        // MATERIAL REQUIRED — one line per sheet size with a big count. This is the purchase order.
+        var stockLines = layouts
+          .GroupBy(l => (W: l.Sheet.Sheet.WidthCalculated, H: l.Sheet.Sheet.HeightCalculated))
+          .Select(g => (g.Key.W, g.Key.H, Count: g.Sum(x => x.Count)))
+          .OrderByDescending(t => t.W * t.H)
+          .ToList();
+        double totalSqFt = stockLines.Sum(s => s.W * s.H * s.Count) / 144.0;
+
+        c.Text(40, 530, 13, bold: true, "MATERIAL REQUIRED");
+        double rowH = 34;
+        double boxH = (stockLines.Count * rowH) + 32;
+        double boxTop = 520;
+        c.FillRect(40, boxTop - boxH, 400, boxH, 0.94, 0.96, 0.985);
+        c.Rect(40, boxTop - boxH, 400, boxH, 0.9);
+        double ry = boxTop - 27;
+        foreach (var (w, h, count) in stockLines)
         {
-          c.Text(48, y, 11, bold: false, label);
+          c.Text(56, ry, 21, bold: true, count.ToString("#,0", CultureInfo.InvariantCulture));
+          c.Text(120, ry, 13, bold: false, $"sheet{(count == 1 ? string.Empty : "s")} of  {Num(w)} x {Num(h)} in");
+          c.SetFill(0.35, 0.35, 0.35);
+          c.Text(330, ry, 10, bold: false, $"{(w * h * count / 144.0).ToString("#,0", CultureInfo.InvariantCulture)} sq ft");
+          c.SetFill(0, 0, 0);
+          ry -= rowH;
+        }
+
+        c.Line(52, ry + 22, 428, ry + 22, 0.6);
+        c.Text(56, ry + 6, 11, bold: true,
+          $"Total:  {totalSheets.ToString("#,0", CultureInfo.InvariantCulture)} sheet{(totalSheets == 1 ? string.Empty : "s")}   -   {totalSqFt.ToString("#,0", CultureInfo.InvariantCulture)} sq ft");
+
+        // Job summary panel (right).
+        c.Text(470, 530, 13, bold: true, "JOB SUMMARY");
+        c.FillRect(470, boxTop - boxH, 282, boxH, 0.965, 0.965, 0.965);
+        c.Rect(470, boxTop - boxH, 282, boxH, 0.9);
+        double jy = boxTop - 24;
+        void JRow(string label, string value, bool warn = false)
+        {
+          c.Text(484, jy, 10.5, bold: false, label);
           if (warn)
           {
             c.SetFill(0.75, 0, 0);
           }
 
-          c.Text(230, y, 11, bold: true, value);
+          c.Text(640, jy, 10.5, bold: true, value);
           c.SetFill(0, 0, 0);
-          y -= 20;
+          jy -= 19;
         }
 
-        Row("Sheet stock used", stockSummary);
-        Row("Sheets to cut", totalSheets.ToString(CultureInfo.InvariantCulture));
-        Row("Distinct layouts", layouts.Count.ToString(CultureInfo.InvariantCulture));
-        Row("Parts placed", totalParts.ToString(CultureInfo.InvariantCulture));
-        Row("Overall utilization", $"{overallUtil.ToString("0.0", CultureInfo.InvariantCulture)} %");
+        JRow("Parts to cut", totalParts.ToString("#,0", CultureInfo.InvariantCulture));
+        JRow("Material used", $"{overallUtil.ToString("0.0", CultureInfo.InvariantCulture)} %");
+        JRow("Different layouts", layouts.Count.ToString(CultureInfo.InvariantCulture));
         if (unplacedCount > 0)
         {
-          Row("PARTS NOT PLACED", unplacedCount.ToString(CultureInfo.InvariantCulture), warn: true);
+          JRow("NOT PLACED - short of material", unplacedCount.ToString(CultureInfo.InvariantCulture), warn: true);
         }
 
-        // Cutting plan lines: "30 x Layout 1 (26 parts, 86.0%)".
-        y -= 8;
-        c.Text(40, y, 13, bold: true, "Cutting plan");
-        y -= 22;
-        for (int i = 0; i < layouts.Count; i++)
+        // CUTTING PLAN — one row per layout, table form: what to cut, on what, how many times.
+        double tableTop = boxTop - boxH - 34;
+        c.Text(40, tableTop, 13, bold: true, "CUTTING PLAN");
+        double ty = tableTop - 20;
+        c.FillRect(40, ty - 5, 400, 19, 0.92, 0.92, 0.92);
+        c.Text(48, ty, 10, bold: true, "Layout");
+        c.Text(120, ty, 10, bold: true, "Sheet size");
+        c.Text(220, ty, 10, bold: true, "Parts / sheet");
+        c.Text(310, ty, 10, bold: true, "Cut");
+        c.Text(365, ty, 10, bold: true, "Used");
+        ty -= 19;
+        for (int i = 0; i < layouts.Count && i < 16; i++)
         {
           var l = layouts[i];
-          c.Text(48, y, 11, bold: false,
-            $"{l.Count} x  Layout {i + 1}   ({Num(l.Sheet.Sheet.WidthCalculated)}x{Num(l.Sheet.Sheet.HeightCalculated)} in, "
-            + $"{l.Sheet.PartPlacements.Count} parts, {Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)}% utilization)");
-          y -= 18;
+          c.Text(48, ty, 10, bold: false, $"Layout {i + 1}  (page {i + 2})");
+          c.Text(120, ty, 10, bold: false, $"{Num(l.Sheet.Sheet.WidthCalculated)} x {Num(l.Sheet.Sheet.HeightCalculated)} in");
+          c.Text(220, ty, 10, bold: false, l.Sheet.PartPlacements.Count.ToString(CultureInfo.InvariantCulture));
+          c.Text(310, ty, 10, bold: true, $"x {l.Count}");
+          c.Text(365, ty, 10, bold: false, $"{Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)} %");
+          c.Line(40, ty - 5, 440, ty - 5, 0.3);
+          ty -= 17;
         }
 
-        // Part totals table on the right half.
-        double ty = 488;
-        c.Text(470, 520, 13, bold: true, "Part totals");
-        c.Text(470, ty, 10, bold: true, "Part");
-        c.Text(710, ty, 10, bold: true, "Qty");
-        c.Line(470, ty - 4, 760, ty - 4, 0.7);
-        ty -= 17;
-        foreach (var (file, qty) in partTotals.Take(24))
+        if (layouts.Count > 16)
         {
-          c.Text(470, ty, 10, bold: false, Trunc(file, 42));
-          c.Text(710, ty, 10, bold: false, qty.ToString(CultureInfo.InvariantCulture));
-          ty -= 15;
+          c.Text(48, ty, 10, bold: false, $"... and {layouts.Count - 16} more layouts");
         }
 
-        if (partTotals.Count > 24)
+        // PART TOTALS — what the job produces, for checking against the order.
+        double py = tableTop;
+        c.Text(470, py, 13, bold: true, "PART TOTALS");
+        py -= 20;
+        c.FillRect(470, py - 5, 282, 19, 0.92, 0.92, 0.92);
+        c.Text(478, py, 10, bold: true, "Part");
+        c.Text(700, py, 10, bold: true, "Qty");
+        py -= 19;
+        foreach (var (file, qty) in partTotals.Take(18))
         {
-          c.Text(470, ty, 10, bold: false, $"... and {partTotals.Count - 24} more");
+          c.Text(478, py, 10, bold: false, Trunc(file, 36));
+          c.Text(700, py, 10, bold: false, qty.ToString("#,0", CultureInfo.InvariantCulture));
+          c.Line(470, py - 5, 752, py - 5, 0.3);
+          py -= 17;
+        }
+
+        if (partTotals.Count > 18)
+        {
+          c.Text(478, py, 10, bold: false, $"... and {partTotals.Count - 18} more");
         }
 
         Footer(c, 1, pageCount);
@@ -225,6 +270,12 @@ namespace DeepNestSharp.Reports
       public void SetFill(double r, double g, double b)
       {
         this.sb.AppendLine(FormattableString.Invariant($"{r:0.###} {g:0.###} {b:0.###} rg"));
+      }
+
+      public void FillRect(double x, double y, double w, double h, double r, double g, double b)
+      {
+        this.sb.AppendLine(FormattableString.Invariant(
+          $"{r:0.###} {g:0.###} {b:0.###} rg {x:0.##} {y:0.##} {w:0.##} {h:0.##} re f 0 0 0 rg"));
       }
 
       public void Text(double x, double y, double size, bool bold, string text)
