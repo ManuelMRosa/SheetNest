@@ -288,7 +288,6 @@ namespace DeepNestSharp.Ui.Views
       try
       {
         Reports.NestReportPdf.Write(dialog.FileName, plan, selected.UnplacedParts?.Count ?? 0);
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dialog.FileName) { UseShellExecute = true });
       }
       catch (System.Exception ex)
       {
