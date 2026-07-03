@@ -9,6 +9,7 @@
     wix build installer\SheetNest.wxs `
       -d PublishDir=<self-contained publish folder> `
       -d Version=1.1.0 `
+      -d IconPath=DeepNestSharp\Branding\sheetnest.ico `
       -arch x64 -o SheetNest-1.1.0-win-x64.msi
 
   The UpgradeCode below is SheetNest's permanent identity — NEVER change it, or upgrades will

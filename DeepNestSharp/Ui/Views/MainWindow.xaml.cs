@@ -174,7 +174,22 @@ namespace DeepNestSharp.Ui.Views
 
     private void OnPartsListDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-      if (this.partsListView.SelectedItem is IDetailLoadInfo part)
+      // MouseDoubleClick fires even for double-clicks on the qty spinner's repeat arrows or the ✕
+      // button inside a row (WPF class handler with handledEventsToo) — and those clicks don't move
+      // the selection, so acting on SelectedItem could edit the WRONG part. Walk up from the actual
+      // click target: ignore clicks on interactive controls, and edit the row that was hit.
+      var d = e.OriginalSource as System.Windows.DependencyObject;
+      while (d != null && !(d is ListViewItem))
+      {
+        if (d is System.Windows.Controls.Primitives.ButtonBase || d is Xceed.Wpf.Toolkit.IntegerUpDown)
+        {
+          return;
+        }
+
+        d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+      }
+
+      if (d is ListViewItem item && item.DataContext is IDetailLoadInfo part)
       {
         OpenEditPart(part);
       }
@@ -260,10 +275,17 @@ namespace DeepNestSharp.Ui.Views
         if (this.dxfViewer != null)
         {
           this.dxfViewer.DefaultPartSpacing = System.Math.Max(0, spacing);
-          this.dxfViewer.PartSpacings = parts.ToDictionary(
-            p => p.Path,
-            p => p.Spacing >= 0 ? p.Spacing : System.Math.Max(0, spacing),
-            System.StringComparer.OrdinalIgnoreCase);
+
+          // Group by path — the same DXF may legitimately be listed twice (e.g. once common-line,
+          // once spaced); a plain ToDictionary would throw and crash the app AFTER the nest ran.
+          // Keep the SMALLEST effective spacing so manual editing never blocks a clearance the
+          // nester itself allowed.
+          this.dxfViewer.PartSpacings = parts
+            .GroupBy(p => p.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+              g => g.Key,
+              g => g.Min(p => p.Spacing >= 0 ? p.Spacing : System.Math.Max(0, spacing)),
+              System.StringComparer.OrdinalIgnoreCase);
         }
 
         // Show it in the results list + viewer + status bar so utilization / placed / sheets / fitness /

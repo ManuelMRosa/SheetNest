@@ -271,8 +271,6 @@
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Unplaced:" />
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
-        <TextBlock Style="{DynamicResource StatusLabel}" Text="Running:" />
-        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.IsRunning}" />
       </StackPanel>
     </Border>
   </Grid>

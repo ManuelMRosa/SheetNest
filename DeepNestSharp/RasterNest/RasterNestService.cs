@@ -72,21 +72,65 @@ namespace DeepNestSharp.RasterNest
       var qtyLeft = stock.Select(s => s.Qty).ToArray();
       var combined = new SheetPlacementCollection();
 
-      void Consume(IEnumerable<ISheetPlacement> sps)
+      // Placements name their part with whatever the parser stored: DXF = the FULL path, but SVG =
+      // just the file name. Match a placement key back to demand entries by exact path first, then
+      // by file name — never assume Name == Path (an SVG job would otherwise never be consumed and
+      // the same parts would be nested again onto every remaining sheet).
+      static string SafeFileName(string path)
       {
-        var placedByPath = sps
-          .SelectMany(sp => sp.PartPlacements)
-          .GroupBy(p => p.Part.Name, System.StringComparer.OrdinalIgnoreCase)
-          .ToDictionary(g => g.Key, g => g.Count(), System.StringComparer.OrdinalIgnoreCase);
+        try
+        {
+          return System.IO.Path.GetFileName(path);
+        }
+        catch (System.ArgumentException)
+        {
+          return path;
+        }
+      }
+
+      IEnumerable<RasterPartInfo> DemandFor(string placementName)
+      {
         foreach (var p in remaining)
         {
-          if (p.Path != null && placedByPath.TryGetValue(p.Path, out int done) && done > 0)
+          if (p.Path != null && string.Equals(p.Path, placementName, System.StringComparison.OrdinalIgnoreCase))
           {
-            int used = System.Math.Min(p.Quantity, done);
-            p.Quantity -= used;
-            placedByPath[p.Path] = done - used;
+            yield return p;
           }
         }
+
+        foreach (var p in remaining)
+        {
+          if (p.Path != null
+              && !string.Equals(p.Path, placementName, System.StringComparison.OrdinalIgnoreCase)
+              && string.Equals(SafeFileName(p.Path), placementName, System.StringComparison.OrdinalIgnoreCase))
+          {
+            yield return p;
+          }
+        }
+      }
+
+      int Consume(IEnumerable<ISheetPlacement> sps)
+      {
+        int consumed = 0;
+        foreach (var g in sps
+          .SelectMany(sp => sp.PartPlacements)
+          .GroupBy(p => p.Part.Name ?? string.Empty, System.StringComparer.OrdinalIgnoreCase))
+        {
+          int left = g.Count();
+          foreach (var p in DemandFor(g.Key))
+          {
+            int used = System.Math.Min(p.Quantity, left);
+            p.Quantity -= used;
+            left -= used;
+            consumed += used;
+            if (left == 0)
+            {
+              break;
+            }
+          }
+        }
+
+        return consumed;
       }
 
       while (remaining.Sum(p => p.Quantity) > 0 && qtyLeft.Sum() > 0)
@@ -143,26 +187,37 @@ namespace DeepNestSharp.RasterNest
         int k = qtyLeft[win];
         foreach (var kv in comp)
         {
-          int have = remaining.Where(p => p.Path != null && p.Path.Equals(kv.Key, System.StringComparison.OrdinalIgnoreCase)).Sum(p => p.Quantity);
-          k = System.Math.Min(k, have / kv.Value);
+          int have = DemandFor(kv.Key).Sum(p => p.Quantity);
+          k = System.Math.Min(k, kv.Value <= 0 ? 0 : have / kv.Value);
         }
 
+        int consumedNow;
         if (k <= 1)
         {
           combined.Add(winSheet);
           qtyLeft[win]--;
-          Consume(new[] { winSheet });
+          consumedNow = Consume(new[] { winSheet });
         }
         else
         {
           // Nest exactly k whole sheets' worth on the winning size (its own pipeline replicates).
           var capped = new List<RasterPartInfo>();
-          foreach (var p in remaining.Where(p => p.Quantity > 0))
+          foreach (var kv in comp)
           {
-            if (p.Path != null && comp.TryGetValue(p.Path, out int per))
+            int want = kv.Value * k;
+            foreach (var p in DemandFor(kv.Key))
             {
-              int give = System.Math.Min(p.Quantity, per * k);
-              capped.Add(new RasterPartInfo { Path = p.Path, Quantity = give, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing });
+              if (want <= 0)
+              {
+                break;
+              }
+
+              int give = System.Math.Min(p.Quantity, want);
+              if (give > 0)
+              {
+                capped.Add(new RasterPartInfo { Path = p.Path, Quantity = give, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing });
+                want -= give;
+              }
             }
           }
 
@@ -171,7 +226,7 @@ namespace DeepNestSharp.RasterNest
           {
             combined.Add(winSheet);
             qtyLeft[win]--;
-            Consume(new[] { winSheet });
+            consumedNow = Consume(new[] { winSheet });
           }
           else
           {
@@ -181,8 +236,15 @@ namespace DeepNestSharp.RasterNest
             }
 
             qtyLeft[win] -= r.UsedSheets.Count;
-            Consume(r.UsedSheets);
+            consumedNow = Consume(r.UsedSheets);
           }
+        }
+
+        if (consumedNow == 0)
+        {
+          // Defensive: placements we cannot map back to demand. Stop rather than nest the same
+          // parts again onto every remaining sheet (duplicate parts cut in real steel).
+          break;
         }
       }
 

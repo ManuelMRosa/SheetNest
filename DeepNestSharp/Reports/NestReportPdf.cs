@@ -119,7 +119,8 @@ namespace DeepNestSharp.Reports
         c.Text(300, ty, 10, bold: true, "Cut");
         c.Text(370, ty, 10, bold: true, "Used");
         ty -= 19;
-        for (int i = 0; i < layouts.Count && i < 16; i++)
+        int planShown = 0;
+        for (int i = 0; i < layouts.Count && ty >= 52; i++)
         {
           var l = layouts[i];
           c.Text(48, ty, 10, bold: false, $"Layout {i + 1}");
@@ -130,11 +131,12 @@ namespace DeepNestSharp.Reports
           c.Text(370, ty, 10, bold: false, $"{Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)} %");
           c.Line(40, ty - 5, 440, ty - 5, 0.3);
           ty -= 17;
+          planShown++;
         }
 
-        if (layouts.Count > 16)
+        if (planShown < layouts.Count)
         {
-          c.Text(48, ty, 10, bold: false, $"... and {layouts.Count - 16} more layouts");
+          c.Text(48, System.Math.Max(ty, 38), 10, bold: false, $"... and {layouts.Count - planShown} more layouts (see their pages)");
         }
 
         // PART TOTALS — what the job produces, for checking against the order.
@@ -145,17 +147,24 @@ namespace DeepNestSharp.Reports
         c.Text(478, py, 10, bold: true, "Part");
         c.Text(700, py, 10, bold: true, "Qty");
         py -= 19;
-        foreach (var (file, qty) in partTotals.Take(18))
+        int totalsShown = 0;
+        foreach (var (file, qty) in partTotals)
         {
+          if (py < 52)
+          {
+            break;
+          }
+
           c.Text(478, py, 10, bold: false, Trunc(file, 33));
           c.Text(700, py, 10, bold: false, qty.ToString("#,0", CultureInfo.InvariantCulture));
           c.Line(470, py - 5, 752, py - 5, 0.3);
           py -= 17;
+          totalsShown++;
         }
 
-        if (partTotals.Count > 18)
+        if (totalsShown < partTotals.Count)
         {
-          c.Text(478, py, 10, bold: false, $"... and {partTotals.Count - 18} more");
+          c.Text(478, System.Math.Max(py, 38), 10, bold: false, $"... and {partTotals.Count - totalsShown} more");
         }
 
         Footer(c, 1, pageCount);
@@ -313,8 +322,10 @@ namespace DeepNestSharp.Reports
           return;
         }
 
+        // The trailing "0 0 0 rg" restores the text fill color — without it every Text() drawn after
+        // a polygon inherits the part/hole fill (white holes made whole part lists invisible).
         string paint = fill ? "0.85 0.91 0.96 rg b" : holeFill ? "1 1 1 rg b" : "s";
-        this.sb.AppendLine(FormattableString.Invariant($"h 0.5 w 0.25 0.3 0.35 RG {paint}"));
+        this.sb.AppendLine(FormattableString.Invariant($"h 0.5 w 0.25 0.3 0.35 RG {paint} 0 0 0 rg"));
       }
 
       public byte[] ToBytes()
