@@ -288,6 +288,17 @@ namespace DeepNestSharp.Ui.Views
         return;
       }
 
+      // One result at a time: its sheets are already deducted from the stock, so nesting again
+      // would consume more sheets on top of it. Clear Result gives them back and unlocks NEST.
+      if (!ViewModel.NestMonitorViewModel.TopNestResults.IsEmpty)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "There is already a nest result. Press Clear Result first — it returns the sheets that nest used to the stock.",
+          "Nest",
+          DeepNestLib.MessageBoxIcon.Information);
+        return;
+      }
+
       // Read the UI-bound project data on the UI thread, then do the heavy nest off-thread so the app
       // stays responsive (it was freezing because the whole nest ran on the UI thread).
       var parts = project.DetailLoadInfos
