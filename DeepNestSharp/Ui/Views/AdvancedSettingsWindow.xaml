@@ -1,0 +1,17 @@
+<Window x:Class="DeepNestSharp.Ui.Views.AdvancedSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:userControls="clr-namespace:DeepNestSharp.Ui.UserControls"
+        Title="Advanced Settings"
+        Width="560" Height="640"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+  <!-- Full engine configuration (the property grid edits the live config directly). -->
+  <DockPanel Margin="10">
+    <Button DockPanel.Dock="Bottom" Style="{StaticResource ModernButton}" Content="Close" Width="88"
+            HorizontalAlignment="Right" Margin="0,10,0,0" IsCancel="True" />
+    <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+      <userControls:SvgNestConfigEditor />
+    </Border>
+  </DockPanel>
+</Window>

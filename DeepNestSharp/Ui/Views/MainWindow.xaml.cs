@@ -100,6 +100,16 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
+    private void OnAdvancedSettings(object sender, RoutedEventArgs e)
+    {
+      var dialog = new AdvancedSettingsWindow
+      {
+        Owner = this,
+        DataContext = ViewModel.SvgNestConfigViewModel, // the editor binds SelectedObject to SvgNestConfig
+      };
+      dialog.ShowDialog();
+    }
+
     /// <summary>Discards the displayed nest result and returns the sheets it consumed to the stock.</summary>
     private void OnClearResult(object sender, RoutedEventArgs e)
     {
