@@ -15,6 +15,7 @@
 No .NET or anything else to install (self-contained build). The first launch may show a Windows SmartScreen prompt (the app isn't code-signed) → **More info → Run anyway**.
 
 ### What SheetNest adds (v1.1)
+- **Sheet stock management (v1.1.1)** — the Sheets tab is live inventory: quantities are deducted the moment a nest completes, **Clear Result** discards the nest and puts its sheets back, and parts/sheets are locked while a result is active so the stock can't drift. Your stock and sheet edge margin survive closing the app — reopen and the leftover is waiting.
 - **Fast raster nesting engine** — bit-packed collision, best-of rotation profiles evaluated in parallel, pattern replication for production runs. Real-world 800-part jobs nest in seconds.
 - **Common-line cutting done right** — per-part "common line" nests copies at a CAM-safe mini-gap (0.003″, below kerf but above CAM merge tolerance), with a hard no-overlap guarantee and tight-pack retries that recover the last part instead of opening an extra sheet.
 - **Mixed sheet stock with optimal size selection** — list every stock size you have; the nester probes each one and puts the bulk on the size that packs densest and the tail on the sheet that wastes least. Add Sheet offers the standard US stock sizes plus custom.
