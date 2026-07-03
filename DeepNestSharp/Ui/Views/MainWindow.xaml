@@ -123,7 +123,18 @@
       <!-- Right: Parts / Sheets / Settings -->
       <TabControl Grid.Column="2" Margin="0,4,4,4">
         <TabItem Header="Parts">
+          <!-- A nest result owns the current stock/part counts: lock editing until Clear Result. -->
           <DockPanel>
+            <DockPanel.Style>
+              <Style TargetType="DockPanel">
+                <Setter Property="IsEnabled" Value="False" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding NestMonitorViewModel.SelectedItem}" Value="{x:Null}">
+                    <Setter Property="IsEnabled" Value="True" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </DockPanel.Style>
             <Button DockPanel.Dock="Bottom" Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" HorizontalAlignment="Stretch" />
             <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"
@@ -172,7 +183,18 @@
           </DockPanel>
         </TabItem>
         <TabItem Header="Sheets">
+          <!-- Same lock as the Parts tab: the result's deduction must stay in sync with this list. -->
           <DockPanel>
+            <DockPanel.Style>
+              <Style TargetType="DockPanel">
+                <Setter Property="IsEnabled" Value="False" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding NestMonitorViewModel.SelectedItem}" Value="{x:Null}">
+                    <Setter Property="IsEnabled" Value="True" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </DockPanel.Style>
             <Button DockPanel.Dock="Bottom" Style="{DynamicResource ModernButton}" Content="+ Add Sheet" Click="OnAddSheetMenu" Margin="4" HorizontalAlignment="Stretch"
                     ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
             <TextBlock DockPanel.Dock="Top" Style="{DynamicResource CaptionText}" Margin="4,4,4,6"
