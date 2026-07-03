@@ -1,5 +1,6 @@
 namespace DeepNestSharp.Ui.Views
 {
+  using System.Collections.Generic;
   using System.Linq;
   using System.Threading.Tasks;
   using System.Windows;
@@ -11,12 +12,19 @@ namespace DeepNestSharp.Ui.Views
 
   public partial class MainWindow : Window
   {
+    // Sheets tab as it was when the last nest ran, and that stock minus the sheets the nest
+    // used — so closing the app can persist the LEFTOVER (35 in stock, nest used 31 → next
+    // launch opens with 4). A manual edit of the tab after the nest wins verbatim.
+    private List<SessionSheet>? nestTabSnapshot;
+    private List<SessionSheet>? nestLeftover;
+
     public MainWindow(IMainViewModel viewModel)
     {
       InitializeComponent();
       this.DataContext = viewModel;
       viewModel.AboutDialogService = new AboutDialogService(() => new AboutDialog());
       this.Loaded += MainWindow_Loaded;
+      this.Closing += MainWindow_Closing;
     }
 
     public IMainViewModel ViewModel => (IMainViewModel)DataContext;
@@ -73,6 +81,57 @@ namespace DeepNestSharp.Ui.Views
         cfg.Spacing = 0.25;
       }
 
+      // Restore the previous session: the user's sheet edge margin and the sheet stock left
+      // over when the app was last closed.
+      var session = SessionState.Load();
+      if (session != null)
+      {
+        if (session.SheetEdgeMargin >= 0)
+        {
+          cfg.SheetSpacing = session.SheetEdgeMargin;
+        }
+
+        if (ViewModel.ActiveDocument is NestProjectViewModel doc && doc.ProjectInfo.SheetLoadInfos.Count == 0)
+        {
+          foreach (var s in session.Sheets.Where(s => s.Width > 0 && s.Height > 0 && s.Quantity > 0))
+          {
+            doc.ProjectInfo.SheetLoadInfos.Add(new SheetLoadInfo(s.Width, s.Height, s.Quantity));
+          }
+
+          this.sheetsListView.Items.Refresh();
+        }
+      }
+    }
+
+    private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+    {
+      var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
+      var rows = project == null ? new List<SessionSheet>() : ReadSheetRows(project);
+
+      // Untouched since the last nest → the nest consumed its sheets; persist the leftover.
+      if (nestLeftover != null && RowsEqual(rows, nestTabSnapshot))
+      {
+        rows = nestLeftover.Where(r => r.Quantity > 0).ToList();
+      }
+
+      new SessionState
+      {
+        SheetEdgeMargin = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
+        Sheets = rows,
+      }.Save();
+    }
+
+    private static List<SessionSheet> ReadSheetRows(IProjectInfo project)
+    {
+      return project.SheetLoadInfos
+        .Select(s => new SessionSheet { Width = s.Width, Height = s.Height, Quantity = s.Quantity })
+        .ToList();
+    }
+
+    private static bool RowsEqual(List<SessionSheet>? a, List<SessionSheet>? b)
+    {
+      return a != null && b != null && a.Count == b.Count &&
+        a.Zip(b, (x, y) => x.Width == y.Width && x.Height == y.Height && x.Quantity == y.Quantity).All(eq => eq);
     }
 
     /// <summary>Add Sheet opens a menu: the standard stock sizes plus "Custom size…" (Radan-style).</summary>
@@ -246,6 +305,7 @@ namespace DeepNestSharp.Ui.Views
       }
 
       int sheetQty = sheetStock.Sum(s => s.Quantity);   // total sheets the job may use (for the warning)
+      var tabSnapshot = ReadSheetRows(project);         // stock as it is NOW, for the session leftover
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var placementType = config.PlacementType;
       int rotations = config.Rotations;
@@ -300,6 +360,28 @@ namespace DeepNestSharp.Ui.Views
         var vm = ViewModel.NestMonitorViewModel;
         vm.TopNestResults.SetSingleResult(result);
         vm.SelectedItem = result;
+
+        // Remember what this nest consumed so closing the app persists only the leftover stock.
+        var used = new Dictionary<(int W, int H), int>();
+        foreach (var sp in result.UsedSheets)
+        {
+          var key = ((int)System.Math.Round(sp.Sheet.WidthCalculated), (int)System.Math.Round(sp.Sheet.HeightCalculated));
+          used[key] = used.TryGetValue(key, out int n) ? n + 1 : 1;
+        }
+
+        var leftover = tabSnapshot.Select(r => new SessionSheet { Width = r.Width, Height = r.Height, Quantity = r.Quantity }).ToList();
+        foreach (var row in leftover)
+        {
+          if (used.TryGetValue((row.Width, row.Height), out int n) && n > 0)
+          {
+            int take = System.Math.Min(row.Quantity, n);
+            row.Quantity -= take;
+            used[(row.Width, row.Height)] = n - take;
+          }
+        }
+
+        nestTabSnapshot = tabSnapshot;
+        nestLeftover = leftover;
 
         // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.
         int unplacedCount = result.UnplacedParts?.Count ?? 0;
