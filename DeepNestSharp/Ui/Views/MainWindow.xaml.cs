@@ -12,12 +12,6 @@ namespace DeepNestSharp.Ui.Views
 
   public partial class MainWindow : Window
   {
-    // Sheets tab as it was when the last nest ran, and that stock minus the sheets the nest
-    // used — so closing the app can persist the LEFTOVER (35 in stock, nest used 31 → next
-    // launch opens with 4). A manual edit of the tab after the nest wins verbatim.
-    private List<SessionSheet>? nestTabSnapshot;
-    private List<SessionSheet>? nestLeftover;
-
     public MainWindow(IMainViewModel viewModel)
     {
       InitializeComponent();
@@ -106,32 +100,17 @@ namespace DeepNestSharp.Ui.Views
     private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
       var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
-      var rows = project == null ? new List<SessionSheet>() : ReadSheetRows(project);
-
-      // Untouched since the last nest → the nest consumed its sheets; persist the leftover.
-      if (nestLeftover != null && RowsEqual(rows, nestTabSnapshot))
-      {
-        rows = nestLeftover.Where(r => r.Quantity > 0).ToList();
-      }
+      var rows = project == null
+        ? new List<SessionSheet>()
+        : project.SheetLoadInfos
+            .Select(s => new SessionSheet { Width = s.Width, Height = s.Height, Quantity = s.Quantity })
+            .ToList();
 
       new SessionState
       {
         SheetEdgeMargin = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
         Sheets = rows,
       }.Save();
-    }
-
-    private static List<SessionSheet> ReadSheetRows(IProjectInfo project)
-    {
-      return project.SheetLoadInfos
-        .Select(s => new SessionSheet { Width = s.Width, Height = s.Height, Quantity = s.Quantity })
-        .ToList();
-    }
-
-    private static bool RowsEqual(List<SessionSheet>? a, List<SessionSheet>? b)
-    {
-      return a != null && b != null && a.Count == b.Count &&
-        a.Zip(b, (x, y) => x.Width == y.Width && x.Height == y.Height && x.Quantity == y.Quantity).All(eq => eq);
     }
 
     /// <summary>Add Sheet opens a menu: the standard stock sizes plus "Custom size…" (Radan-style).</summary>
@@ -305,7 +284,6 @@ namespace DeepNestSharp.Ui.Views
       }
 
       int sheetQty = sheetStock.Sum(s => s.Quantity);   // total sheets the job may use (for the warning)
-      var tabSnapshot = ReadSheetRows(project);         // stock as it is NOW, for the session leftover
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var placementType = config.PlacementType;
       int rotations = config.Rotations;
@@ -361,7 +339,9 @@ namespace DeepNestSharp.Ui.Views
         vm.TopNestResults.SetSingleResult(result);
         vm.SelectedItem = result;
 
-        // Remember what this nest consumed so closing the app persists only the leftover stock.
+        // Consume the stock this nest used, right in the Sheets tab — the count visibly drops
+        // (35 in stock, nest used 31 → the tab now shows 4) and closing the app persists what
+        // physically remains.
         var used = new Dictionary<(int W, int H), int>();
         foreach (var sp in result.UsedSheets)
         {
@@ -369,8 +349,7 @@ namespace DeepNestSharp.Ui.Views
           used[key] = used.TryGetValue(key, out int n) ? n + 1 : 1;
         }
 
-        var leftover = tabSnapshot.Select(r => new SessionSheet { Width = r.Width, Height = r.Height, Quantity = r.Quantity }).ToList();
-        foreach (var row in leftover)
+        foreach (var row in project.SheetLoadInfos)
         {
           if (used.TryGetValue((row.Width, row.Height), out int n) && n > 0)
           {
@@ -380,8 +359,7 @@ namespace DeepNestSharp.Ui.Views
           }
         }
 
-        nestTabSnapshot = tabSnapshot;
-        nestLeftover = leftover;
+        this.sheetsListView.Items.Refresh();
 
         // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.
         int unplacedCount = result.UnplacedParts?.Count ?? 0;

@@ -28,11 +28,15 @@
 
     public event EventHandler? IsDirtyChanged;
 
+    // The wrapper collections MUST keep a stable identity while a project is open: rebuilding on
+    // "Count == 0" (as this used to) hands every early caller a fresh instance, so the ListView
+    // ends up bound to an orphaned empty copy while adds land in a newer one — items exist in the
+    // data but never show. Rebuild ONLY on Load(), which raises PropertyChanged so bindings re-fetch.
     public IList<IDetailLoadInfo, DetailLoadInfo> DetailLoadInfos
     {
       get
       {
-        if (this.detailLoadInfos == null || this.detailLoadInfos.Count == 0)
+        if (this.detailLoadInfos == null)
         {
           this.detailLoadInfos = new ObservableCollection<IDetailLoadInfo, DetailLoadInfo, ObservableDetailLoadInfo>(this.wrappedProjectInfo.DetailLoadInfos, x => new ObservableDetailLoadInfo(x));
           this.detailLoadInfos.IsDirtyChanged += this.DetailLoadInfos_IsDirtyChanged;
@@ -46,7 +50,7 @@
     {
       get
       {
-        if (this.sheetLoadInfos == null || this.sheetLoadInfos.Count == 0)
+        if (this.sheetLoadInfos == null)
         {
           sheetLoadInfos = new ObservableCollection<ISheetLoadInfo, SheetLoadInfo, ObservableSheetLoadInfo>(this.wrappedProjectInfo.SheetLoadInfos, x => new ObservableSheetLoadInfo(x));
         }
@@ -77,9 +81,17 @@
     {
       // This is a fudge; need a better way of injecting Config; loathe to go Locator but AvalonDock's pushing that way.
       config.MustBe(mainViewModel.SvgNestConfigViewModel.SvgNestConfig);
-      this.DetailLoadInfos.Clear();
-      this.SheetLoadInfos.Clear();
       wrappedProjectInfo.Load(config, filePath);
+
+      // The loaded data repopulated the UNDERLYING lists; drop the wrapper collections so the
+      // PropertyChanged below makes bindings re-fetch fresh copies of the loaded items.
+      if (this.detailLoadInfos != null)
+      {
+        this.detailLoadInfos.IsDirtyChanged -= this.DetailLoadInfos_IsDirtyChanged;
+      }
+
+      this.detailLoadInfos = null;
+      this.sheetLoadInfos = null;
       OnPropertyChanged(nameof(DetailLoadInfos));
       OnPropertyChanged(nameof(SheetLoadInfos));
       mainViewModel.SvgNestConfigViewModel.RaiseNotifyUpdatePropertyGrid();
