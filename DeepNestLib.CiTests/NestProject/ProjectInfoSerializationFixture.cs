@@ -11,7 +11,8 @@
     {
       var config = SvgNest.Config;
       var sut = new ProjectInfo(config);
-      sut.SheetLoadInfos.Should().NotBeEmpty();
+      sut.SheetLoadInfos.Should().BeEmpty(); // new projects start with no stock
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 1));
       var json = sut.ToJson();
       ProjectInfo actual = ProjectInfo.FromJson(config, json);
 

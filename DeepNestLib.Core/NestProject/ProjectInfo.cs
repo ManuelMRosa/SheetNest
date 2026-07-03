@@ -24,17 +24,10 @@ namespace DeepNestLib.NestProject
       {
         if (wrappableSheetLoadInfos == null)
         {
-          ISheetLoadInfo sheetLoadInfo;
-          if (config == null)
-          {
-            //This is a bit of a fudge for during deserialisation; ultimately this should get set with the deserialised object, just need to get the deserializer past this
-            sheetLoadInfo = new SheetLoadInfo(SvgNest.Config);
-          }
-          else
-          {
-            sheetLoadInfo = new ConfigSheetLoadInfo(Config);
-          }
-          wrappableSheetLoadInfos = new WrappableList<ISheetLoadInfo, SheetLoadInfo>() { sheetLoadInfo };
+          // New projects start with NO stock — the user adds real sheet sizes via Add Sheet.
+          // (Seeding a ConfigSheetLoadInfo here surfaced the legacy 3000x1500 x10 mm defaults
+          // as a bogus inches sheet on every fresh install.)
+          wrappableSheetLoadInfos = new WrappableList<ISheetLoadInfo, SheetLoadInfo>();
         }
 
         return wrappableSheetLoadInfos;

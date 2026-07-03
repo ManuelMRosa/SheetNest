@@ -1,6 +1,5 @@
 ﻿namespace DeepNestLib.NestProject
 {
-  using System;
   using System.Text.Json;
   using System.Text.Json.Serialization;
   using DeepNestLib;
@@ -19,11 +18,6 @@
       this.Width = width;
       this.Height = height;
       this.Quantity = quantity;
-    }
-
-    [Obsolete("Only use from ConfigSheetLoadInfo to bypass the constructor - could just pass the config in but if we do it would be less transparent; no other reason to keep it long term is there?")]
-    protected SheetLoadInfo()
-    {
     }
 
     public virtual int Width { get; set; }

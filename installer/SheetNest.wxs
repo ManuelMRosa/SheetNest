@@ -2,20 +2,28 @@
 <!--
   SheetNest MSI (WiX 5+ schema, built with the `wix` dotnet tool).
 
-  Per-user install (no admin/UAC) into %LOCALAPPDATA%\Programs\SheetNest — the same location the
-  manual installs used — with Start-menu + desktop shortcuts and clean major upgrades.
+  Per-user install (no admin/UAC), default %LOCALAPPDATA%\Programs\SheetNest, with a full
+  install wizard: Welcome, choose folder, desktop-shortcut checkbox, confirm, and a
+  "Launch SheetNest" checkbox on the finish page. The chosen folder and shortcut choice are
+  remembered in HKCU\Software\SheetNest so upgrades reuse them.
 
-  Build (from the repo root, after `dotnet publish` of the app):
+  Build (from the repo root, after `dotnet publish` of the app; needs the UI extension once:
+  `wix extension add -g WixToolset.UI.wixext/5.0.2`):
     wix build installer\SheetNest.wxs `
       -d PublishDir=<self-contained publish folder> `
-      -d Version=1.1.0 `
+      -d Version=1.1.1 `
       -d IconPath=DeepNestSharp\Branding\sheetnest.ico `
-      -arch x64 -o SheetNest-1.1.0-win-x64.msi
+      -ext WixToolset.UI.wixext `
+      -arch x64 -o SheetNest-1.1.1-win-x64.msi
+
+  NOTE: Windows Installer only compares the first THREE version fields (x.y.z) — a fourth
+  field like 1.1.0.1 is ignored, so every release must bump at least the third number.
 
   The UpgradeCode below is SheetNest's permanent identity — NEVER change it, or upgrades will
   install side-by-side instead of replacing the previous version.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="SheetNest"
            Manufacturer="Manuel Rosa"
            Version="$(var.Version)"
@@ -38,26 +46,83 @@
     <StandardDirectory Id="ProgramMenuFolder" />
     <StandardDirectory Id="DesktopFolder" />
 
+    <!-- Remember the previous install folder and desktop-shortcut choice across upgrades. -->
+    <Property Id="PREVINSTALLFOLDER">
+      <RegistrySearch Id="RememberInstallFolder" Root="HKCU" Key="Software\SheetNest" Name="InstallFolder" Type="raw" />
+    </Property>
+    <SetDirectory Id="INSTALLFOLDER" Value="[PREVINSTALLFOLDER]" Condition="PREVINSTALLFOLDER" />
+    <Property Id="INSTALLDESKTOPSHORTCUT" Value="1" Secure="yes">
+      <RegistrySearch Id="RememberDesktopShortcut" Root="HKCU" Key="Software\SheetNest" Name="DesktopShortcut" Type="raw" />
+    </Property>
+
     <!-- Every file of the self-contained publish output. -->
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
       <Files Include="$(var.PublishDir)\**" />
     </ComponentGroup>
 
-    <!-- Shortcuts + per-user keypath + folder cleanup on uninstall. -->
+    <!-- Start-menu shortcut + per-user keypath + remembered choices + folder cleanup on uninstall. -->
     <Component Id="ShortcutsAndCleanup" Directory="INSTALLFOLDER">
       <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" />
+      <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="DesktopShortcut" Type="string" Value="[INSTALLDESKTOPSHORTCUT]" />
       <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="SheetNest"
-                Description="Production sheet-metal nesting"
-                Target="[INSTALLFOLDER]SheetNest.exe" WorkingDirectory="INSTALLFOLDER" />
-      <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="SheetNest"
                 Description="Production sheet-metal nesting"
                 Target="[INSTALLFOLDER]SheetNest.exe" WorkingDirectory="INSTALLFOLDER" />
       <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
     </Component>
 
+    <!-- Desktop shortcut only when the wizard checkbox is ticked. -->
+    <Component Id="DesktopShortcutComp" Directory="INSTALLFOLDER" Condition="INSTALLDESKTOPSHORTCUT = 1">
+      <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+      <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="SheetNest"
+                Description="Production sheet-metal nesting"
+                Target="[INSTALLFOLDER]SheetNest.exe" WorkingDirectory="INSTALLFOLDER" />
+    </Component>
+
     <Feature Id="Main" Title="SheetNest">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="ShortcutsAndCleanup" />
+      <ComponentRef Id="DesktopShortcutComp" />
     </Feature>
+
+    <!-- "Launch SheetNest" checkbox on the finish page. -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch SheetNest" />
+    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER"
+                  ExeCommand="[INSTALLFOLDER]SheetNest.exe" Return="asyncNoWait" />
+
+    <UI>
+      <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+      <!-- No license page: Welcome goes straight to the folder chooser. -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="99" Condition="NOT Installed" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="99" />
+
+      <!-- Options page (desktop shortcut) between the folder chooser and the confirm page. -->
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="OptionsDlg" Order="99" Condition="WIXUI_INSTALLDIR_VALID=&quot;1&quot;" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="OptionsDlg" Order="99" Condition="NOT Installed" />
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+
+      <Dialog Id="OptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Additional options" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose additional shortcuts." />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="DesktopShortcutCheckBox" Type="CheckBox" X="20" Y="60" Width="330" Height="17"
+                 Property="INSTALLDESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a &amp;desktop shortcut" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">
+          <Publish Event="NewDialog" Value="InstallDirDlg" />
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="&amp;Next">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+    </UI>
   </Package>
 </Wix>

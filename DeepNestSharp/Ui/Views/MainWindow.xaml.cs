@@ -239,6 +239,12 @@ namespace DeepNestSharp.Ui.Views
         .Where(s => s.Width > 0 && s.Height > 0 && s.Quantity > 0)
         .Select(s => (s.Width, s.Height, s.Quantity))
         .ToList();
+      if (sheetStock.Count == 0)
+      {
+        ViewModel.MessageService.DisplayMessageBox("Add at least one sheet in the Sheets tab first.", "Nest", DeepNestLib.MessageBoxIcon.Information);
+        return;
+      }
+
       int sheetQty = sheetStock.Sum(s => s.Quantity);   // total sheets the job may use (for the warning)
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var placementType = config.PlacementType;

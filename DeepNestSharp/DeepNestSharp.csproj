@@ -8,10 +8,10 @@
     <PublishSingleFile>false</PublishSingleFile>
     <ApplicationIcon>Branding\sheetnest.ico</ApplicationIcon>
     <DebugType>embedded</DebugType>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
-    <InformationalVersion>1.1.0</InformationalVersion>
-    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.1.0</AssemblyVersion>
+    <FileVersion>1.1.1.0</FileVersion>
+    <InformationalVersion>1.1.1</InformationalVersion>
+    <Version>1.1.1</Version>
     <Product>SheetNest</Product>
     <AssemblyTitle>SheetNest</AssemblyTitle>
     <AssemblyName>SheetNest</AssemblyName>
