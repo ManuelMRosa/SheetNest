@@ -12,6 +12,9 @@ namespace DeepNestSharp.Ui.Views
 
   public partial class MainWindow : Window
   {
+    // Sheets the LAST nest deducted from the stock, by size — Clear Result gives them back.
+    private Dictionary<(int W, int H), int>? lastNestConsumed;
+
     public MainWindow(IMainViewModel viewModel)
     {
       InitializeComponent();
@@ -95,6 +98,34 @@ namespace DeepNestSharp.Ui.Views
           this.sheetsListView.Items.Refresh();
         }
       }
+    }
+
+    /// <summary>Discards the displayed nest result and returns the sheets it consumed to the stock.</summary>
+    private void OnClearResult(object sender, RoutedEventArgs e)
+    {
+      bool hadResult = ViewModel.NestMonitorViewModel.SelectedItem != null;
+      ViewModel.NestMonitorViewModel.Reset();
+
+      if (hadResult && lastNestConsumed != null && ViewModel.ActiveDocument is NestProjectViewModel doc)
+      {
+        foreach (var kv in lastNestConsumed)
+        {
+          var row = doc.ProjectInfo.SheetLoadInfos.FirstOrDefault(s => s.Width == kv.Key.W && s.Height == kv.Key.H);
+          if (row != null)
+          {
+            row.Quantity += kv.Value;
+          }
+          else
+          {
+            // The user removed the row after nesting — bring the size back so no stock is lost.
+            doc.ProjectInfo.SheetLoadInfos.Add(new SheetLoadInfo(kv.Key.W, kv.Key.H, kv.Value));
+          }
+        }
+
+        this.sheetsListView.Items.Refresh();
+      }
+
+      lastNestConsumed = null; // a result can only be given back once
     }
 
     private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -349,6 +380,7 @@ namespace DeepNestSharp.Ui.Views
           used[key] = used.TryGetValue(key, out int n) ? n + 1 : 1;
         }
 
+        var consumed = new Dictionary<(int W, int H), int>();
         foreach (var row in project.SheetLoadInfos)
         {
           if (used.TryGetValue((row.Width, row.Height), out int n) && n > 0)
@@ -356,9 +388,14 @@ namespace DeepNestSharp.Ui.Views
             int take = System.Math.Min(row.Quantity, n);
             row.Quantity -= take;
             used[(row.Width, row.Height)] = n - take;
+            if (take > 0)
+            {
+              consumed[(row.Width, row.Height)] = consumed.TryGetValue((row.Width, row.Height), out int c) ? c + take : take;
+            }
           }
         }
 
+        lastNestConsumed = consumed;
         this.sheetsListView.Items.Refresh();
 
         // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.

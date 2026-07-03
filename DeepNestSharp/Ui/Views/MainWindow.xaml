@@ -59,6 +59,7 @@
     <Border Grid.Row="1" Background="{DynamicResource Brush.Panel}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="8,6">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Clear Result" Click="OnClearResult" ToolTip="Discard the nest result and return the sheets it used to the stock" />
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Export DXF" Click="OnExportDxf" ToolTip="Export the selected nest result to DXF" />
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Report PDF" Click="OnNestReportPdf" ToolTip="Save a PDF nest report: cutting plan, layouts, quantities and utilization" />
         </StackPanel>
