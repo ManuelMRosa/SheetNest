@@ -11,6 +11,8 @@
   <SolidColorBrush x:Key="Brush.AccentPressed" Color="#1B5E20" />
   <SolidColorBrush x:Key="Brush.AccentTint" Color="#E8F5E9" />
   <SolidColorBrush x:Key="Brush.Danger" Color="#C62828" />
+  <SolidColorBrush x:Key="Brush.DangerHover" Color="#D32F2F" />
+  <SolidColorBrush x:Key="Brush.DangerPressed" Color="#B71C1C" />
 
   <!-- Surfaces -->
   <SolidColorBrush x:Key="Brush.Window" Color="#FAFAFA" />
@@ -86,6 +88,33 @@
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
               <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.AccentPressed}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- The destructive counterpart of PrimaryButton (Clear Result): solid red, same shape. -->
+  <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+    <Setter Property="Background" Value="{StaticResource Brush.Danger}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="bd" CornerRadius="4" BorderThickness="0"
+                  Background="{TemplateBinding Background}"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.DangerHover}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.DangerPressed}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.5" />
