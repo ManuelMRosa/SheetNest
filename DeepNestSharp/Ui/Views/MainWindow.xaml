@@ -66,10 +66,6 @@
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="New" Command="{Binding CreateNestProjectCommand}" ToolTip="Start a new nesting project" />
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Open" Command="{Binding LoadNestProjectCommand}" ToolTip="Open an existing project" />
           <Rectangle Style="{DynamicResource ToolbarSeparator}" />
-          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Add Part" Click="OnAddPartClicked" ToolTip="Load a part from DXF/SVG" />
-          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Add Sheet" Click="OnAddSheetMenu" ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
-          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Clear Parts" Command="{Binding ActiveDocument.ClearPartsCommand}" ToolTip="Remove all parts" />
-          <Rectangle Style="{DynamicResource ToolbarSeparator}" />
           <Button Style="{DynamicResource PrimaryButton}" Margin="3,0" MinWidth="130" Content="&#9654;  NEST" Click="OnNest" ToolTip="Run the nest." />
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Clear Result" Click="OnClearResult" ToolTip="Discard the nest result and return the sheets it used to the stock" />
         </StackPanel>
