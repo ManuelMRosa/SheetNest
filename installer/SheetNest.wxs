@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SheetNest MSI (WiX 5+ schema, built with the `wix` dotnet tool).
+
+  Per-user install (no admin/UAC) into %LOCALAPPDATA%\Programs\SheetNest — the same location the
+  manual installs used — with Start-menu + desktop shortcuts and clean major upgrades.
+
+  Build (from the repo root, after `dotnet publish` of the app):
+    wix build installer\SheetNest.wxs `
+      -d PublishDir=<self-contained publish folder> `
+      -d Version=1.1.0 `
+      -arch x64 -o SheetNest-1.1.0-win-x64.msi
+
+  The UpgradeCode below is SheetNest's permanent identity — NEVER change it, or upgrades will
+  install side-by-side instead of replacing the previous version.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="SheetNest"
+           Manufacturer="Manuel Rosa"
+           Version="$(var.Version)"
+           Language="1033"
+           Scope="perUser"
+           UpgradeCode="5F4FF854-34F6-4373-A2AE-6E5538B7A18A">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of SheetNest is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="SheetNestIco" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="SheetNestIco" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/ManuelMRosa/SheetNest" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="SheetNest" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- Every file of the self-contained publish output. -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**" />
+    </ComponentGroup>
+
+    <!-- Shortcuts + per-user keypath + folder cleanup on uninstall. -->
+    <Component Id="ShortcutsAndCleanup" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="SheetNest"
+                Description="Production sheet-metal nesting"
+                Target="[INSTALLFOLDER]SheetNest.exe" WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="SheetNest"
+                Description="Production sheet-metal nesting"
+                Target="[INSTALLFOLDER]SheetNest.exe" WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+    </Component>
+
+    <Feature Id="Main" Title="SheetNest">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ShortcutsAndCleanup" />
+    </Feature>
+  </Package>
+</Wix>

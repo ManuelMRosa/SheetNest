@@ -8,17 +8,21 @@
 
 ## ⬇️ Download &amp; install (Windows 10/11, 64-bit)
 
-1. Open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download **`SheetNest-1.0.0-win-x64.zip`**.
-2. Right-click the zip → **Extract All** (anywhere — e.g. your Desktop).
-3. Open the folder and run **`SheetNest.exe`**.
+**Recommended:** open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download the **`SheetNest-x.y.z-win-x64.msi`** installer — double-click, done. It installs per-user (no admin needed), adds Start-menu and desktop shortcuts, and upgrades cleanly over previous versions.
 
-That's it — no .NET or anything else to install (it's a self-contained build). The first launch may show a Windows SmartScreen prompt (the app isn't code-signed) → **More info → Run anyway**.
+**Portable option:** download the `.zip` instead, extract anywhere, and run `SheetNest.exe`.
 
-### What SheetNest adds
-- **GPU / raster nesting engine** — an alternative bitmap-based nester (bottom-left fill, rotations, multi-sheet) that on real jobs reaches higher material utilization than the classic NFP engine. A single **NEST** button switches between the **CPU (NFP)** and **GPU (raster)** engines via a Settings toggle that auto-enables when a GPU is detected.
-- **Industrial production plan** — groups identical sheets into "cut N × layout A + M × layout B" (cutting-stock style) and **exports one DXF per distinct layout** instead of one per physical sheet.
-- **Part spacing & sheet-edge margin** honoured in the raster engine, a faithful DXF viewer, part thumbnails, an inch (imperial) workflow, and a simplified settings panel.
-- Engine fixes: inch-appropriate curve tolerance, grid-packer spacing, and DXF bulge-arc import/export.
+No .NET or anything else to install (self-contained build). The first launch may show a Windows SmartScreen prompt (the app isn't code-signed) → **More info → Run anyway**.
+
+### What SheetNest adds (v1.1)
+- **Fast raster nesting engine** — bit-packed collision, best-of rotation profiles evaluated in parallel, pattern replication for production runs. Real-world 800-part jobs nest in seconds.
+- **Common-line cutting done right** — per-part "common line" nests copies at a CAM-safe mini-gap (0.003″, below kerf but above CAM merge tolerance), with a hard no-overlap guarantee and tight-pack retries that recover the last part instead of opening an extra sheet.
+- **Mixed sheet stock with optimal size selection** — list every stock size you have; the nester probes each one and puts the bulk on the size that packs densest and the tail on the sheet that wastes least. Add Sheet offers the standard US stock sizes plus custom.
+- **Radan-style per-part controls** — Edit Part dialog with the seven orientation permissions (as drawn / 90° only / 0°+90° / 0°+180° / 90°+270° / 4-way / free), per-part spacing, priority, and required + spare quantities. Geometry-detected "no turn" suggestion for circles and squares.
+- **Industrial production plan** — identical sheets group into "cut N × layout A + M × layout B"; **one DXF per distinct layout** (parts only — no sheet-outline entity for the CAM to trip on).
+- **Nest report PDF** — a one-click report: MATERIAL REQUIRED box for purchasing (sheets per size + sq ft), cutting plan, part totals, and a page per layout with a scaled drawing.
+- **Manual nest editing** — drag, rotate and nudge placed parts in the viewer with spacing/collision enforcement, undo/redo, and drop-to-contact.
+- Plus: reusable-remnant packing (the offcut is a full short-dimension strip), sheet quantity limits with honest "didn't fit" reporting, inch workflow, and a single-toolbar UI.
 
 SheetNest is built on the MIT-licensed DeepNestSharp; its original lineage and license are preserved below and in [LICENSE](LICENSE).
 
