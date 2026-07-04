@@ -140,6 +140,34 @@ namespace DeepNestSharp.Ui.Views
 
     private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+      // Closing with a nest result on screen: offer to save the project first. Yes runs the same
+      // Save as the File menu (Save As dialog when the project has no file yet — declining THAT
+      // dialog aborts the close so no work is silently lost); No closes without saving; Cancel stays.
+      if (ViewModel.NestMonitorViewModel.SelectedItem != null && ViewModel.ActiveDocument != null)
+      {
+        var answer = MessageBox.Show(
+          this,
+          "You have a nest result. Save the project before closing?",
+          "SheetNest",
+          MessageBoxButton.YesNoCancel,
+          MessageBoxImage.Question);
+        if (answer == MessageBoxResult.Cancel)
+        {
+          e.Cancel = true;
+          return;
+        }
+
+        if (answer == MessageBoxResult.Yes)
+        {
+          ViewModel.Save(ViewModel.ActiveDocument, false);
+          if (string.IsNullOrEmpty(ViewModel.ActiveDocument.FilePath))
+          {
+            e.Cancel = true;
+            return;
+          }
+        }
+      }
+
       var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
       var rows = project == null
         ? new List<SessionSheet>()
