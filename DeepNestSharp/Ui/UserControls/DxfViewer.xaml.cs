@@ -458,13 +458,22 @@ namespace DeepNestSharp.Ui.UserControls
         $"{sp.Sheet.WidthCalculated}x{sp.Sheet.HeightCalculated}#{string.Join("|", items)}");
     }
 
+    /// <summary>
+    /// Compact industrial-style plan line: "CUT  30 + 5  =  35 sheets  ·  800 parts". The old text
+    /// enumerated every layout with parts and utilization and grew unreadably long on multi-layout
+    /// jobs; per-layout detail now lives in the navigation label ("cut 30/35") as sheets are flipped.
+    /// </summary>
     private string BuildSummary()
     {
       int totalSheets = this.groups.Sum(g => g.Count);
       int placed = this.Result?.TotalPlacedCount ?? 0;
-      var plan = this.groups.Select(g =>
-        $"{g.Count} × {g.Name.ToLowerInvariant()} ({g.Representative.PartPlacements.Count} parts, {UtilizationOf(g.Representative):F1}%)");
-      return "CUT:   " + string.Join("    +    ", plan) + $"\n{placed} parts total  ·  {totalSheets} sheets";
+      string sheets = totalSheets == 1 ? "sheet" : "sheets";
+      if (this.groups.Count > 1)
+      {
+        return $"CUT  {string.Join(" + ", this.groups.Select(g => g.Count))}  =  {totalSheets} {sheets}  ·  {placed} parts";
+      }
+
+      return $"CUT  {totalSheets} {sheets}  ·  {placed} parts";
     }
 
     /// <summary>Material utilization of ONE sheet layout: net part area on it / its sheet area (%).</summary>
@@ -543,10 +552,13 @@ namespace DeepNestSharp.Ui.UserControls
 
       this.emptyHint.Visibility = Visibility.Collapsed;
 
-      // Show the production plan, and navigate by distinct LAYOUT (not by physical sheet).
+      // Show the production plan, and navigate by distinct LAYOUT (not by physical sheet). The nav
+      // label carries the per-layout cut count industrial-style: "cut 30/35" = of the job's 35
+      // sheets, 30 are cut with this layout.
+      int planSheets = this.groups.Sum(g => g.Count);
       this.summaryText.Text = this.BuildSummary();
       this.summaryBox.Visibility = (result.UsedSheets?.Count ?? 0) > 1 ? Visibility.Visible : Visibility.Collapsed;
-      this.sheetLabel.Text = $"{group.Name}  ·  {sheetPlacement.PartPlacements.Count} parts  ·  {UtilizationOf(sheetPlacement):F1}%  ·  cut ×{group.Count}";
+      this.sheetLabel.Text = $"Layout {idx + 1}/{this.groups.Count}  ·  cut {group.Count}/{planSheets}  ·  {sheetPlacement.PartPlacements.Count} parts  ·  {UtilizationOf(sheetPlacement):F1}%";
       this.sheetNav.Visibility = this.groups.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
 
       double w = sheet.WidthCalculated;
