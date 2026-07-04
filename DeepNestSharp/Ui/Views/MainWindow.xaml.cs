@@ -375,6 +375,25 @@ namespace DeepNestSharp.Ui.Views
       menu.IsOpen = true;
     }
 
+    /// <summary>Edits a stock row (size and quantity) through the sheet dialog — the inline Qty is read-only.</summary>
+    private void OnEditSheet(object sender, RoutedEventArgs e)
+    {
+      if (!((sender as Button)?.Tag is ISheetLoadInfo row))
+      {
+        return;
+      }
+
+      var dialog = new AddSheetWindow { Owner = this };
+      dialog.PrefillForEdit(row.Width, row.Height, row.Quantity);
+      if (dialog.ShowDialog() == true)
+      {
+        row.Width = dialog.SheetWidth;
+        row.Height = dialog.SheetHeight;
+        row.Quantity = dialog.SheetQuantity;
+        this.sheetsListView.Items.Refresh();
+      }
+    }
+
     private void AddSheetOfSize(int width, int height, int quantity)
     {
       if (ViewModel.ActiveDocument is NestProjectViewModel doc && doc.AddSheetCommand.CanExecute(null))

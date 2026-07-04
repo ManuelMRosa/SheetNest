@@ -10,6 +10,16 @@ namespace DeepNestSharp.Ui.Views
       InitializeComponent();
     }
 
+    /// <summary>Reuses the dialog to EDIT an existing stock row: pre-filled values, edit wording.</summary>
+    public void PrefillForEdit(int width, int height, int quantity)
+    {
+      this.Title = "Edit sheet";
+      this.okButton.Content = "OK";
+      this.widthUpDown.Value = width;
+      this.heightUpDown.Value = height;
+      this.qtyUpDown.Value = quantity;
+    }
+
     public int SheetWidth { get; private set; } = 120;
 
     public int SheetHeight { get; private set; } = 60;

@@ -183,8 +183,10 @@
                           </TextBlock.Style>
                         </TextBlock>
                       </StackPanel>
-                      <xctk:IntegerUpDown Grid.Column="2" Minimum="0" Width="56" VerticalAlignment="Center" Margin="6,0"
-                                          Value="{Binding Quantity, Mode=TwoWay}" ToolTip="Quantity (required — spares are set in Edit Part)" />
+                      <!-- Quantity is read-only here; it is changed in the Edit Part dialog (✎). -->
+                      <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="6,0" FontWeight="SemiBold" FontSize="13"
+                                 Text="{Binding Quantity, Mode=OneWay, StringFormat='×{0}'}"
+                                 ToolTip="Quantity — change it in Edit Part (✎)" />
                       <Button Grid.Column="3" Style="{DynamicResource IconButton}" Content="&#9998;" VerticalAlignment="Center" Margin="2,0,0,0"
                               ToolTip="Edit part (quantity, orientations, priority)"
                               Click="OnEditPart" Tag="{Binding}" />
@@ -236,11 +238,13 @@
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
-                  <GridViewColumn Header="Qty" Width="60">
+                  <GridViewColumn Header="Qty" Width="45">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <xctk:IntegerUpDown Minimum="0" Width="50" Value="{Binding Quantity, Mode=TwoWay}"
-                                            ToolTip="Sheets of this size available for the job" />
+                        <!-- Read-only; quantity is changed through the Edit sheet dialog (✎). -->
+                        <TextBlock Text="{Binding Quantity, Mode=OneWay}" FontWeight="SemiBold" FontSize="13"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   ToolTip="Sheets of this size available — change it with ✎" />
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
@@ -256,12 +260,16 @@
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
-                  <GridViewColumn Header="" Width="40">
+                  <GridViewColumn Header="" Width="66">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <Button Style="{DynamicResource IconButton}" Content="&#10005;" ToolTip="Remove sheet"
-                                Command="{Binding DataContext.ActiveDocument.RemoveSheetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                CommandParameter="{Binding}" />
+                        <StackPanel Orientation="Horizontal">
+                          <Button Style="{DynamicResource IconButton}" Content="&#9998;" ToolTip="Edit sheet (size and quantity)"
+                                  Click="OnEditSheet" Tag="{Binding}" />
+                          <Button Style="{DynamicResource IconButton}" Content="&#10005;" Margin="2,0,0,0" ToolTip="Remove sheet"
+                                  Command="{Binding DataContext.ActiveDocument.RemoveSheetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                  CommandParameter="{Binding}" />
+                        </StackPanel>
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
