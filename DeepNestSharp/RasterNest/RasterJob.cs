@@ -250,6 +250,23 @@ namespace DeepNestSharp.RasterNest
       };
     }
 
+    /// <summary>
+    /// One-shot placement for the service's post-compaction REFILL: find the bottom-left position for
+    /// one copy of <paramref name="t"/> (its Masks/Packed already built) on an existing occupancy grid.
+    /// Exactly the nester's scan and collision test; row hints start at the inset because the occupancy
+    /// was rebuilt fresh from exact positions.
+    /// </summary>
+    internal static bool TryPlaceOne(ulong[] occ, int wpr, int gw, int gh, int insetPx, PartType t, bool growX, out int x, out int y, out int rotIdx)
+    {
+      var hints = new int[t.Packed.Length];
+      for (int i = 0; i < hints.Length; i++)
+      {
+        hints[i] = insetPx;
+      }
+
+      return TryPlaceBest(occ, wpr, gw, gh, insetPx, t, hints, growX, out x, out y, out rotIdx);
+    }
+
     private static bool MasksEqual(PackedMask a, PackedMask b)
     {
       return a.W == b.W && a.H == b.H && System.MemoryExtensions.SequenceEqual<ulong>(a.Words, b.Words);
@@ -380,7 +397,7 @@ namespace DeepNestSharp.RasterNest
       return true;
     }
 
-    private static void Stamp(ulong[] occ, int wpr, PackedMask m, int ox, int oy)
+    internal static void Stamp(ulong[] occ, int wpr, PackedMask m, int ox, int oy)
     {
       int wordX = ox >> 6;
       int s = ox & 63;

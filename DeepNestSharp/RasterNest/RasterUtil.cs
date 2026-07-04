@@ -25,12 +25,6 @@ namespace DeepNestSharp.RasterNest
     {
       double minX = poly.Points.Min(p => p.X);
       double minY = poly.Points.Min(p => p.Y);
-      double maxX = poly.Points.Max(p => p.X);
-      double maxY = poly.Points.Max(p => p.Y);
-
-      int w = Math.Max(1, (int)Math.Ceiling((maxX - minX) * pxPerUnit));
-      int h = Math.Max(1, (int)Math.Ceiling((maxY - minY) * pxPerUnit));
-      var bits = new bool[w * h];
 
       var contours = new List<double[]> { ToPixels(poly, minX, minY, pxPerUnit) };
       if (poly.Children != null)
@@ -41,6 +35,47 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
+      double maxX = poly.Points.Max(p => p.X);
+      double maxY = poly.Points.Max(p => p.Y);
+      int w = Math.Max(1, (int)Math.Ceiling((maxX - minX) * pxPerUnit));
+      int h = Math.Max(1, (int)Math.Ceiling((maxY - minY) * pxPerUnit));
+      return Fill(contours, w, h);
+    }
+
+    /// <summary>
+    /// Rasterize the polygon TRANSLATED by (<paramref name="offX"/>, <paramref name="offY"/>) with the
+    /// mask's pixel edges aligned to the SHEET grid (origin returned in <paramref name="gx"/>/<paramref name="gy"/>,
+    /// in sheet pixels). <see cref="Rasterize"/> aligns pixel 0 to the part's own bbox corner, so a mask
+    /// stamped at a fractional position under-covers by up to a pixel; this variant bakes the exact
+    /// offset into the contours instead, keeping the mask a true superset of the placed part. Used by
+    /// the post-compaction refill to rebuild sheet occupancy from exact (sub-pixel) positions.
+    /// </summary>
+    public static RasterMask RasterizeAligned(INfp poly, double offX, double offY, double pxPerUnit, out int gx, out int gy)
+    {
+      double minX = (poly.Points.Min(p => p.X) + offX) * pxPerUnit;
+      double minY = (poly.Points.Min(p => p.Y) + offY) * pxPerUnit;
+      double maxX = (poly.Points.Max(p => p.X) + offX) * pxPerUnit;
+      double maxY = (poly.Points.Max(p => p.Y) + offY) * pxPerUnit;
+      gx = (int)Math.Floor(minX);
+      gy = (int)Math.Floor(minY);
+      int w = Math.Max(1, (int)Math.Ceiling(maxX) - gx);
+      int h = Math.Max(1, (int)Math.Ceiling(maxY) - gy);
+
+      var contours = new List<double[]> { ToGridPixels(poly, offX, offY, gx, gy, pxPerUnit) };
+      if (poly.Children != null)
+      {
+        foreach (var c in poly.Children)
+        {
+          contours.Add(ToGridPixels(c, offX, offY, gx, gy, pxPerUnit));
+        }
+      }
+
+      return Fill(contours, w, h);
+    }
+
+    private static RasterMask Fill(List<double[]> contours, int w, int h)
+    {
+      var bits = new bool[w * h];
       int solid = 0;
       var xs = new List<double>();
       for (int py = 0; py < h; py++)
@@ -217,6 +252,19 @@ namespace DeepNestSharp.RasterNest
       {
         arr[2 * i] = (pts[i].X - minX) * pxPerUnit;
         arr[(2 * i) + 1] = (pts[i].Y - minY) * pxPerUnit;
+      }
+
+      return arr;
+    }
+
+    private static double[] ToGridPixels(INfp contour, double offX, double offY, int gx, int gy, double pxPerUnit)
+    {
+      var pts = contour.Points;
+      var arr = new double[pts.Length * 2];
+      for (int i = 0; i < pts.Length; i++)
+      {
+        arr[2 * i] = ((pts[i].X + offX) * pxPerUnit) - gx;
+        arr[(2 * i) + 1] = ((pts[i].Y + offY) * pxPerUnit) - gy;
       }
 
       return arr;

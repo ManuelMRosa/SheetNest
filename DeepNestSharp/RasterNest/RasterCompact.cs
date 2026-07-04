@@ -16,12 +16,14 @@
   }
 
   /// <summary>
-  /// EXACT-geometry compaction pass for spacing-0 nests. The raster engine can only place parts on its
-  /// pixel grid, and its conservative masks keep two parts that share an edge (e.g. interlocking
-  /// triangles) 1-2 pixels apart â€” a visible ~1-2 mm gap that no affordable resolution removes. This pass
-  /// slides each placed part down then left in EXACT polygon space (Clipper, the same library the NFP
-  /// engine uses) until it touches its neighbours or the sheet margin, eliminating the raster
-  /// quantization entirely. A small safety backoff (0.001") is kept so numeric noise can never produce
+  /// EXACT-geometry compaction pass. The raster engine can only place parts on its pixel grid, and its
+  /// conservative masks keep every pair 1-2 pixels further apart than asked (spacing-0 parts that should
+  /// share an edge sit ~1-2 mm apart; spaced parts carry the same phantom slack on top of their spacing).
+  /// This pass slides each placed part down then left in EXACT polygon space (Clipper, the same library
+  /// the NFP engine uses) until it reaches its true limit: contact for common-line parts, the exact
+  /// requested clearance for spaced parts, or the sheet margin. That concentrates the sheet's slack into
+  /// one free region at the pack's end (where the refill pass can use it) instead of leaving it spread
+  /// as N useless slivers. A small safety backoff (0.001") is kept so numeric noise can never produce
   /// real material interference. Translation only â€” rotations are never changed.
   /// </summary>
   internal static class RasterCompact
@@ -38,13 +40,13 @@
     internal const double CommonLineGap = 0.003;
 
     /// <summary>
-    /// Compact one sheet's placements in place (mutates item X/Y). Only spacing-0 (common-line) parts
-    /// slide; parts with a spacing keep their position AND their clearance â€” the sliding parts test
-    /// against their neighbours' outlines inflated by the neighbour's half-spacing.
+    /// Compact one sheet's placements in place (mutates item X/Y). Every part slides toward the pack
+    /// corner; clearances are preserved exactly â€” each pair keeps (spacingA + spacingB)/2 via
+    /// half-inflated shells, and common-line pairs keep the CAM-safe mini-gap.
     /// </summary>
     public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin)
     {
-      if (items == null || items.Count < 1 || !items.Any(it => it.Spacing <= 0))
+      if (items == null || items.Count < 1)
       {
         return;
       }
@@ -130,10 +132,10 @@
       // axis, so push primarily along that axis (keeps the remnant a clean short-dimension strip).
       bool growX = sheetW > sheetH;
 
-      // Only common-line (spacing-0) parts move. Parts nearest the target corner settle first so the
-      // others can lean on their final positions; two rounds lets a part freed by a neighbour's move
-      // take the extra slack.
-      var movable = Enumerable.Range(0, items.Count).Where(i => items[i].Spacing <= 0);
+      // Every part moves (spaced parts stop at their exact clearance, so sliding them is always safe).
+      // Parts nearest the target corner settle first so the others can lean on their final positions;
+      // two rounds lets a part freed by a neighbour's move take the extra slack.
+      var movable = Enumerable.Range(0, items.Count);
       var order = (growX
           ? movable.OrderBy(i => items[i].X + items[i].Poly.MinX).ThenBy(i => items[i].Y + items[i].Poly.MinY)
           : movable.OrderBy(i => items[i].Y + items[i].Poly.MinY).ThenBy(i => items[i].X + items[i].Poly.MinX))
@@ -300,6 +302,13 @@
           return false;
         }
 
+        // Pre-probe: a part that cannot move even 2× the backoff nets a no-op slide — skip the whole
+        // binary search (most parts are already blocked in round 2, and each probe is a Clipper call).
+        if (!ValidOffset(i, dirX * System.Math.Min(max, Backoff * 2.0), dirY * System.Math.Min(max, Backoff * 2.0)))
+        {
+          return false;
+        }
+
         double slide;
         if (ValidOffset(i, dirX * max, dirY * max))
         {
@@ -307,9 +316,11 @@
         }
         else
         {
-          // Largest collision-free slide: binary search (30 iterations â‰ˆ 1e-7" over a 120" sheet).
+          // Largest collision-free slide: adaptive binary search to half the backoff (finer precision
+          // is invisible behind the 0.001" backoff, and every iteration is a Clipper intersection —
+          // with ALL parts sliding, the old fixed 30 iterations dominated the nest's wall time).
           double lo = 0, hi = max;
-          for (int k = 0; k < 30; k++)
+          while (hi - lo > Backoff / 2.0)
           {
             double mid = (lo + hi) / 2.0;
             if (ValidOffset(i, dirX * mid, dirY * mid))
@@ -388,6 +399,56 @@
           {
             return false;
           }
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>
+    /// Exact-geometry acceptance gate for REFILL insertions: the candidate must keep every pair's
+    /// required clearance against ALL placed parts â€” (spacingA + spacingB)/2, or the CAM-safe mini-gap
+    /// for a common-line pair â€” and its real contour must stay inside the sheet margin. The raster scan
+    /// that proposed the position is conservative, so this should always pass; it is the safety net
+    /// that guarantees a refill insertion can never violate what the compacted layout promised.
+    /// </summary>
+    internal static bool CandidateClear(IList<CompactItem> items, CompactItem cand, double sheetW, double sheetH, double margin)
+    {
+      const double Eps = 0.0005; // do not reject the raster's own integer-pixel clearance over noise
+
+      if (cand.X + cand.Poly.MinX < margin - Eps || cand.Y + cand.Poly.MinY < margin - Eps
+        || cand.X + cand.Poly.MaxX > sheetW - margin + Eps || cand.Y + cand.Poly.MaxY > sheetH - margin + Eps)
+      {
+        return false;
+      }
+
+      var candRaw = ToPaths(cand);
+      var grownByFloor = new Dictionary<double, List<List<IntPoint>>>();
+      foreach (var it in items)
+      {
+        double req = cand.Spacing <= 0 && it.Spacing <= 0
+          ? CommonLineGap
+          : (Math.Max(0, cand.Spacing) + Math.Max(0, it.Spacing)) / 2.0;
+        double floor = Math.Max(0, req - Eps);
+
+        var itRaw = ToPaths(it);
+        long pad = (long)Math.Round(floor * Scale) + 1;
+        var cb = BoundsOf(candRaw);
+        var padded = new IntRect(cb.left - pad, cb.top - pad, cb.right + pad, cb.bottom + pad);
+        if (!BoxesTouch(padded, BoundsOf(itRaw)))
+        {
+          continue;
+        }
+
+        if (!grownByFloor.TryGetValue(floor, out var grown))
+        {
+          grown = Inflate(candRaw, floor);
+          grownByFloor[floor] = grown;
+        }
+
+        if (Intersects(grown, itRaw))
+        {
+          return false;
         }
       }
 

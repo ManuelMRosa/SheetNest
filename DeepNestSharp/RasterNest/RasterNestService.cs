@@ -730,22 +730,24 @@ namespace DeepNestSharp.RasterNest
         sel = (swept, sel.Types);
       }
 
-      var collection = new SheetPlacementCollection();
-      int id = 0;
-
       // Replicated pattern sheets are placement-identical, and compaction is deterministic — compact
       // each DISTINCT layout once and reuse the slid positions for every copy (30 identical sheets of
       // an 800-part run were re-compacted 30 times for the exact same answer).
       var compactCache = new Dictionary<string, (double X, double Y)[]>();
+
+      // Sheets are materialized (exact geometry, compacted) BEFORE the placement collection is built,
+      // so the refill/absorption passes below can still add parts or dissolve the last sheet. BaseSig
+      // is the pre-refill layout signature: identical pattern copies share scan-failure results.
+      var builtSheets = new List<(List<JobPlacement> Jps, List<CompactItem> Items, List<int> ParsedIdx, string BaseSig)>();
       foreach (var sheetGroup in sel.Job.Placements.GroupBy(p => p.Sheet).OrderBy(g => g.Key))
       {
-        var sheet = Sheet.NewSheet(sheetGroup.Key + 1, sheetWin, sheetHin);
-
         var jps = sheetGroup.ToList();
         var items = new List<CompactItem>(jps.Count);
+        var parsedIdx = new List<int>(jps.Count);
         foreach (var jp in jps)
         {
-          var entry = parsed.First(p => p.Src == jp.Source);
+          int pi = parsed.FindIndex(p => p.Src == jp.Source);
+          var entry = parsed[pi];
           var rotated = jp.RotationDeg == 0 ? entry.Nfp : entry.Nfp.Rotate(jp.RotationDeg);
           items.Add(new CompactItem
           {
@@ -754,30 +756,282 @@ namespace DeepNestSharp.RasterNest
             Y = (jp.Ypx / px) - rotated.MinY,
             Spacing = entry.SpacingIn,
           });
+          parsedIdx.Add(pi);
         }
 
-        // Common-line parts (spacing 0) must TOUCH, but the raster grid keeps them 1-2 pixels apart
-        // (its masks are conservative and positions are pixel-quantized). Close that last gap with an
-        // exact-geometry compaction pass: only the spacing-0 parts slide, and spaced neighbours are
-        // respected at their own half-spacing (parts end up in true contact, 0.001" safety gap).
-        if (items.Any(it => it.Spacing <= 0))
+        // Exact-geometry compaction: the raster grid keeps every pair 1-2 pixels further apart than
+        // asked (conservative masks, pixel-quantized positions). Sliding closes common-line parts to
+        // true contact and spaced parts to their exact clearance, concentrating the sheet's slack in
+        // one free region at the pack's end — which the refill below can use.
+        string layoutSig = string.Join("|", jps.Select(p => $"{p.Source}:{p.Xpx}:{p.Ypx}:{p.RotationDeg}"));
+        if (compactCache.TryGetValue(layoutSig, out var slid))
         {
-          string layoutSig = string.Join("|", jps.Select(p => $"{p.Source}:{p.Xpx}:{p.Ypx}:{p.RotationDeg}"));
-          if (compactCache.TryGetValue(layoutSig, out var slid))
+          for (int i = 0; i < items.Count; i++)
           {
-            for (int i = 0; i < items.Count; i++)
+            items[i].X = slid[i].X;
+            items[i].Y = slid[i].Y;
+          }
+        }
+        else
+        {
+          RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin));
+          compactCache[layoutSig] = items.Select(it => (it.X, it.Y)).ToArray();
+        }
+
+        builtSheets.Add((jps, items, parsedIdx, layoutSig));
+      }
+
+      // ── POST-COMPACTION REFILL ─────────────────────────────────────────────────────────────────
+      // Greedy leaves its slack spread across every gap; compaction just concentrated it. Rebuild each
+      // sheet's occupancy from the EXACT compacted positions (grid-aligned conservative rasterization),
+      // run the nester's own bottom-left scan for the parts that could not be placed, and accept an
+      // insertion only if the exact-geometry gate confirms every clearance. Counted against the
+      // ORIGINAL demand — in pattern mode the job carries the capped probe quantity, not the real one.
+      var pool = new int[parsed.Count];
+      {
+        var placedPerSource = sel.Job.Placements.GroupBy(p => p.Source).ToDictionary(g => g.Key, g => g.Count());
+        for (int i = 0; i < parsed.Count; i++)
+        {
+          placedPerSource.TryGetValue(parsed[i].Src, out int placedCount);
+          pool[i] = System.Math.Max(0, parsed[i].Qty - placedCount);
+        }
+      }
+
+      int refillPad = System.Math.Max(1, halos.Max());
+      int gridW = sw + (2 * refillPad);
+      int gridH = sh + (2 * refillPad);
+      int gridWpr = (gridW + 63) / 64;
+      var occCache = new Dictionary<int, ulong[]>();
+      var candTypeCache = new Dictionary<int, PartType>();
+
+      // Scan-failure caches: a sheet only ever gains material during refill, so once a part type finds
+      // no fit on a sheet it never will (same rule as the nester's `closed`); and untouched sheets with
+      // the same layout signature share the verdict, so an 800-part run's 30 identical pattern copies
+      // cost ONE failed scan instead of 30.
+      var closedScan = new HashSet<(int Si, int Pi)>();
+      var failedSigs = new HashSet<(string Sig, int Pi)>();
+      var touchedSheets = new HashSet<int>();
+
+      // Refill halo: same per-part rule as placement, but common-line parts keep the minimum 1px —
+      // no compaction runs after an insertion, so a born-touching pair could never be opened.
+      int RefillHalo(int pi) => System.Math.Max(parsed[pi].SpacingIn <= 0 ? 1 : 0, halos[pi]);
+
+      void StampBits(ulong[] occ, RasterMask m, int ox, int oy)
+      {
+        for (int y = 0; y < m.H; y++)
+        {
+          int ty = oy + y;
+          if (ty < 0 || ty >= gridH)
+          {
+            continue;
+          }
+
+          int rowBase = y * m.W;
+          for (int x = 0; x < m.W; x++)
+          {
+            if (!m.Bits[rowBase + x])
             {
-              items[i].X = slid[i].X;
-              items[i].Y = slid[i].Y;
+              continue;
+            }
+
+            int tx = ox + x;
+            if (tx >= 0 && tx < gridW)
+            {
+              occ[(ty * gridWpr) + (tx >> 6)] |= 1UL << (tx & 63);
             }
           }
-          else
+        }
+      }
+
+      ulong[] OccFor(int si)
+      {
+        if (occCache.TryGetValue(si, out var cached))
+        {
+          return cached;
+        }
+
+        var occ = new ulong[gridWpr * gridH];
+        var sheetB = builtSheets[si];
+        for (int k = 0; k < sheetB.Items.Count; k++)
+        {
+          var it = sheetB.Items[k];
+          var m = RasterUtil.RasterizeAligned(it.Poly, it.X, it.Y, px, out int gx, out int gy);
+          int hp = halos[sheetB.ParsedIdx[k]];
+          if (hp > 0)
           {
-            RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin));
-            compactCache[layoutSig] = items.Select(it => (it.X, it.Y)).ToArray();
+            m = RasterUtil.Dilate(m, hp);
+            gx -= hp;
+            gy -= hp;
+          }
+
+          StampBits(occ, m, gx + refillPad, gy + refillPad);
+        }
+
+        occCache[si] = occ;
+        return occ;
+      }
+
+      PartType CandType(int pi)
+      {
+        if (candTypeCache.TryGetValue(pi, out var cached))
+        {
+          return cached;
+        }
+
+        var p = parsed[pi];
+        int hp = RefillHalo(pi);
+        var masks = p.Allowed
+          .Select(r => RasterUtil.Dilate(RasterUtil.Rasterize(r == 0 ? p.Nfp : p.Nfp.Rotate(r), px), hp))
+          .ToArray();
+        var t = new PartType
+        {
+          Source = p.Src,
+          Poly = p.Nfp,
+          RotationsDeg = p.Allowed,
+          HaloPx = hp,
+          Masks = masks,
+          Packed = masks.Select(PackedMask.From).ToArray(),
+        };
+        candTypeCache[pi] = t;
+        return t;
+      }
+
+      // Try to insert ONE copy of parsed[pi] into sheet si (occupancy, geometry and placement list all
+      // updated on success).
+      bool TryInsert(int si, int pi)
+      {
+        if (closedScan.Contains((si, pi))
+          || (!touchedSheets.Contains(si) && failedSigs.Contains((builtSheets[si].BaseSig, pi))))
+        {
+          return false;
+        }
+
+        bool Fail()
+        {
+          closedScan.Add((si, pi));
+          if (!touchedSheets.Contains(si))
+          {
+            failedSigs.Add((builtSheets[si].BaseSig, pi));
+          }
+
+          return false;
+        }
+
+        var t = CandType(pi);
+        var occ = OccFor(si);
+        int inset = marginPx + refillPad - t.HaloPx;
+        if (!RasterJobNester.TryPlaceOne(occ, gridWpr, gridW, gridH, inset, t, growX, out int x, out int y, out int ri))
+        {
+          return Fail();
+        }
+
+        var p = parsed[pi];
+        int deg = t.RotationsDeg[ri];
+        var rotated = deg == 0 ? p.Nfp : p.Nfp.Rotate(deg);
+        var cand = new CompactItem
+        {
+          Poly = rotated,
+          X = ((x + t.HaloPx - refillPad) / px) - rotated.MinX,
+          Y = ((y + t.HaloPx - refillPad) / px) - rotated.MinY,
+          Spacing = p.SpacingIn,
+        };
+        if (!RasterCompact.CandidateClear(builtSheets[si].Items, cand, sheetWin, sheetHin, System.Math.Max(0, margin)))
+        {
+          return Fail();
+        }
+
+        RasterJobNester.Stamp(occ, gridWpr, t.Packed[ri], x, y);
+        touchedSheets.Add(si);
+        builtSheets[si].Items.Add(cand);
+        builtSheets[si].ParsedIdx.Add(pi);
+        builtSheets[si].Jps.Add(new JobPlacement
+        {
+          Source = p.Src,
+          Sheet = builtSheets[si].Jps[0].Sheet,
+          Xpx = x + t.HaloPx - refillPad,
+          Ypx = y + t.HaloPx - refillPad,
+          RotationDeg = deg,
+        });
+        return true;
+      }
+
+      if (pool.Any(q => q > 0))
+      {
+        // Last sheet first: it holds the tail, so its concentrated slack is the largest — and keeping
+        // insertions there preserves the identical replicated-pattern copies for as long as possible.
+        var byPref = Enumerable.Range(0, parsed.Count)
+          .OrderByDescending(i => parsed[i].Priority)
+          .ThenByDescending(i => System.Math.Abs(parsed[i].Nfp.NetArea))
+          .ToArray();
+        for (int si = builtSheets.Count - 1; si >= 0; si--)
+        {
+          foreach (int pi in byPref)
+          {
+            while (pool[pi] > 0 && TryInsert(si, pi))
+            {
+              pool[pi]--;
+            }
+          }
+        }
+      }
+
+      // ── LAST-SHEET ABSORPTION ──────────────────────────────────────────────────────────────────
+      // With everything placed, try to dissolve the LAST sheet entirely into the slack the earlier
+      // compacted sheets still hold. All-or-nothing: moving only SOME parts off the remainder sheet
+      // reshuffles the plan without saving any material, so a partial round is fully reverted.
+      while (pool.All(q => q == 0) && builtSheets.Count >= 2)
+      {
+        int last = builtSheets.Count - 1;
+        var before = builtSheets.Select(b => b.Items.Count).ToArray();
+        bool all = true;
+
+        // Largest parts first — they are the hardest to re-home, so fail fast.
+        var moveOrder = Enumerable.Range(0, builtSheets[last].Items.Count)
+          .OrderByDescending(i => System.Math.Abs(parsed[builtSheets[last].ParsedIdx[i]].Nfp.NetArea))
+          .ToList();
+        foreach (int ii in moveOrder)
+        {
+          int pi = builtSheets[last].ParsedIdx[ii];
+          bool placedIt = false;
+          for (int si = last - 1; si >= 0 && !placedIt; si--)
+          {
+            placedIt = TryInsert(si, pi);
+          }
+
+          if (!placedIt)
+          {
+            all = false;
+            break;
           }
         }
 
+        if (!all)
+        {
+          // Revert this round's insertions: trim the target lists back and drop their occupancy.
+          for (int si = 0; si < last; si++)
+          {
+            int added = builtSheets[si].Items.Count - before[si];
+            if (added > 0)
+            {
+              builtSheets[si].Items.RemoveRange(before[si], added);
+              builtSheets[si].ParsedIdx.RemoveRange(before[si], added);
+              builtSheets[si].Jps.RemoveRange(before[si], added);
+              occCache.Remove(si);
+            }
+          }
+
+          break;
+        }
+
+        builtSheets.RemoveAt(last);
+        occCache.Remove(last);
+      }
+
+      var collection = new SheetPlacementCollection();
+      int id = 0;
+      foreach (var (jps, items, _, _) in builtSheets)
+      {
+        var sheet = Sheet.NewSheet(collection.Count + 1, sheetWin, sheetHin);
         var placements = new List<IPartPlacement>();
         for (int i = 0; i < items.Count; i++)
         {
@@ -801,16 +1055,14 @@ namespace DeepNestSharp.RasterNest
       }
 
       // Surface any parts that could not be placed (sheet quota exhausted, or too big for the sheet in
-      // every rotation) so the Unplaced count is honest. Counted against the ORIGINAL demand — in
-      // pattern mode `types` carries the capped probe quantity, not the real one.
-      var placedPerSource = sel.Job.Placements.GroupBy(p => p.Source).ToDictionary(g => g.Key, g => g.Count());
+      // every rotation) so the Unplaced count is honest. `pool` is the original demand minus greedy
+      // placements minus refill insertions.
       var unplaced = new List<INfp>();
-      foreach (var p in parsed)
+      for (int i = 0; i < parsed.Count; i++)
       {
-        placedPerSource.TryGetValue(p.Src, out int placedCount);
-        for (int i = placedCount; i < p.Qty; i++)
+        for (int k = 0; k < pool[i]; k++)
         {
-          unplaced.Add(p.Nfp);
+          unplaced.Add(parsed[i].Nfp);
         }
       }
 
