@@ -90,7 +90,8 @@
 
     Task OnLoadSheetPlacementAsync();
 
-    void Save(IFileViewModel fileViewModel, bool v);
+    /// <summary>Saves the document; returns false when the user cancels the Save As dialog.</summary>
+    bool Save(IFileViewModel fileViewModel, bool v);
 
     void SetSelectedToolView(IFileViewModel fileViewModel);
   }

@@ -226,8 +226,10 @@ namespace DeepNestSharp.Ui.Views
 
         if (answer == MessageBoxResult.Yes)
         {
-          ViewModel.Save(ViewModel.ActiveDocument, false);
-          if (string.IsNullOrEmpty(ViewModel.ActiveDocument.FilePath))
+          // Always via the Save As dialog (pre-filled with the project's own name/folder for saved
+          // projects — plain Enter overwrites, typing renames). Cancelling the dialog aborts the
+          // close so no work is silently lost.
+          if (!ViewModel.Save(ViewModel.ActiveDocument, true))
           {
             e.Cancel = true;
             return;

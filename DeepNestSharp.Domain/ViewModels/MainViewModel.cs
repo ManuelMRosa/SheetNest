@@ -346,40 +346,60 @@
       }
     }
 
-    public void Save(IFileViewModel fileToSave, bool saveAsFlag = false)
+    /// <summary>
+    /// Saves the document; returns true when the file was actually written (false = the user
+    /// cancelled the Save As dialog, or there was nothing to save).
+    /// </summary>
+    public bool Save(IFileViewModel fileToSave, bool saveAsFlag = false)
     {
-      if (fileToSave != null)
+      if (fileToSave == null)
       {
-        // FilePath is never null for a new document (the getter coalesces to string.Empty), so the
-        // old `== null` test skipped the Save As dialog entirely and the save silently did nothing.
-        if (string.IsNullOrEmpty(fileToSave.FilePath) || saveAsFlag)
-        {
-          var filePath = fileIoService.GetSaveFilePath(fileToSave.FileDialogFilter, null, SvgNestConfigViewModel.SvgNestConfig.LastNestFilePath);
-          if (!string.IsNullOrWhiteSpace(filePath))
-          {
-            fileToSave.FilePath = filePath;
-          }
-        }
-
-        if (string.IsNullOrEmpty(fileToSave?.FilePath))
-        {
-          return;
-        }
-
-        // A project carries the nest result that is on screen (or clears it when there is none), so
-        // reopening the .dnest brings the nesting back exactly as saved.
-        if (fileToSave is NestProjectViewModel projectViewModel)
-        {
-          projectViewModel.ProjectInfo.LastNestResultJson =
-            (NestMonitorViewModel.SelectedItem as NestResult)?.ToJson(false) ?? string.Empty;
-        }
-
-        File.WriteAllText(fileToSave.FilePath, fileToSave.TextContent);
-        if (ActiveDocument != null)
-        {
-          ActiveDocument.IsDirty = false;
-        }
+        return false;
       }
+
+      // FilePath is never null for a new document (the getter coalesces to string.Empty), so the
+      // old `== null` test skipped the Save As dialog entirely and the save silently did nothing.
+      if (string.IsNullOrEmpty(fileToSave.FilePath) || saveAsFlag)
+      {
+        // An already-saved document pre-fills its own name and folder, so plain Enter overwrites it
+        // and typing renames it; new documents start in the last-used nest folder.
+        string suggestedName = null;
+        string initialDirectory = SvgNestConfigViewModel.SvgNestConfig.LastNestFilePath;
+        if (!string.IsNullOrEmpty(fileToSave.FilePath))
+        {
+          suggestedName = Path.GetFileName(fileToSave.FilePath);
+          initialDirectory = Path.GetDirectoryName(fileToSave.FilePath);
+        }
+
+        var filePath = fileIoService.GetSaveFilePath(fileToSave.FileDialogFilter, suggestedName, initialDirectory);
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+          return false; // dialog cancelled — do NOT fall through to overwrite the old path
+        }
+
+        fileToSave.FilePath = filePath;
+      }
+
+      if (string.IsNullOrEmpty(fileToSave.FilePath))
+      {
+        return false;
+      }
+
+      // A project carries the nest result that is on screen (or clears it when there is none), so
+      // reopening the .dnest brings the nesting back exactly as saved.
+      if (fileToSave is NestProjectViewModel projectViewModel)
+      {
+        projectViewModel.ProjectInfo.LastNestResultJson =
+          (NestMonitorViewModel.SelectedItem as NestResult)?.ToJson(false) ?? string.Empty;
+      }
+
+      File.WriteAllText(fileToSave.FilePath, fileToSave.TextContent);
+      if (ActiveDocument != null)
+      {
+        ActiveDocument.IsDirty = false;
+      }
+
+      return true;
     }
 
     private async Task OnLoadNfpCandidatesAsync()
