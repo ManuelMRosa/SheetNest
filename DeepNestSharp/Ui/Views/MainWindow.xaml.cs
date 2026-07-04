@@ -375,14 +375,40 @@ namespace DeepNestSharp.Ui.Views
       menu.IsOpen = true;
     }
 
-    /// <summary>Edits a stock row (size and quantity) through the sheet dialog — the inline Qty is read-only.</summary>
+    /// <summary>Edits a stock row through the sheet dialog — the panel shows no quantity at all.</summary>
     private void OnEditSheet(object sender, RoutedEventArgs e)
     {
-      if (!((sender as Button)?.Tag is ISheetLoadInfo row))
+      if ((sender as Button)?.Tag is ISheetLoadInfo row)
       {
-        return;
+        OpenEditSheet(row);
+      }
+    }
+
+    /// <summary>Double-click on a stock row opens the same Edit sheet dialog as the ✎ button.</summary>
+    private void OnSheetsListDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+      // Same guard as the parts list: MouseDoubleClick fires for double-clicks on the W/H spinners'
+      // repeat arrows or the row buttons too, and those don't move the selection — walk up from the
+      // real click target and edit the row that was actually hit.
+      var d = e.OriginalSource as System.Windows.DependencyObject;
+      while (d != null && !(d is ListViewItem))
+      {
+        if (d is System.Windows.Controls.Primitives.ButtonBase || d is Xceed.Wpf.Toolkit.IntegerUpDown)
+        {
+          return;
+        }
+
+        d = System.Windows.Media.VisualTreeHelper.GetParent(d);
       }
 
+      if (d is ListViewItem item && item.DataContext is ISheetLoadInfo row)
+      {
+        OpenEditSheet(row);
+      }
+    }
+
+    private void OpenEditSheet(ISheetLoadInfo row)
+    {
       var dialog = new AddSheetWindow { Owner = this };
       dialog.PrefillForEdit(row.Width, row.Height, row.Quantity);
       if (dialog.ShowDialog() == true)
