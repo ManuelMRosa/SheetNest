@@ -39,6 +39,13 @@ namespace DeepNestLib.NestProject
       }
     }
 
+    /// <summary>
+    /// Gets or sets the nest result on screen at save time (NestResult json, the .dnr format).
+    /// Optional: absent in older project files, and unknown to older apps (both ignore it safely).
+    /// </summary>
+    [JsonInclude]
+    public string LastNestResultJson { get; set; }
+
     [JsonInclude]
     public ISvgNestConfig Config
     {
@@ -90,6 +97,7 @@ namespace DeepNestLib.NestProject
     /// <param name="source">Source of ProjectInfo to set.</param>
     public void Load(ProjectInfo source)
     {
+      this.LastNestResultJson = source.LastNestResultJson;
       this.DetailLoadInfos.Clear();
       foreach (var p in source.DetailLoadInfos)
       {

@@ -22,6 +22,7 @@ namespace DeepNestSharp.Ui.Views
       viewModel.AboutDialogService = new AboutDialogService(() => new AboutDialog());
       this.Loaded += MainWindow_Loaded;
       this.Closing += MainWindow_Closing;
+      viewModel.ActiveDocumentChanged += MainWindow_ActiveDocumentChanged;
     }
 
     public IMainViewModel ViewModel => (IMainViewModel)DataContext;
@@ -136,6 +137,72 @@ namespace DeepNestSharp.Ui.Views
       }
 
       lastNestConsumed = null; // a result can only be given back once
+    }
+
+    /// <summary>
+    /// A project became active (opened or created): restore the nest result saved inside it, or
+    /// clear the previous project's result — the on-screen nest always belongs to the active project.
+    /// </summary>
+    private void MainWindow_ActiveDocumentChanged(object sender, System.EventArgs e)
+    {
+      if (!(ViewModel.ActiveDocument is NestProjectViewModel doc))
+      {
+        return;
+      }
+
+      var monitor = ViewModel.NestMonitorViewModel;
+      string json = doc.ProjectInfo.LastNestResultJson;
+      if (string.IsNullOrWhiteSpace(json))
+      {
+        monitor.Reset();
+        lastNestConsumed = null;
+        return;
+      }
+
+      try
+      {
+        var result = NestResult.FromJson(json);
+        if (result == null || result.UsedSheets.Count == 0)
+        {
+          monitor.Reset();
+          lastNestConsumed = null;
+          return;
+        }
+
+        // Same clearance setup the nest itself hands the viewer, so manual editing of the restored
+        // result enforces the same rules.
+        if (this.dxfViewer != null)
+        {
+          this.dxfViewer.DefaultPartSpacing = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing);
+          this.dxfViewer.PartSpacings = doc.ProjectInfo.DetailLoadInfos
+            .Where(o => !string.IsNullOrWhiteSpace(o.Path))
+            .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+              g => g.Key,
+              g => g.Min(o => o.CommonLine ? 0.0 : (o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing))),
+              System.StringComparer.OrdinalIgnoreCase);
+        }
+
+        monitor.TopNestResults.SetSingleResult(result);
+        monitor.SelectedItem = result;
+
+        // The project file stores the stock AS DEDUCTED by this nest, so Clear Result must be able
+        // to give those sheets back — rebuild the consumed-by-size record from the result itself.
+        var restoredConsumed = new Dictionary<(int W, int H), int>();
+        foreach (var sp in result.UsedSheets)
+        {
+          var key = ((int)System.Math.Round(sp.Sheet.WidthCalculated), (int)System.Math.Round(sp.Sheet.HeightCalculated));
+          restoredConsumed[key] = restoredConsumed.TryGetValue(key, out int n) ? n + 1 : 1;
+        }
+
+        lastNestConsumed = restoredConsumed;
+      }
+      catch (System.Exception)
+      {
+        // A corrupt/incompatible embedded result must never block opening the project itself.
+        monitor.Reset();
+        lastNestConsumed = null;
+      }
     }
 
     private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)

@@ -72,6 +72,12 @@
       }
     }
 
+    public string LastNestResultJson
+    {
+      get => wrappedProjectInfo.LastNestResultJson;
+      set => wrappedProjectInfo.LastNestResultJson = value;
+    }
+
     private void DetailLoadInfos_IsDirtyChanged(object? sender, EventArgs e)
     {
       IsDirtyChanged?.Invoke(this, e);

@@ -350,9 +350,11 @@
     {
       if (fileToSave != null)
       {
-        if (fileToSave.FilePath == null || saveAsFlag)
+        // FilePath is never null for a new document (the getter coalesces to string.Empty), so the
+        // old `== null` test skipped the Save As dialog entirely and the save silently did nothing.
+        if (string.IsNullOrEmpty(fileToSave.FilePath) || saveAsFlag)
         {
-          var filePath = fileIoService.GetSaveFilePath(fileToSave.FileDialogFilter, SvgNestConfigViewModel.SvgNestConfig.LastNestFilePath);
+          var filePath = fileIoService.GetSaveFilePath(fileToSave.FileDialogFilter, null, SvgNestConfigViewModel.SvgNestConfig.LastNestFilePath);
           if (!string.IsNullOrWhiteSpace(filePath))
           {
             fileToSave.FilePath = filePath;
@@ -362,6 +364,14 @@
         if (string.IsNullOrEmpty(fileToSave?.FilePath))
         {
           return;
+        }
+
+        // A project carries the nest result that is on screen (or clears it when there is none), so
+        // reopening the .dnest brings the nesting back exactly as saved.
+        if (fileToSave is NestProjectViewModel projectViewModel)
+        {
+          projectViewModel.ProjectInfo.LastNestResultJson =
+            (NestMonitorViewModel.SelectedItem as NestResult)?.ToJson(false) ?? string.Empty;
         }
 
         File.WriteAllText(fileToSave.FilePath, fileToSave.TextContent);
