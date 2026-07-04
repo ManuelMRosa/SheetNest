@@ -36,10 +36,8 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <!-- Menu bar with SheetNest logo -->
+    <!-- Menu bar (branding lives in the title-bar icon only). -->
     <DockPanel Grid.Row="0" Background="{DynamicResource Brush.Window}">
-      <Image DockPanel.Dock="Right" Source="/Branding/sheetnest-logo.png" Height="30"
-             Margin="0,2,12,2" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
       <Menu Background="Transparent" VerticalAlignment="Center">
       <MenuItem Header="_File">
         <MenuItem Header="New Project" Command="{Binding CreateNestProjectCommand}" />
