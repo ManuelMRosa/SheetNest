@@ -117,6 +117,13 @@ namespace DeepNestSharp.Ui.Views
       bool hadResult = ViewModel.NestMonitorViewModel.SelectedItem != null;
       ViewModel.NestMonitorViewModel.Reset();
 
+      // The project no longer carries this result (a save from here on writes it without one, and
+      // the session's close-time stock logic must treat any FRESH nest after this as unsaved).
+      if (ViewModel.ActiveDocument is NestProjectViewModel clearedDoc)
+      {
+        clearedDoc.ProjectInfo.LastNestResultJson = string.Empty;
+      }
+
       if (hadResult && lastNestConsumed != null && ViewModel.ActiveDocument is NestProjectViewModel doc)
       {
         foreach (var kv in lastNestConsumed)
@@ -244,11 +251,12 @@ namespace DeepNestSharp.Ui.Views
             .Select(s => new SessionSheet { Width = s.Width, Height = s.Height, Quantity = s.Quantity })
             .ToList();
 
-      // A nest result that is only ON SCREEN has not cut any steel: the session keeps the sheets it
-      // consumed (user report: 5 sheets, nest, close unsaved, reopen showed 4). A SAVED project is
-      // the one that keeps the deducted rows together with its embedded result — reopening it stays
-      // consistent, and its Clear Result returns the sheets there.
-      if (lastNestConsumed != null)
+      // Stock on close follows whether the nest was KEPT. A result that was never saved is discarded
+      // with the app, so the session gets its sheets back (5 stay 5). A result saved into a project —
+      // by the Yes above, or restored from / saved to a .dnest earlier (LastNestResultJson set) — is
+      // committed work, so the deduction stands (35 - 31 = 4 on reopen); that project's own Clear
+      // Result is what returns the sheets.
+      if (lastNestConsumed != null && string.IsNullOrEmpty(project?.LastNestResultJson))
       {
         foreach (var kv in lastNestConsumed)
         {
