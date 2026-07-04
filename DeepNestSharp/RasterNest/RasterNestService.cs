@@ -667,10 +667,31 @@ namespace DeepNestSharp.RasterNest
       var tightHalos = parsed.Select((p, i) => p.SpacingIn <= 0 ? 0 : halos[i]).ToArray();
       if (!tightHalos.SequenceEqual(halos) && (sel.Job.NotPlaced > 0 || sel.Job.Sheets > 1))
       {
+        double LastSheetDemandArea(JobResult j)
+        {
+          int last = j.Sheets - 1;
+          double area = 0;
+          foreach (var p in j.Placements)
+          {
+            if (p.Sheet == last)
+            {
+              area += System.Math.Abs(parsed.First(q => q.Src == p.Source).Nfp.NetArea);
+            }
+          }
+
+          return area;
+        }
+
         bool TryAdopt((JobResult Job, List<PartType> Types) attempt)
         {
+          // Same placed count and same sheet count is NOT a tie: less part area on the LAST sheet
+          // means the earlier sheets are denser and the remainder keeps a bigger clean remnant (user
+          // case: 27 rails came out 24+3 because the tight retry's 26+1 "only" equalled 2 sheets and
+          // was thrown away).
           bool better = attempt.Job.NotPlaced < sel.Job.NotPlaced
-            || (attempt.Job.NotPlaced == sel.Job.NotPlaced && attempt.Job.Sheets < sel.Job.Sheets);
+            || (attempt.Job.NotPlaced == sel.Job.NotPlaced && attempt.Job.Sheets < sel.Job.Sheets)
+            || (attempt.Job.NotPlaced == sel.Job.NotPlaced && attempt.Job.Sheets == sel.Job.Sheets
+              && attempt.Job.Sheets > 1 && LastSheetDemandArea(attempt.Job) < LastSheetDemandArea(sel.Job) - 1e-6);
           if (better && TightGapsOk(attempt.Job))
           {
             sel = attempt;
@@ -696,7 +717,13 @@ namespace DeepNestSharp.RasterNest
         // so it escalates just as cheaply as a small job — and a 1-part-per-sheet gain there
         // multiplies across every replicated sheet).
         int escalationWork = patternMode ? patternCap : parsed.Sum(p => p.Qty);
-        if (!adopted && (sel.Job.NotPlaced > 0 || sel.Job.Sheets > 1) && escalationWork <= 100)
+
+        // Escalate when the 24px tight retry was rejected, OR when it was adopted but the job still
+        // spans several sheets — the finer grid can then re-home last-sheet parts (27 rails: tight
+        // 24px gives 26+1, but only 48px proves the 26-per-sheet layout at margin 0.25). Quota-limited
+        // single-sheet probes keep the old rule (escalating every mixed-stock probe would be slow for
+        // a bounded +1-part gain).
+        if ((!adopted || sel.Job.Sheets > 1) && (sel.Job.NotPlaced > 0 || sel.Job.Sheets > 1) && escalationWork <= 100)
         {
           px = pxPerInch * 2.0;
           sw = (int)(sheetWin * px);
@@ -1189,6 +1216,18 @@ namespace DeepNestSharp.RasterNest
         return a.Job.Sheets < b.Job.Sheets;
       }
 
+      // Same sheet count is not yet a tie: LESS part area on the last sheet means the earlier sheets
+      // are denser and the remainder keeps more clean material. Judging by strip extent first was
+      // wrong here — the greedy can stack a 2-part remainder into a LONGER strip than a 4-part one
+      // (user case: 28 rails ranked 24+4 above 26+2), and the tail sweep re-packs the last sheet's
+      // strip afterwards anyway.
+      double areaA = LastSheetNetArea(a);
+      double areaB = LastSheetNetArea(b);
+      if (System.Math.Abs(areaA - areaB) > 1e-6)
+      {
+        return areaA < areaB;
+      }
+
       double extentA = LastSheetExtentPx(a, growX);
       double extentB = LastSheetExtentPx(b, growX);
       if (System.Math.Abs(extentA - extentB) > 0.5)
@@ -1208,6 +1247,22 @@ namespace DeepNestSharp.RasterNest
       return job.Placements
         .GroupBy(p => p.Source)
         .Sum(g => g.Select(p => p.RotationDeg).Distinct().Count());
+    }
+
+    /// <summary>Total real part area (in²) placed on the LAST sheet — the remainder's material load.</summary>
+    private static double LastSheetNetArea((JobResult Job, List<PartType> Types) r)
+    {
+      int last = r.Job.Sheets - 1;
+      double area = 0;
+      foreach (var p in r.Job.Placements)
+      {
+        if (p.Sheet == last)
+        {
+          area += System.Math.Abs(r.Types.First(x => x.Source == p.Source).Poly.NetArea);
+        }
+      }
+
+      return area;
     }
 
     /// <summary>Highest occupied position (px, real part extents) along the growth axis on the last sheet.</summary>
