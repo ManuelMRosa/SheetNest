@@ -87,7 +87,7 @@ namespace DeepNestSharp.Ui.Converters
       double dim = Math.Max(g.Bounds.Width, g.Bounds.Height);
       var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)), dim / 60.0);
       pen.Freeze();
-      var fill = new SolidColorBrush(Color.FromArgb(0x66, 0x33, 0x99, 0xDD));
+      var fill = new SolidColorBrush(Color.FromArgb(0xD0, 0xB4, 0xB8, 0xBC)); // aluminum gray, matches the viewer
       fill.Freeze();
 
       var drawing = new GeometryDrawing(fill, pen, g);
