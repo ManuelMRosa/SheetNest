@@ -458,24 +458,6 @@ namespace DeepNestSharp.Ui.UserControls
         $"{sp.Sheet.WidthCalculated}x{sp.Sheet.HeightCalculated}#{string.Join("|", items)}");
     }
 
-    /// <summary>
-    /// Compact industrial-style plan line: "CUT  30 + 5  =  35 sheets  ·  800 parts". The old text
-    /// enumerated every layout with parts and utilization and grew unreadably long on multi-layout
-    /// jobs; per-layout detail now lives in the navigation label ("cut 30/35") as sheets are flipped.
-    /// </summary>
-    private string BuildSummary()
-    {
-      int totalSheets = this.groups.Sum(g => g.Count);
-      int placed = this.Result?.TotalPlacedCount ?? 0;
-      string sheets = totalSheets == 1 ? "sheet" : "sheets";
-      if (this.groups.Count > 1)
-      {
-        return $"CUT  {string.Join(" + ", this.groups.Select(g => g.Count))}  =  {totalSheets} {sheets}  ·  {placed} parts";
-      }
-
-      return $"CUT  {totalSheets} {sheets}  ·  {placed} parts";
-    }
-
     /// <summary>Material utilization of ONE sheet layout: net part area on it / its sheet area (%).</summary>
     private static double UtilizationOf(ISheetPlacement sp)
     {
@@ -532,7 +514,6 @@ namespace DeepNestSharp.Ui.UserControls
       if (result == null || this.groups.Count == 0)
       {
         this.emptyHint.Visibility = Visibility.Visible;
-        this.summaryBox.Visibility = Visibility.Collapsed;
         this.sheetNav.Visibility = Visibility.Collapsed;
         this.editBar.Visibility = Visibility.Collapsed;
         return;
@@ -552,14 +533,14 @@ namespace DeepNestSharp.Ui.UserControls
 
       this.emptyHint.Visibility = Visibility.Collapsed;
 
-      // Show the production plan, and navigate by distinct LAYOUT (not by physical sheet). The nav
-      // label carries the per-layout cut count industrial-style: "cut 30/35" = of the job's 35
-      // sheets, 30 are cut with this layout.
-      int planSheets = this.groups.Sum(g => g.Count);
-      this.summaryText.Text = this.BuildSummary();
-      this.summaryBox.Visibility = (result.UsedSheets?.Count ?? 0) > 1 ? Visibility.Visible : Visibility.Collapsed;
-      this.sheetLabel.Text = $"Layout {idx + 1}/{this.groups.Count}  ·  cut {group.Count}/{planSheets}  ·  {sheetPlacement.PartPlacements.Count} parts  ·  {UtilizationOf(sheetPlacement):F1}%";
-      this.sheetNav.Visibility = this.groups.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+      // Navigate by distinct LAYOUT (not by physical sheet), labelled the way industrial nesting
+      // packages do it (SigmaNEST: one repeated layout shown with its repeat count in parentheses
+      // next to the name): "Nest 1/2 (30)" = layout 1 of 2, cut it 30 times. Job totals stay in the
+      // status bar and results grid — nothing verbose over the drawing.
+      this.sheetLabel.Text = group.Count > 1
+        ? $"Nest {idx + 1}/{this.groups.Count}  ({group.Count})"
+        : $"Nest {idx + 1}/{this.groups.Count}";
+      this.sheetNav.Visibility = this.groups.Count > 1 || group.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
 
       double w = sheet.WidthCalculated;
       double h = sheet.HeightCalculated;
