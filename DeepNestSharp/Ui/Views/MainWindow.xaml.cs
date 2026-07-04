@@ -79,25 +79,13 @@ namespace DeepNestSharp.Ui.Views
         cfg.Spacing = 0.25;
       }
 
-      // Restore the previous session: the user's sheet edge margin and the sheet stock left
-      // over when the app was last closed.
+      // Restore the previous session's sheet edge margin. Sheets are NOT restored: the app starts
+      // with an empty Sheets tab because each launch is usually a different job — sheet stock
+      // belongs to (and travels with) each saved .dnest project.
       var session = SessionState.Load();
-      if (session != null)
+      if (session != null && session.SheetEdgeMargin >= 0)
       {
-        if (session.SheetEdgeMargin >= 0)
-        {
-          cfg.SheetSpacing = session.SheetEdgeMargin;
-        }
-
-        if (ViewModel.ActiveDocument is NestProjectViewModel doc && doc.ProjectInfo.SheetLoadInfos.Count == 0)
-        {
-          foreach (var s in session.Sheets.Where(s => s.Width > 0 && s.Height > 0 && s.Quantity > 0))
-          {
-            doc.ProjectInfo.SheetLoadInfos.Add(new SheetLoadInfo(s.Width, s.Height, s.Quantity));
-          }
-
-          this.sheetsListView.Items.Refresh();
-        }
+        cfg.SheetSpacing = session.SheetEdgeMargin;
       }
     }
 
@@ -244,38 +232,13 @@ namespace DeepNestSharp.Ui.Views
         }
       }
 
-      var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
-      var rows = project == null
-        ? new List<SessionSheet>()
-        : project.SheetLoadInfos
-            .Select(s => new SessionSheet { Width = s.Width, Height = s.Height, Quantity = s.Quantity })
-            .ToList();
-
-      // Stock on close follows whether the nest was KEPT. A result that was never saved is discarded
-      // with the app, so the session gets its sheets back (5 stay 5). A result saved into a project —
-      // by the Yes above, or restored from / saved to a .dnest earlier (LastNestResultJson set) — is
-      // committed work, so the deduction stands (35 - 31 = 4 on reopen); that project's own Clear
-      // Result is what returns the sheets.
-      if (lastNestConsumed != null && string.IsNullOrEmpty(project?.LastNestResultJson))
-      {
-        foreach (var kv in lastNestConsumed)
-        {
-          var row = rows.FirstOrDefault(r => r.Width == kv.Key.W && r.Height == kv.Key.H);
-          if (row != null)
-          {
-            row.Quantity += kv.Value;
-          }
-          else
-          {
-            rows.Add(new SessionSheet { Width = kv.Key.W, Height = kv.Key.H, Quantity = kv.Value });
-          }
-        }
-      }
-
+      // Only the sheet edge margin persists across sessions. Sheet stock is deliberately NOT part of
+      // the session anymore — the app starts empty and each saved .dnest project carries its own
+      // stock (with its embedded nest result, whose Clear Result returns the sheets it consumed).
       new SessionState
       {
         SheetEdgeMargin = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
-        Sheets = rows,
+        Sheets = new List<SessionSheet>(),
       }.Save();
     }
 
