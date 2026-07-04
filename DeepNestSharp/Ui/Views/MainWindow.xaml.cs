@@ -208,9 +208,10 @@ namespace DeepNestSharp.Ui.Views
     }
 
     /// <summary>
-    /// Per-row "X/Y" indicators in the Parts and Sheets panels while a nest result is on screen:
-    /// each sheet size shows used/available ("31/35") and each part shows placed/requested
-    /// ("26/30") — per row, so mixed sheet sizes are read at a glance. Null result clears them.
+    /// Feeds the per-row "Available X/Y" badges in the Parts and Sheets panels: sets each row's
+    /// NestedCount (sheets consumed / parts placed by the on-screen result; 0 = no result) and the
+    /// wrappers render availability from it. The badges are ALWAYS visible — with no result every
+    /// row simply reads N/N.
     /// </summary>
     private void UpdateNestedInfo(INestResult result)
     {
@@ -224,13 +225,13 @@ namespace DeepNestSharp.Ui.Views
 
       if (result == null)
       {
-        sheetRows.ForEach(s => s.NestedInfo = null);
-        partRows.ForEach(p => p.NestedInfo = null);
+        sheetRows.ForEach(s => s.NestedCount = 0);
+        partRows.ForEach(p => p.NestedCount = 0);
         return;
       }
 
-      // Sheets: consumed of this size (recorded at deduction time) / available before the nest
-      // (= the deducted quantity now in the row plus what was consumed).
+      // Sheets: sheets of this size the nest consumed (recorded at deduction time); the wrapper
+      // renders availability as Quantity / (Quantity + NestedCount).
       foreach (var s in sheetRows)
       {
         int used = 0;
@@ -239,7 +240,7 @@ namespace DeepNestSharp.Ui.Views
           lastNestConsumed.TryGetValue((s.Width, s.Height), out used);
         }
 
-        s.NestedInfo = $"{used}/{s.Quantity + used}";
+        s.NestedCount = used;
       }
 
       // Parts: placements carry the name the parser stored (full path for DXF, file name for SVG).
@@ -294,7 +295,7 @@ namespace DeepNestSharp.Ui.Views
         }
       }
 
-      partRows.ForEach(p => p.NestedInfo = $"{assigned[p]}/{p.Quantity + p.Extra}");
+      partRows.ForEach(p => p.NestedCount = assigned[p]);
     }
 
     private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)

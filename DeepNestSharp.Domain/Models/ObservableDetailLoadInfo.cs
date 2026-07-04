@@ -76,33 +76,48 @@
     public int Quantity
     {
       get => detailLoadInfo.Quantity;
-      set => SetProperty(nameof(Quantity), () => detailLoadInfo.Quantity, v => detailLoadInfo.Quantity = v, value);
+      set
+      {
+        SetProperty(nameof(Quantity), () => detailLoadInfo.Quantity, v => detailLoadInfo.Quantity = v, value);
+        OnPropertyChanged(nameof(NestedInfo));
+      }
     }
 
     public int Extra
     {
       get => detailLoadInfo.Extra;
-      set => SetProperty(nameof(Extra), () => detailLoadInfo.Extra, v => detailLoadInfo.Extra = v, value);
-    }
-
-    private string nestedInfo;
-
-    /// <summary>
-    /// Gets or sets the "placed/requested" indicator for this part while a nest result is on screen
-    /// (e.g. "26/30"); null when there is no result. Display-only — never persisted.
-    /// </summary>
-    public string NestedInfo
-    {
-      get => nestedInfo;
       set
       {
-        if (nestedInfo != value)
+        SetProperty(nameof(Extra), () => detailLoadInfo.Extra, v => detailLoadInfo.Extra = v, value);
+        OnPropertyChanged(nameof(NestedInfo));
+      }
+    }
+
+    private int nestedCount;
+
+    /// <summary>
+    /// Gets or sets how many copies of this part the on-screen nest placed (0 = no result).
+    /// Display-only — never persisted.
+    /// </summary>
+    public int NestedCount
+    {
+      get => nestedCount;
+      set
+      {
+        if (nestedCount != value)
         {
-          nestedInfo = value;
+          nestedCount = value;
+          OnPropertyChanged(nameof(NestedCount));
           OnPropertyChanged(nameof(NestedInfo));
         }
       }
     }
+
+    /// <summary>
+    /// Gets the always-visible "Available" indicator: copies still left to nest / total requested
+    /// (quantity + spares). No result: "30/30"; a nest that placed 26: "4/30".
+    /// </summary>
+    public string NestedInfo => $"{System.Math.Max(0, Quantity + Extra - nestedCount)}/{Quantity + Extra}";
 
     public int Rotations
     {

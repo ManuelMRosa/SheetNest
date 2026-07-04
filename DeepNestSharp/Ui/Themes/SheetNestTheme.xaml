@@ -150,6 +150,23 @@
     <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}" />
   </Style>
 
+  <!-- Industrial count badge (the "Available 31/31" pill on part cards and sheet rows). KEYED ONLY,
+       like every style in this theme — implicit styles leak into Xceed/menus. -->
+  <Style x:Key="CountBadge" TargetType="Border">
+    <Setter Property="Background" Value="{StaticResource Brush.Accent}" />
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+
+  <Style x:Key="CountBadgeText" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <!-- Settings/status text styles (moved from MainWindow.Resources — same keys, brushed colors). -->
   <Style x:Key="SettingLabel" TargetType="TextBlock">
     <Setter Property="VerticalAlignment" Value="Center" />

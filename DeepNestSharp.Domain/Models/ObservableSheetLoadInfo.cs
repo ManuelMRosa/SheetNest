@@ -23,7 +23,11 @@
     public int Quantity
     {
       get => sheetLoadInfo.Quantity;
-      set => SetProperty(nameof(Quantity), () => sheetLoadInfo.Quantity, v => sheetLoadInfo.Quantity = v, value);
+      set
+      {
+        SetProperty(nameof(Quantity), () => sheetLoadInfo.Quantity, v => sheetLoadInfo.Quantity = v, value);
+        OnPropertyChanged(nameof(NestedInfo));
+      }
     }
 
     public int Width
@@ -32,24 +36,32 @@
       set => SetProperty(nameof(Width), () => sheetLoadInfo.Width, v => sheetLoadInfo.Width = v, value);
     }
 
-    private string nestedInfo;
+    private int nestedCount;
 
     /// <summary>
-    /// Gets or sets the "used/available" indicator for this sheet size while a nest result is on
-    /// screen (e.g. "31/35"); null when there is no result. Display-only — never persisted.
+    /// Gets or sets how many sheets of this size the on-screen nest consumed (0 = no result).
+    /// Display-only — never persisted.
     /// </summary>
-    public string NestedInfo
+    public int NestedCount
     {
-      get => nestedInfo;
+      get => nestedCount;
       set
       {
-        if (nestedInfo != value)
+        if (nestedCount != value)
         {
-          nestedInfo = value;
+          nestedCount = value;
+          OnPropertyChanged(nameof(NestedCount));
           OnPropertyChanged(nameof(NestedInfo));
         }
       }
     }
+
+    /// <summary>
+    /// Gets the always-visible "Available" indicator, SigmaNEST-style (Quantity Available):
+    /// sheets of this size still available / total. The row's Quantity is already deducted while a
+    /// result is on screen, so it IS the available count — no result: "31/31"; nest used 28: "3/31".
+    /// </summary>
+    public string NestedInfo => $"{Quantity}/{Quantity + nestedCount}";
 
     public SheetLoadInfo Item => this.sheetLoadInfo;
   }
