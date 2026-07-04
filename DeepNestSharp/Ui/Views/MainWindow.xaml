@@ -168,6 +168,20 @@
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
                         <TextBlock Style="{DynamicResource CaptionText}" Text="{Binding NetArea, Mode=OneWay, StringFormat='{}{0:0} area'}" Margin="0,1,0,0" />
                         <TextBlock Text="{Binding NestingLabel, Mode=OneWay}" FontSize="11" Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                        <!-- "26/30" = placed by the on-screen nest / requested (qty + spares). -->
+                        <TextBlock Text="{Binding NestedInfo, Mode=OneWay}" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Accent}" Margin="0,1,0,0"
+                                   ToolTip="Parts placed by the nest / requested">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding NestedInfo}" Value="{x:Null}">
+                                  <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
                       </StackPanel>
                       <xctk:IntegerUpDown Grid.Column="2" Minimum="0" Width="56" VerticalAlignment="Center" Margin="6,0"
                                           Value="{Binding Quantity, Mode=TwoWay}" ToolTip="Quantity (required — spares are set in Edit Part)" />
@@ -230,6 +244,18 @@
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
+                  <GridViewColumn Header="Used" Width="55">
+                    <GridViewColumn.CellTemplate>
+                      <DataTemplate>
+                        <!-- "31/35" = sheets of THIS size the nest used / available before the nest.
+                             Only shown while a result is on screen. TextBlock (not a Control) keeps
+                             its accent colour even though the panel is disabled during a result. -->
+                        <TextBlock Text="{Binding NestedInfo, Mode=OneWay}" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}"
+                                   ToolTip="Sheets of this size used by the nest / available before it" />
+                      </DataTemplate>
+                    </GridViewColumn.CellTemplate>
+                  </GridViewColumn>
                   <GridViewColumn Header="" Width="40">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
@@ -281,20 +307,12 @@
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Utilization:" />
         <TextBlock Style="{DynamicResource StatusValue}" Foreground="{DynamicResource Brush.Accent}" FontSize="14"
                    Text="{Binding NestMonitorViewModel.SelectedItem.MaterialUtilization, StringFormat={}{0:P1}, FallbackValue=--}" />
-        <!-- Industrial X/Y counters: Parts = placed / requested, Sheets = used / available stock.
-             The sheets total needs the pre-nest stock, which only the nest/restore/clear code knows,
-             so that value is set from code-behind. -->
-        <TextBlock Style="{DynamicResource StatusLabel}" Text="Parts:" />
-        <TextBlock Style="{DynamicResource StatusValue}">
-          <TextBlock.Text>
-            <MultiBinding StringFormat="{}{0}/{1}" FallbackValue="--">
-              <Binding Path="NestMonitorViewModel.SelectedItem.TotalPlacedCount" Mode="OneWay" />
-              <Binding Path="NestMonitorViewModel.SelectedItem.TotalPartsCount" Mode="OneWay" />
-            </MultiBinding>
-          </TextBlock.Text>
-        </TextBlock>
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Sheets:" />
-        <TextBlock x:Name="sheetsStatusText" Style="{DynamicResource StatusValue}" Text="--" />
+        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.UsedSheets.Count, FallbackValue=--}" />
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Placed:" />
+        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Unplaced:" />
+        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
       </StackPanel>
     </Border>
   </Grid>

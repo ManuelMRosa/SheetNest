@@ -85,6 +85,25 @@
       set => SetProperty(nameof(Extra), () => detailLoadInfo.Extra, v => detailLoadInfo.Extra = v, value);
     }
 
+    private string nestedInfo;
+
+    /// <summary>
+    /// Gets or sets the "placed/requested" indicator for this part while a nest result is on screen
+    /// (e.g. "26/30"); null when there is no result. Display-only — never persisted.
+    /// </summary>
+    public string NestedInfo
+    {
+      get => nestedInfo;
+      set
+      {
+        if (nestedInfo != value)
+        {
+          nestedInfo = value;
+          OnPropertyChanged(nameof(NestedInfo));
+        }
+      }
+    }
+
     public int Rotations
     {
       get => detailLoadInfo.Rotations;

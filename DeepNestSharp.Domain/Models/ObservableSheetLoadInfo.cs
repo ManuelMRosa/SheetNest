@@ -32,6 +32,25 @@
       set => SetProperty(nameof(Width), () => sheetLoadInfo.Width, v => sheetLoadInfo.Width = v, value);
     }
 
+    private string nestedInfo;
+
+    /// <summary>
+    /// Gets or sets the "used/available" indicator for this sheet size while a nest result is on
+    /// screen (e.g. "31/35"); null when there is no result. Display-only — never persisted.
+    /// </summary>
+    public string NestedInfo
+    {
+      get => nestedInfo;
+      set
+      {
+        if (nestedInfo != value)
+        {
+          nestedInfo = value;
+          OnPropertyChanged(nameof(NestedInfo));
+        }
+      }
+    }
+
     public SheetLoadInfo Item => this.sheetLoadInfo;
   }
 }

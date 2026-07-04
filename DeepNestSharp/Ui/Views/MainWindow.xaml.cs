@@ -7,6 +7,7 @@ namespace DeepNestSharp.Ui.Views
   using System.Windows.Controls;
   using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
+  using DeepNestSharp.Domain.Models;
   using DeepNestSharp.Domain.ViewModels;
   using DeepNestSharp.RasterNest;
 
@@ -112,7 +113,7 @@ namespace DeepNestSharp.Ui.Views
         clearedDoc.ProjectInfo.LastNestResultJson = string.Empty;
       }
 
-      this.sheetsStatusText.Text = "--";
+      this.UpdateNestedInfo(null);
 
       if (hadResult && lastNestConsumed != null && ViewModel.ActiveDocument is NestProjectViewModel doc)
       {
@@ -153,7 +154,7 @@ namespace DeepNestSharp.Ui.Views
       {
         monitor.Reset();
         lastNestConsumed = null;
-        this.sheetsStatusText.Text = "--";
+        this.UpdateNestedInfo(null);
         return;
       }
 
@@ -164,7 +165,7 @@ namespace DeepNestSharp.Ui.Views
         {
           monitor.Reset();
           lastNestConsumed = null;
-          this.sheetsStatusText.Text = "--";
+          this.UpdateNestedInfo(null);
           return;
         }
 
@@ -195,18 +196,105 @@ namespace DeepNestSharp.Ui.Views
         }
 
         lastNestConsumed = restoredConsumed;
-
-        // The file stores the stock post-deduction, so available-before-nest = rows + consumed.
-        int totalStock = doc.ProjectInfo.SheetLoadInfos.Sum(s => s.Quantity) + restoredConsumed.Values.Sum();
-        this.sheetsStatusText.Text = $"{result.UsedSheets.Count}/{totalStock}";
+        this.UpdateNestedInfo(result);
       }
       catch (System.Exception)
       {
         // A corrupt/incompatible embedded result must never block opening the project itself.
         monitor.Reset();
         lastNestConsumed = null;
-        this.sheetsStatusText.Text = "--";
+        this.UpdateNestedInfo(null);
       }
+    }
+
+    /// <summary>
+    /// Per-row "X/Y" indicators in the Parts and Sheets panels while a nest result is on screen:
+    /// each sheet size shows used/available ("31/35") and each part shows placed/requested
+    /// ("26/30") — per row, so mixed sheet sizes are read at a glance. Null result clears them.
+    /// </summary>
+    private void UpdateNestedInfo(INestResult result)
+    {
+      if (!(ViewModel.ActiveDocument is NestProjectViewModel doc))
+      {
+        return;
+      }
+
+      var sheetRows = doc.ProjectInfo.SheetLoadInfos.OfType<ObservableSheetLoadInfo>().ToList();
+      var partRows = doc.ProjectInfo.DetailLoadInfos.OfType<ObservableDetailLoadInfo>().ToList();
+
+      if (result == null)
+      {
+        sheetRows.ForEach(s => s.NestedInfo = null);
+        partRows.ForEach(p => p.NestedInfo = null);
+        return;
+      }
+
+      // Sheets: consumed of this size (recorded at deduction time) / available before the nest
+      // (= the deducted quantity now in the row plus what was consumed).
+      foreach (var s in sheetRows)
+      {
+        int used = 0;
+        if (lastNestConsumed != null)
+        {
+          lastNestConsumed.TryGetValue((s.Width, s.Height), out used);
+        }
+
+        s.NestedInfo = $"{used}/{s.Quantity + used}";
+      }
+
+      // Parts: placements carry the name the parser stored (full path for DXF, file name for SVG).
+      // Hand each name's count out to matching rows in listed order, capped at each row's own
+      // demand — the same matching the mixed-stock consumption uses, so a DXF listed twice (e.g.
+      // once common-line, once spaced) splits sensibly instead of double-counting.
+      static string SafeFileName(string path)
+      {
+        try
+        {
+          return System.IO.Path.GetFileName(path);
+        }
+        catch (System.ArgumentException)
+        {
+          return path;
+        }
+      }
+
+      var assigned = new Dictionary<ObservableDetailLoadInfo, int>();
+      partRows.ForEach(p => assigned[p] = 0);
+      var placedByName = result.UsedSheets
+        .SelectMany(sp => sp.PartPlacements)
+        .GroupBy(p => p.Part.Name ?? string.Empty, System.StringComparer.OrdinalIgnoreCase);
+      foreach (var group in placedByName)
+      {
+        int left = group.Count();
+        foreach (int pass in new[] { 0, 1 })
+        {
+          foreach (var row in partRows)
+          {
+            if (left == 0)
+            {
+              break;
+            }
+
+            bool exact = string.Equals(row.Path, group.Key, System.StringComparison.OrdinalIgnoreCase);
+            bool match = pass == 0 ? exact : !exact && string.Equals(SafeFileName(row.Path), group.Key, System.StringComparison.OrdinalIgnoreCase);
+            if (!match)
+            {
+              continue;
+            }
+
+            int take = System.Math.Min(System.Math.Max(0, row.Quantity + row.Extra - assigned[row]), left);
+            assigned[row] += take;
+            left -= take;
+          }
+
+          if (left == 0)
+          {
+            break;
+          }
+        }
+      }
+
+      partRows.ForEach(p => p.NestedInfo = $"{assigned[p]}/{p.Quantity + p.Extra}");
     }
 
     private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -515,9 +603,7 @@ namespace DeepNestSharp.Ui.Views
 
         lastNestConsumed = consumed;
         this.sheetsListView.Items.Refresh();
-
-        // Status bar, industrial style: sheets USED of the stock that was AVAILABLE before this nest.
-        this.sheetsStatusText.Text = $"{result.UsedSheets.Count}/{sheetQty}";
+        this.UpdateNestedInfo(result);
 
         // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.
         int unplacedCount = result.UnplacedParts?.Count ?? 0;
