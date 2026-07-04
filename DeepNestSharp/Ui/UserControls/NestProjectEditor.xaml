@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DeepNestSharp.Ui.UserControls.NestProjectEditor"
+<UserControl x:Class="DeepNestSharp.Ui.UserControls.NestProjectEditor"
                         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -27,7 +27,7 @@
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
       <StackPanel Grid.Row="0" Grid.Column="0"  Orientation="Horizontal" HorizontalAlignment="Stretch">
-        <Button Content="▶  NESTAR" Command="{Binding ExecuteNestCommand}" Margin="5,5,10,5" Padding="14,4" FontWeight="Bold" FontSize="14" Background="#2E7D32" Foreground="White" ToolTip="Ejecutar el anidado con las piezas y chapas cargadas" />
+        <Button Content="▶  NESTAR" Command="{Binding ExecuteNestCommand}" Margin="5,5,10,5" Padding="14,4" FontWeight="Bold" FontSize="14" Background="{DynamicResource Brush.Panel}" Foreground="{DynamicResource Brush.TextPrimary}" ToolTip="Ejecutar el anidado con las piezas y chapas cargadas" />
         <Button Content="Agregar chapa" Command="{Binding AddSheetCommand}" Margin="5,5,5,5" Padding="8,4" ToolTip="Agregar un tamaño de chapa" />
         <Button Content="Agregar pieza" Command="{Binding AddPartCommand}" Margin="5,5,5,5" Padding="8,4" ToolTip="Cargar una pieza desde DXF/SVG" />
         <TextBlock Text="Multiplicador" Margin="10,7,0,5" VerticalAlignment="Center" />

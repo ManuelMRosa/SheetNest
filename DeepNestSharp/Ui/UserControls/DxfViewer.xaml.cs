@@ -38,7 +38,7 @@ namespace DeepNestSharp.Ui.UserControls
     private static readonly Brush PartStroke = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x10));
     private static readonly Brush PartFill = new SolidColorBrush(Color.FromArgb(0x33, 0x33, 0x99, 0xDD));
     private static readonly Brush HoleFill = new SolidColorBrush(Color.FromRgb(0xFA, 0xFA, 0xFA));
-    private static readonly Brush SelectedFill = new SolidColorBrush(Color.FromArgb(0x77, 0x2E, 0x7D, 0x32));
+    private static readonly Brush SelectedFill = new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x80)); // classic navy selection
     private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromArgb(0x77, 0xD3, 0x2F, 0x2F));
 
     // Distinct sheet layouts and how many physical sheets use each (the production plan).

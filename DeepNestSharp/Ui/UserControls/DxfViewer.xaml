@@ -5,7 +5,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="800">
-  <Grid x:Name="host" Background="#2D2D30" ClipToBounds="True" Focusable="True"
+  <!-- Classic CAD workspace gray around the white sheet (the retro look has no dark chrome). -->
+  <Grid x:Name="host" Background="#808080" ClipToBounds="True" Focusable="True"
         MouseWheel="OnMouseWheel"
         MouseLeftButtonDown="OnPanStart" MouseMove="OnPanMove" MouseLeftButtonUp="OnPanEnd"
         MouseRightButtonDown="OnResetView" PreviewKeyDown="OnViewerKeyDown">
@@ -23,14 +24,15 @@
     </Canvas>
     <TextBlock x:Name="emptyHint"
                Text="Run a nest to see the result here."
-               Foreground="#9A9A9A" FontSize="14"
+               Foreground="#EFEFEF" FontSize="14"
                HorizontalAlignment="Center" VerticalAlignment="Center" />
     <TextBlock x:Name="hintText" Text="scroll = zoom  ·  drag = pan  ·  right-click = fit"
-               Foreground="#6E6E6E" FontSize="11" IsHitTestVisible="False"
+               Foreground="#DCDCDC" FontSize="11" IsHitTestVisible="False"
                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8" />
 
-    <!-- Manual nesting: select, drag and rotate parts to refine the nest by hand. -->
-    <Border x:Name="editBar" Background="#D2202020" CornerRadius="5" Padding="5,3"
+    <!-- Manual nesting: select, drag and rotate parts to refine the nest by hand.
+         Classic raised gray panel — square corners, no translucency (retro chrome). -->
+    <Border x:Name="editBar" Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,3"
             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Visibility="Collapsed">
       <StackPanel Orientation="Horizontal">
         <ToggleButton x:Name="editToggle" Content="&#9995; Edit nest" Padding="8,3" FontWeight="SemiBold"
@@ -52,12 +54,12 @@
     <!-- Layout navigation, industrial style (SigmaNEST convention): one entry per DISTINCT layout,
          its repeat count in parentheses next to the name — "Nest 1/2 (30)" = layout 1 of 2, cut it
          30 times. Totals (utilization / sheets / placed) live in the status bar, not over the plot. -->
-    <Border x:Name="sheetNav" Background="#D2202020" CornerRadius="5" Padding="5,3"
+    <Border x:Name="sheetNav" Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,3"
             HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,12" Visibility="Collapsed">
       <StackPanel Orientation="Horizontal">
         <Button Content="&#9664;" Width="28" Click="OnPrevSheet" ToolTip="Previous layout" />
-        <TextBlock x:Name="sheetLabel" Foreground="White" VerticalAlignment="Center"
-                   Margin="10,0" MinWidth="80" TextAlignment="Center" FontWeight="SemiBold" />
+        <TextBlock x:Name="sheetLabel" Foreground="Black" VerticalAlignment="Center"
+                   Margin="10,0" MinWidth="80" TextAlignment="Center" FontWeight="Bold" />
         <Button Content="&#9654;" Width="28" Click="OnNextSheet" ToolTip="Next layout" />
       </StackPanel>
     </Border>

@@ -5,6 +5,7 @@
         xmlns:conv="clr-namespace:DeepNestSharp.Ui.Converters"
         xmlns:uc="clr-namespace:DeepNestSharp.Ui.UserControls"
         Title="Edit Part"
+        FontFamily="Tahoma" FontSize="11"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         ResizeMode="NoResize"

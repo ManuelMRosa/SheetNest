@@ -54,7 +54,7 @@ namespace DeepNestSharp.Ui.UserControls
       ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
     };
 
-    private static readonly Brush IconFill = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32));
+    private static readonly Brush IconFill = new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x80)); // classic navy
 
     private readonly List<ToggleButton> buttons = new List<ToggleButton>();
 

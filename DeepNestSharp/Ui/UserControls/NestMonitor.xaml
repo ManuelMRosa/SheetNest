@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DeepNestSharp.Ui.UserControls.NestMonitor"
+<UserControl x:Class="DeepNestSharp.Ui.UserControls.NestMonitor"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -79,7 +79,7 @@
           <GridViewColumn Header="% Util." Width="80">
             <GridViewColumn.CellTemplate>
               <DataTemplate>
-                <TextBlock Text="{Binding MaterialUtilization, StringFormat={}{0:P1}}" HorizontalAlignment="Center" FontWeight="Bold" Foreground="#2E7D32" />
+                <TextBlock Text="{Binding MaterialUtilization, StringFormat={}{0:P1}}" HorizontalAlignment="Center" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" />
               </DataTemplate>
             </GridViewColumn.CellTemplate>
           </GridViewColumn>

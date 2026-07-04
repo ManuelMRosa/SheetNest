@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:userControls="clr-namespace:DeepNestSharp.Ui.UserControls"
         Title="Advanced Settings"
+        FontFamily="Tahoma" FontSize="11"
         Width="560" Height="640"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">

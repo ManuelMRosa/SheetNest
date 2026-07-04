@@ -17,7 +17,7 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ToggleButton">
-            <Border x:Name="bd" CornerRadius="4" BorderThickness="1.5"
+            <Border x:Name="bd" CornerRadius="0" BorderThickness="1.5"
                     Background="{TemplateBinding Background}"
                     BorderBrush="{TemplateBinding BorderBrush}"
                     Padding="{TemplateBinding Padding}">
@@ -25,12 +25,12 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="bd" Property="BorderBrush" Value="#7FB3E0" />
-                <Setter TargetName="bd" Property="Background" Value="#F2F8FF" />
+                <Setter TargetName="bd" Property="BorderBrush" Value="#666699" />
+                <Setter TargetName="bd" Property="Background" Value="#D6D6E8" />
               </Trigger>
               <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="bd" Property="BorderBrush" Value="#2E7D32" />
-                <Setter TargetName="bd" Property="Background" Value="#E6F4E6" />
+                <Setter TargetName="bd" Property="BorderBrush" Value="#000080" />
+                <Setter TargetName="bd" Property="Background" Value="#D6D6E8" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
