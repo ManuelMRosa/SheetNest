@@ -281,12 +281,20 @@
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Utilization:" />
         <TextBlock Style="{DynamicResource StatusValue}" Foreground="{DynamicResource Brush.Accent}" FontSize="14"
                    Text="{Binding NestMonitorViewModel.SelectedItem.MaterialUtilization, StringFormat={}{0:P1}, FallbackValue=--}" />
+        <!-- Industrial X/Y counters: Parts = placed / requested, Sheets = used / available stock.
+             The sheets total needs the pre-nest stock, which only the nest/restore/clear code knows,
+             so that value is set from code-behind. -->
+        <TextBlock Style="{DynamicResource StatusLabel}" Text="Parts:" />
+        <TextBlock Style="{DynamicResource StatusValue}">
+          <TextBlock.Text>
+            <MultiBinding StringFormat="{}{0}/{1}" FallbackValue="--">
+              <Binding Path="NestMonitorViewModel.SelectedItem.TotalPlacedCount" Mode="OneWay" />
+              <Binding Path="NestMonitorViewModel.SelectedItem.TotalPartsCount" Mode="OneWay" />
+            </MultiBinding>
+          </TextBlock.Text>
+        </TextBlock>
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Sheets:" />
-        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.UsedSheets.Count, FallbackValue=--}" />
-        <TextBlock Style="{DynamicResource StatusLabel}" Text="Placed:" />
-        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
-        <TextBlock Style="{DynamicResource StatusLabel}" Text="Unplaced:" />
-        <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
+        <TextBlock x:Name="sheetsStatusText" Style="{DynamicResource StatusValue}" Text="--" />
       </StackPanel>
     </Border>
   </Grid>

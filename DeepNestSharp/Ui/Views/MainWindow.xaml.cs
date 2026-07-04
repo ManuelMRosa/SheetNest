@@ -112,6 +112,8 @@ namespace DeepNestSharp.Ui.Views
         clearedDoc.ProjectInfo.LastNestResultJson = string.Empty;
       }
 
+      this.sheetsStatusText.Text = "--";
+
       if (hadResult && lastNestConsumed != null && ViewModel.ActiveDocument is NestProjectViewModel doc)
       {
         foreach (var kv in lastNestConsumed)
@@ -151,6 +153,7 @@ namespace DeepNestSharp.Ui.Views
       {
         monitor.Reset();
         lastNestConsumed = null;
+        this.sheetsStatusText.Text = "--";
         return;
       }
 
@@ -161,6 +164,7 @@ namespace DeepNestSharp.Ui.Views
         {
           monitor.Reset();
           lastNestConsumed = null;
+          this.sheetsStatusText.Text = "--";
           return;
         }
 
@@ -191,12 +195,17 @@ namespace DeepNestSharp.Ui.Views
         }
 
         lastNestConsumed = restoredConsumed;
+
+        // The file stores the stock post-deduction, so available-before-nest = rows + consumed.
+        int totalStock = doc.ProjectInfo.SheetLoadInfos.Sum(s => s.Quantity) + restoredConsumed.Values.Sum();
+        this.sheetsStatusText.Text = $"{result.UsedSheets.Count}/{totalStock}";
       }
       catch (System.Exception)
       {
         // A corrupt/incompatible embedded result must never block opening the project itself.
         monitor.Reset();
         lastNestConsumed = null;
+        this.sheetsStatusText.Text = "--";
       }
     }
 
@@ -506,6 +515,9 @@ namespace DeepNestSharp.Ui.Views
 
         lastNestConsumed = consumed;
         this.sheetsListView.Items.Refresh();
+
+        // Status bar, industrial style: sheets USED of the stock that was AVAILABLE before this nest.
+        this.sheetsStatusText.Text = $"{result.UsedSheets.Count}/{sheetQty}";
 
         // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.
         int unplacedCount = result.UnplacedParts?.Count ?? 0;
