@@ -166,7 +166,7 @@
 
     public IMessageService MessageService => this.messageService;
 
-    public string Title => $"SheetNest {this.GetType().Assembly.GetName().Version?.ToString()}";
+    public string Title => $"SheetNest {this.GetType().Assembly.GetName().Version?.ToString(3)}"; // 3 fields: 1.1.2, not 1.1.2.0
 
     public void SetSelectedToolView(IFileViewModel fileViewModel)
     {
