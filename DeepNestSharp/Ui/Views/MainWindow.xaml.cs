@@ -581,6 +581,12 @@ namespace DeepNestSharp.Ui.Views
 
       try
       {
+        // Hidden end-to-end test hook for the crash reporter (set SHEETNEST_CRASH_TEST=1).
+        if (System.Environment.GetEnvironmentVariable("SHEETNEST_CRASH_TEST") == "1")
+        {
+          throw new System.InvalidOperationException("Synthetic crash for testing the problem-report dialog.");
+        }
+
         var (result, error) = await Task.Run(() =>
         {
           // 24 px/inch (was 8): triples the raster resolution so the safety halo + spacing gaps shrink from
@@ -661,6 +667,13 @@ namespace DeepNestSharp.Ui.Views
             "Not enough sheets",
             DeepNestLib.MessageBoxIcon.Warning);
         }
+      }
+      catch (System.Exception ex)
+      {
+        // A third-party DXF the importer chokes on (or an engine bug) must never kill the app —
+        // this async void handler would otherwise crash the process (real-world user report).
+        // Log it, offer the consent-based GitHub report, and stay alive.
+        CrashReporter.Show(ex, "nest", this);
       }
       finally
       {

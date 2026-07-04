@@ -22,6 +22,34 @@
 
     public App()
     {
+      // Consent-based crash reporting: log locally, offer a pre-filled GitHub issue, never send
+      // anything by itself. The nest path has its own non-fatal catch in MainWindow.OnNest; these
+      // are the last-resort nets for everything else.
+      this.DispatcherUnhandledException += (s, e) =>
+      {
+        e.Handled = true; // keep WPF from tearing down before the dialog shows
+        CrashReporter.Show(e.Exception, "ui", Current?.MainWindow);
+        Environment.Exit(1); // state is unknown — exit without running half-broken save prompts
+      };
+      AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+      {
+        var ex = e.ExceptionObject as Exception;
+        CrashReporter.Save(ex, "background");
+        try
+        {
+          this.Dispatcher.Invoke(() => CrashReporter.Show(ex, "background", Current?.MainWindow));
+        }
+        catch
+        {
+          // The process is dying; the log on disk is what matters.
+        }
+      };
+      System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, e) =>
+      {
+        CrashReporter.Save(e.Exception, "task");
+        e.SetObserved();
+      };
+
       host = new HostBuilder()
            .ConfigureServices((hostContext, services) =>
            {
