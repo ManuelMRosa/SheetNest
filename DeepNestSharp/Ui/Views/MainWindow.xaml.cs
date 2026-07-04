@@ -244,6 +244,26 @@ namespace DeepNestSharp.Ui.Views
             .Select(s => new SessionSheet { Width = s.Width, Height = s.Height, Quantity = s.Quantity })
             .ToList();
 
+      // A nest result that is only ON SCREEN has not cut any steel: the session keeps the sheets it
+      // consumed (user report: 5 sheets, nest, close unsaved, reopen showed 4). A SAVED project is
+      // the one that keeps the deducted rows together with its embedded result — reopening it stays
+      // consistent, and its Clear Result returns the sheets there.
+      if (lastNestConsumed != null)
+      {
+        foreach (var kv in lastNestConsumed)
+        {
+          var row = rows.FirstOrDefault(r => r.Width == kv.Key.W && r.Height == kv.Key.H);
+          if (row != null)
+          {
+            row.Quantity += kv.Value;
+          }
+          else
+          {
+            rows.Add(new SessionSheet { Width = kv.Key.W, Height = kv.Key.H, Quantity = kv.Value });
+          }
+        }
+      }
+
       new SessionState
       {
         SheetEdgeMargin = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
