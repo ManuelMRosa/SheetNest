@@ -187,6 +187,11 @@
 
     public async Task OnLoadNestProjectAsync()
     {
+      if (!ConfirmNestResultSaved())
+      {
+        return;
+      }
+
       var filePath = await fileIoService.GetOpenFilePathAsync(ProjectInfo.FileDialogFilter, SvgNestConfigViewModel.SvgNestConfig.LastNestFilePath).ConfigureAwait(false);
       OnLoadNestProject(filePath);
     }
@@ -433,8 +438,36 @@
       return false;
     }
 
+    /// <summary>
+    /// New/Open are about to replace the on-screen nest result — offer to save the project first.
+    /// True = go ahead (saved, or the user chose not to save); false = the user cancelled.
+    /// </summary>
+    private bool ConfirmNestResultSaved()
+    {
+      if (NestMonitorViewModel.SelectedItem == null || ActiveDocument == null)
+      {
+        return true;
+      }
+
+      var answer = MessageService.DisplayYesNoCancel(
+        "You have a nest result. Save the project first?",
+        "SheetNest",
+        MessageBoxIcon.Question);
+      if (answer == MessageBoxResult.Yes)
+      {
+        return Save(ActiveDocument, true); // cancelling the Save As dialog cancels the New/Open too
+      }
+
+      return answer == MessageBoxResult.No;
+    }
+
     private void OnCreateNestProject()
     {
+      if (!ConfirmNestResultSaved())
+      {
+        return;
+      }
+
       var newFile = new NestProjectViewModel(this, fileIoService);
       this.files.Add(newFile);
       this.ActiveDocument = newFile;
