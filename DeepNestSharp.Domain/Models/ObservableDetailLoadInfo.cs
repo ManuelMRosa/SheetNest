@@ -93,6 +93,16 @@
       }
     }
 
+    public int MirrorQuantity
+    {
+      get => detailLoadInfo.MirrorQuantity;
+      set
+      {
+        SetProperty(nameof(MirrorQuantity), () => detailLoadInfo.MirrorQuantity, v => detailLoadInfo.MirrorQuantity = v, value);
+        OnPropertyChanged(nameof(NestedInfo));
+      }
+    }
+
     private int nestedCount;
 
     /// <summary>
@@ -115,9 +125,9 @@
 
     /// <summary>
     /// Gets the always-visible "Available" indicator: copies still left to nest / total requested
-    /// (quantity + spares). No result: "30/30"; a nest that placed 26: "4/30".
+    /// (quantity + spares + mirrored). No result: "30/30"; a nest that placed 26: "4/30".
     /// </summary>
-    public string NestedInfo => $"{System.Math.Max(0, Quantity + Extra - nestedCount)}/{Quantity + Extra}";
+    public string NestedInfo => $"{System.Math.Max(0, Quantity + Extra + MirrorQuantity - nestedCount)}/{Quantity + Extra + MirrorQuantity}";
 
     public int Rotations
     {

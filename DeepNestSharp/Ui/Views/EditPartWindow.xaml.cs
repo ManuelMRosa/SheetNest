@@ -25,6 +25,7 @@ namespace DeepNestSharp.Ui.Views
 
       this.requiredUpDown.Value = part.Quantity;
       this.extraUpDown.Value = part.Extra;
+      this.mirroredUpDown.Value = part.MirrorQuantity;
 
       // Spacing is per-part; a part that has never been edited starts from the job default.
       this.spacingUpDown.Value = part.Spacing >= 0 ? part.Spacing : defaultSpacing;
@@ -213,10 +214,12 @@ namespace DeepNestSharp.Ui.Views
       // otherwise save the stale previous value (e.g. a typed spacing silently ignored).
       this.requiredUpDown.CommitInput();
       this.extraUpDown.CommitInput();
+      this.mirroredUpDown.CommitInput();
       this.spacingUpDown.CommitInput();
 
       this.part.Quantity = this.requiredUpDown.Value ?? this.part.Quantity;
       this.part.Extra = this.extraUpDown.Value ?? this.part.Extra;
+      this.part.MirrorQuantity = this.mirroredUpDown.Value ?? this.part.MirrorQuantity;
       this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
       this.part.CommonLine = this.commonLineCheck.IsChecked == true;
 

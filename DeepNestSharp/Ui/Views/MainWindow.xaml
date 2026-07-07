@@ -184,7 +184,7 @@
                       </StackPanel>
                       <!-- Always-visible availability, SigmaNEST-style: copies left to nest / requested. -->
                       <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="6,0"
-                                  ToolTip="Parts still to nest / requested (quantity + spares)">
+                                  ToolTip="Parts still to nest / requested (quantity + spares + mirrored)">
                         <TextBlock Style="{DynamicResource CaptionText}" Text="Available" FontSize="10" HorizontalAlignment="Center" Margin="0,0,0,1" />
                         <Border Style="{DynamicResource CountBadge}">
                           <TextBlock Style="{DynamicResource CountBadgeText}" Text="{Binding NestedInfo, Mode=OneWay}" />

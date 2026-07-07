@@ -312,7 +312,7 @@ namespace DeepNestSharp.Ui.Views
               continue;
             }
 
-            int take = System.Math.Min(System.Math.Max(0, row.Quantity + row.Extra - assigned[row]), left);
+            int take = System.Math.Min(System.Math.Max(0, row.Quantity + row.Extra + row.MirrorQuantity - assigned[row]), left);
             assigned[row] += take;
             left -= take;
           }
@@ -776,13 +776,35 @@ namespace DeepNestSharp.Ui.Views
       // stays responsive (it was freezing because the whole nest ran on the UI thread).
       var parts = project.DetailLoadInfos
         .Where(o => o.IsIncluded && !string.IsNullOrWhiteSpace(o.Path))
-        .Select(o => new RasterPartInfo
+        .SelectMany(o =>
         {
-          Path = o.Path,
-          Quantity = o.Quantity + o.Extra,               // required + spares
-          Rotations = o.Rotations,                       // -1 = engine default
-          Priority = o.Priority,                         // higher nests first
-          Spacing = o.CommonLine ? 0.0 : o.Spacing,      // common-line = touch; -1 = job default
+          var populations = new List<RasterPartInfo>
+          {
+            new RasterPartInfo
+            {
+              Path = o.Path,
+              Quantity = o.Quantity + o.Extra,               // required + spares
+              Rotations = o.Rotations,                       // -1 = engine default
+              Priority = o.Priority,                         // higher nests first
+              Spacing = o.CommonLine ? 0.0 : o.Spacing,      // common-line = touch; -1 = job default
+            },
+          };
+
+          if (o.MirrorQuantity > 0)
+          {
+            // Second population of the SAME part, nested X-flipped (left/right-hand pairs).
+            populations.Add(new RasterPartInfo
+            {
+              Path = o.Path,
+              Quantity = o.MirrorQuantity,
+              Rotations = o.Rotations,
+              Priority = o.Priority,
+              Spacing = o.CommonLine ? 0.0 : o.Spacing,
+              Mirrored = true,
+            });
+          }
+
+          return populations;
         })
         .ToList();
       // EVERY sheet entry participates; the engine picks the size that wastes least material at each

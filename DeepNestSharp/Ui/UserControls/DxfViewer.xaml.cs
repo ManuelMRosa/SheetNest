@@ -1056,7 +1056,7 @@ namespace DeepNestSharp.Ui.UserControls
 
       if (this.EditMode)
       {
-        // Topmost part under the cursor gets selected and dragged; empty space falls through to pan.
+        // Topmost part under the cursor gets selected and dragged; empty space just deselects.
         Point pt = e.GetPosition(this.canvas);
         for (int i = this.partPaths.Count - 1; i >= 0; i--)
         {
@@ -1076,19 +1076,12 @@ namespace DeepNestSharp.Ui.UserControls
 
         this.SelectPart(null);
       }
-
-      this.isPanning = true;
-      this.panStart = e.GetPosition(this.host);
-      this.panTranslateX = this.translate.X;
-      this.panTranslateY = this.translate.Y;
-      this.host.CaptureMouse();
-      this.host.Cursor = Cursors.SizeAll;
     }
 
     private void OnPanMove(object sender, MouseEventArgs e)
     {
-      // An active pan (middle-button anywhere, or left-drag in view mode) wins over measure/edit, so
-      // wheel-pan works in every mode.
+      // An active pan (middle-button, in any mode) wins over measure/edit, so wheel-pan works in
+      // every mode.
       if (this.isPanning)
       {
         Point panPos = e.GetPosition(this.host);

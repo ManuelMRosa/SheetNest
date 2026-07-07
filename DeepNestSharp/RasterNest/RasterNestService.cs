@@ -14,6 +14,7 @@ namespace DeepNestSharp.RasterNest
     public int Rotations = -1;  // per-part allowed rotations; -1 = use the job's global setting
     public int Priority = 5;    // 0-10, higher nests first
     public double Spacing = -1; // per-part gap to neighbours (in); 0 = common-line (touching); -1 = job default
+    public bool Mirrored;       // nest this population X-flipped; its placements carry IsMirrored for the exporter
   }
 
   /// <summary>
@@ -65,7 +66,7 @@ namespace DeepNestSharp.RasterNest
 
       var remaining = partInfos
         .Where(p => p != null && !string.IsNullOrWhiteSpace(p.Path) && p.Quantity > 0)
-        .Select(p => new RasterPartInfo { Path = p.Path, Quantity = p.Quantity, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing })
+        .Select(p => new RasterPartInfo { Path = p.Path, Quantity = p.Quantity, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing, Mirrored = p.Mirrored })
         .ToList();
       int totalParts = remaining.Sum(p => p.Quantity);
 
@@ -88,11 +89,15 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
-      IEnumerable<RasterPartInfo> DemandFor(string placementName)
+      // Normal and mirrored populations share the same Path, so demand matching carries the mirror
+      // flag alongside the name — otherwise placing a mirrored copy would consume normal demand.
+      IEnumerable<RasterPartInfo> DemandFor(string placementName, bool mirrored)
       {
         foreach (var p in remaining)
         {
-          if (p.Path != null && string.Equals(p.Path, placementName, System.StringComparison.OrdinalIgnoreCase))
+          if (p.Mirrored == mirrored
+              && p.Path != null
+              && string.Equals(p.Path, placementName, System.StringComparison.OrdinalIgnoreCase))
           {
             yield return p;
           }
@@ -100,7 +105,8 @@ namespace DeepNestSharp.RasterNest
 
         foreach (var p in remaining)
         {
-          if (p.Path != null
+          if (p.Mirrored == mirrored
+              && p.Path != null
               && !string.Equals(p.Path, placementName, System.StringComparison.OrdinalIgnoreCase)
               && string.Equals(SafeFileName(p.Path), placementName, System.StringComparison.OrdinalIgnoreCase))
           {
@@ -112,20 +118,23 @@ namespace DeepNestSharp.RasterNest
       int Consume(IEnumerable<ISheetPlacement> sps)
       {
         int consumed = 0;
-        foreach (var g in sps
+        foreach (var mg in sps
           .SelectMany(sp => sp.PartPlacements)
-          .GroupBy(p => p.Part.Name ?? string.Empty, System.StringComparer.OrdinalIgnoreCase))
+          .GroupBy(p => p.IsMirrored))
         {
-          int left = g.Count();
-          foreach (var p in DemandFor(g.Key))
+          foreach (var g in mg.GroupBy(p => p.Part.Name ?? string.Empty, System.StringComparer.OrdinalIgnoreCase))
           {
-            int used = System.Math.Min(p.Quantity, left);
-            p.Quantity -= used;
-            left -= used;
-            consumed += used;
-            if (left == 0)
+            int left = g.Count();
+            foreach (var p in DemandFor(g.Key, mg.Key))
             {
-              break;
+              int used = System.Math.Min(p.Quantity, left);
+              p.Quantity -= used;
+              left -= used;
+              consumed += used;
+              if (left == 0)
+              {
+                break;
+              }
             }
           }
         }
@@ -139,7 +148,7 @@ namespace DeepNestSharp.RasterNest
         // parallel (each probe is a full single-size pipeline, so per-sheet quality is unchanged).
         var snapshot = remaining
           .Where(p => p.Quantity > 0)
-          .Select(p => new RasterPartInfo { Path = p.Path, Quantity = p.Quantity, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing })
+          .Select(p => new RasterPartInfo { Path = p.Path, Quantity = p.Quantity, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing, Mirrored = p.Mirrored })
           .ToList();
         var probes = new INestResult[stock.Count];
         System.Threading.Tasks.Parallel.For(0, stock.Count, i =>
@@ -182,12 +191,12 @@ namespace DeepNestSharp.RasterNest
         // plan: k identical sheets), then loop — the tail gets re-evaluated against every size.
         var winSheet = probes[win].UsedSheets[0];
         var comp = winSheet.PartPlacements
-          .GroupBy(p => p.Part.Name, System.StringComparer.OrdinalIgnoreCase)
-          .ToDictionary(g => g.Key, g => g.Count(), System.StringComparer.OrdinalIgnoreCase);
+          .GroupBy(p => (p.IsMirrored, Name: (p.Part.Name ?? string.Empty).ToUpperInvariant()))
+          .ToDictionary(g => g.Key, g => g.Count());
         int k = qtyLeft[win];
         foreach (var kv in comp)
         {
-          int have = DemandFor(kv.Key).Sum(p => p.Quantity);
+          int have = DemandFor(kv.Key.Name, kv.Key.IsMirrored).Sum(p => p.Quantity);
           k = System.Math.Min(k, kv.Value <= 0 ? 0 : have / kv.Value);
         }
 
@@ -205,7 +214,7 @@ namespace DeepNestSharp.RasterNest
           foreach (var kv in comp)
           {
             int want = kv.Value * k;
-            foreach (var p in DemandFor(kv.Key))
+            foreach (var p in DemandFor(kv.Key.Name, kv.Key.IsMirrored))
             {
               if (want <= 0)
               {
@@ -215,7 +224,7 @@ namespace DeepNestSharp.RasterNest
               int give = System.Math.Min(p.Quantity, want);
               if (give > 0)
               {
-                capped.Add(new RasterPartInfo { Path = p.Path, Quantity = give, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing });
+                capped.Add(new RasterPartInfo { Path = p.Path, Quantity = give, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing, Mirrored = p.Mirrored });
                 want -= give;
               }
             }
@@ -263,6 +272,11 @@ namespace DeepNestSharp.RasterNest
         var det = unplacedHelper.LoadRawDetail(new FileInfo(p.Path));
         if (det != null && det.TryConvertToNfp(unplacedSrc++, out INfp nfp))
         {
+          if (p.Mirrored)
+          {
+            nfp = nfp.MirrorX();
+          }
+
           for (int i = 0; i < p.Quantity; i++)
           {
             unplaced.Add(nfp);
@@ -289,7 +303,7 @@ namespace DeepNestSharp.RasterNest
       error = null;
       var helper = new NestExecutionHelper();
 
-      var parsed = new List<(int Src, INfp Nfp, int Qty, int[] Allowed, int Priority, double SpacingIn)>();
+      var parsed = new List<(int Src, INfp Nfp, int Qty, int[] Allowed, int Priority, double SpacingIn, bool Mirrored)>();
       int src = 0;
       foreach (var part in partInfos)
       {
@@ -301,8 +315,17 @@ namespace DeepNestSharp.RasterNest
         var det = helper.LoadRawDetail(new FileInfo(part.Path));
         if (det != null && det.TryConvertToNfp(src, out INfp nfp) && nfp.Points.Length > 2)
         {
+          if (part.Mirrored)
+          {
+            // Mirror ABOUT ORIGIN — the canonical mirror-then-rotate order the exporter replays via
+            // the placement's IsMirrored. MirrorX preserves Name (the original file path, which the
+            // exporter reloads), and every downstream consumer offsets by the polygon's own
+            // MinX/MinY, so no re-centering is needed.
+            nfp = nfp.MirrorX();
+          }
+
           double effSpacing = part.Spacing >= 0 ? part.Spacing : System.Math.Max(0, spacing);
-          parsed.Add((src, nfp, part.Quantity, PermittedSet(part.Rotations > 0 ? part.Rotations : rotations), part.Priority, effSpacing));
+          parsed.Add((src, nfp, part.Quantity, PermittedSet(part.Rotations > 0 ? part.Rotations : rotations), part.Priority, effSpacing, part.Mirrored));
           src++;
         }
       }
@@ -1056,7 +1079,7 @@ namespace DeepNestSharp.RasterNest
 
       var collection = new SheetPlacementCollection();
       int id = 0;
-      foreach (var (jps, items, _, _) in builtSheets)
+      foreach (var (jps, items, parsedIdx, _) in builtSheets)
       {
         var sheet = Sheet.NewSheet(collection.Count + 1, sheetWin, sheetHin);
         var placements = new List<IPartPlacement>();
@@ -1067,6 +1090,10 @@ namespace DeepNestSharp.RasterNest
             X = items[i].X,
             Y = items[i].Y,
             Rotation = jps[i].RotationDeg,
+
+            // The exporter reloads the ORIGINAL dxf via Part.Name and re-applies mirror-then-rotate,
+            // so mirrored-population placements must carry the flag.
+            IsMirrored = parsed[parsedIdx[i]].Mirrored,
             Source = jps[i].Source,
             Id = id++,
           });

@@ -27,6 +27,12 @@
     int Extra { get; set; }
 
     /// <summary>
+    /// Gets or sets how many MIRRORED (X-flipped) copies to nest on top of <see cref="Quantity"/> +
+    /// <see cref="Extra"/> — left-hand/right-hand sheet-metal pairs. The exported DXF cuts these mirrored.
+    /// </summary>
+    int MirrorQuantity { get; set; }
+
+    /// <summary>
     /// Gets or sets the per-part allowed rotations (1 = fixed, 2 = 0/180, 4 = 90° steps, 36 = free).
     /// Values &lt;= 0 fall back to the engine's configured default.
     /// </summary>
