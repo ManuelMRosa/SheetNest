@@ -207,7 +207,7 @@ namespace DeepNestLib.IO
         }
         catch (Exception ex)
         {
-          throw new StepUnfoldException($"No se pudo iniciar el motor de unfold (FreeCAD):\n{freecad}\n\n{ex.Message}", ex);
+          throw new StepUnfoldException($"Could not start the unfold engine (FreeCAD):\n{freecad}\n\n{ex.Message}", ex);
         }
 
         proc.BeginOutputReadLine();
@@ -224,7 +224,7 @@ namespace DeepNestLib.IO
             // ignore
           }
 
-          throw new StepUnfoldException($"FreeCAD excedió el tiempo límite ({TimeoutMs / 1000} s).");
+          throw new StepUnfoldException($"FreeCAD timed out ({TimeoutMs / 1000} s).");
         }
 
         proc.WaitForExit(); // ensure async output buffers are flushed
@@ -259,7 +259,7 @@ namespace DeepNestLib.IO
 
       if (line == null)
       {
-        throw new StepUnfoldException("FreeCAD no devolvió un resultado.\n\n" + Tail(stderr.ToString()));
+        throw new StepUnfoldException("FreeCAD returned no result.\n\n" + Tail(stderr.ToString()));
       }
 
       return line;
@@ -280,7 +280,7 @@ namespace DeepNestLib.IO
           var paths = seg[3].Split('|').Select(p => p.Trim()).Where(p => p.Length > 0 && File.Exists(p)).ToList();
           if (paths.Count == 0)
           {
-            throw new StepUnfoldException("El unfold reportó éxito pero no se generó ningún plano.");
+            throw new StepUnfoldException("The unfold reported success but produced no flat pattern.");
           }
 
           return (paths, total < paths.Count ? paths.Count : total);
@@ -289,7 +289,7 @@ namespace DeepNestLib.IO
 
       var fail = payload.Split(new[] { ':' }, 3);
       var reason = fail.Length >= 3 ? fail[2] : payload;
-      throw new StepUnfoldException("No se pudo desdoblar la pieza 3D.\n\n" + reason);
+      throw new StepUnfoldException("Could not unfold the 3D part.\n\n" + reason);
     }
 
     /// <summary>Analyzes a 3D file WITHOUT unfolding: returns the solid count and per-solid thickness (mm, 0 if unknown).</summary>
@@ -307,7 +307,7 @@ namespace DeepNestLib.IO
       if (!payload.StartsWith("OK:", StringComparison.Ordinal))
       {
         var seg0 = payload.Split(new[] { ':' }, 3);
-        throw new StepUnfoldException("No se pudo analizar el modelo 3D.\n\n" + (seg0.Length >= 3 ? seg0[2] : payload));
+        throw new StepUnfoldException("Could not analyze the 3D model.\n\n" + (seg0.Length >= 3 ? seg0[2] : payload));
       }
 
       var seg = payload.Split(new[] { ':' }, 3); // OK, count, "t1|t2|..."
@@ -350,8 +350,8 @@ namespace DeepNestLib.IO
       }
 
       throw new StepUnfoldException(
-        "No se encontró el motor de unfold (FreeCAD).\n" +
-        "Reinstala SheetNest (trae FreeCAD incluido) o instala FreeCAD desde freecad.org.");
+        "Unfold engine (FreeCAD) not found.\n" +
+        "Reinstall SheetNest (it bundles FreeCAD) or install FreeCAD from freecad.org.");
     }
 
     private static string DetectInstalledFreeCad()
@@ -404,7 +404,7 @@ namespace DeepNestLib.IO
         return alt;
       }
 
-      throw new StepUnfoldException("No se encontró unfold_macro.py junto a SheetNest.");
+      throw new StepUnfoldException("unfold_macro.py not found next to SheetNest.");
     }
 
     private static void TryDelete(string path)
