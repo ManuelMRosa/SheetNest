@@ -20,6 +20,7 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
     <!-- Part file -->
@@ -91,8 +92,24 @@
       </GroupBox>
     </Grid>
 
+    <!-- 3D unfold (only for STEP/IGES-imported parts). Changing K re-unfolds the part on OK. -->
+    <GroupBox x:Name="unfold3DGroup" Grid.Row="2" Header="3D unfold (sheet metal)" Margin="0,12,0,0" Padding="8" Visibility="Collapsed">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Text="K-factor:" VerticalAlignment="Center" Margin="0,0,8,0" />
+        <xctk:DoubleUpDown x:Name="kFactor3DUpDown" Width="80" Minimum="0" Maximum="2" Increment="0.05" FormatString="0.###"
+                           ToolTip="Bend-allowance K-factor. Changing it re-unfolds this part with FreeCAD (the developed length changes)." />
+        <TextBlock Text="Standard:" VerticalAlignment="Center" Margin="16,0,8,0" />
+        <ComboBox x:Name="std3DCombo" Width="70" SelectedIndex="0">
+          <ComboBoxItem>ANSI</ComboBoxItem>
+          <ComboBoxItem>DIN</ComboBoxItem>
+        </ComboBox>
+        <TextBlock Text="Thickness:" VerticalAlignment="Center" Margin="16,0,8,0" />
+        <TextBlock x:Name="thickness3DText" VerticalAlignment="Center" Foreground="{StaticResource Brush.TextMuted}" />
+      </StackPanel>
+    </GroupBox>
+
     <!-- OK / Cancel -->
-    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
       <Button Style="{StaticResource PrimaryButton}" Content="OK" Width="96" FontSize="13" Padding="0,6" IsDefault="True" Click="OnOk" />
       <Button Style="{StaticResource ModernButton}" Content="Cancel" Width="84" Margin="10,0,0,0" IsCancel="True" />
     </StackPanel>

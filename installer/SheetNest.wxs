@@ -9,12 +9,19 @@
 
   Build (from the repo root, after `dotnet publish` of the app; needs the UI extension once:
   `wix extension add -g WixToolset.UI.wixext/5.0.2`):
+    # 1. publish the app  -> <publishDir>
+    # 2. stage the bundled FreeCAD payload so 3D (STEP/IGES) import + unfold works offline:
+    #      installer\build-freecad-payload.ps1 -Dest <publishDir>\freecad
+    #    (the app finds it at <install>\freecad\bin\freecadcmd.exe; see StepUnfoldService)
+    # 3. build the MSI (the harvest below ships <publishDir>\** including freecad\):
     wix build installer\SheetNest.wxs `
       -d PublishDir=<self-contained publish folder> `
       -d Version=1.1.1 `
       -d IconPath=DeepNestSharp\Branding\sheetnest.ico `
       -ext WixToolset.UI.wixext `
       -arch x64 -o SheetNest-1.1.1-win-x64.msi
+
+  NOTE: with the FreeCAD payload staged, the publish folder is ~2 GB and the MSI ~500 MB.
 
   NOTE: Windows Installer only compares the first THREE version fields (x.y.z) — a fourth
   field like 1.1.0.1 is ignored, so every release must bump at least the third number.

@@ -69,6 +69,28 @@ namespace DeepNestSharp.Ui.Views
       }
 
       this.priorityCombo.SelectedIndex = System.Math.Max(0, System.Math.Min(10, part.Priority));
+
+      // 3D-unfolded parts get an editable K-factor + a read-only detected thickness. Changing K
+      // re-unfolds the part (handled by the caller after OK). Hidden for plain 2D (DXF) parts.
+      if (!string.IsNullOrEmpty(part.SourceStepPath))
+      {
+        this.unfold3DGroup.Visibility = Visibility.Visible;
+        this.kFactor3DUpDown.Value = part.KFactor;
+        this.std3DCombo.SelectedIndex = string.Equals(part.KFactorStandard, "din", System.StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        this.thickness3DText.Text = FormatThickness(part.ThicknessMm, part.UnfoldUnitInch);
+      }
+    }
+
+    private static string FormatThickness(double thicknessMm, bool inch)
+    {
+      if (thicknessMm <= 0)
+      {
+        return "—";
+      }
+
+      return inch
+        ? (thicknessMm / 25.4).ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + " in"
+        : thicknessMm.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) + " mm";
     }
 
     private static DeepNestLib.INfp LoadPolygon(string path)
@@ -210,6 +232,15 @@ namespace DeepNestSharp.Ui.Views
       int priority = this.priorityCombo.SelectedIndex < 0 ? 5 : this.priorityCombo.SelectedIndex;
       this.part.Priority = priority;
       this.part.IsPriority = priority >= 6; // the NFP engine's priority is a flag: "nest these first"
+
+      // 3D parts: write the chosen K-factor/standard. The caller (OpenEditPart) compares against the
+      // pre-dialog values and re-unfolds if they changed.
+      if (!string.IsNullOrEmpty(this.part.SourceStepPath))
+      {
+        this.kFactor3DUpDown.CommitInput();
+        this.part.KFactor = this.kFactor3DUpDown.Value ?? this.part.KFactor;
+        this.part.KFactorStandard = this.std3DCombo.SelectedIndex == 1 ? "din" : "ansi";
+      }
 
       this.DialogResult = true;
     }

@@ -77,6 +77,11 @@
         det = DxfParser.LoadDxfFile(f.FullName).Result;
       }
 
+      if (StepUnfoldService.IsStepFile(f.FullName))
+      {
+        det = StepUnfoldService.LoadAsRawDetail(f.FullName);
+      }
+
       return det;
     }
   }

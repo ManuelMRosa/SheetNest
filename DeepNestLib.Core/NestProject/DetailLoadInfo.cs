@@ -35,6 +35,21 @@
 
     public AnglesEnum StrictAngle { get; set; } = AnglesEnum.None;
 
+    // 3D-unfold provenance: when a part comes from a STEP/IGES import, these let SheetNest re-unfold it
+    // (e.g. after the user changes the K-factor in Edit Part) and rebuild the flat if the temp DXF is
+    // gone. Empty SourceStepPath = a plain 2D part (never 3D-unfolded). All persist to the .dnest.
+    public string SourceStepPath { get; set; } = string.Empty;
+
+    public int UnfoldIndex { get; set; } = 0; // index into StepUnfoldService.GetUnfoldedParts(...).Paths for THIS part
+
+    public double KFactor { get; set; } = 0.40;
+
+    public string KFactorStandard { get; set; } = "ansi";
+
+    public bool UnfoldUnitInch { get; set; } = true;
+
+    public double ThicknessMm { get; set; } = 0; // detected sheet thickness (mm); 0 = unknown (display only)
+
     public override string ToJson(bool writeIndented = false)
     {
       var options = new JsonSerializerOptions();

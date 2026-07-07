@@ -16,7 +16,7 @@
 
   public class NoFitPolygon : PolygonBase, INfp, IHiddenNfp, IStringify
   {
-    public const string FileDialogFilter = "AutoCad Drawing Exchange Format (*.dxf)|*.dxf|DeepNest Polygon (*.dnpoly)|*.dnpoly|All files (*.*)|*.*";
+    public const string FileDialogFilter = "Drawings & 3D (*.dxf;*.step;*.stp;*.iges;*.igs;*.dnpoly)|*.dxf;*.step;*.stp;*.iges;*.igs;*.dnpoly|AutoCad Drawing Exchange Format (*.dxf)|*.dxf|STEP / IGES 3D (*.step;*.stp;*.iges;*.igs)|*.step;*.stp;*.iges;*.igs|DeepNest Polygon (*.dnpoly)|*.dnpoly|All files (*.*)|*.*";
     private double rotation;
 
     public NoFitPolygon(IList<INfp> children)
@@ -454,6 +454,32 @@
       }
 
       return clone;
+    }
+
+    /// <inheritdoc/>
+    public bool IsMirrored { get; set; }
+
+    /// <inheritdoc/>
+    public INfp MirrorX(WithChildren withChildren = WithChildren.Included)
+    {
+      List<SvgPoint> pp = new List<SvgPoint>();
+      for (var i = 0; i < this.Length; i++)
+      {
+        pp.Add(new SvgPoint(-this[i].X, this[i].Y));
+      }
+
+      var mirrored = this.CloneInstance();
+      mirrored.ReplacePoints(pp);
+
+      if (withChildren == WithChildren.Included && this.Children != null && this.Children.Count > 0)
+      {
+        for (var j = 0; j < this.Children.Count; j++)
+        {
+          mirrored.Children[j] = this.Children[j].MirrorX(withChildren);
+        }
+      }
+
+      return mirrored;
     }
 
     /// <inheritdoc/>

@@ -9,6 +9,7 @@
   <Grid x:Name="host" Background="#808080" ClipToBounds="True" Focusable="True"
         MouseWheel="OnMouseWheel"
         MouseLeftButtonDown="OnPanStart" MouseMove="OnPanMove" MouseLeftButtonUp="OnPanEnd"
+        MouseDown="OnViewerMouseDown" MouseUp="OnViewerMouseUp"
         MouseRightButtonDown="OnResetView" PreviewKeyDown="OnViewerKeyDown">
     <!-- Canvas is drawn in sheet coordinates (Y already flipped); zoom/pan via RenderTransform.
          Anchor top-left so its origin is the host's (0,0); otherwise WPF centres a fixed-size
@@ -26,7 +27,7 @@
                Text="Run a nest to see the result here."
                Foreground="#EFEFEF" FontSize="14"
                HorizontalAlignment="Center" VerticalAlignment="Center" />
-    <TextBlock x:Name="hintText" Text="scroll = zoom  ·  drag = pan  ·  right-click = fit"
+    <TextBlock x:Name="hintText" Text="scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit"
                Foreground="#DCDCDC" FontSize="11" IsHitTestVisible="False"
                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8" />
 
@@ -47,7 +48,12 @@
           <Button Content="&#8635; 90" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw90" ToolTip="Rotate selected part 90° clockwise" />
           <Button Content="&#8634; 5" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw5" ToolTip="Rotate selected part 5° counter-clockwise" />
           <Button Content="&#8635; 5" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw5" ToolTip="Rotate selected part 5° clockwise" />
+          <Button Content="&#8646; Mirror" Margin="10,0,0,0" Padding="6,3" Click="OnMirror"
+                  ToolTip="Mirror the selected part (left ↔ right hand). The DXF export reflects it too, so the cut part is really mirrored — not just on screen." />
         </StackPanel>
+        <ToggleButton x:Name="measureToggle" Content="Measure" Margin="12,0,0,0" Padding="8,3" FontWeight="SemiBold"
+                      Checked="OnMeasureModeChanged" Unchecked="OnMeasureModeChanged"
+                      ToolTip="Measure a distance: click two points on the drawing; the length shows below (in the drawing's units — inches). Use it to verify a 3D-unfolded part's size / K-factor." />
       </StackPanel>
     </Border>
 

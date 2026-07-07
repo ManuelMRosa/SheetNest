@@ -126,7 +126,7 @@
         var sheetXoffset = -sheet.WidthCalculated * i;
         //double sheetYoffset = -sheet.Height * i;
         DxfPoint offsetdistance = new DxfPoint(polygon.X + sheetXoffset, polygon.Y, 0D);
-        List<DxfEntity> newlist = OffsetToNest(fl.Outers, offsetdistance, polygon.Rotation, differentiateChildren);
+        List<DxfEntity> newlist = OffsetToNest(fl.Outers, offsetdistance, polygon.Rotation, polygon.IsMirrored, differentiateChildren);
         foreach (DxfEntity ent in newlist)
         {
           yield return ent;
@@ -134,7 +134,7 @@
       }
     }
 
-    private static List<DxfEntity> OffsetToNest(IEnumerable<ILocalContour> contours, DxfPoint offsetdistance, double rotation, bool differentiateChildren)
+    private static List<DxfEntity> OffsetToNest(IEnumerable<ILocalContour> contours, DxfPoint offsetdistance, double rotation, bool mirror, bool differentiateChildren)
     {
       var allEntities = new List<DxfEntity>();
       foreach (var contour in contours)
@@ -153,10 +153,10 @@
         }
       }
 
-      return OffsetToNest(allEntities, offsetdistance, rotation);
+      return OffsetToNest(allEntities, offsetdistance, rotation, mirror);
     }
 
-    private static List<DxfEntity> OffsetToNest(IList<DxfEntity> dxfEntities, DxfPoint offset, double rotationAngle)
+    private static List<DxfEntity> OffsetToNest(IList<DxfEntity> dxfEntities, DxfPoint offset, double rotationAngle, bool mirror)
     {
       var result = new List<DxfEntity>();
       List<DxfPoint> tmpPts;
@@ -166,53 +166,80 @@
         {
           case DxfEntityType.Arc:
             DxfArc dxfArc = (DxfArc)entity;
-            dxfArc.Center = RotateLocation(rotationAngle, dxfArc.Center);
+            dxfArc.Center = TransformLocation(mirror, rotationAngle, dxfArc.Center);
             dxfArc.Center += offset;
-            dxfArc.StartAngle += rotationAngle;
-            dxfArc.EndAngle += rotationAngle;
+            if (mirror)
+            {
+              // Reflection across Y reverses the arc's CCW sweep: swap the endpoints and map θ -> 180-θ.
+              double s = dxfArc.StartAngle, en = dxfArc.EndAngle;
+              dxfArc.StartAngle = 180.0 - en + rotationAngle;
+              dxfArc.EndAngle = 180.0 - s + rotationAngle;
+            }
+            else
+            {
+              dxfArc.StartAngle += rotationAngle;
+              dxfArc.EndAngle += rotationAngle;
+            }
+
             result.Add(dxfArc);
             break;
 
           case DxfEntityType.ArcAlignedText:
             DxfArcAlignedText dxfArcAligned = (DxfArcAlignedText)entity;
-            dxfArcAligned.CenterPoint = RotateLocation(rotationAngle, dxfArcAligned.CenterPoint);
+            dxfArcAligned.CenterPoint = TransformLocation(mirror, rotationAngle, dxfArcAligned.CenterPoint);
             dxfArcAligned.CenterPoint += offset;
-            dxfArcAligned.StartAngle += rotationAngle;
-            dxfArcAligned.EndAngle += rotationAngle;
+            if (mirror)
+            {
+              double s = dxfArcAligned.StartAngle, en = dxfArcAligned.EndAngle;
+              dxfArcAligned.StartAngle = 180.0 - en + rotationAngle;
+              dxfArcAligned.EndAngle = 180.0 - s + rotationAngle;
+            }
+            else
+            {
+              dxfArcAligned.StartAngle += rotationAngle;
+              dxfArcAligned.EndAngle += rotationAngle;
+            }
+
             result.Add(dxfArcAligned);
             break;
 
           case DxfEntityType.Attribute:
             DxfAttribute dxfAttribute = (DxfAttribute)entity;
-            dxfAttribute.Location = RotateLocation(rotationAngle, dxfAttribute.Location);
+            dxfAttribute.Location = TransformLocation(mirror, rotationAngle, dxfAttribute.Location);
             dxfAttribute.Location += offset;
             result.Add(dxfAttribute);
             break;
 
           case DxfEntityType.AttributeDefinition:
             DxfAttributeDefinition dxfAttributecommon = (DxfAttributeDefinition)entity;
-            dxfAttributecommon.Location = RotateLocation(rotationAngle, dxfAttributecommon.Location);
+            dxfAttributecommon.Location = TransformLocation(mirror, rotationAngle, dxfAttributecommon.Location);
             dxfAttributecommon.Location += offset;
             result.Add(dxfAttributecommon);
             break;
 
           case DxfEntityType.Circle:
             DxfCircle dxfCircle = (DxfCircle)entity;
-            dxfCircle.Center = RotateLocation(rotationAngle, dxfCircle.Center);
+            dxfCircle.Center = TransformLocation(mirror, rotationAngle, dxfCircle.Center);
             dxfCircle.Center += offset;
             result.Add(dxfCircle);
             break;
 
           case DxfEntityType.Ellipse:
             DxfEllipse dxfEllipse = (DxfEllipse)entity;
-            dxfEllipse.Center = RotateLocation(rotationAngle, dxfEllipse.Center);
+            dxfEllipse.Center = TransformLocation(mirror, rotationAngle, dxfEllipse.Center);
             dxfEllipse.Center += offset;
+            if (mirror)
+            {
+              var ma = dxfEllipse.MajorAxis;
+              dxfEllipse.MajorAxis = new DxfVector(-ma.X, ma.Y, ma.Z); // reflect the major-axis direction
+            }
+
             result.Add(dxfEllipse);
             break;
 
           case DxfEntityType.Image:
             DxfImage dxfImage = (DxfImage)entity;
-            dxfImage.Location = RotateLocation(rotationAngle, dxfImage.Location);
+            dxfImage.Location = TransformLocation(mirror, rotationAngle, dxfImage.Location);
             dxfImage.Location += offset;
 
             result.Add(dxfImage);
@@ -224,7 +251,7 @@
 
             foreach (DxfPoint vrt in dxfLeader.Vertices)
             {
-              var tmppnt = RotateLocation(rotationAngle, vrt);
+              var tmppnt = TransformLocation(mirror, rotationAngle, vrt);
               tmppnt += offset;
               tmpPts.Add(tmppnt);
             }
@@ -236,8 +263,8 @@
 
           case DxfEntityType.Line:
             DxfLine dxfLine = (DxfLine)entity;
-            dxfLine.P1 = RotateLocation(rotationAngle, dxfLine.P1);
-            dxfLine.P2 = RotateLocation(rotationAngle, dxfLine.P2);
+            dxfLine.P1 = TransformLocation(mirror, rotationAngle, dxfLine.P1);
+            dxfLine.P2 = TransformLocation(mirror, rotationAngle, dxfLine.P2);
             dxfLine.P1 += offset;
             dxfLine.P2 += offset;
             result.Add(dxfLine);
@@ -249,10 +276,14 @@
             DxfLwPolyline dxfLwPoly = (DxfLwPolyline)entity;
             foreach (DxfLwPolylineVertex vrt in dxfLwPoly.Vertices)
             {
-              var rotated = RotateLocation(rotationAngle, new DxfPoint(vrt.X, vrt.Y, 0));
+              var rotated = TransformLocation(mirror, rotationAngle, new DxfPoint(vrt.X, vrt.Y, 0));
               rotated += offset;
               vrt.X = rotated.X;
               vrt.Y = rotated.Y;
+              if (mirror)
+              {
+                vrt.Bulge = -vrt.Bulge; // reflection flips the sign of the arc bulge
+              }
             }
 
             result.Add(dxfLwPoly);
@@ -263,11 +294,11 @@
             tmpPts = new List<DxfPoint>();
             mLine.StartPoint += offset;
 
-            mLine.StartPoint = RotateLocation(rotationAngle, mLine.StartPoint);
+            mLine.StartPoint = TransformLocation(mirror, rotationAngle, mLine.StartPoint);
 
             foreach (DxfPoint vrt in mLine.Vertices)
             {
-              var tmppnt = RotateLocation(rotationAngle, vrt);
+              var tmppnt = TransformLocation(mirror, rotationAngle, vrt);
               tmppnt += offset;
               tmpPts.Add(tmppnt);
             }
@@ -284,8 +315,13 @@
             foreach (DxfVertex vrt in polyline.Vertices)
             {
               var tmppnt = vrt;
-              tmppnt.Location = RotateLocation(rotationAngle, tmppnt.Location);
+              tmppnt.Location = TransformLocation(mirror, rotationAngle, tmppnt.Location);
               tmppnt.Location += offset;
+              if (mirror)
+              {
+                tmppnt.Bulge = -tmppnt.Bulge;
+              }
+
               verts.Add(tmppnt);
             }
 
@@ -342,6 +378,19 @@
       var x1 = (double)(x * Math.Cos(angle) - y * Math.Sin(angle));
       var y1 = (double)(x * Math.Sin(angle) + y * Math.Cos(angle));
       return new DxfPoint(x1, y1, pt.Z);
+    }
+
+    /// <summary>Applies the placement's transform to a point in the original file's frame: mirror across Y
+    /// (negate X) first when the placement is mirrored, THEN rotate — matching how the on-screen/nested
+    /// geometry was built (mirror-then-rotate), so the exported part lands exactly where it's shown.</summary>
+    private static DxfPoint TransformLocation(bool mirror, double rotationAngle, DxfPoint pt)
+    {
+      if (mirror)
+      {
+        pt = new DxfPoint(-pt.X, pt.Y, pt.Z);
+      }
+
+      return RotateLocation(rotationAngle, pt);
     }
 
     private DxfFile GenerateDxfFile(IEnumerable<INfp> polygons, ISheet sheet, int i, bool doMergeLines, bool differentiateChildren)

@@ -33,6 +33,9 @@ namespace DeepNestSharp.Ui.UserControls
     // Target on-screen line width in device pixels (constant at any zoom level).
     private const double StrokeScreenPx = 1.0;
 
+    // Measure snap: how close (device px) the cursor must be to a vertex to snap onto it.
+    private const double SnapScreenPx = 12.0;
+
     private static readonly Brush SheetFill = new SolidColorBrush(Color.FromRgb(0xFA, 0xFA, 0xFA));
     private static readonly Brush SheetStroke = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
     private static readonly Brush PartStroke = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x10));
@@ -63,6 +66,21 @@ namespace DeepNestSharp.Ui.UserControls
     private double dragStartY;
     private double currentSheetW;
     private double currentSheetH;
+
+    // Measure tool: first clicked point (canvas/inch coords), whether the segment is fixed, and the
+    // overlay shapes (children of the canvas so they zoom/pan with the geometry).
+    private Point? measureA;
+    private bool measureDone;
+    private System.Windows.Shapes.Line measureLine;
+    private System.Windows.Shapes.Ellipse measureDotA;
+    private System.Windows.Shapes.Ellipse measureDotB;
+    private System.Windows.Shapes.Ellipse measureSnapMarker; // hollow ring shown over the snapped vertex
+    private Point measureSnapAt;
+
+    // Vertices / edge midpoints / hole centres (canvas coords) the measure tool snaps to, and the
+    // edge segments for "nearest point on an edge" projection — all rebuilt each Render.
+    private readonly List<Point> snapPoints = new List<Point>();
+    private readonly List<(Point A, Point B)> snapSegments = new List<(Point, Point)>();
 
     // Undo/redo history of manual edits (cleared when a new result arrives).
     private readonly Stack<EditRecord> undoStack = new Stack<EditRecord>();
@@ -104,6 +122,7 @@ namespace DeepNestSharp.Ui.UserControls
       public double X;
       public double Y;
       public double Rotation;
+      public bool IsMirrored;
       public int Source;
       public int Id;
 
@@ -113,6 +132,7 @@ namespace DeepNestSharp.Ui.UserControls
         X = pp.X,
         Y = pp.Y,
         Rotation = pp.Rotation,
+        IsMirrored = pp.IsMirrored,
         Source = pp.Source,
         Id = pp.Id,
       };
@@ -122,6 +142,7 @@ namespace DeepNestSharp.Ui.UserControls
         X = this.X,
         Y = this.Y,
         Rotation = this.Rotation,
+        IsMirrored = this.IsMirrored,
         Source = this.Source,
         Id = this.Id,
       };
@@ -509,6 +530,7 @@ namespace DeepNestSharp.Ui.UserControls
     {
       this.canvas.Children.Clear();
       this.partPaths.Clear();
+      this.ClearMeasure(); // canvas was cleared; drop dangling measure-shape references
 
       var result = this.Result;
       if (result == null || this.groups.Count == 0)
@@ -606,6 +628,8 @@ namespace DeepNestSharp.Ui.UserControls
           // Skip a part that can't be rendered rather than blanking the whole view.
         }
       }
+
+      this.BuildSnapPoints();
     }
 
     private Brush FillFor(IPartPlacement pp)
@@ -725,6 +749,7 @@ namespace DeepNestSharp.Ui.UserControls
       this.scale.ScaleX = newScale;
       this.scale.ScaleY = newScale;
       this.UpdateStrokeWidths();
+      this.UpdateMeasureScale();
       e.Handled = true;
     }
 
@@ -732,13 +757,235 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void OnEditModeChanged(object sender, RoutedEventArgs e)
     {
+      if (this.EditMode && this.measureToggle != null && this.measureToggle.IsChecked == true)
+      {
+        this.measureToggle.IsChecked = false; // mutually exclusive with Measure
+      }
+
       this.SelectPart(null);
       if (this.hintText != null)
       {
         this.hintText.Text = this.EditMode
           ? "click = select part  ·  drag = move  ·  buttons = rotate  ·  overlaps show red"
-          : "scroll = zoom  ·  drag = pan  ·  right-click = fit";
+          : "scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit";
       }
+    }
+
+    private bool MeasureMode => this.measureToggle != null && this.measureToggle.IsChecked == true;
+
+    private void OnMeasureModeChanged(object sender, RoutedEventArgs e)
+    {
+      if (this.MeasureMode && this.editToggle != null && this.editToggle.IsChecked == true)
+      {
+        this.editToggle.IsChecked = false; // mutually exclusive with Edit
+      }
+
+      this.ClearMeasure();
+      if (this.MeasureMode)
+      {
+        this.EnsureMeasureShapes(); // so the snap ring can show while aiming the first click
+      }
+
+      if (this.hintText != null)
+      {
+        this.hintText.Text = this.MeasureMode
+          ? "measure: click two points (snaps to corners)"
+          : "scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit";
+      }
+    }
+
+    private void ClearMeasure()
+    {
+      this.measureA = null;
+      this.measureDone = false;
+      if (this.measureLine != null) { this.canvas.Children.Remove(this.measureLine); this.measureLine = null; }
+      if (this.measureDotA != null) { this.canvas.Children.Remove(this.measureDotA); this.measureDotA = null; }
+      if (this.measureDotB != null) { this.canvas.Children.Remove(this.measureDotB); this.measureDotB = null; }
+      if (this.measureSnapMarker != null) { this.canvas.Children.Remove(this.measureSnapMarker); this.measureSnapMarker = null; }
+    }
+
+    private void EnsureMeasureShapes()
+    {
+      if (this.measureLine != null)
+      {
+        return;
+      }
+
+      var brush = new SolidColorBrush(Color.FromRgb(0xC0, 0x00, 0x00)); // measure red
+      brush.Freeze();
+      this.measureLine = new System.Windows.Shapes.Line { Stroke = brush, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+      this.measureDotA = new System.Windows.Shapes.Ellipse { Fill = brush, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+      this.measureDotB = new System.Windows.Shapes.Ellipse { Fill = brush, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+      this.measureSnapMarker = new System.Windows.Shapes.Ellipse { Stroke = brush, Fill = null, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+      this.canvas.Children.Add(this.measureLine);
+      this.canvas.Children.Add(this.measureDotA);
+      this.canvas.Children.Add(this.measureDotB);
+      this.canvas.Children.Add(this.measureSnapMarker);
+    }
+
+    /// <summary>Keeps the measure overlay a constant on-screen size (counter-scaling the zoom) and
+    /// positions the dots + snap ring at their points.</summary>
+    private void UpdateMeasureScale()
+    {
+      if (this.measureLine == null)
+      {
+        return;
+      }
+
+      double f = 1.0 / Math.Max(0.0001, this.scale.ScaleX);
+      this.measureLine.StrokeThickness = 1.5 * f;
+      double r = 3.0 * f;
+
+      if (this.measureDotA != null && this.measureA != null)
+      {
+        this.measureDotA.Width = this.measureDotA.Height = r * 2;
+        System.Windows.Controls.Canvas.SetLeft(this.measureDotA, this.measureA.Value.X - r);
+        System.Windows.Controls.Canvas.SetTop(this.measureDotA, this.measureA.Value.Y - r);
+      }
+
+      if (this.measureDotB != null)
+      {
+        this.measureDotB.Width = this.measureDotB.Height = r * 2;
+        System.Windows.Controls.Canvas.SetLeft(this.measureDotB, this.measureLine.X2 - r);
+        System.Windows.Controls.Canvas.SetTop(this.measureDotB, this.measureLine.Y2 - r);
+      }
+
+      if (this.measureSnapMarker != null)
+      {
+        double sr = 5.0 * f;
+        this.measureSnapMarker.StrokeThickness = 1.5 * f;
+        this.measureSnapMarker.Width = this.measureSnapMarker.Height = sr * 2;
+        System.Windows.Controls.Canvas.SetLeft(this.measureSnapMarker, this.measureSnapAt.X - sr);
+        System.Windows.Controls.Canvas.SetTop(this.measureSnapMarker, this.measureSnapAt.Y - sr);
+      }
+    }
+
+    private void BuildSnapPoints()
+    {
+      this.snapPoints.Clear();
+      this.snapSegments.Clear();
+      double h = this.currentSheetH;
+
+      // Sheet corners (canvas coords: Y flipped).
+      this.snapPoints.Add(new Point(0, h));
+      this.snapPoints.Add(new Point(this.currentSheetW, h));
+      this.snapPoints.Add(new Point(0, 0));
+      this.snapPoints.Add(new Point(this.currentSheetW, 0));
+
+      foreach (var (_, pp) in this.partPaths)
+      {
+        var src = pp?.PlacedPart;
+        if (src == null)
+        {
+          continue;
+        }
+
+        this.AddContourSnap(src, h);
+        if (src.Children != null)
+        {
+          foreach (var child in src.Children)
+          {
+            this.AddContourSnap(child, h);
+            this.AddHoleCentre(child, h); // circle/hole centre = its bbox centre
+          }
+        }
+      }
+    }
+
+    /// <summary>Adds each vertex + each edge midpoint to snapPoints, and each edge to snapSegments,
+    /// for one contour (in canvas coords). Wraps the last edge to close the loop and skips the
+    /// zero-length edge some contours carry from a duplicated closing vertex.</summary>
+    private void AddContourSnap(INfp contour, double h)
+    {
+      if (contour == null)
+      {
+        return;
+      }
+
+      int n = contour.Length;
+      for (int i = 0; i < n; i++)
+      {
+        var a = new Point(contour[i].X, h - contour[i].Y); // absolute sheet coords -> canvas (flip Y)
+        this.snapPoints.Add(a);
+
+        var next = contour[(i + 1) % n];
+        var b = new Point(next.X, h - next.Y);
+        double ex = b.X - a.X;
+        double ey = b.Y - a.Y;
+        if ((ex * ex) + (ey * ey) > 1e-9)
+        {
+          this.snapPoints.Add(new Point((a.X + b.X) / 2, (a.Y + b.Y) / 2)); // edge midpoint
+          this.snapSegments.Add((a, b));
+        }
+      }
+    }
+
+    private void AddHoleCentre(INfp hole, double h)
+    {
+      if (hole == null || hole.Length < 3)
+      {
+        return;
+      }
+
+      double cx = (hole.MinX + hole.MaxX) / 2;
+      double cy = (hole.MinY + hole.MaxY) / 2;
+      this.snapPoints.Add(new Point(cx, h - cy)); // exact centre for a circular hole; bbox centre otherwise
+    }
+
+    /// <summary>Snaps <paramref name="cursor"/> (canvas coords) to the nearest vertex within the screen
+    /// threshold; returns the cursor unchanged (snapped=false) when none is close enough.</summary>
+    private Point SnapToNearest(Point cursor, out bool snapped)
+    {
+      snapped = false;
+      Point result = cursor;
+      double thresh = SnapScreenPx / Math.Max(0.0001, this.scale.ScaleX);
+      double bestD2 = thresh * thresh;
+
+      // Tier 1 — discrete points (vertices, edge midpoints, hole centres, sheet corners): these win.
+      foreach (var sp in this.snapPoints)
+      {
+        double dx = sp.X - cursor.X;
+        double dy = sp.Y - cursor.Y;
+        double d2 = (dx * dx) + (dy * dy);
+        if (d2 <= bestD2)
+        {
+          bestD2 = d2;
+          result = sp;
+          snapped = true;
+        }
+      }
+
+      if (snapped)
+      {
+        return result;
+      }
+
+      // Tier 2 — nearest point on an edge (perpendicular projection): fallback when no vertex is close.
+      foreach (var (a, b) in this.snapSegments)
+      {
+        double abx = b.X - a.X;
+        double aby = b.Y - a.Y;
+        double len2 = (abx * abx) + (aby * aby);
+        if (len2 < 1e-9)
+        {
+          continue;
+        }
+
+        double t = (((cursor.X - a.X) * abx) + ((cursor.Y - a.Y) * aby)) / len2;
+        t = Math.Max(0, Math.Min(1, t));
+        var proj = new Point(a.X + (t * abx), a.Y + (t * aby));
+        double dx = proj.X - cursor.X;
+        double dy = proj.Y - cursor.Y;
+        double d2 = (dx * dx) + (dy * dy);
+        if (d2 <= bestD2)
+        {
+          bestD2 = d2;
+          result = proj;
+          snapped = true;
+        }
+      }
+
+      return result;
     }
 
     private void SelectPart(IPartPlacement pp)
@@ -769,6 +1016,43 @@ namespace DeepNestSharp.Ui.UserControls
     private void OnPanStart(object sender, MouseButtonEventArgs e)
     {
       this.host.Focus(); // so Ctrl+Z / Ctrl+Y reach the viewer
+
+      if (this.MeasureMode)
+      {
+        this.EnsureMeasureShapes();
+        Point p = this.SnapToNearest(e.GetPosition(this.canvas), out _); // canvas units == drawing inches
+        if (this.measureA == null || this.measureDone)
+        {
+          this.measureA = p;
+          this.measureDone = false;
+          this.measureLine.X1 = this.measureLine.X2 = p.X;
+          this.measureLine.Y1 = this.measureLine.Y2 = p.Y;
+          this.measureLine.Visibility = Visibility.Visible;
+          this.measureDotA.Visibility = Visibility.Visible;
+          this.measureDotB.Visibility = Visibility.Collapsed;
+          this.UpdateMeasureScale();
+          if (this.hintText != null)
+          {
+            this.hintText.Text = "measure: click the second point";
+          }
+        }
+        else
+        {
+          this.measureLine.X2 = p.X;
+          this.measureLine.Y2 = p.Y;
+          this.measureDotB.Visibility = Visibility.Visible;
+          this.measureDone = true;
+          this.UpdateMeasureScale();
+          double d = (p - this.measureA.Value).Length; // Y-flip invariant → inches
+          if (this.hintText != null)
+          {
+            this.hintText.Text = $"distance: {d:0.000} in  ·  click to measure again";
+          }
+        }
+
+        e.Handled = true;
+        return;
+      }
 
       if (this.EditMode)
       {
@@ -803,6 +1087,38 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void OnPanMove(object sender, MouseEventArgs e)
     {
+      // An active pan (middle-button anywhere, or left-drag in view mode) wins over measure/edit, so
+      // wheel-pan works in every mode.
+      if (this.isPanning)
+      {
+        Point panPos = e.GetPosition(this.host);
+        this.translate.X = this.panTranslateX + (panPos.X - this.panStart.X);
+        this.translate.Y = this.panTranslateY + (panPos.Y - this.panStart.Y);
+        return;
+      }
+
+      if (this.MeasureMode)
+      {
+        this.EnsureMeasureShapes();
+        Point mp = this.SnapToNearest(e.GetPosition(this.canvas), out bool snapped);
+        this.measureSnapAt = mp;
+        this.measureSnapMarker.Visibility = snapped ? Visibility.Visible : Visibility.Collapsed;
+
+        if (this.measureA != null && !this.measureDone)
+        {
+          this.measureLine.X2 = mp.X;
+          this.measureLine.Y2 = mp.Y;
+          double d = (mp - this.measureA.Value).Length;
+          if (this.hintText != null)
+          {
+            this.hintText.Text = $"distance: {d:0.000} in";
+          }
+        }
+
+        this.UpdateMeasureScale();
+        return;
+      }
+
       if (this.isDraggingPart && this.selectedPp != null)
       {
         // Canvas units are sheet units; canvas Y runs downward, sheet Y upward.
@@ -817,15 +1133,6 @@ namespace DeepNestSharp.Ui.UserControls
         this.SetSelectedFill(this.dragInvalid ? InvalidFill : SelectedFill);
         return;
       }
-
-      if (!this.isPanning)
-      {
-        return;
-      }
-
-      Point p = e.GetPosition(this.host);
-      this.translate.X = this.panTranslateX + (p.X - this.panStart.X);
-      this.translate.Y = this.panTranslateY + (p.Y - this.panStart.Y);
     }
 
     /// <summary>
@@ -933,6 +1240,36 @@ namespace DeepNestSharp.Ui.UserControls
       e.Handled = true;
     }
 
+    private void OnViewerMouseDown(object sender, MouseButtonEventArgs e)
+    {
+      // Middle button (mouse-wheel press) = pan, in ANY mode (view / edit / measure), CAD-style —
+      // leaving the left button free for selecting/dragging parts and measuring.
+      if (e.ChangedButton != System.Windows.Input.MouseButton.Middle)
+      {
+        return;
+      }
+
+      this.host.Focus();
+      this.isPanning = true;
+      this.panStart = e.GetPosition(this.host);
+      this.panTranslateX = this.translate.X;
+      this.panTranslateY = this.translate.Y;
+      this.host.CaptureMouse();
+      this.host.Cursor = Cursors.SizeAll;
+      e.Handled = true;
+    }
+
+    private void OnViewerMouseUp(object sender, MouseButtonEventArgs e)
+    {
+      if (e.ChangedButton == System.Windows.Input.MouseButton.Middle && this.isPanning)
+      {
+        this.isPanning = false;
+        this.host.ReleaseMouseCapture();
+        this.host.Cursor = Cursors.Arrow;
+        e.Handled = true;
+      }
+    }
+
     private void OnRotateCw90(object sender, RoutedEventArgs e) => this.RotateSelected(90);
 
     private void OnRotateCcw90(object sender, RoutedEventArgs e) => this.RotateSelected(-90);
@@ -940,6 +1277,8 @@ namespace DeepNestSharp.Ui.UserControls
     private void OnRotateCw5(object sender, RoutedEventArgs e) => this.RotateSelected(5);
 
     private void OnRotateCcw5(object sender, RoutedEventArgs e) => this.RotateSelected(-5);
+
+    private void OnMirror(object sender, RoutedEventArgs e) => this.MirrorSelected();
 
     /// <summary>
     /// Rotates the selected part in place about its bounding-box centre. The placement is REPLACED
@@ -980,12 +1319,84 @@ namespace DeepNestSharp.Ui.UserControls
         X = cx - ((newPart.MinX + newPart.MaxX) / 2.0),
         Y = cy - ((newPart.MinY + newPart.MaxY) / 2.0),
         Rotation = (((pp.Rotation + deltaDeg) % 360.0) + 360.0) % 360.0,
+        IsMirrored = pp.IsMirrored, // rotating a mirrored part keeps it mirrored
         Source = pp.Source,
         Id = pp.Id,
       };
 
       // Overlaps are not allowed: refuse the rotation (brief red flash) if the turned part would
       // collide with a neighbour or leave the sheet.
+      if (!this.IsPositionValid(replacement, pp))
+      {
+        this.FlashSelectedInvalid();
+        return;
+      }
+
+      this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
+      list[index] = replacement;
+      this.invalid.Remove(pp);
+      for (int i = 0; i < this.partPaths.Count; i++)
+      {
+        if (this.partPaths[i].Pp == pp)
+        {
+          this.partPaths[i] = (this.partPaths[i].Path, replacement);
+          break;
+        }
+      }
+
+      this.selectedPp = replacement;
+      this.RefreshSelectedPath();
+      this.CommitManualEdit();
+    }
+
+    /// <summary>
+    /// Mirrors the selected part in place across the Y axis (left ↔ right hand). Like <see cref="RotateSelected"/>
+    /// the placement is REPLACED with one whose Part carries the reflected geometry, plus an <c>IsMirrored</c>
+    /// flag the DXF export also honours — so the CUT part is really mirrored, not just on screen.
+    /// </summary>
+    private void MirrorSelected()
+    {
+      var pp = this.selectedPp;
+      var group = this.CurrentGroup();
+      if (pp == null || group == null)
+      {
+        return;
+      }
+
+      var sp = group.Representative;
+      int index = -1;
+      for (int i = 0; i < sp.PartPlacements.Count; i++)
+      {
+        if (sp.PartPlacements[i] == pp)
+        {
+          index = i;
+          break;
+        }
+      }
+
+      if (index < 0 || !(sp.PartPlacements is IList<IPartPlacement> list) || list.IsReadOnly)
+      {
+        return;
+      }
+
+      double cx = ((pp.Part.MinX + pp.Part.MaxX) / 2.0) + pp.X;
+      double cy = ((pp.Part.MinY + pp.Part.MaxY) / 2.0) + pp.Y;
+
+      // Canonical transform = mirror(across Y, about origin) THEN rotate(Rotation): un-rotate to the source
+      // frame, mirror there, re-rotate. This matches the exporter (reload original -> mirror -> rotate) and
+      // stays consistent under further rotations (they just add to the outer rotation).
+      var newPart = pp.Part.Rotate(-pp.Rotation).MirrorX().Rotate(pp.Rotation);
+      var replacement = new PartPlacement(newPart)
+      {
+        X = cx - ((newPart.MinX + newPart.MaxX) / 2.0),
+        Y = cy - ((newPart.MinY + newPart.MaxY) / 2.0),
+        Rotation = pp.Rotation,
+        IsMirrored = !pp.IsMirrored,
+        Source = pp.Source,
+        Id = pp.Id,
+      };
+
+      // Overlaps aren't allowed: refuse the mirror (brief red flash) if it would collide or leave the sheet.
       if (!this.IsPositionValid(replacement, pp))
       {
         this.FlashSelectedInvalid();

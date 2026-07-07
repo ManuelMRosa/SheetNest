@@ -235,6 +235,10 @@
       set => SetProperty(nameof(SheetSpacing), () => svgNestConfig.SheetSpacing, v => svgNestConfig.SheetSpacing = v, value);
     }
 
+    // 3D unfold K-factor / unit are now PER PART (Edit Part dialog of a 3D-imported part), not global —
+    // so the old global proxy properties were removed. The last-used values still persist as the import
+    // default via SessionState + the StepUnfoldService statics.
+
     /// <inheritdoc />
     [Category("Sheet Defaults")]
     public int SheetWidth

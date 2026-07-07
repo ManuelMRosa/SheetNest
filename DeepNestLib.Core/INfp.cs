@@ -20,6 +20,12 @@
     bool Fitted { get; }
 
     /// <summary>
+    /// Gets or sets whether this polygon should be EXPORTED mirrored (reflected across Y). Set on the
+    /// export copy from the placement; the on-screen/nested geometry bakes the mirror into its points.
+    /// </summary>
+    bool IsMirrored { get; set; }
+
+    /// <summary>
     /// Gets overall height.
     /// </summary>
     double HeightCalculated { get; }
@@ -108,6 +114,14 @@
     /// <param name="degrees">The degrees to rotate, +ve clockwise, -ve anti-clockwise.</param>
     /// <returns>A clone of the original, rotated. The original <see cref="NoFitPolygon"/> is unaltered.</returns>
     INfp Rotate(double degrees, WithChildren withChildren = WithChildren.Included);
+
+    /// <summary>
+    /// Mirror (reflect) the part across the Y axis — negate X of every point and every child. Unlike
+    /// <see cref="Rotate"/> this reverses handedness (left ↔ right hand) and is NOT a rotation, so it
+    /// leaves the Rotation state untouched.
+    /// </summary>
+    /// <returns>A mirrored clone; the original is unaltered.</returns>
+    INfp MirrorX(WithChildren withChildren = WithChildren.Included);
 
     /// <summary>
     /// Generates a chromosome which to separate Rotation from the Nfp. Rotation served a confused dual purpose of tracking state as well as instruction; store instruction the gene instead). The chromosome will actually contain a clone of the part so the original will not get altered.

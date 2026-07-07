@@ -42,6 +42,7 @@
       <MenuItem Header="_File">
         <MenuItem Header="New Project" Command="{Binding CreateNestProjectCommand}" />
         <MenuItem Header="Open Project..." Command="{Binding LoadNestProjectCommand}" />
+        <MenuItem Header="Import 3D (STEP / IGES)..." Click="OnImport3DClicked" />
         <Separator />
         <MenuItem Header="Save" Command="{Binding ActiveDocumentSaveCommand}" />
         <MenuItem Header="Save As..." Command="{Binding ActiveDocumentSaveAsCommand}" />
@@ -137,7 +138,12 @@
                 </Style.Triggers>
               </Style>
             </DockPanel.Style>
-            <Button DockPanel.Dock="Bottom" Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" HorizontalAlignment="Stretch" />
+            <StackPanel DockPanel.Dock="Bottom">
+              <Button Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4,4,4,0" HorizontalAlignment="Stretch"
+                      ToolTip="Add a part to nest (DXF, or STEP/IGES 3D)." />
+              <Button Style="{DynamicResource ModernButton}" Content="Import 3D…" Click="OnImport3DClicked" Margin="4" HorizontalAlignment="Stretch"
+                      ToolTip="Import a 3D sheet-metal part (STEP/IGES) — SheetNest unfolds it to a flat pattern for nesting." />
+            </StackPanel>
             <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"
                       MouseDoubleClick="OnPartsListDoubleClick"
@@ -156,6 +162,7 @@
                     <Border.ToolTip>
                       <TextBlock>
                         <Run Text="{Binding Path, Mode=OneWay}" /><LineBreak />
+                        <Run Text="{Binding SizeLabel, Mode=OneWay, StringFormat='size {0} in'}" /><LineBreak />
                         <Run Text="{Binding NetArea, Mode=OneWay, StringFormat='net area {0:0.0} in²'}" />
                       </TextBlock>
                     </Border.ToolTip>
@@ -169,7 +176,7 @@
                       </Grid.ColumnDefinitions>
                       <Border Grid.Column="0" Width="48" Height="48" Background="{DynamicResource Brush.Card}"
                               BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" Margin="0,0,8,0">
-                        <Image Source="{Binding Converter={StaticResource PartPreview}}" Stretch="Uniform" Margin="3" />
+                        <Image Source="{Binding PreviewSource, Converter={StaticResource PartPreview}}" Stretch="Uniform" Margin="3" />
                       </Border>
                       <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" />
@@ -293,7 +300,8 @@
                 </Grid.RowDefinitions>
 
                 <!-- Part spacing, rotation and common-line are set PER PART in the Edit Part dialog
-                     (pencil button / double-click a part). -->
+                     (pencil button / double-click a part). For 3D (STEP/IGES) parts the K-factor,
+                     thickness and unit also live in that dialog — per part, editable, re-unfolds on change. -->
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Style="{DynamicResource SettingLabel}" Text="Sheet edge margin" />
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
@@ -301,7 +309,6 @@
                                      Value="{Binding SvgNestConfig.SheetSpacing}"
                                      ToolTip="Empty border kept clear around the sheet (in the drawing's units)." />
                 </StackPanel>
-
               </Grid>
             </StackPanel>
           </ScrollViewer>

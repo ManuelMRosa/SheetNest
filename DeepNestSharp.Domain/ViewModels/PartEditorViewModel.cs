@@ -73,6 +73,18 @@
         var part = DxfParser.LoadDxfFile(this.FilePath).Result.ToNfp();
         this.Part = new ObservableNfp(part.Shift(-part?.MinX ?? 0, -part?.MinY ?? 0));
       }
+      else if (StepUnfoldService.IsStepFile(this.FilePath))
+      {
+        try
+        {
+          var part = StepUnfoldService.LoadAsRawDetail(this.FilePath).ToNfp();
+          this.Part = new ObservableNfp(part.Shift(-part?.MinX ?? 0, -part?.MinY ?? 0));
+        }
+        catch (StepUnfoldException ex)
+        {
+          this.MainViewModel.MessageService.DisplayMessageBox(ex.Message, "Import 3D", MessageBoxIcon.Stop);
+        }
+      }
       else
       {
         var part = NoFitPolygon.LoadFromFile(this.FilePath);

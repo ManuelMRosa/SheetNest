@@ -42,6 +42,14 @@
     /// <inheritdoc/>
     public bool Fitted => this.item.Fitted;
 
+    /// <inheritdoc/>
+    [Browsable(false)]
+    public bool IsMirrored
+    {
+      get => this.item.IsMirrored;
+      set => SetProperty(nameof(IsMirrored), () => this.item.IsMirrored, v => this.item.IsMirrored = v, value);
+    }
+
     [Description("The overall height of the part.")]
     [Category("Dimensions")]
     /// <inheritdoc/>
@@ -263,6 +271,12 @@
     public INfp Rotate(double degrees, WithChildren withChildren)
     {
       return this.item.Rotate(degrees, withChildren);
+    }
+
+    /// <inheritdoc/>
+    public INfp MirrorX(WithChildren withChildren)
+    {
+      return this.item.MirrorX(withChildren);
     }
 
     /// <inheritdoc/>

@@ -20,6 +20,7 @@
     private ISheetLoadInfo selectedSheetLoadInfo;
     private AsyncRelayCommand executeNestCommand;
     private AsyncRelayCommand addPartCommand;
+    private AsyncRelayCommand addPart3DCommand;
     private RelayCommand addSheetCommand;
     private RelayCommand clearPartsCommand;
     private RelayCommand<IDetailLoadInfo> removePartCommand;
@@ -50,6 +51,9 @@
     }
 
     public IAsyncRelayCommand AddPartCommand => addPartCommand ?? (addPartCommand = new AsyncRelayCommand(OnAddPartAsync));
+
+    /// <summary>Add a 3D (STEP/IGES) part: the file dialog is filtered to 3D; the unfold happens on load.</summary>
+    public IAsyncRelayCommand AddPart3DCommand => addPart3DCommand ?? (addPart3DCommand = new AsyncRelayCommand(OnAddPart3DAsync));
 
     public IRelayCommand AddSheetCommand => addSheetCommand ?? (addSheetCommand = new RelayCommand(OnAddSheet));
 
@@ -153,20 +157,85 @@
       this.IsDirty = true;
     }
 
-    private async Task OnAddPartAsync()
+    private Task OnAddPartAsync() => AddPartsAsync(NoFitPolygon.FileDialogFilter);
+
+    private Task OnAddPart3DAsync() => AddPartsAsync(DeepNestLib.IO.StepUnfoldService.FileDialogFilter3D);
+
+    private async Task AddPartsAsync(string fileDialogFilter)
     {
-      var filePaths = await this.fileIoService.GetOpenFilePathsAsync(NoFitPolygon.FileDialogFilter);
+      var filePaths = await this.fileIoService.GetOpenFilePathsAsync(fileDialogFilter);
       foreach (var filePath in filePaths)
       {
-        if (!string.IsNullOrWhiteSpace(filePath) && this.fileIoService.Exists(filePath))
+        if (string.IsNullOrWhiteSpace(filePath) || !this.fileIoService.Exists(filePath))
         {
-          var newPart = new DetailLoadInfo()
-          {
-            Path = filePath,
-          };
-
-          observableProjectInfo?.DetailLoadInfos.Add(newPart);
+          continue;
         }
+
+        if (DeepNestLib.IO.StepUnfoldService.IsStepFile(filePath))
+        {
+          // A 3D file unfolds to one flat DXF per sheet-metal solid (an assembly => many parts).
+          // Run it off the UI thread so a slow/large assembly doesn't freeze the app.
+          (System.Collections.Generic.IReadOnlyList<string> Paths, int Skipped) result;
+          try
+          {
+            result = await Task.Run(() => DeepNestLib.IO.StepUnfoldService.GetUnfoldedParts(filePath));
+          }
+          catch (DeepNestLib.IO.StepUnfoldException ex)
+          {
+            this.MainViewModel.MessageService.DisplayMessageBox(ex.Message, "Import 3D", DeepNestLib.MessageBoxIcon.Stop);
+            continue;
+          }
+
+          for (int i = 0; i < result.Paths.Count; i++)
+          {
+            observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo()
+            {
+              Path = result.Paths[i],
+              SourceStepPath = filePath,
+              UnfoldIndex = i,
+              KFactor = DeepNestLib.IO.StepUnfoldService.KFactor,
+              KFactorStandard = DeepNestLib.IO.StepUnfoldService.KFactorStandard,
+              UnfoldUnitInch = DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
+              ThicknessMm = 0, // this quick path skips the probe; thickness shows as unknown until re-imported via the dialog
+            });
+          }
+        }
+        else
+        {
+          observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo() { Path = filePath });
+        }
+      }
+
+      Contextualise();
+      this.IsDirty = true;
+    }
+
+    /// <summary>Metadata for one flat produced by a 3D unfold — lets the part be re-unfolded later
+    /// (e.g. when the user changes its K-factor in Edit Part) and rebuilt if the temp DXF is gone.</summary>
+    public readonly record struct UnfoldedPartInfo(
+      string FlatDxfPath, string SourceStepPath, int UnfoldIndex,
+      double KFactor, string KFactorStandard, bool UnfoldUnitInch, double ThicknessMm);
+
+    /// <summary>Adds flats from a 3D unfold, each carrying its source STEP + K-factor + thickness.</summary>
+    public void AddUnfoldedParts(System.Collections.Generic.IEnumerable<UnfoldedPartInfo> parts)
+    {
+      foreach (var p in parts)
+      {
+        if (string.IsNullOrWhiteSpace(p.FlatDxfPath))
+        {
+          continue;
+        }
+
+        observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo()
+        {
+          Path = p.FlatDxfPath,
+          SourceStepPath = p.SourceStepPath,
+          UnfoldIndex = p.UnfoldIndex,
+          KFactor = p.KFactor,
+          KFactorStandard = p.KFactorStandard,
+          UnfoldUnitInch = p.UnfoldUnitInch,
+          ThicknessMm = p.ThicknessMm,
+        });
       }
 
       Contextualise();

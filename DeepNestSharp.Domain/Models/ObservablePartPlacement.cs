@@ -140,6 +140,13 @@
     }
 
     /// <inheritdoc/>
+    public bool IsMirrored
+    {
+      get => partPlacement.IsMirrored;
+      set => SetProperty(nameof(IsMirrored), () => partPlacement.IsMirrored, v => partPlacement.IsMirrored = v, value);
+    }
+
+    /// <inheritdoc/>
     public bool IsExact => Part.IsExact;
 
     public int Order { get; private set; }

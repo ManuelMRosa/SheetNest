@@ -62,6 +62,9 @@
     <Content Include="..\MinkowskiDlls\minkowski_x86.dll" Link="minkowski_x86.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\assets\freecad\unfold_macro.py" Link="unfold_macro.py">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Dirkster.AvalonDock" Version="4.70.1" />

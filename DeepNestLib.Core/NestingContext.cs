@@ -275,6 +275,10 @@
         {
           r = DxfParser.LoadDxfFile(path).Result;
         }
+        else if (StepUnfoldService.IsStepFile(path))
+        {
+          r = StepUnfoldService.LoadAsRawDetail(path);
+        }
         else
         {
           continue;

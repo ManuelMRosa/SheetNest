@@ -16,6 +16,10 @@ namespace DeepNestSharp.Ui.Views
     // Sheets the LAST nest deducted from the stock, by size — Clear Result gives them back.
     private Dictionary<(int W, int H), int>? lastNestConsumed;
 
+    // Set once the window is closed, so an async op that finishes afterwards (e.g. a slow 3D unfold)
+    // doesn't touch a dead window (would throw "set Owner on a closed Window").
+    private bool isClosed;
+
     public MainWindow(IMainViewModel viewModel)
     {
       InitializeComponent();
@@ -23,6 +27,7 @@ namespace DeepNestSharp.Ui.Views
       viewModel.AboutDialogService = new AboutDialogService(() => new AboutDialog());
       this.Loaded += MainWindow_Loaded;
       this.Closing += MainWindow_Closing;
+      this.Closed += (s, e) => this.isClosed = true;
       viewModel.ActiveDocumentChanged += MainWindow_ActiveDocumentChanged;
     }
 
@@ -84,9 +89,33 @@ namespace DeepNestSharp.Ui.Views
       // with an empty Sheets tab because each launch is usually a different job — sheet stock
       // belongs to (and travels with) each saved .dnest project.
       var session = SessionState.Load();
-      if (session != null && session.SheetEdgeMargin >= 0)
+      if (session != null)
       {
-        cfg.SheetSpacing = session.SheetEdgeMargin;
+        if (session.SheetEdgeMargin >= 0)
+        {
+          cfg.SheetSpacing = session.SheetEdgeMargin;
+        }
+
+        // Restore the 3D-unfold (FreeCAD) settings.
+        if (session.UnfoldKFactor >= 0)
+        {
+          DeepNestLib.IO.StepUnfoldService.KFactor = session.UnfoldKFactor;
+        }
+
+        if (!string.IsNullOrWhiteSpace(session.UnfoldKFactorStandard))
+        {
+          DeepNestLib.IO.StepUnfoldService.KFactorStandard = session.UnfoldKFactorStandard;
+        }
+
+        if (!string.IsNullOrWhiteSpace(session.FreeCadCmdPath))
+        {
+          DeepNestLib.IO.StepUnfoldService.FreeCadCmdPathOverride = session.FreeCadCmdPath;
+        }
+
+        if (session.UnfoldUnitInch.HasValue)
+        {
+          DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch = session.UnfoldUnitInch.Value;
+        }
       }
     }
 
@@ -337,6 +366,10 @@ namespace DeepNestSharp.Ui.Views
       {
         SheetEdgeMargin = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
         Sheets = new List<SessionSheet>(),
+        UnfoldKFactor = DeepNestLib.IO.StepUnfoldService.KFactor,
+        UnfoldKFactorStandard = DeepNestLib.IO.StepUnfoldService.KFactorStandard,
+        FreeCadCmdPath = DeepNestLib.IO.StepUnfoldService.FreeCadCmdPathOverride,
+        UnfoldUnitInch = DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
       }.Save();
     }
 
@@ -455,6 +488,138 @@ namespace DeepNestSharp.Ui.Views
     }
 
     private async void OnAddPartClicked(object sender, RoutedEventArgs e)
+      => await AddPartsToActiveProject(d => d.AddPartCommand, autoEditSingle: true);
+
+    /// <summary>
+    /// Import 3D (STEP/IGES): pick file(s) → probe thickness → show the K-factor dialog → unfold every
+    /// sheet-metal solid → add the flats. Off-UI unfolds with a busy cursor; guarded against a closed window.
+    /// </summary>
+    private async void OnImport3DClicked(object sender, RoutedEventArgs e)
+    {
+      var doc = ViewModel.ActiveDocument as NestProjectViewModel;
+      if (doc == null)
+      {
+        return;
+      }
+
+      var picker = new Microsoft.Win32.OpenFileDialog
+      {
+        Filter = DeepNestLib.IO.StepUnfoldService.FileDialogFilter3D,
+        Multiselect = true,
+        Title = "Import 3D (STEP / IGES)",
+      };
+      if (picker.ShowDialog(this) != true)
+      {
+        return;
+      }
+
+      foreach (var file in picker.FileNames)
+      {
+        try
+        {
+          // 1. Probe: detect thickness + solid count (off the UI thread).
+          System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.AppStarting;
+          (int SolidCount, double[] ThicknessMm) probe;
+          try
+          {
+            probe = await System.Threading.Tasks.Task.Run(() => DeepNestLib.IO.StepUnfoldService.ProbeThickness(file));
+          }
+          finally
+          {
+            System.Windows.Input.Mouse.OverrideCursor = null;
+          }
+
+          if (this.isClosed || !this.IsLoaded)
+          {
+            return;
+          }
+
+          // 2. Ask for K-factor / standard / unit (pre-filled with the detected thickness).
+          var opts = new Import3DWindow(System.IO.Path.GetFileName(file), probe.SolidCount, probe.ThicknessMm) { Owner = this };
+          if (opts.ShowDialog() != true)
+          {
+            continue;
+          }
+
+          // 3. Unfold with the chosen options (off the UI thread) and add the flats.
+          System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.AppStarting;
+          (System.Collections.Generic.IReadOnlyList<string> Paths, int Skipped) result;
+          try
+          {
+            result = await System.Threading.Tasks.Task.Run(() => DeepNestLib.IO.StepUnfoldService.GetUnfoldedParts(file));
+          }
+          finally
+          {
+            System.Windows.Input.Mouse.OverrideCursor = null;
+          }
+
+          if (this.isClosed || !this.IsLoaded)
+          {
+            return;
+          }
+
+          // Map each produced flat to its metadata. Thickness: if no solid was skipped, index-align it to
+          // the probe result (exact for the common single-solid case); otherwise use the sheet's single
+          // thickness if uniform, else 0 (unknown — display only). The dialog wrote the chosen K/std/unit
+          // to the StepUnfoldService statics on OK.
+          double uniformThickness = 0;
+          bool thicknessVaries = false;
+          foreach (var t in probe.ThicknessMm)
+          {
+            if (t > 0)
+            {
+              if (uniformThickness == 0)
+              {
+                uniformThickness = t;
+              }
+              else if (System.Math.Abs(uniformThickness - t) > 1e-9)
+              {
+                thicknessVaries = true;
+              }
+            }
+          }
+
+          double fallbackThickness = thicknessVaries ? 0 : uniformThickness;
+          var infos = new System.Collections.Generic.List<NestProjectViewModel.UnfoldedPartInfo>();
+          for (int i = 0; i < result.Paths.Count; i++)
+          {
+            double thick = (result.Paths.Count == probe.SolidCount && i < probe.ThicknessMm.Length)
+              ? probe.ThicknessMm[i]
+              : fallbackThickness;
+            infos.Add(new NestProjectViewModel.UnfoldedPartInfo(
+              result.Paths[i], file, i,
+              DeepNestLib.IO.StepUnfoldService.KFactor,
+              DeepNestLib.IO.StepUnfoldService.KFactorStandard,
+              DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
+              thick));
+          }
+
+          doc.AddUnfoldedParts(infos);
+
+          if (result.Skipped > 0)
+          {
+            ViewModel.MessageService.DisplayMessageBox(
+              $"Imported {result.Paths.Count} part(s). {result.Skipped} solid(s) were skipped (not recognized as sheet metal).",
+              "Import 3D",
+              DeepNestLib.MessageBoxIcon.Information);
+          }
+        }
+        catch (DeepNestLib.IO.StepUnfoldException ex)
+        {
+          System.Windows.Input.Mouse.OverrideCursor = null;
+          ViewModel.MessageService.DisplayMessageBox(ex.Message, "Import 3D", DeepNestLib.MessageBoxIcon.Stop);
+        }
+        catch (System.Exception ex)
+        {
+          System.Windows.Input.Mouse.OverrideCursor = null;
+          CrashReporter.Show(ex, "import-3d", this);
+        }
+      }
+    }
+
+    private async System.Threading.Tasks.Task AddPartsToActiveProject(
+      System.Func<NestProjectViewModel, Microsoft.Toolkit.Mvvm.Input.IAsyncRelayCommand> commandSelector,
+      bool autoEditSingle)
     {
       var doc = ViewModel.ActiveDocument as NestProjectViewModel;
       if (doc == null)
@@ -463,12 +628,18 @@ namespace DeepNestSharp.Ui.Views
       }
 
       int before = doc.ProjectInfo.DetailLoadInfos.Count;
-      await doc.AddPartCommand.ExecuteAsync(null);
+      await commandSelector(doc).ExecuteAsync(null);
 
-      // Radan-style insert flow: adding a single part opens Edit Part right away (quantity,
-      // orientations, priority). A multi-file add skips it — a dialog per file would be a nuisance.
+      // The user may have closed the window while a slow 3D unfold ran — don't touch a dead window.
+      if (this.isClosed || !this.IsLoaded)
+      {
+        return;
+      }
+
+      // Radan-style insert flow: adding a single part opens Edit Part right away. Skipped for 3D
+      // imports (autoEditSingle=false) — their unfold is slow, so the part loads async in the grid.
       var infos = doc.ProjectInfo.DetailLoadInfos;
-      if (infos.Count == before + 1 && infos[infos.Count - 1] is IDetailLoadInfo added)
+      if (autoEditSingle && infos.Count == before + 1 && infos[infos.Count - 1] is IDetailLoadInfo added)
       {
         OpenEditPart(added);
       }
@@ -505,16 +676,77 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
-    private void OpenEditPart(IDetailLoadInfo part)
+    private async void OpenEditPart(IDetailLoadInfo part)
     {
+      if (this.isClosed || !this.IsLoaded)
+      {
+        return;
+      }
+
+      bool is3D = !string.IsNullOrEmpty(part.SourceStepPath);
+      double oldK = part.KFactor;
+      string oldStd = part.KFactorStandard;
+
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var dialog = new EditPartWindow(part, cfg.Rotations, System.Math.Max(0, cfg.Spacing))
       {
         Owner = this,
       };
-      if (dialog.ShowDialog() == true)
+      if (dialog.ShowDialog() != true)
       {
-        this.partsListView.Items.Refresh(); // plain (non-observable) fields may have changed
+        return;
+      }
+
+      this.partsListView.Items.Refresh(); // plain (non-observable) fields may have changed
+
+      bool kChanged = is3D
+        && (System.Math.Abs(part.KFactor - oldK) > 1e-9
+            || !string.Equals(part.KFactorStandard, oldStd, System.StringComparison.OrdinalIgnoreCase));
+      if (kChanged)
+      {
+        await ReunfoldPart(part, oldK, oldStd);
+      }
+    }
+
+    /// <summary>Re-runs the FreeCAD unfold for a 3D part with its new K-factor and swaps in the new flat,
+    /// refreshing the thumbnail / size / area. Off the UI thread with a busy cursor. Reverts K on failure.</summary>
+    private async System.Threading.Tasks.Task ReunfoldPart(IDetailLoadInfo part, double oldK, string oldStd)
+    {
+      var obs = part as DeepNestSharp.Domain.Models.ObservableDetailLoadInfo;
+      string oldPath = part.Path;
+      System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.AppStarting;
+      try
+      {
+        var result = await System.Threading.Tasks.Task.Run(() => DeepNestLib.IO.StepUnfoldService.GetUnfoldedParts(
+          part.SourceStepPath, part.KFactor, part.KFactorStandard, part.UnfoldUnitInch));
+
+        if (this.isClosed || !this.IsLoaded || result.Paths.Count == 0)
+        {
+          return;
+        }
+
+        int idx = (part.UnfoldIndex >= 0 && part.UnfoldIndex < result.Paths.Count) ? part.UnfoldIndex : 0;
+        string newFlat = result.Paths[idx];
+
+        part.Path = newFlat;
+        DeepNestSharp.Ui.Converters.PartPreviewConverter.Invalidate(oldPath);
+        DeepNestSharp.Ui.Converters.PartPreviewConverter.Invalidate(newFlat);
+        obs?.InvalidateGeometry();
+        this.partsListView.Items.Refresh();
+      }
+      catch (DeepNestLib.IO.StepUnfoldException ex)
+      {
+        part.KFactor = oldK; // revert so Edit Part shows the value that actually produced the current flat
+        part.KFactorStandard = oldStd;
+        ViewModel.MessageService.DisplayMessageBox(ex.Message, "Re-unfold", DeepNestLib.MessageBoxIcon.Stop);
+      }
+      catch (System.Exception ex)
+      {
+        CrashReporter.Show(ex, "reunfold-3d", this);
+      }
+      finally
+      {
+        System.Windows.Input.Mouse.OverrideCursor = null;
       }
     }
 

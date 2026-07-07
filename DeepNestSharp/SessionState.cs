@@ -16,6 +16,18 @@ namespace DeepNestSharp
 
     public List<SessionSheet> Sheets { get; set; } = new List<SessionSheet>();
 
+    /// <summary>Bend-allowance K-factor for 3D (STEP/IGES) unfold; -1 = never saved (keep default).</summary>
+    public double UnfoldKFactor { get; set; } = -1;
+
+    /// <summary>K-factor standard for 3D unfold ("ansi"/"din"); null/empty = keep default.</summary>
+    public string? UnfoldKFactorStandard { get; set; }
+
+    /// <summary>Optional override path to freecadcmd.exe (debug); null/empty = use the bundled copy.</summary>
+    public string? FreeCadCmdPath { get; set; }
+
+    /// <summary>Interpret unfolded 3D parts in inches (true) vs millimeters (false); null = keep default.</summary>
+    public bool? UnfoldUnitInch { get; set; }
+
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");
 

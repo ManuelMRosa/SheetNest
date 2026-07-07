@@ -44,6 +44,13 @@
     double Rotation { get; set; }
 
     /// <summary>
+    /// Gets or sets whether this placement is mirrored (reflected across Y) relative to the source part.
+    /// The mirror is baked into the placement's point geometry AND carried here so the DXF export (which
+    /// reloads the original file) reflects it too.
+    /// </summary>
+    bool IsMirrored { get; set; }
+
+    /// <summary>
     /// Gets or sets the Source of the part placed.
     /// </summary>
     int Source { get; set; }

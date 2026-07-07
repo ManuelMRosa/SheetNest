@@ -81,6 +81,9 @@
     public double Rotation { get; set; }
 
     /// <inheritdoc />
+    public bool IsMirrored { get; set; }
+
+    /// <inheritdoc />
     [JsonConverter(typeof(DoublePrecisionConverter))]
     public double X { get; set; }
 

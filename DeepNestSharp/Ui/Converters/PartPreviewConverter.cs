@@ -20,10 +20,39 @@ namespace DeepNestSharp.Ui.Converters
   {
     private static readonly Dictionary<string, ImageSource> Cache = new Dictionary<string, ImageSource>();
 
+    /// <summary>Drops the cached thumbnail for a path so it rebuilds — used after a 3D part is
+    /// re-unfolded (new K-factor) and its flat DXF changes.</summary>
+    public static void Invalidate(string path)
+    {
+      if (!string.IsNullOrEmpty(path))
+      {
+        Cache.Remove(path);
+      }
+    }
+
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
       string path = (value as IDetailLoadInfo)?.Path ?? value as string;
-      if (string.IsNullOrEmpty(path) || !path.ToLowerInvariant().EndsWith(".dxf"))
+      if (string.IsNullOrEmpty(path))
+      {
+        return null;
+      }
+
+      // 3D parts preview the ALREADY-unfolded flat (FreeCAD is far too slow to run per thumbnail);
+      // if it isn't unfolded yet, show nothing — PreviewSource refreshes this once loading completes.
+      string dxfPath;
+      if (StepUnfoldService.IsStepFile(path))
+      {
+        if (!StepUnfoldService.TryGetCachedDxf(path, out dxfPath))
+        {
+          return null;
+        }
+      }
+      else if (path.ToLowerInvariant().EndsWith(".dxf"))
+      {
+        dxfPath = path;
+      }
+      else
       {
         return null;
       }
@@ -40,7 +69,7 @@ namespace DeepNestSharp.Ui.Converters
         // on. The wait is BOUNDED: the parser retries a locked file for seconds, and a thumbnail isn't
         // worth freezing the UI that long — on timeout show no image and skip the cache, so the thumbnail
         // can still appear on a later refresh once the file is free.
-        var load = System.Threading.Tasks.Task.Run(() => DxfParser.LoadDxfFile(path));
+        var load = System.Threading.Tasks.Task.Run(() => DxfParser.LoadDxfFile(dxfPath));
         if (!load.Wait(1500))
         {
           return null;

@@ -99,7 +99,8 @@
                   mainViewModel.LoadSheetPlacement(fileInfo.FullName);
                 }
                 else if (fileInfo.Extension == ".dxf" ||
-                         fileInfo.Extension == ".dnpoly")
+                         fileInfo.Extension == ".dnpoly" ||
+                         DeepNestLib.IO.StepUnfoldService.IsStepFile(fileInfo.FullName))
                 {
                   mainViewModel.LoadPart(fileInfo.FullName);
                 }
@@ -113,6 +114,7 @@
                   message.AppendLine("  DeepNest Sheet Placement (*.dnsp)");
                   message.AppendLine("  AutoCad Drawing Exchange Format (*.dxf) and ");
                   message.AppendLine("  DeepNest Polygon (*.dnpoly).");
+                  message.AppendLine("  3D sheet metal (*.step, *.stp, *.iges, *.igs)");
                   if (MessageBox.Show(message.ToString(), "DeepNest", MessageBoxButton.OKCancel) == System.Windows.MessageBoxResult.Cancel)
                   {
                     Application.Current.MainWindow.Close();

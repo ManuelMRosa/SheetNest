@@ -146,6 +146,7 @@
                   result.Sheet = this.Sheet;
                   result.X = o.X;
                   result.Y = o.Y;
+                  result.IsMirrored = o.IsMirrored; // carry the mirror to the exporter (it reloads the original file)
                   return result;
                 });
       }
