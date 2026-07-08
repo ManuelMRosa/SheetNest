@@ -16,7 +16,9 @@
 
   public class NoFitPolygon : PolygonBase, INfp, IHiddenNfp, IStringify
   {
-    public const string FileDialogFilter = "Drawings & 3D (*.dxf;*.step;*.stp;*.iges;*.igs;*.dnpoly)|*.dxf;*.step;*.stp;*.iges;*.igs;*.dnpoly|AutoCad Drawing Exchange Format (*.dxf)|*.dxf|STEP / IGES 3D (*.step;*.stp;*.iges;*.igs)|*.step;*.stp;*.iges;*.igs|DeepNest Polygon (*.dnpoly)|*.dnpoly|All files (*.*)|*.*";
+    // 2D only on purpose: 3D (STEP/IGES) imports go through File > Import 3D, which probes the
+    // sheet thickness and asks for the K-factor before unfolding.
+    public const string FileDialogFilter = "AutoCad Drawing Exchange Format (*.dxf)|*.dxf|DeepNest Polygon (*.dnpoly)|*.dnpoly|All files (*.*)|*.*";
     private double rotation;
 
     public NoFitPolygon(IList<INfp> children)

@@ -142,7 +142,7 @@
             <StackPanel DockPanel.Dock="Bottom">
               <!-- 3D import lives in File > Import 3D (STEP / IGES)... — not frequent enough for a permanent button. -->
               <Button Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" HorizontalAlignment="Stretch"
-                      ToolTip="Add a part to nest (DXF, or STEP/IGES 3D)." />
+                      ToolTip="Add a part to nest (DXF)." />
             </StackPanel>
             <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"

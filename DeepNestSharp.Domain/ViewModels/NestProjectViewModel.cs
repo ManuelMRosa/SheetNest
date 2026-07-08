@@ -173,32 +173,13 @@
 
         if (DeepNestLib.IO.StepUnfoldService.IsStepFile(filePath))
         {
-          // A 3D file unfolds to one flat DXF per sheet-metal solid (an assembly => many parts).
-          // Run it off the UI thread so a slow/large assembly doesn't freeze the app.
-          (System.Collections.Generic.IReadOnlyList<string> Paths, int Skipped) result;
-          try
-          {
-            result = await Task.Run(() => DeepNestLib.IO.StepUnfoldService.GetUnfoldedParts(filePath));
-          }
-          catch (DeepNestLib.IO.StepUnfoldException ex)
-          {
-            this.MainViewModel.MessageService.DisplayMessageBox(ex.Message, "Import 3D", DeepNestLib.MessageBoxIcon.Stop);
-            continue;
-          }
-
-          for (int i = 0; i < result.Paths.Count; i++)
-          {
-            observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo()
-            {
-              Path = result.Paths[i],
-              SourceStepPath = filePath,
-              UnfoldIndex = i,
-              KFactor = DeepNestLib.IO.StepUnfoldService.KFactor,
-              KFactorStandard = DeepNestLib.IO.StepUnfoldService.KFactorStandard,
-              UnfoldUnitInch = DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
-              ThicknessMm = 0, // this quick path skips the probe; thickness shows as unknown until re-imported via the dialog
-            });
-          }
+          // Add Part is 2D-only by design. 3D imports go through File > Import 3D, which probes the
+          // sheet thickness and asks for the K-factor — never unfold silently with defaults here.
+          this.MainViewModel.MessageService.DisplayMessageBox(
+            "To import a 3D part use File > Import 3D (STEP / IGES)... — it detects the sheet thickness and lets you set the K-factor.",
+            "Add Part",
+            DeepNestLib.MessageBoxIcon.Information);
+          continue;
         }
         else
         {
