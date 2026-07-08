@@ -28,9 +28,11 @@
       }
       else
       {
-        var newY = (double)b.Slope * Math.Max(b.Right.X, a.Right.X) + (double)b.Intercept;
-        var right = new DxfPoint(Math.Max(b.Right.X, a.Right.X), newY, 0);
-        return new MergeLine(new DxfLine(a.Left, right));
+        // Combine using the ORIGINAL endpoints — recomputing the far end from the (tolerance-
+        // matched) slope/intercept regression used to shift the actual cut geometry slightly.
+        var left = a.Left.X <= b.Left.X ? a.Left : b.Left;
+        var right = a.Right.X >= b.Right.X ? a.Right : b.Right;
+        return new MergeLine(new DxfLine(left, right));
       }
     }
 
@@ -45,8 +47,10 @@
         }
         else
         {
-          return current.Left.X >= prior.Left.X &&
-                 current.Left.X <= prior.Right.X;
+          // Tolerance on both ends: float noise between two placements of the same edge can put
+          // current a hair OUTSIDE prior's span depending on sort order.
+          return current.Left.X >= prior.Left.X - (double)Tolerance &&
+                 current.Left.X <= prior.Right.X + (double)Tolerance;
         }
       }
 
@@ -64,8 +68,11 @@
 
     internal static bool Coaligned(MergeLine prior, MergeLine current)
     {
-      return (current.IsVertical && prior.IsVertical || current.Slope - prior.Slope < Tolerance) &&
-             current.Intercept - prior.Intercept < Tolerance;
+      // Math.Abs matters: the old signed comparison accepted ANY pair where current sorted below
+      // prior, and rejected legitimate pairs off by positive rounding noise.
+      return (current.IsVertical && prior.IsVertical
+              || (!current.IsVertical && !prior.IsVertical && Math.Abs(current.Slope - prior.Slope) < Tolerance)) &&
+             Math.Abs(current.Intercept - prior.Intercept) < Tolerance;
     }
 
     internal DxfFile MergeLines(DxfFile dxfFile)

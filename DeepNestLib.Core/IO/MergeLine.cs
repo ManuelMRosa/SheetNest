@@ -87,7 +87,10 @@
       }
       else
       {
-        return (decimal)Math.Round((Right.Y - Left.Y) / (Right.X - Left.X), FractionalDigits);
+        // Full precision on purpose: rounding to 4 digits made every DIAGONAL pair miss the
+        // coincidence tolerance (slope error × run length > 0.0001"), so common-line hypotenuses
+        // exported as two cuts while axis-aligned edges (exact slope 0) merged fine.
+        return (decimal)((Right.Y - Left.Y) / (Right.X - Left.X));
       }
     }
 
@@ -99,7 +102,9 @@
       }
       else
       {
-        return (decimal)Math.Round(line.P1.Y - (double)Slope * line.P1.X, FractionalDigits);
+        // Anchor on the canonical LEFT point (not P1, which differs between the two directions the
+        // same edge is drawn in) and use the unrounded slope — coincident edges then agree to ~1e-9.
+        return (decimal)(Left.Y - (((Right.Y - Left.Y) / (Right.X - Left.X)) * Left.X));
       }
     }
   }
