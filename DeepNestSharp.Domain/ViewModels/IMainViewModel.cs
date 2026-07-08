@@ -80,6 +80,9 @@
 
     void OnLoadNestProject(string filePath);
 
+    /// <summary>Loads a project by path with the same save-your-result confirmation the Open menu uses.</summary>
+    void LoadNestProjectInteractive(string filePath);
+
     Task OnLoadNestProjectAsync();
 
     void OnLoadNestResult(INestResult nestResult);

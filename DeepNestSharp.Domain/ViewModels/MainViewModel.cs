@@ -154,6 +154,7 @@
         {
           activeDocument = value;
           OnPropertyChanged(nameof(ActiveDocument));
+          OnPropertyChanged(nameof(Title));
           ActiveDocumentChanged?.Invoke(this, EventArgs.Empty);
           SetSelectedToolView(value);
         }
@@ -166,7 +167,8 @@
 
     public IMessageService MessageService => this.messageService;
 
-    public string Title => $"SheetNest {this.GetType().Assembly.GetName().Version?.ToString(3)}"; // 3 fields: 1.1.2, not 1.1.2.0
+    // 3-field version (1.1.2, not 1.1.2.0); the trailing asterisk is the universal "unsaved changes" marker.
+    public string Title => $"SheetNest {this.GetType().Assembly.GetName().Version?.ToString(3)}{(ActiveDocument?.IsDirty == true ? " *" : string.Empty)}";
 
     public void SetSelectedToolView(IFileViewModel fileViewModel)
     {
@@ -193,6 +195,17 @@
       }
 
       var filePath = await fileIoService.GetOpenFilePathAsync(ProjectInfo.FileDialogFilter, SvgNestConfigViewModel.SvgNestConfig.LastNestFilePath).ConfigureAwait(false);
+      OnLoadNestProject(filePath);
+    }
+
+    /// <inheritdoc />
+    public void LoadNestProjectInteractive(string filePath)
+    {
+      if (!ConfirmNestResultSaved())
+      {
+        return;
+      }
+
       OnLoadNestProject(filePath);
     }
 
@@ -398,6 +411,20 @@
           (NestMonitorViewModel.SelectedItem as NestResult)?.ToJson(false) ?? string.Empty;
       }
 
+      // AutoCAD-style safety net: keep the previous version as .bak before overwriting. A failed
+      // copy (locked/read-only .bak) must never block the actual save.
+      try
+      {
+        if (File.Exists(fileToSave.FilePath))
+        {
+          File.Copy(fileToSave.FilePath, fileToSave.FilePath + ".bak", true);
+        }
+      }
+      catch
+      {
+        // best effort only
+      }
+
       File.WriteAllText(fileToSave.FilePath, fileToSave.TextContent);
       if (ActiveDocument != null)
       {
@@ -515,6 +542,7 @@
       {
         activeDocumentSaveCommand?.NotifyCanExecuteChanged();
         activeDocumentSaveAsCommand?.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(Title)); // the title's unsaved-changes asterisk tracks IsDirty
       }
     }
 

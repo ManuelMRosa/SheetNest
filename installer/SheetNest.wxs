@@ -86,10 +86,20 @@
                 Target="[INSTALLFOLDER]SheetNest.exe" WorkingDirectory="INSTALLFOLDER" />
     </Component>
 
+    <!-- .dnest file association (per-user, HKCU\Software\Classes — no admin needed): double-clicking
+         a project opens it in SheetNest (the app already handles the command-line path). -->
+    <Component Id="DnestFileAssociation" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKCU" Key="Software\Classes\.dnest" Type="string" Value="SheetNest.Project" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\SheetNest.Project" Type="string" Value="SheetNest Nest Project" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\SheetNest.Project\DefaultIcon" Type="string" Value="[INSTALLFOLDER]SheetNest.exe,0" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\SheetNest.Project\shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]SheetNest.exe&quot; &quot;%1&quot;" />
+    </Component>
+
     <Feature Id="Main" Title="SheetNest">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="ShortcutsAndCleanup" />
       <ComponentRef Id="DesktopShortcutComp" />
+      <ComponentRef Id="DnestFileAssociation" />
     </Feature>
 
     <!-- "Launch SheetNest" checkbox on the finish page. -->

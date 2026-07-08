@@ -28,6 +28,15 @@ namespace DeepNestSharp
     /// <summary>Interpret unfolded 3D parts in inches (true) vs millimeters (false); null = keep default.</summary>
     public bool? UnfoldUnitInch { get; set; }
 
+    /// <summary>Most-recently-used project files, newest first (File > Recent Projects).</summary>
+    public List<string> RecentProjects { get; set; } = new List<string>();
+
+    /// <summary>Autosave the open project (SigmaNEST "Auto Save WS"); null = default (enabled).</summary>
+    public bool? AutosaveEnabled { get; set; }
+
+    /// <summary>Minutes between autosaves (SigmaNEST "Auto Save Time (min)"); -1 = default (5).</summary>
+    public int AutosaveMinutes { get; set; } = -1;
+
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");
 
@@ -46,6 +55,35 @@ namespace DeepNestSharp
       }
 
       return null;
+    }
+
+    /// <summary>
+    /// Records a project in the MRU list (newest first, case-insensitive dedupe, capped at 8).
+    /// Load-modify-save so it never clobbers the other session fields; best effort.
+    /// </summary>
+    public static void PushRecentProject(string path)
+    {
+      if (string.IsNullOrWhiteSpace(path))
+      {
+        return;
+      }
+
+      try
+      {
+        var session = Load() ?? new SessionState();
+        session.RecentProjects.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        session.RecentProjects.Insert(0, path);
+        if (session.RecentProjects.Count > 8)
+        {
+          session.RecentProjects.RemoveRange(8, session.RecentProjects.Count - 8);
+        }
+
+        session.Save();
+      }
+      catch
+      {
+        // MRU is a convenience — never let it break opening/saving
+      }
     }
 
     public void Save()

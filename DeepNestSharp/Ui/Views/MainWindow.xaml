@@ -42,6 +42,9 @@
       <MenuItem Header="_File">
         <MenuItem Header="New Project" Command="{Binding CreateNestProjectCommand}" />
         <MenuItem Header="Open Project..." Command="{Binding LoadNestProjectCommand}" />
+        <MenuItem x:Name="recentProjectsMenu" Header="Recent Projects" SubmenuOpened="OnRecentProjectsOpened">
+          <MenuItem Header="(empty)" IsEnabled="False" />
+        </MenuItem>
         <MenuItem Header="Import 3D (STEP / IGES)..." Click="OnImport3DClicked" />
         <Separator />
         <MenuItem Header="Save" Command="{Binding ActiveDocumentSaveCommand}" />
@@ -50,6 +53,7 @@
         <MenuItem Header="Exit" Command="{Binding ExitCommand}" />
       </MenuItem>
       <MenuItem Header="_Settings">
+        <MenuItem Header="Application Settings..." Click="OnAppSettings" />
         <MenuItem Header="Advanced Settings..." Click="OnAdvancedSettings" />
       </MenuItem>
       <MenuItem Header="_Help">

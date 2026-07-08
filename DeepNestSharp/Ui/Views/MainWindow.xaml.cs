@@ -23,6 +23,9 @@ namespace DeepNestSharp.Ui.Views
     // doesn't touch a dead window (would throw "set Owner on a closed Window").
     private bool isClosed;
     private string updateUrl;
+    private System.Windows.Threading.DispatcherTimer autosaveTimer;
+    private bool autosaveEnabled = true;
+    private int autosaveMinutes = 5;
 
     public MainWindow(IMainViewModel viewModel)
     {
@@ -33,6 +36,13 @@ namespace DeepNestSharp.Ui.Views
       this.Closing += MainWindow_Closing;
       this.Closed += (s, e) => this.isClosed = true;
       viewModel.ActiveDocumentChanged += MainWindow_ActiveDocumentChanged;
+
+      // Autosave (SigmaNEST "Auto Save WS"): snapshot the dirty project periodically; a crash then
+      // offers recovery on the next start (clean saves/closes clear the snapshot). Enable/interval
+      // live in Settings > Application Settings and the session restores them on load.
+      this.autosaveTimer = new System.Windows.Threading.DispatcherTimer { Interval = System.TimeSpan.FromMinutes(5) };
+      this.autosaveTimer.Tick += this.OnAutosaveTick;
+      this.autosaveTimer.Start();
     }
 
     public IMainViewModel ViewModel => (IMainViewModel)DataContext;
@@ -124,6 +134,70 @@ namespace DeepNestSharp.Ui.Views
         {
           DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch = session.UnfoldUnitInch.Value;
         }
+
+        // Autosave settings (Settings > Application Settings).
+        this.ApplyAutosaveSettings(
+          session.AutosaveEnabled ?? true,
+          session.AutosaveMinutes >= 1 && session.AutosaveMinutes <= 60 ? session.AutosaveMinutes : 5);
+      }
+
+      // The config normalization above — and the initial WPF binding pass, which runs AFTER Loaded
+      // (Xceed up-downs push their first values) — ping the project's IsDirty. A fresh EMPTY project
+      // has no user work, and the title asterisk must mean "YOUR changes are unsaved", so reset the
+      // flag once the binding churn settles. The content guard keeps real work (recovered projects,
+      // a part added in the first second) dirty.
+      this.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new System.Action(() =>
+      {
+        if (!this.isClosed
+            && ViewModel.ActiveDocument is NestProjectViewModel fresh
+            && string.IsNullOrEmpty(fresh.FilePath)
+            && fresh.ProjectInfo.DetailLoadInfos.Count == 0
+            && fresh.ProjectInfo.SheetLoadInfos.Count == 0)
+        {
+          fresh.IsDirty = false;
+        }
+      }));
+
+      // Crash recovery LAST (after the config/session churn, so the recovered doc's deliberate
+      // dirty flag survives): an autosave snapshot only exists after an unclean exit.
+      this.OfferAutosaveRecovery();
+    }
+
+    /// <summary>Offers to restore the autosaved project left behind by a crashed session.</summary>
+    private void OfferAutosaveRecovery()
+    {
+      try
+      {
+        if (!Autosave.TryGetPending(out string originalPath, out string savedAt))
+        {
+          return;
+        }
+
+        string name = string.IsNullOrWhiteSpace(originalPath) ? "an unsaved project" : System.IO.Path.GetFileName(originalPath);
+        string when = string.IsNullOrWhiteSpace(savedAt) ? string.Empty : $" (autosaved {savedAt})";
+        var answer = ViewModel.MessageService.DisplayOkCancel(
+          $"SheetNest closed unexpectedly with unsaved changes in {name}{when}.\n\nRecover the autosaved project?",
+          "Recovery",
+          DeepNestLib.MessageBoxIcon.Information);
+        if (answer == DeepNestLib.MessageBoxResult.OK)
+        {
+          ViewModel.OnLoadNestProject(Autosave.RecoveryPath);
+          if (ViewModel.ActiveDocument is NestProjectViewModel recovered)
+          {
+            // Point the document back at the REAL file (empty = never saved -> Save As) and keep it
+            // dirty: recovered work is unsaved work until the user saves it.
+            recovered.FilePath = originalPath ?? string.Empty;
+            recovered.IsDirty = true;
+          }
+        }
+
+        Autosave.Clear();
+      }
+      catch (Exception ex)
+      {
+        // Recovery is best-effort and must never block startup — but a failure is worth a local log.
+        CrashReporter.Save(ex, "autosave-recovery");
+        Autosave.Clear(); // a snapshot that cannot be recovered must not re-prompt forever
       }
     }
 
@@ -210,6 +284,98 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
+    private void Document_PropertyChangedForMru(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+      if (e.PropertyName == nameof(NestProjectViewModel.FilePath)
+          && sender is NestProjectViewModel doc
+          && !string.IsNullOrWhiteSpace(doc.FilePath))
+      {
+        SessionState.PushRecentProject(doc.FilePath);
+      }
+
+      // A save (IsDirty -> false) means there is nothing left to recover.
+      if (e.PropertyName == nameof(NestProjectViewModel.IsDirty)
+          && sender is NestProjectViewModel saved
+          && !saved.IsDirty)
+      {
+        Autosave.Clear();
+      }
+    }
+
+    /// <summary>Every 5 minutes: snapshot the dirty project (with its on-screen nest result) for recovery.</summary>
+    private void OnAutosaveTick(object sender, System.EventArgs e)
+    {
+      try
+      {
+        if (ViewModel?.ActiveDocument is NestProjectViewModel doc && doc.IsDirty)
+        {
+          // Same embed Save performs, so a recovery brings the on-screen nest result back too.
+          doc.ProjectInfo.LastNestResultJson =
+            (ViewModel.NestMonitorViewModel.SelectedItem as NestResult)?.ToJson(false) ?? string.Empty;
+          Autosave.Write(doc.TextContent, doc.FilePath);
+        }
+      }
+      catch
+      {
+        // autosave must never disturb the user
+      }
+    }
+
+    /// <summary>Rebuilds File > Recent Projects from the session on every open (prunes dead paths).</summary>
+    private void OnRecentProjectsOpened(object sender, RoutedEventArgs e)
+    {
+      this.recentProjectsMenu.Items.Clear();
+      var recents = (SessionState.Load()?.RecentProjects ?? new List<string>())
+        .Where(System.IO.File.Exists)
+        .ToList();
+      if (recents.Count == 0)
+      {
+        this.recentProjectsMenu.Items.Add(new MenuItem { Header = "(empty)", IsEnabled = false });
+        return;
+      }
+
+      foreach (var path in recents)
+      {
+        var item = new MenuItem
+        {
+          Header = System.IO.Path.GetFileName(path),
+          ToolTip = path,
+        };
+        string captured = path;
+        item.Click += (_, __) => ViewModel.LoadNestProjectInteractive(captured);
+        this.recentProjectsMenu.Items.Add(item);
+      }
+    }
+
+    /// <summary>Applies the autosave settings to the running timer and remembers them for the session save.</summary>
+    private void ApplyAutosaveSettings(bool enabled, int minutes)
+    {
+      this.autosaveEnabled = enabled;
+      this.autosaveMinutes = minutes;
+      if (this.autosaveTimer != null)
+      {
+        this.autosaveTimer.Interval = System.TimeSpan.FromMinutes(minutes);
+        this.autosaveTimer.IsEnabled = enabled;
+      }
+    }
+
+    private void OnAppSettings(object sender, RoutedEventArgs e)
+    {
+      var dialog = new AppSettingsWindow(this.autosaveEnabled, this.autosaveMinutes) { Owner = this };
+      if (dialog.ShowDialog() != true)
+      {
+        return;
+      }
+
+      this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
+
+      // Persist immediately (load-modify-save keeps the MRU and the other session fields intact).
+      var session = SessionState.Load() ?? new SessionState();
+      session.AutosaveEnabled = this.autosaveEnabled;
+      session.AutosaveMinutes = this.autosaveMinutes;
+      session.Save();
+    }
+
     private void OnAdvancedSettings(object sender, RoutedEventArgs e)
     {
       var dialog = new AdvancedSettingsWindow
@@ -267,6 +433,16 @@ namespace DeepNestSharp.Ui.Views
       {
         return;
       }
+
+      // Recent Projects: record opened files now, and saved-for-the-first-time files when their
+      // FilePath appears (Save As raises PropertyChanged). Subscription is made idempotent.
+      if (!string.IsNullOrWhiteSpace(doc.FilePath))
+      {
+        SessionState.PushRecentProject(doc.FilePath);
+      }
+
+      doc.PropertyChanged -= this.Document_PropertyChangedForMru;
+      doc.PropertyChanged += this.Document_PropertyChangedForMru;
 
       var monitor = ViewModel.NestMonitorViewModel;
       string json = doc.ProjectInfo.LastNestResultJson;
@@ -450,6 +626,10 @@ namespace DeepNestSharp.Ui.Views
         }
       }
 
+      // A close that reaches this point is CLEAN (saved, discarded by choice, or nothing dirty) —
+      // the autosave snapshot must not trigger a bogus recovery prompt on the next start.
+      Autosave.Clear();
+
       // Only the sheet edge margin persists across sessions. Sheet stock is deliberately NOT part of
       // the session anymore — the app starts empty and each saved .dnest project carries its own
       // stock (with its embedded nest result, whose Clear Result returns the sheets it consumed).
@@ -461,6 +641,9 @@ namespace DeepNestSharp.Ui.Views
         UnfoldKFactorStandard = DeepNestLib.IO.StepUnfoldService.KFactorStandard,
         FreeCadCmdPath = DeepNestLib.IO.StepUnfoldService.FreeCadCmdPathOverride,
         UnfoldUnitInch = DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
+        RecentProjects = SessionState.Load()?.RecentProjects ?? new List<string>(), // preserve the MRU
+        AutosaveEnabled = this.autosaveEnabled,
+        AutosaveMinutes = this.autosaveMinutes,
       }.Save();
     }
 
