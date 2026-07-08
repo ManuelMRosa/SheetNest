@@ -411,20 +411,6 @@
           (NestMonitorViewModel.SelectedItem as NestResult)?.ToJson(false) ?? string.Empty;
       }
 
-      // AutoCAD-style safety net: keep the previous version as .bak before overwriting. A failed
-      // copy (locked/read-only .bak) must never block the actual save.
-      try
-      {
-        if (File.Exists(fileToSave.FilePath))
-        {
-          File.Copy(fileToSave.FilePath, fileToSave.FilePath + ".bak", true);
-        }
-      }
-      catch
-      {
-        // best effort only
-      }
-
       File.WriteAllText(fileToSave.FilePath, fileToSave.TextContent);
       if (ActiveDocument != null)
       {
