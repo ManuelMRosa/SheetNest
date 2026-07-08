@@ -140,10 +140,9 @@
               </Style>
             </DockPanel.Style>
             <StackPanel DockPanel.Dock="Bottom">
-              <Button Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4,4,4,0" HorizontalAlignment="Stretch"
+              <!-- 3D import lives in File > Import 3D (STEP / IGES)... — not frequent enough for a permanent button. -->
+              <Button Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" HorizontalAlignment="Stretch"
                       ToolTip="Add a part to nest (DXF, or STEP/IGES 3D)." />
-              <Button Style="{DynamicResource ModernButton}" Content="Import 3D…" Click="OnImport3DClicked" Margin="4" HorizontalAlignment="Stretch"
-                      ToolTip="Import a 3D sheet-metal part (STEP/IGES) — SheetNest unfolds it to a flat pattern for nesting." />
             </StackPanel>
             <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
                       SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"
