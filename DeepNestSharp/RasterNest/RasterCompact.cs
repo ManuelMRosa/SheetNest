@@ -381,32 +381,45 @@
       // For common-line parts that residue defeats the feature — the shared edge must be EXACTLY
       // coincident for the DXF export (MergeLines) to emit it as one cut — so close each CC part the
       // last fraction precisely, by geometry: the exact directional gap to the nearest constraint
-      // (sheet margin, a CC neighbour's raw outline, or a spaced neighbour's clearance shell). Only
-      // the backoff residue is welded; the packing itself already happened above.
-      double weldMax = Backoff * 4.0;
+      // (sheet margin, a CC neighbour's raw outline, or a spaced neighbour's clearance shell).
+      // Residues CASCADE down a contact chain (each weld moves the wall the next part rests on —
+      // measured 0.005" on the 5th part of a row), hence pack order, a cap generous enough for long
+      // chains, and a second sweep. The cap cannot jump real open space: the slide above already
+      // consumed all genuine free room, so any post-slide gap to a blocker is residue by construction.
+      double weldMax = 0.05;
       long weldMaxInt = (long)Math.Round(weldMax * Scale);
       long marginInt = (long)Math.Round(margin * Scale);
-      foreach (int i in order)
+      for (int sweep = 0; sweep < 2; sweep++)
       {
-        if (items[i].Spacing > 0)
+        bool welded = false;
+        foreach (int i in order)
         {
-          continue;
-        }
-
-        for (int pass = 0; pass < 2; pass++)
-        {
-          bool alongX = growX == (pass == 0);
-          long gap = DirectionalGapExact(i, alongX, weldMaxInt, marginInt, items, pathsRaw, pathsHalf);
-          if (gap > 0 && gap <= weldMaxInt)
+          if (items[i].Spacing > 0)
           {
-            double g = gap / Scale;
-            double ox = alongX ? -g : 0;
-            double oy = alongX ? 0 : -g;
-            if (RawClearAll(i, ox, oy))
+            continue;
+          }
+
+          for (int pass = 0; pass < 2; pass++)
+          {
+            bool alongX = growX == (pass == 0);
+            long gap = DirectionalGapExact(i, alongX, weldMaxInt, marginInt, items, pathsRaw, pathsHalf);
+            if (gap > 0 && gap <= weldMaxInt)
             {
-              ApplyMove(i, ox, oy);
+              double g = gap / Scale;
+              double ox = alongX ? -g : 0;
+              double oy = alongX ? 0 : -g;
+              if (RawClearAll(i, ox, oy))
+              {
+                ApplyMove(i, ox, oy);
+                welded = true;
+              }
             }
           }
+        }
+
+        if (!welded)
+        {
+          break;
         }
       }
     }
@@ -434,13 +447,18 @@
       var mine = pathsRaw[i];
       long best = long.MaxValue;
 
-      // Sheet margin along the slide axis.
-      long myMinU = long.MaxValue;
+      // My bounds in the rotated frame (also gives the margin gap along the slide axis).
+      long myMinU = long.MaxValue, myMaxU = long.MinValue, myMinV = long.MaxValue, myMaxV = long.MinValue;
       foreach (var path in mine)
       {
         foreach (var p in path)
         {
-          myMinU = Math.Min(myMinU, U(p));
+          long u = U(p);
+          long v = V(p);
+          if (u < myMinU) { myMinU = u; }
+          if (u > myMaxU) { myMaxU = u; }
+          if (v < myMinV) { myMinV = v; }
+          if (v > myMaxV) { myMaxV = v; }
         }
       }
 
@@ -483,36 +501,79 @@
 
         var theirs = items[j].Spacing <= 0 ? pathsRaw[j] : pathsHalf[j];
 
+        // BBox pre-filter (essential: without it an 800-part common-line job timed out — this scan
+        // is O(vertsA x vertsB) per pair). The constraint can only bite if it overlaps my V-range
+        // and sits within [myMinU - cap, myMaxU] along the slide axis.
+        long thMinU = long.MaxValue, thMaxU = long.MinValue, thMinV = long.MaxValue, thMaxV = long.MinValue;
+        foreach (var path in theirs)
+        {
+          foreach (var p in path)
+          {
+            long u = U(p);
+            long v = V(p);
+            if (u < thMinU) { thMinU = u; }
+            if (u > thMaxU) { thMaxU = u; }
+            if (v < thMinV) { thMinV = v; }
+            if (v > thMaxV) { thMaxV = v; }
+          }
+        }
+
+        if (thMinV > myMaxV || thMaxV < myMinV || thMinU > myMaxU || thMaxU < myMinU - capInt)
+        {
+          continue;
+        }
+
+        // My vertices raying -U onto their edges.
         foreach (var pathA in mine)
         {
-          for (int m = 0; m < pathA.Count; m++)
+          foreach (var v in pathA)
           {
-            var v = pathA[m];
+            if (V(v) < thMinV || V(v) > thMaxV || U(v) < thMinU || U(v) - thMaxU > capInt)
+            {
+              continue; // this vertex can't reach them within the cap
+            }
+
             foreach (var pathB in theirs)
             {
               for (int n = 0; n < pathB.Count; n++)
               {
-                // My vertex raying -U onto their edge…
                 long g1 = RayGap(v, pathB[n], pathB[(n + 1) % pathB.Count]);
-                if (g1 >= 0 && g1 < best)
+                if (g1 < best)
                 {
                   best = g1;
                 }
+              }
+            }
+          }
+        }
 
-                // …and their vertex raying +U onto my edge (equivalent to me sliding -U onto it).
-                long g2 = RayGapReverse(pathB[n], pathA[m], pathA[(m + 1) % pathA.Count]);
-                if (g2 >= 0 && g2 < best)
+        // Their vertices raying +U onto my edges (equivalent to me sliding -U onto them).
+        foreach (var pathB in theirs)
+        {
+          foreach (var w in pathB)
+          {
+            if (V(w) < myMinV || V(w) > myMaxV || U(w) > myMaxU || myMinU - U(w) > capInt)
+            {
+              continue;
+            }
+
+            foreach (var pathA in mine)
+            {
+              for (int m = 0; m < pathA.Count; m++)
+              {
+                long g2 = RayGapReverse(w, pathA[m], pathA[(m + 1) % pathA.Count]);
+                if (g2 < best)
                 {
                   best = g2;
                 }
               }
             }
-
-            if (best == 0)
-            {
-              return 0;
-            }
           }
+        }
+
+        if (best == 0)
+        {
+          return 0;
         }
       }
 
