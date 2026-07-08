@@ -7,11 +7,11 @@ namespace DeepNestLib.IO
   using IxMilia.Dxf.Entities;
 
   /// <summary>
-  /// Joins the exploded LINE/ARC soup that FreeCAD's DXF exporter writes into CLOSED LWPOLYLINEs
-  /// (arcs become bulge segments). Laser CAM and AutoCAD treat loose entities as "open" geometry
-  /// even when every endpoint coincides exactly — a cut file must be one closed polyline per
-  /// contour. Chains that do not close (or single loose segments) are left untouched rather than
-  /// degraded; circles and any other entity types pass through unchanged.
+  /// Joins exploded LINE/ARC soup (FreeCAD unfolds, many client CAD exports) into CLOSED
+  /// LWPOLYLINEs (arcs become bulge segments). Laser CAM and AutoCAD treat loose entities as
+  /// "open" geometry even when every endpoint coincides exactly — a cut file must be one closed
+  /// polyline per contour. Chains that do not close (or single loose segments) are left untouched
+  /// rather than degraded; circles and any other entity types pass through unchanged.
   /// </summary>
   public static class FlatDxfJoiner
   {
@@ -22,10 +22,31 @@ namespace DeepNestLib.IO
     public static void JoinToClosedPolylines(string dxfPath)
     {
       var file = DxfFile.Load(dxfPath);
+      if (!JoinEntities(file.Entities))
+      {
+        return;
+      }
 
+      // FreeCAD writes R12, which cannot hold LWPOLYLINE — save as R2000 (same as the exporter).
+      if (file.Header.Version < DxfAcadVersion.R2000)
+      {
+        file.Header.Version = DxfAcadVersion.R2000;
+      }
+
+      file.Save(dxfPath, true);
+    }
+
+    /// <summary>
+    /// Joins the LINE/ARC chains in the list into closed LWPOLYLINEs, in place (consumed segments
+    /// removed, polylines appended). Returns true when anything was joined. The whole set is left
+    /// untouched when any endpoint junction is ambiguous (3+ segment ends meeting — T joints,
+    /// crossings) so a cut contour can never be mis-chained.
+    /// </summary>
+    public static bool JoinEntities(IList<DxfEntity> entities)
+    {
       // Segments we can chain: lines and arcs. Everything else stays as-is.
       var segments = new List<Segment>();
-      foreach (var ent in file.Entities)
+      foreach (var ent in entities)
       {
         if (ent is DxfLine line)
         {
@@ -48,9 +69,9 @@ namespace DeepNestLib.IO
         }
       }
 
-      if (segments.Count < 2)
+      if (segments.Count < 2 || HasAmbiguousJunction(segments))
       {
-        return;
+        return false;
       }
 
       var polylines = new List<DxfLwPolyline>();
@@ -113,6 +134,7 @@ namespace DeepNestLib.IO
           {
             IsClosed = true,
             Layer = seed.Entity.Layer,
+            Color = seed.Entity.Color, // hole contours keep the exporter's differentiating colour
           };
           polylines.Add(poly);
           consumed.AddRange(chainEnts);
@@ -121,26 +143,49 @@ namespace DeepNestLib.IO
 
       if (polylines.Count == 0)
       {
-        return;
+        return false;
       }
 
       foreach (var ent in consumed)
       {
-        file.Entities.Remove(ent);
+        entities.Remove(ent);
       }
 
       foreach (var poly in polylines)
       {
-        file.Entities.Add(poly);
+        entities.Add(poly);
       }
 
-      // FreeCAD writes R12, which cannot hold LWPOLYLINE — save as R2000 (same as the exporter).
-      if (file.Header.Version < DxfAcadVersion.R2000)
+      return true;
+    }
+
+    /// <summary>True when any junction joins 3+ segment ends — chaining there would be a guess.</summary>
+    private static bool HasAmbiguousJunction(List<Segment> segments)
+    {
+      var ends = new List<DxfPoint>(segments.Count * 2);
+      foreach (var s in segments)
       {
-        file.Header.Version = DxfAcadVersion.R2000;
+        ends.Add(s.Start);
+        ends.Add(s.End);
       }
 
-      file.Save(dxfPath, true);
+      for (int i = 0; i < ends.Count; i++)
+      {
+        int matches = 0;
+        for (int j = 0; j < ends.Count; j++)
+        {
+          if (i != j && Coincide(ends[i], ends[j]))
+          {
+            matches++;
+            if (matches >= 2)
+            {
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
     }
 
     private static bool Coincide(DxfPoint a, DxfPoint b)

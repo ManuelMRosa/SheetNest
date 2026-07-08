@@ -85,6 +85,46 @@ namespace DeepNestLib.CiTests.IO
     }
 
     [Fact]
+    public void JoinEntities_InMemory_PreservesColorAndLayer()
+    {
+      // A red triangle "hole" contour (the exporter colours child contours red) must come out as
+      // a red closed polyline on the same layer.
+      var red = DxfColor.FromIndex(1);
+      var entities = new System.Collections.Generic.List<DxfEntity>
+      {
+        new DxfLine(new DxfPoint(0, 0, 0), new DxfPoint(4, 0, 0)) { Color = red, Layer = "HOLES" },
+        new DxfLine(new DxfPoint(4, 0, 0), new DxfPoint(2, 3, 0)) { Color = red, Layer = "HOLES" },
+        new DxfLine(new DxfPoint(2, 3, 0), new DxfPoint(0, 0, 0)) { Color = red, Layer = "HOLES" },
+      };
+
+      FlatDxfJoiner.JoinEntities(entities).Should().BeTrue();
+
+      entities.Should().HaveCount(1);
+      var poly = entities[0].Should().BeOfType<DxfLwPolyline>().Subject;
+      poly.IsClosed.Should().BeTrue();
+      poly.Color.Should().Be(red);
+      poly.Layer.Should().Be("HOLES");
+    }
+
+    [Fact]
+    public void JoinEntities_SkipsAmbiguousJunctions()
+    {
+      // Three segment ends meeting at one point (T joint): chaining would be a guess — the
+      // joiner must leave everything untouched.
+      var entities = new System.Collections.Generic.List<DxfEntity>
+      {
+        new DxfLine(new DxfPoint(0, 0, 0), new DxfPoint(10, 0, 0)),
+        new DxfLine(new DxfPoint(10, 0, 0), new DxfPoint(10, 10, 0)),
+        new DxfLine(new DxfPoint(10, 10, 0), new DxfPoint(0, 0, 0)),
+        new DxfLine(new DxfPoint(10, 0, 0), new DxfPoint(10, -5, 0)), // dangling spur off the corner
+      };
+
+      FlatDxfJoiner.JoinEntities(entities).Should().BeFalse();
+      entities.Should().HaveCount(4);
+      entities.Should().AllBeOfType<DxfLine>();
+    }
+
+    [Fact]
     public void LeavesUnclosableChainsUntouched()
     {
       // An open L (two lines) must stay as-is: never emit an open polyline for a cut file.

@@ -127,6 +127,19 @@
         //double sheetYoffset = -sheet.Height * i;
         DxfPoint offsetdistance = new DxfPoint(polygon.X + sheetXoffset, polygon.Y, 0D);
         List<DxfEntity> newlist = OffsetToNest(fl.Outers, offsetdistance, polygon.Rotation, polygon.IsMirrored, differentiateChildren);
+
+        // Join each part's exploded LINE/ARC soup into closed LWPOLYLINEs so the laser receives
+        // real closed contours (client DXFs often arrive exploded). Per-part on purpose: touching
+        // common-line parts must never chain into each other. Failure = export exploded, as before.
+        try
+        {
+          FlatDxfJoiner.JoinEntities(newlist);
+        }
+        catch
+        {
+          // keep the exploded entities
+        }
+
         foreach (DxfEntity ent in newlist)
         {
           yield return ent;
