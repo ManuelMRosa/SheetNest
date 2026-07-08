@@ -111,6 +111,22 @@ namespace DeepNestLib.IO
         Directory.CreateDirectory(dir);
         var dstBase = Path.Combine(dir, Path.GetFileNameWithoutExtension(stepPath) + ".dxf");
         var (paths, total) = RunUnfold(stepPath, dstBase, kFactor, kFactorStandard, scale);
+
+        // FreeCAD exports exploded LINE/ARC soup; join each flat into closed LWPOLYLINEs so the
+        // nested DXF the laser receives has real closed contours. A join failure keeps the
+        // exploded (still geometrically closed) file rather than failing the import.
+        foreach (var p in paths)
+        {
+          try
+          {
+            FlatDxfJoiner.JoinToClosedPolylines(p);
+          }
+          catch
+          {
+            // keep the exploded flat
+          }
+        }
+
         PartsCache[cacheKey] = (key, paths, total);
         return (paths, System.Math.Max(0, total - paths.Count));
       }
@@ -165,7 +181,9 @@ namespace DeepNestLib.IO
         // missing file -> ticks 0; the unfold will surface the real error
       }
 
-      return string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}|{3}", ticks, kFactor,
+      // "joined1" versions the cache format: bumping it regenerates stale exploded-entity flats
+      // produced before FlatDxfJoiner existed.
+      return string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}|{3}|joined1", ticks, kFactor,
         string.IsNullOrWhiteSpace(kFactorStandard) ? "ansi" : kFactorStandard, scale);
     }
 
