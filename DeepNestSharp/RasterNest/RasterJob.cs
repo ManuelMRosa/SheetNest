@@ -14,6 +14,7 @@ namespace DeepNestSharp.RasterNest
     public PackedMask[] Packed; // 64-bit packed rows of Masks, built by the nester
     public int Priority = 5;    // 0-10, higher nests first (Radan-style)
     public int HaloPx = 0;      // PER-PART spacing halo (px): masks dilate by this, so two parts end up (haloA + haloB) apart
+    public bool CommonLine;     // spacing<=0 part: its pair module is born with the internal seam at EXACT contact (shared cut)
 
     // PAIR CLUSTERING (industry "pairwise nesting"): parts that interlock with their own 180°
     // rotation — a triangle plus its flip is a parallelogram — get extra PAIR MODULE entries
@@ -28,6 +29,15 @@ namespace DeepNestSharp.RasterNest
     public int[] PairAy;
     public int[] PairBx;
     public int[] PairBy;
+
+    // Common-line pairs only: EXACT sub-part offsets (inches, doubles) inside the module frame.
+    // The integer-pixel pair offset leaves the internal seam ~1px (0.04") open — a double cut on
+    // the shared edge. These exact offsets, computed by polygon ray-cast, close it to true contact;
+    // the placement carries them past the pixel grid and compaction keeps the module rigid.
+    public double[] PairExactAx;
+    public double[] PairExactAy;
+    public double[] PairExactBx;
+    public double[] PairExactBy;
   }
 
   /// <summary>
@@ -71,6 +81,10 @@ namespace DeepNestSharp.RasterNest
     public int Xpx;
     public int Ypx;
     public int RotationDeg;
+    public int PairGroup;   // >0: this part is half of a rigid pair module (compaction moves the pair as one body)
+    public bool HasExact;   // common-line pair member: use the double position (internal seam at true contact)
+    public double ExactXin; // exact part-bbox-min position, TRUE-sheet inches (the int px grid can't express it)
+    public double ExactYin;
   }
 
   internal sealed class JobResult
@@ -97,9 +111,10 @@ namespace DeepNestSharp.RasterNest
       // The real part sits inset by (halo, halo) inside its dilated mask.
       foreach (var t in types)
       {
-        t.Masks = t.RotationsDeg
-          .Select(r => RasterUtil.Dilate(RasterUtil.Rasterize(r == 0 ? t.Poly : t.Poly.Rotate(r), pxPerInch), t.HaloPx))
+        var raws = t.RotationsDeg
+          .Select(r => RasterUtil.Rasterize(r == 0 ? t.Poly : t.Poly.Rotate(r), pxPerInch))
           .ToArray();
+        t.Masks = raws.Select(m => RasterUtil.Dilate(m, t.HaloPx)).ToArray();
         t.Packed = t.Masks.Select(PackedMask.From).ToArray();
 
         // Rotation-symmetric parts (circles, squares…) yield IDENTICAL masks for several rotations —
@@ -124,9 +139,10 @@ namespace DeepNestSharp.RasterNest
           t.RotationsDeg = keep.Select(i => t.RotationsDeg[i]).ToArray();
           t.Masks = keep.Select(i => t.Masks[i]).ToArray();
           t.Packed = keep.Select(i => t.Packed[i]).ToArray();
+          raws = keep.Select(i => raws[i]).ToArray();
         }
 
-        ComputePairing(t);
+        ComputePairing(t, raws, pxPerInch);
       }
 
       long profMaskMs = profSw?.ElapsedMilliseconds ?? 0;
@@ -179,6 +195,7 @@ namespace DeepNestSharp.RasterNest
       long solidPlaced = 0;
 
       var used = new bool[instances.Count];
+      int pairGroupSeq = 0;
       for (int idx = 0; idx < instances.Count; idx++)
       {
         if (used[idx])
@@ -260,10 +277,32 @@ namespace DeepNestSharp.RasterNest
             if (t.FirstPairEntry >= 0 && rotIdx >= t.FirstPairEntry)
             {
               // PAIR MODULE placed (e.g. two triangles as a parallelogram): one stamped union mask,
-              // TWO real placements, and the mate instance is consumed from the queue.
+              // TWO real placements, and the mate instance is consumed from the queue. Common-line
+              // modules also carry the EXACT double offsets (internal seam at true contact — the int
+              // grid can't express it) and a group id so compaction moves the module as one body.
               int pi = rotIdx - t.FirstPairEntry;
-              placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x + t.PairAx[pi] + t.HaloPx - pad, Ypx = y + t.PairAy[pi] + t.HaloPx - pad, RotationDeg = t.RotationsDeg[t.PairSubA[pi]] });
-              placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x + t.PairBx[pi] + t.HaloPx - pad, Ypx = y + t.PairBy[pi] + t.HaloPx - pad, RotationDeg = t.RotationsDeg[t.PairSubB[pi]] });
+              bool exactPair = t.CommonLine && t.PairExactAx != null && !double.IsNaN(t.PairExactAx[pi]);
+              int grp = 0;
+              if (exactPair)
+              {
+                pairGroupSeq++;
+                grp = pairGroupSeq;
+              }
+
+              double frameX = (x - pad) / pxPerInch;
+              double frameY = (y - pad) / pxPerInch;
+              placements.Add(new JobPlacement
+              {
+                Source = t.Source, Sheet = si, RotationDeg = t.RotationsDeg[t.PairSubA[pi]], PairGroup = grp,
+                Xpx = x + t.PairAx[pi] + t.HaloPx - pad, Ypx = y + t.PairAy[pi] + t.HaloPx - pad,
+                HasExact = exactPair, ExactXin = exactPair ? frameX + t.PairExactAx[pi] : 0, ExactYin = exactPair ? frameY + t.PairExactAy[pi] : 0,
+              });
+              placements.Add(new JobPlacement
+              {
+                Source = t.Source, Sheet = si, RotationDeg = t.RotationsDeg[t.PairSubB[pi]], PairGroup = grp,
+                Xpx = x + t.PairBx[pi] + t.HaloPx - pad, Ypx = y + t.PairBy[pi] + t.HaloPx - pad,
+                HasExact = exactPair, ExactXin = exactPair ? frameX + t.PairExactBx[pi] : 0, ExactYin = exactPair ? frameY + t.PairExactBy[pi] : 0,
+              });
               used[pairMate] = true;
             }
             else
@@ -406,13 +445,19 @@ namespace DeepNestSharp.RasterNest
     /// rectangles and other non-interlocking shapes are untouched. Masks are the DILATED ones, so
     /// the spacing/halo clearance is built in.
     /// </summary>
-    internal static void ComputePairing(PartType t)
+    internal static void ComputePairing(PartType t, RasterMask[] raws = null, double pxPerInch = 0)
     {
       int n = t.RotationsDeg.Length;
       if (t.Quantity < 2)
       {
         return;
       }
+
+      // Common-line pairs are matched on the UNDILATED masks so the module is born with its internal
+      // seam at EXACT contact — that seam IS the shared cut, and nothing downstream may move it
+      // (the module rides rigidly through compaction). Spaced parts keep the dilated matching: their
+      // internal seam is born at exactly the requested clearance instead.
+      bool exact = t.CommonLine && raws != null;
 
       var pairMasks = new List<RasterMask>();
       var pairRotLabel = new List<int>();
@@ -422,6 +467,10 @@ namespace DeepNestSharp.RasterNest
       var aOffY = new List<int>();
       var bOffX = new List<int>();
       var bOffY = new List<int>();
+      var exactAx = new List<double>();
+      var exactAy = new List<double>();
+      var exactBx = new List<double>();
+      var exactBy = new List<double>();
 
       (int[] Top, int[] Bot) Profiles(RasterMask m)
       {
@@ -460,8 +509,8 @@ namespace DeepNestSharp.RasterNest
           continue; // complement not allowed (or deduped away for a symmetric part — pairing is pointless there)
         }
 
-        var a = t.Masks[ri];
-        var b = t.Masks[bi];
+        var a = exact ? raws[ri] : t.Masks[ri];
+        var b = exact ? raws[bi] : t.Masks[bi];
         var (topA, botA) = Profiles(a);
         var (topB, botB) = Profiles(b);
 
@@ -516,33 +565,28 @@ namespace DeepNestSharp.RasterNest
           continue;
         }
 
-        // Build the module mask: both dilated masks blitted into the union frame.
+        // Module mask = the FILLED bounding box, not the union outline. The pair already fills
+        // ~all of its bbox (the >=1.15 density gate saw to that), and a solid rectangle gives the
+        // module FLAT faces: with the true union, the bottom-left scan tucked a module's corner
+        // 1-2px into the previous column's diagonal pocket — winning 0.01" of X at the cost of a
+        // 0.32" stacking gap per module (measured), which is exactly the stair-stepped, uneven
+        // columns the user reported. Flat faces make columns stack flush by construction.
+        // Exact (common-line) modules add the halo back as a border ring, so the module keeps the
+        // usual anti-jam clearance to OTHERS while its inside stays at true contact.
+        int border = exact ? t.HaloPx : 0;
         int ax = System.Math.Max(0, -bestDx);
         int ay = System.Math.Max(0, -bestDy);
         int bx = System.Math.Max(0, bestDx);
         int by = System.Math.Max(0, bestDy);
-        int pw = System.Math.Max(ax + a.W, bx + b.W);
-        int ph = System.Math.Max(ay + a.H, by + b.H);
+        int pw = System.Math.Max(ax + a.W, bx + b.W) + (2 * border);
+        int ph = System.Math.Max(ay + a.H, by + b.H) + (2 * border);
         var bits = new bool[pw * ph];
-        int solid = 0;
-        void Blit(RasterMask m, int ox, int oy)
+        for (int k = 0; k < bits.Length; k++)
         {
-          for (int y = 0; y < m.H; y++)
-          {
-            for (int x = 0; x < m.W; x++)
-            {
-              if (m.Bits[(y * m.W) + x] && !bits[((oy + y) * pw) + ox + x])
-              {
-                bits[((oy + y) * pw) + ox + x] = true;
-                solid++;
-              }
-            }
-          }
+          bits[k] = true;
         }
 
-        Blit(a, ax, ay);
-        Blit(b, bx, by);
-        pairMasks.Add(new RasterMask { Bits = bits, W = pw, H = ph, SolidCount = solid });
+        pairMasks.Add(new RasterMask { Bits = bits, W = pw, H = ph, SolidCount = pw * ph });
         pairRotLabel.Add(t.RotationsDeg[ri]);
         subA.Add(ri);
         subB.Add(bi);
@@ -550,6 +594,51 @@ namespace DeepNestSharp.RasterNest
         aOffY.Add(ay);
         bOffX.Add(bx);
         bOffY.Add(by);
+
+        // EXACT internal seam for common-line pairs: the pixel offset leaves the mates ~1px apart
+        // (a 0.04" double cut on the shared edge). Close the smaller-axis gap by polygon ray-cast in
+        // doubles; the corrected sub-offsets ride in the placement so the pair is BORN touching.
+        if (exact && pxPerInch > 0)
+        {
+          var polyA = t.RotationsDeg[ri] == 0 ? t.Poly : t.Poly.Rotate(t.RotationsDeg[ri]);
+          var polyB = t.RotationsDeg[bi] == 0 ? t.Poly : t.Poly.Rotate(t.RotationsDeg[bi]);
+          double offXin = bestDx / pxPerInch;
+          double offYin = bestDy / pxPerInch;
+          double tax = -polyA.Points.Min(p => p.X);
+          double tay = -polyA.Points.Min(p => p.Y);
+          double tbx = offXin - polyB.Points.Min(p => p.X);
+          double tby = offYin - polyB.Points.Min(p => p.Y);
+          double gX = AxisGapPoly(polyA, tax, tay, polyB, tbx, tby, true);
+          double gY = AxisGapPoly(polyA, tax, tay, polyB, tbx, tby, false);
+          double snapX = offXin;
+          double snapY = offYin;
+          double closable = 3.0 / pxPerInch; // birth residue is ~1px; anything larger means no real seam on that axis
+          if (gX > 0 && gX <= closable && gX <= gY)
+          {
+            snapX -= gX;
+          }
+          else if (gY > 0 && gY <= closable)
+          {
+            snapY -= gY;
+          }
+
+          // Re-anchor so the raw union starts at the frame origin; the border ring absorbs the shift.
+          double unionMinX = System.Math.Min(0, snapX);
+          double unionMinY = System.Math.Min(0, snapY);
+          double borderIn = border / pxPerInch;
+          exactAx.Add(borderIn - unionMinX);
+          exactAy.Add(borderIn - unionMinY);
+          exactBx.Add(borderIn + snapX - unionMinX);
+          exactBy.Add(borderIn + snapY - unionMinY);
+        }
+        else
+        {
+          // Not exact-capable: mirror the integer offsets so the arrays stay aligned (unused).
+          exactAx.Add(double.NaN);
+          exactAy.Add(double.NaN);
+          exactBx.Add(double.NaN);
+          exactBy.Add(double.NaN);
+        }
       }
 
       if (pairMasks.Count == 0)
@@ -567,6 +656,90 @@ namespace DeepNestSharp.RasterNest
       t.PairAy = aOffY.ToArray();
       t.PairBx = bOffX.ToArray();
       t.PairBy = bOffY.ToArray();
+      t.PairExactAx = exactAx.ToArray();
+      t.PairExactAy = exactAy.ToArray();
+      t.PairExactBx = exactBx.ToArray();
+      t.PairExactBy = exactBy.ToArray();
+    }
+
+    /// <summary>
+    /// Exact directional clearance (inches) between two placed polygons: how far B can slide toward
+    /// -X (or -Y) before its raw outline meets A's. Double-precision twin of the weld's integer
+    /// ray-cast — vertex-vs-edge both ways. Returns MaxValue when the slide never meets A.
+    /// </summary>
+    internal static double AxisGapPoly(INfp a, double tax, double tay, INfp b, double tbx, double tby, bool alongX)
+    {
+      double U(double x, double y) => alongX ? x : y;
+      double V(double x, double y) => alongX ? y : x;
+      double best = double.MaxValue;
+
+      // Ray from vertex v toward -U against edge (p,q): hits where the edge spans v's V ordinate.
+      double RayGap(double vu, double vv, double pu, double pv, double qu, double qv)
+      {
+        if (pv == qv)
+        {
+          return double.MaxValue; // parallel to the ray — the edge's endpoints constrain instead
+        }
+
+        if (vv < System.Math.Min(pv, qv) || vv > System.Math.Max(pv, qv))
+        {
+          return double.MaxValue;
+        }
+
+        double tt = (vv - pv) / (qv - pv);
+        double uEdge = pu + (tt * (qu - pu));
+        return uEdge <= vu ? vu - uEdge : double.MaxValue;
+      }
+
+      var pa = a.Points;
+      var pb = b.Points;
+
+      // B's vertices raying -U onto A's edges…
+      foreach (var v in pb)
+      {
+        double vu = U(v.X + tbx, v.Y + tby);
+        double vv = V(v.X + tbx, v.Y + tby);
+        for (int e = 0; e < pa.Length; e++)
+        {
+          var p = pa[e];
+          var q = pa[(e + 1) % pa.Length];
+          double g = RayGap(vu, vv, U(p.X + tax, p.Y + tay), V(p.X + tax, p.Y + tay), U(q.X + tax, q.Y + tay), V(q.X + tax, q.Y + tay));
+          if (g < best)
+          {
+            best = g;
+          }
+        }
+      }
+
+      // …and A's vertices raying +U onto B's edges (equivalent to B sliding -U onto them).
+      foreach (var v in pa)
+      {
+        double vu = U(v.X + tax, v.Y + tay);
+        double vv = V(v.X + tax, v.Y + tay);
+        for (int e = 0; e < pb.Length; e++)
+        {
+          var p = pb[e];
+          var q = pb[(e + 1) % pb.Length];
+          double pu = U(p.X + tbx, p.Y + tby);
+          double pv = V(p.X + tbx, p.Y + tby);
+          double qu = U(q.X + tbx, q.Y + tby);
+          double qv = V(q.X + tbx, q.Y + tby);
+          if (pv == qv || vv < System.Math.Min(pv, qv) || vv > System.Math.Max(pv, qv))
+          {
+            continue;
+          }
+
+          double tt = (vv - pv) / (qv - pv);
+          double uEdge = pu + (tt * (qu - pu));
+          double g = uEdge >= vu ? uEdge - vu : double.MaxValue;
+          if (g < best)
+          {
+            best = g;
+          }
+        }
+      }
+
+      return best;
     }
 
     /// <summary>Profiling only (SHEETNEST_NEST_PROFILE=1): total Fits probes across a job.</summary>

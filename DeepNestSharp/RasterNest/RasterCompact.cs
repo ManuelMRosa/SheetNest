@@ -52,11 +52,46 @@
     /// corner; clearances are preserved exactly â€” each pair keeps (spacingA + spacingB)/2 via
     /// half-inflated shells, and common-line pairs close to EXACT contact (shared cut edge).
     /// </summary>
-    public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin)
+    public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin, int[] groups = null)
     {
       if (items == null || items.Count < 1)
       {
         return;
+      }
+
+      // PAIR MODULES ride through compaction RIGIDLY (groups[i] > 0 marks members of one module).
+      // Sliding the two halves independently let each wedge into the previous column's diagonal at a
+      // different depth — columns leaned over and the strip grew 4%. A module has flat outer faces,
+      // so moving it as one body keeps columns straight; its internal seam is born exact and must not
+      // change. memberSets[i] is the SAME array instance for all members (reference equality = same group).
+      var memberSets = new int[items.Count][];
+      if (groups != null)
+      {
+        var byGroup = new Dictionary<int, List<int>>();
+        for (int i = 0; i < items.Count && i < groups.Length; i++)
+        {
+          if (groups[i] > 0)
+          {
+            if (!byGroup.TryGetValue(groups[i], out var list))
+            {
+              byGroup[groups[i]] = list = new List<int>();
+            }
+
+            list.Add(i);
+          }
+        }
+
+        foreach (var g in byGroup.Values)
+        {
+          if (g.Count > 1)
+          {
+            var arr = g.ToArray();
+            foreach (int i in arr)
+            {
+              memberSets[i] = arr;
+            }
+          }
+        }
       }
 
       // Clearance is PER PAIR: spacing pairs need (sA+sB)/2 â€” expressed by half-inflated shells â€” and
@@ -74,18 +109,24 @@
       {
         long tx = (long)Math.Round(ox * Scale);
         long ty = (long)Math.Round(oy * Scale);
-        var moved = ox == 0 && oy == 0 ? pathsRaw[m] : Translate(pathsRaw[m], tx, ty);
-        var mb = BoundsOf(moved);
-        for (int k = 0; k < items.Count; k++)
+        var set = memberSets[m];
+        int n = set?.Length ?? 1;
+        for (int s = 0; s < n; s++)
         {
-          if (k == m || !BoxesTouch(mb, bounds[k]))
+          int mm = set != null ? set[s] : m;
+          var moved = tx == 0 && ty == 0 ? pathsRaw[mm] : Translate(pathsRaw[mm], tx, ty);
+          var mb = BoundsOf(moved);
+          for (int k = 0; k < items.Count; k++)
           {
-            continue;
-          }
+            if (k == mm || (set != null && memberSets[k] == set) || !BoxesTouch(mb, bounds[k]))
+            {
+              continue;
+            }
 
-          if (Intersects(moved, pathsRaw[k]))
-          {
-            return false;
+            if (Intersects(moved, pathsRaw[k]))
+            {
+              return false;
+            }
           }
         }
 
@@ -98,22 +139,28 @@
       {
         long tx = (long)Math.Round(ox * Scale);
         long ty = (long)Math.Round(oy * Scale);
-        var movedHalf = ox == 0 && oy == 0 ? pathsHalf[i] : Translate(pathsHalf[i], tx, ty);
-        var movedCC = pathsCC[i] == null ? null : ox == 0 && oy == 0 ? pathsCC[i] : Translate(pathsCC[i], tx, ty);
-        var mb = BoundsOf(movedCC ?? movedHalf);
-        for (int j = 0; j < items.Count; j++)
+        var set = memberSets[i];
+        int n = set?.Length ?? 1;
+        for (int s = 0; s < n; s++)
         {
-          if (j == i || !BoxesTouch(mb, bounds[j]))
+          int mm = set != null ? set[s] : i;
+          var movedHalf = tx == 0 && ty == 0 ? pathsHalf[mm] : Translate(pathsHalf[mm], tx, ty);
+          var movedCC = pathsCC[mm] == null ? null : tx == 0 && ty == 0 ? pathsCC[mm] : Translate(pathsCC[mm], tx, ty);
+          var mb = BoundsOf(movedCC ?? movedHalf);
+          for (int j = 0; j < items.Count; j++)
           {
-            continue;
-          }
+            if (j == mm || (set != null && memberSets[j] == set) || !BoxesTouch(mb, bounds[j]))
+            {
+              continue;
+            }
 
-          bool hit = BothCC(i, j)
-            ? Intersects(movedCC, pathsCC[j])
-            : Intersects(movedHalf, pathsHalf[j]);
-          if (hit)
-          {
-            return false;
+            bool hit = BothCC(mm, j)
+              ? Intersects(movedCC, pathsCC[j])
+              : Intersects(movedHalf, pathsHalf[j]);
+            if (hit)
+            {
+              return false;
+            }
           }
         }
 
@@ -124,16 +171,22 @@
       {
         long tx = (long)Math.Round(ox * Scale);
         long ty = (long)Math.Round(oy * Scale);
-        items[i].X += ox;
-        items[i].Y += oy;
-        pathsRaw[i] = Translate(pathsRaw[i], tx, ty);
-        pathsHalf[i] = Translate(pathsHalf[i], tx, ty);
-        if (pathsCC[i] != null)
+        var set = memberSets[i];
+        int n = set?.Length ?? 1;
+        for (int s = 0; s < n; s++)
         {
-          pathsCC[i] = Translate(pathsCC[i], tx, ty);
-        }
+          int mm = set != null ? set[s] : i;
+          items[mm].X += ox;
+          items[mm].Y += oy;
+          pathsRaw[mm] = Translate(pathsRaw[mm], tx, ty);
+          pathsHalf[mm] = Translate(pathsHalf[mm], tx, ty);
+          if (pathsCC[mm] != null)
+          {
+            pathsCC[mm] = Translate(pathsCC[mm], tx, ty);
+          }
 
-        bounds[i] = BoundsOf(pathsCC[i] ?? pathsHalf[i]);
+          bounds[mm] = BoundsOf(pathsCC[mm] ?? pathsHalf[mm]);
+        }
       }
 
       // Compact toward the same corner the nester packs to: the pack grows along the sheet's LONGER
@@ -141,12 +194,15 @@
       bool growX = sheetW > sheetH;
 
       // Every part moves (spaced parts stop at their exact clearance, so sliding them is always safe).
-      // Parts nearest the target corner settle first so the others can lean on their final positions;
-      // two rounds lets a part freed by a neighbour's move take the extra slack.
+      // Parts nearest the target corner settle first so the others can lean on their final positions.
+      // The order runs along the SETTLE axis (the secondary axis, slid first below): for growX the
+      // stack settles downward, so process bottom-up — ordering along X here split interlocked pair
+      // mates apart (their X differs by ~2px), so a part's -Y slide landed on a mate that had not
+      // settled yet and the whole column hung 0.07-0.32" high (the user's uneven columns).
       var movable = Enumerable.Range(0, items.Count);
       var order = (growX
-          ? movable.OrderBy(i => items[i].X + items[i].Poly.MinX).ThenBy(i => items[i].Y + items[i].Poly.MinY)
-          : movable.OrderBy(i => items[i].Y + items[i].Poly.MinY).ThenBy(i => items[i].X + items[i].Poly.MinX))
+          ? movable.OrderBy(i => items[i].Y + items[i].Poly.MinY).ThenBy(i => items[i].X + items[i].Poly.MinX)
+          : movable.OrderBy(i => items[i].X + items[i].Poly.MinX).ThenBy(i => items[i].Y + items[i].Poly.MinY))
         .ToArray();
 
       // SEPARATION pre-pass: the raster can place CC parts literally touching (gap 0), and a touching
@@ -176,9 +232,10 @@
         {
           for (int b = a + 1; b < items.Count; b++)
           {
-            if (!BoxesTouch(bounds[a], bounds[b]) || PairClear(a, b, 0, 0))
+            if ((memberSets[a] != null && memberSets[a] == memberSets[b])
+                || !BoxesTouch(bounds[a], bounds[b]) || PairClear(a, b, 0, 0))
             {
-              continue;
+              continue; // module mates are born at their exact internal seam — never "violated"
             }
 
             anyViolation = true;
@@ -300,11 +357,17 @@
       // Slide item i as far as possible along (dirX, dirY); returns true if it moved.
       bool Slide(int i, int dirX, int dirY)
       {
-        var it = items[i];
-
         // Furthest the part could go: down to the sheet margin (sliding only ever shrinks the extent,
-        // so the far edges can't be violated).
-        double max = dirX != 0 ? (it.X + it.Poly.MinX) - margin : (it.Y + it.Poly.MinY) - margin;
+        // so the far edges can't be violated). For a rigid module: the closest member bounds it.
+        double max = double.MaxValue;
+        var slideSet = memberSets[i];
+        int slideN = slideSet?.Length ?? 1;
+        for (int s = 0; s < slideN; s++)
+        {
+          var it = items[slideSet != null ? slideSet[s] : i];
+          max = Math.Min(max, dirX != 0 ? (it.X + it.Poly.MinX) - margin : (it.Y + it.Poly.MinY) - margin);
+        }
+
         if (max <= Backoff)
         {
           return false;
@@ -354,20 +417,45 @@
         return true;
       }
 
-      for (int round = 0; round < 2; round++)
+      // Rounds run until nothing moves (capped): a part freed by a neighbour's move takes the slack
+      // next round, and stacked chains need as many rounds as their depth — the old fixed two left
+      // parts hanging 0.07-0.32" above a late-settling neighbour, beyond the weld's reach.
+      var processed = new bool[items.Count];
+      for (int round = 0; round < 8; round++)
       {
         bool moved = false;
+        Array.Clear(processed, 0, processed.Length);
         foreach (int i in order)
         {
+          if (processed[i])
+          {
+            continue; // already moved as part of its rigid module this round
+          }
+
+          var iSet = memberSets[i];
+          if (iSet != null)
+          {
+            foreach (int mm in iSet)
+            {
+              processed[mm] = true;
+            }
+          }
+
+          // SECONDARY axis first. Sliding the growth axis first pins a part against its previous
+          // column, and if that column's face is DIAGONAL (parallelogram pair modules — e.g. paired
+          // scalene triangles) the pinned part can no longer settle down: measured 0.2-0.31" gaps
+          // between stacked modules from the third one up, while the first (neighbour-less) column
+          // stacked tight. Settling the secondary axis first stacks every column flat, then the
+          // growth-axis slide wedges the whole stack as deep as the diagonal allows.
           if (growX)
           {
+            moved |= Slide(i, 0, -1); // down (settle the stack)
             moved |= Slide(i, -1, 0); // left (growth axis)
-            moved |= Slide(i, 0, -1); // down
           }
           else
           {
+            moved |= Slide(i, -1, 0); // left (settle the stack)
             moved |= Slide(i, 0, -1); // down (growth axis)
-            moved |= Slide(i, -1, 0); // left
           }
         }
 
@@ -392,17 +480,27 @@
       for (int sweep = 0; sweep < 2; sweep++)
       {
         bool welded = false;
+        Array.Clear(processed, 0, processed.Length);
         foreach (int i in order)
         {
-          if (items[i].Spacing > 0)
+          if (items[i].Spacing > 0 || processed[i])
           {
             continue;
+          }
+
+          var iSet = memberSets[i];
+          if (iSet != null)
+          {
+            foreach (int mm in iSet)
+            {
+              processed[mm] = true;
+            }
           }
 
           for (int pass = 0; pass < 2; pass++)
           {
             bool alongX = growX == (pass == 0);
-            long gap = DirectionalGapExact(i, alongX, weldMaxInt, marginInt, items, pathsRaw, pathsHalf);
+            long gap = DirectionalGapExact(i, alongX, weldMaxInt, marginInt, items, pathsRaw, pathsHalf, memberSets);
             if (gap > 0 && gap <= weldMaxInt)
             {
               double g = gap / Scale;
@@ -438,13 +536,29 @@
       long marginInt,
       IList<CompactItem> items,
       List<List<IntPoint>>[] pathsRaw,
-      List<List<IntPoint>>[] pathsHalf)
+      List<List<IntPoint>>[] pathsHalf,
+      int[][] memberSets = null)
     {
       // Work in a rotated frame where the slide is always -X: U = slide axis, V = the other.
       long U(IntPoint p) => alongX ? p.X : p.Y;
       long V(IntPoint p) => alongX ? p.Y : p.X;
 
-      var mine = pathsRaw[i];
+      // A rigid module measures from ALL its members' outlines and ignores its own mates.
+      var iSet = memberSets?[i];
+      List<List<IntPoint>> mine;
+      if (iSet == null)
+      {
+        mine = pathsRaw[i];
+      }
+      else
+      {
+        mine = new List<List<IntPoint>>();
+        foreach (int mm in iSet)
+        {
+          mine.AddRange(pathsRaw[mm]);
+        }
+      }
+
       long best = long.MaxValue;
 
       // My bounds in the rotated frame (also gives the margin gap along the slide axis).
@@ -494,7 +608,7 @@
 
       for (int j = 0; j < items.Count; j++)
       {
-        if (j == i)
+        if (j == i || (iSet != null && memberSets[j] == iSet))
         {
           continue;
         }

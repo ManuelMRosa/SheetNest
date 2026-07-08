@@ -390,6 +390,7 @@ namespace DeepNestSharp.RasterNest
               Priority = p.Priority,
               RotationsDeg = candidates[ci][i],
               HaloPx = halos[i],
+              CommonLine = p.SpacingIn <= 0,
             })
             .ToList();
           results[ci] = (RasterJobNester.Nest(candidateTypes, sw, sh, px, marginPx, allowedSheets), candidateTypes);
@@ -545,7 +546,7 @@ namespace DeepNestSharp.RasterNest
             // profile won the job — the winner may have restricted itself to one axis.
             int tailIdx = parsed.FindIndex(q => q.Src == tailSources[0]);
             var pe = parsed[tailIdx];
-            var t0 = new PartType { Source = pe.Src, Poly = pe.Nfp, HaloPx = halos[tailIdx] };
+            var t0 = new PartType { Source = pe.Src, Poly = pe.Nfp, HaloPx = halos[tailIdx], CommonLine = pe.SpacingIn <= 0 };
             int[] setA = pe.Allowed.Where(a => a == 90 || a == 270).ToArray();
             int[] setB = pe.Allowed.Where(a => a == 0 || a == 180).ToArray();
 
@@ -585,12 +586,12 @@ namespace DeepNestSharp.RasterNest
                 var splitTypes = new List<PartType>();
                 if (n - k > 0)
                 {
-                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = n - k, RotationsDeg = firstSet, HaloPx = t0.HaloPx, Priority = 6 });
+                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = n - k, RotationsDeg = firstSet, HaloPx = t0.HaloPx, Priority = 6, CommonLine = t0.CommonLine });
                 }
 
                 if (k > 0)
                 {
-                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = k, RotationsDeg = secondSet, HaloPx = t0.HaloPx, Priority = 5 });
+                  splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = k, RotationsDeg = secondSet, HaloPx = t0.HaloPx, Priority = 5, CommonLine = t0.CommonLine });
                 }
 
                 var attempt = RasterJobNester.Nest(splitTypes, sw, sh, px, marginPx, 1);
@@ -661,13 +662,13 @@ namespace DeepNestSharp.RasterNest
             vet.Add(new CompactItem
             {
               Poly = rotated,
-              X = (jp.Xpx / px) - rotated.MinX,
-              Y = (jp.Ypx / px) - rotated.MinY,
+              X = (jp.HasExact ? jp.ExactXin : jp.Xpx / px) - rotated.MinX,
+              Y = (jp.HasExact ? jp.ExactYin : jp.Ypx / px) - rotated.MinY,
               Spacing = entry.SpacingIn,
             });
           }
 
-          RasterCompact.Compact(vet, sheetWin, sheetHin, System.Math.Max(0, margin));
+          RasterCompact.Compact(vet, sheetWin, sheetHin, System.Math.Max(0, margin), sheetPl.Select(p => p.PairGroup).ToArray());
           if (!RasterCompact.CommonLineGapsOk(vet, RasterCompact.MixedPairFloor))
           {
             return false;
@@ -818,8 +819,8 @@ namespace DeepNestSharp.RasterNest
           items.Add(new CompactItem
           {
             Poly = rotated,
-            X = (jp.Xpx / px) - rotated.MinX,
-            Y = (jp.Ypx / px) - rotated.MinY,
+            X = (jp.HasExact ? jp.ExactXin : jp.Xpx / px) - rotated.MinX,
+            Y = (jp.HasExact ? jp.ExactYin : jp.Ypx / px) - rotated.MinY,
             Spacing = entry.SpacingIn,
           });
           parsedIdx.Add(pi);
@@ -830,6 +831,14 @@ namespace DeepNestSharp.RasterNest
         // true contact and spaced parts to their exact clearance, concentrating the sheet's slack in
         // one free region at the pack's end — which the refill below can use.
         string layoutSig = string.Join("|", jps.Select(p => $"{p.Source}:{p.Xpx}:{p.Ypx}:{p.RotationDeg}"));
+        if (NestProfile.Enabled)
+        {
+          for (int i = 0; i < items.Count; i++)
+          {
+            NestProfile.Log($"birth i={i} x={items[i].X + items[i].Poly.MinX:F3} y={items[i].Y + items[i].Poly.MinY:F3} rot={jps[i].RotationDeg}");
+          }
+        }
+
         if (compactCache.TryGetValue(layoutSig, out var slid))
         {
           for (int i = 0; i < items.Count; i++)
@@ -840,8 +849,16 @@ namespace DeepNestSharp.RasterNest
         }
         else
         {
-          RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin));
+          RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin), jps.Select(p => p.PairGroup).ToArray());
           compactCache[layoutSig] = items.Select(it => (it.X, it.Y)).ToArray();
+        }
+
+        if (NestProfile.Enabled)
+        {
+          for (int i = 0; i < items.Count; i++)
+          {
+            NestProfile.Log($"compacted i={i} x={items[i].X + items[i].Poly.MinX:F3} y={items[i].Y + items[i].Poly.MinY:F3}");
+          }
         }
 
         builtSheets.Add((jps, items, parsedIdx, layoutSig));
