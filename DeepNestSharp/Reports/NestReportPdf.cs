@@ -34,9 +34,10 @@ namespace DeepNestSharp.Reports
       double stockArea = layouts.Sum(l => l.Count * l.Sheet.Sheet.WidthCalculated * l.Sheet.Sheet.HeightCalculated);
       double overallUtil = stockArea <= 0 ? 0 : placedArea / stockArea * 100.0;
 
-      // Total quantity per source part across the whole job.
+      // Total quantity per source part across the whole job (mirrored copies listed separately —
+      // a left-hand and a right-hand part are different physical parts on the shop floor).
       var partTotals = layouts
-        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: DisplayName(p.Part.Name), l.Count)))
+        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: Label(p), l.Count)))
         .GroupBy(t => t.File, StringComparer.OrdinalIgnoreCase)
         .Select(g => (File: g.Key, Qty: g.Sum(t => t.Count)))
         .OrderByDescending(t => t.Qty)
@@ -219,9 +220,9 @@ namespace DeepNestSharp.Reports
           }
         }
 
-        // Parts on this layout (below the drawing, portrait flow).
+        // Parts on this layout (below the drawing, portrait flow). Mirrored copies list separately.
         var onSheet = sp.PartPlacements
-          .GroupBy(p => DisplayName(p.Part.Name), StringComparer.OrdinalIgnoreCase)
+          .GroupBy(p => Label(p), StringComparer.OrdinalIgnoreCase)
           .Select(g => (File: g.Key, Qty: g.Count()))
           .OrderByDescending(t => t.Qty)
           .ToList();
@@ -282,6 +283,10 @@ namespace DeepNestSharp.Reports
         return path ?? "(part)";
       }
     }
+
+    /// <summary>Report label for a placement — mirrored copies count as their own line item.</summary>
+    private static string Label(IPartPlacement p)
+      => DisplayName(p.Part.Name) + (p.IsMirrored ? " (mirrored)" : string.Empty);
 
     private static string Trunc(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "~";
 
