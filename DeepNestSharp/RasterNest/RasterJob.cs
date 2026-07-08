@@ -14,6 +14,20 @@ namespace DeepNestSharp.RasterNest
     public PackedMask[] Packed; // 64-bit packed rows of Masks, built by the nester
     public int Priority = 5;    // 0-10, higher nests first (Radan-style)
     public int HaloPx = 0;      // PER-PART spacing halo (px): masks dilate by this, so two parts end up (haloA + haloB) apart
+
+    // PAIR CLUSTERING (industry "pairwise nesting"): parts that interlock with their own 180°
+    // rotation — a triangle plus its flip is a parallelogram — get extra PAIR MODULE entries
+    // appended to Masks/Packed/RotationsDeg. The scanner places a module like any rotation (so it
+    // competes on position with singles) and the placement loop then emits TWO placements.
+    // Dropping the buddy AFTER seating the seed was tried first and failed: the buddy's slot is
+    // usually already occupied (measured 23 fits out of 77 tries on 100 triangles).
+    public int FirstPairEntry = -1; // index into Masks where pair modules start; -1 = none
+    public int[] PairSubA;          // per pair entry: the two REAL rotation indices…
+    public int[] PairSubB;
+    public int[] PairAx;            // …and each sub-part's offset inside the module frame
+    public int[] PairAy;
+    public int[] PairBx;
+    public int[] PairBy;
   }
 
   /// <summary>
@@ -111,6 +125,8 @@ namespace DeepNestSharp.RasterNest
           t.Masks = keep.Select(i => t.Masks[i]).ToArray();
           t.Packed = keep.Select(i => t.Packed[i]).ToArray();
         }
+
+        ComputePairing(t);
       }
 
       long profMaskMs = profSw?.ElapsedMilliseconds ?? 0;
@@ -162,8 +178,15 @@ namespace DeepNestSharp.RasterNest
       int notPlaced = 0;
       long solidPlaced = 0;
 
-      foreach (int ti in instances)
+      var used = new bool[instances.Count];
+      for (int idx = 0; idx < instances.Count; idx++)
       {
+        if (used[idx])
+        {
+          continue; // consumed as a pair buddy
+        }
+
+        int ti = instances[idx];
         var t = types[ti];
         int partSolid = t.Masks[0].SolidCount;
         bool done = false;
@@ -204,7 +227,21 @@ namespace DeepNestSharp.RasterNest
             rowHints.Add(types.Select(tt => Enumerable.Repeat(marginInset + pad - tt.HaloPx, tt.Masks.Length).ToArray()).ToArray());
           }
 
-          if (TryPlaceBest(occ, wpr, gw, gh, insetPx, t, rowHints[si][ti], growX, out int x, out int y, out int rotIdx))
+          // A pair module may only be chosen when a SECOND unused instance of this type exists.
+          int pairMate = -1;
+          if (t.FirstPairEntry >= 0)
+          {
+            for (int k = idx + 1; k < instances.Count; k++)
+            {
+              if (!used[k] && instances[k] == ti)
+              {
+                pairMate = k;
+                break;
+              }
+            }
+          }
+
+          if (TryPlaceBest(occ, wpr, gw, gh, insetPx, t, rowHints[si][ti], growX, pairMate >= 0, out int x, out int y, out int rotIdx))
           {
             if (si == sheets.Count)
             {
@@ -217,12 +254,24 @@ namespace DeepNestSharp.RasterNest
             var m = t.Masks[rotIdx];
             Stamp(occ, wpr, t.Packed[rotIdx], x, y);
             sheetFree[si] -= m.SolidCount;
-
-            // Real part corner in TRUE-sheet coords = mask corner + halo − pad (the real part sits
-            // +halo inside its dilated mask; the grid is padded by the largest halo).
-            placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x + t.HaloPx - pad, Ypx = y + t.HaloPx - pad, RotationDeg = t.RotationsDeg[rotIdx] });
             solidPlaced += m.SolidCount;
             done = true;
+
+            if (t.FirstPairEntry >= 0 && rotIdx >= t.FirstPairEntry)
+            {
+              // PAIR MODULE placed (e.g. two triangles as a parallelogram): one stamped union mask,
+              // TWO real placements, and the mate instance is consumed from the queue.
+              int pi = rotIdx - t.FirstPairEntry;
+              placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x + t.PairAx[pi] + t.HaloPx - pad, Ypx = y + t.PairAy[pi] + t.HaloPx - pad, RotationDeg = t.RotationsDeg[t.PairSubA[pi]] });
+              placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x + t.PairBx[pi] + t.HaloPx - pad, Ypx = y + t.PairBy[pi] + t.HaloPx - pad, RotationDeg = t.RotationsDeg[t.PairSubB[pi]] });
+              used[pairMate] = true;
+            }
+            else
+            {
+              // Real part corner in TRUE-sheet coords = mask corner + halo − pad (the real part sits
+              // +halo inside its dilated mask; the grid is padded by the largest halo).
+              placements.Add(new JobPlacement { Source = t.Source, Sheet = si, Xpx = x + t.HaloPx - pad, Ypx = y + t.HaloPx - pad, RotationDeg = t.RotationsDeg[rotIdx] });
+            }
           }
           else if (si < sheets.Count)
           {
@@ -274,7 +323,7 @@ namespace DeepNestSharp.RasterNest
         hints[i] = insetPx;
       }
 
-      return TryPlaceBest(occ, wpr, gw, gh, insetPx, t, hints, growX, out x, out y, out rotIdx);
+      return TryPlaceBest(occ, wpr, gw, gh, insetPx, t, hints, growX, false, out x, out y, out rotIdx);
     }
 
     private static bool MasksEqual(PackedMask a, PackedMask b)
@@ -282,14 +331,30 @@ namespace DeepNestSharp.RasterNest
       return a.W == b.W && a.H == b.H && System.MemoryExtensions.SequenceEqual<ulong>(a.Words, b.Words);
     }
 
-    private static bool TryPlaceBest(ulong[] occ, int wpr, int sheetW, int sheetH, int insetPx, PartType t, int[] rowHints, bool growX, out int bx, out int by, out int bRot)
+    private static bool TryPlaceBest(ulong[] occ, int wpr, int sheetW, int sheetH, int insetPx, PartType t, int[] rowHints, bool growX, bool allowPair, out int bx, out int by, out int bRot)
+    {
+      // MODULE-FIRST (pairwise nesting): when a pair module fits it wins outright — a single always
+      // fits at a position <= the module's (it is a subset), so scoring them together means the
+      // module NEVER gets picked and the interlock is lost. Singles remain the fallback (end of
+      // sheet, odd part out).
+      if (allowPair && t.FirstPairEntry >= 0
+          && TryPlaceRange(occ, wpr, sheetW, sheetH, insetPx, t, rowHints, growX, t.FirstPairEntry, t.Packed.Length, out bx, out by, out bRot))
+      {
+        return true;
+      }
+
+      int singleEnd = t.FirstPairEntry >= 0 ? t.FirstPairEntry : t.Packed.Length;
+      return TryPlaceRange(occ, wpr, sheetW, sheetH, insetPx, t, rowHints, growX, 0, singleEnd, out bx, out by, out bRot);
+    }
+
+    private static bool TryPlaceRange(ulong[] occ, int wpr, int sheetW, int sheetH, int insetPx, PartType t, int[] rowHints, bool growX, int riFrom, int riTo, out int bx, out int by, out int bRot)
     {
       bx = -1;
       by = -1;
       bRot = -1;
       long bestIndex = long.MaxValue;
 
-      for (int ri = 0; ri < t.Packed.Length; ri++)
+      for (int ri = riFrom; ri < riTo; ri++)
       {
         var m = t.Packed[ri];
         if (m.W + (2 * insetPx) > sheetW || m.H + (2 * insetPx) > sheetH)
@@ -330,6 +395,178 @@ namespace DeepNestSharp.RasterNest
       }
 
       return bestIndex != long.MaxValue;
+    }
+
+    /// <summary>
+    /// PAIR CLUSTERING setup: for every rotation that has its 180° complement available, find the
+    /// buddy offset that packs part + flipped copy into the smallest union bounding box (a triangle
+    /// pair = a parallelogram). Column min/max profiles make the search O(W²) — exact for convex
+    /// parts, conservative (never overlapping) for concave ones. When the pair is >= 15% denser
+    /// than the single part, a PAIR MODULE mask (the union) is appended as an extra scan entry —
+    /// rectangles and other non-interlocking shapes are untouched. Masks are the DILATED ones, so
+    /// the spacing/halo clearance is built in.
+    /// </summary>
+    internal static void ComputePairing(PartType t)
+    {
+      int n = t.RotationsDeg.Length;
+      if (t.Quantity < 2)
+      {
+        return;
+      }
+
+      var pairMasks = new List<RasterMask>();
+      var pairRotLabel = new List<int>();
+      var subA = new List<int>();
+      var subB = new List<int>();
+      var aOffX = new List<int>();
+      var aOffY = new List<int>();
+      var bOffX = new List<int>();
+      var bOffY = new List<int>();
+
+      (int[] Top, int[] Bot) Profiles(RasterMask m)
+      {
+        var top = new int[m.W];
+        var bot = new int[m.W];
+        for (int x = 0; x < m.W; x++)
+        {
+          top[x] = -1;
+          bot[x] = int.MaxValue;
+          for (int y = 0; y < m.H; y++)
+          {
+            if (m.Bits[(y * m.W) + x])
+            {
+              if (y < bot[x])
+              {
+                bot[x] = y;
+              }
+
+              if (y > top[x])
+              {
+                top[x] = y;
+              }
+            }
+          }
+        }
+
+        return (top, bot);
+      }
+
+      for (int ri = 0; ri < n; ri++)
+      {
+        int want = (t.RotationsDeg[ri] + 180) % 360;
+        int bi = System.Array.IndexOf(t.RotationsDeg, want);
+        if (bi < 0)
+        {
+          continue; // complement not allowed (or deduped away for a symmetric part — pairing is pointless there)
+        }
+
+        var a = t.Masks[ri];
+        var b = t.Masks[bi];
+        var (topA, botA) = Profiles(a);
+        var (topB, botB) = Profiles(b);
+
+        long bestArea = long.MaxValue;
+        int bestDx = 0, bestDy = 0;
+        for (int dx = -b.W + 1; dx < a.W; dx++)
+        {
+          // Contact positions: B dropped from above until its columns rest on A, and pushed up from
+          // below until its columns press under A (interval profiles => guaranteed no overlap).
+          int dyAbove = int.MinValue;
+          int dyBelow = int.MaxValue;
+          bool anyColumn = false;
+          int lo = System.Math.Max(0, dx);
+          int hi = System.Math.Min(a.W, dx + b.W);
+          for (int x = lo; x < hi; x++)
+          {
+            int xb = x - dx;
+            if (topA[x] < 0 || topB[xb] < 0)
+            {
+              continue; // an empty column constrains nothing
+            }
+
+            anyColumn = true;
+            dyAbove = System.Math.Max(dyAbove, topA[x] - botB[xb] + 1);
+            dyBelow = System.Math.Min(dyBelow, botA[x] - topB[xb] - 1);
+          }
+
+          foreach (int dy in anyColumn ? new[] { dyAbove, dyBelow } : new[] { 0 })
+          {
+            long w = System.Math.Max(a.W, dx + b.W) - System.Math.Min(0, dx);
+            long h = System.Math.Max(a.H, dy + b.H) - System.Math.Min(0, dy);
+            long area = w * h;
+            if (area < bestArea)
+            {
+              bestArea = area;
+              bestDx = dx;
+              bestDy = dy;
+            }
+          }
+        }
+
+        if (bestArea == long.MaxValue)
+        {
+          continue;
+        }
+
+        double singleDensity = (double)a.SolidCount / ((long)a.W * a.H);
+        double pairDensity = (double)(a.SolidCount + b.SolidCount) / bestArea;
+        NestProfile.Log($"pairing src={t.Source} rot={t.RotationsDeg[ri]} best=({bestDx},{bestDy}) single={singleDensity:0.000} pair={pairDensity:0.000} gate={(pairDensity >= singleDensity * 1.15 ? "ON" : "off")}");
+        if (pairDensity < singleDensity * 1.15)
+        {
+          continue;
+        }
+
+        // Build the module mask: both dilated masks blitted into the union frame.
+        int ax = System.Math.Max(0, -bestDx);
+        int ay = System.Math.Max(0, -bestDy);
+        int bx = System.Math.Max(0, bestDx);
+        int by = System.Math.Max(0, bestDy);
+        int pw = System.Math.Max(ax + a.W, bx + b.W);
+        int ph = System.Math.Max(ay + a.H, by + b.H);
+        var bits = new bool[pw * ph];
+        int solid = 0;
+        void Blit(RasterMask m, int ox, int oy)
+        {
+          for (int y = 0; y < m.H; y++)
+          {
+            for (int x = 0; x < m.W; x++)
+            {
+              if (m.Bits[(y * m.W) + x] && !bits[((oy + y) * pw) + ox + x])
+              {
+                bits[((oy + y) * pw) + ox + x] = true;
+                solid++;
+              }
+            }
+          }
+        }
+
+        Blit(a, ax, ay);
+        Blit(b, bx, by);
+        pairMasks.Add(new RasterMask { Bits = bits, W = pw, H = ph, SolidCount = solid });
+        pairRotLabel.Add(t.RotationsDeg[ri]);
+        subA.Add(ri);
+        subB.Add(bi);
+        aOffX.Add(ax);
+        aOffY.Add(ay);
+        bOffX.Add(bx);
+        bOffY.Add(by);
+      }
+
+      if (pairMasks.Count == 0)
+      {
+        return;
+      }
+
+      t.FirstPairEntry = n;
+      t.RotationsDeg = t.RotationsDeg.Concat(pairRotLabel).ToArray();
+      t.Masks = t.Masks.Concat(pairMasks).ToArray();
+      t.Packed = t.Packed.Concat(pairMasks.Select(PackedMask.From)).ToArray();
+      t.PairSubA = subA.ToArray();
+      t.PairSubB = subB.ToArray();
+      t.PairAx = aOffX.ToArray();
+      t.PairAy = aOffY.ToArray();
+      t.PairBx = bOffX.ToArray();
+      t.PairBy = bOffY.ToArray();
     }
 
     /// <summary>Profiling only (SHEETNEST_NEST_PROFILE=1): total Fits probes across a job.</summary>
