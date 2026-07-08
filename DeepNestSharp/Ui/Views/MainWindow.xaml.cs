@@ -1,12 +1,15 @@
 namespace DeepNestSharp.Ui.Views
 {
+  using System;
   using System.Collections.Generic;
   using System.Linq;
   using System.Threading.Tasks;
   using System.Windows;
   using System.Windows.Controls;
+  using System.Windows.Input;
   using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
+  using DeepNestSharp.Domain;
   using DeepNestSharp.Domain.Models;
   using DeepNestSharp.Domain.ViewModels;
   using DeepNestSharp.RasterNest;
@@ -19,6 +22,7 @@ namespace DeepNestSharp.Ui.Views
     // Set once the window is closed, so an async op that finishes afterwards (e.g. a slow 3D unfold)
     // doesn't touch a dead window (would throw "set Owner on a closed Window").
     private bool isClosed;
+    private string updateUrl;
 
     public MainWindow(IMainViewModel viewModel)
     {
@@ -73,6 +77,10 @@ namespace DeepNestSharp.Ui.Views
       // real spacing/edge gaps. 0.01" keeps the geometry true so spacing and sheet margin are honoured.
       cfg.CurveTolerance = 0.01;
 
+      // Fire-and-forget update check: lights up the status-bar link if a newer release exists.
+      // Silent on every failure (offline shop PCs) and sends nothing — a single anonymous GET.
+      _ = this.CheckForUpdatesOnStartupAsync();
+
       // Part spacing default is 10 (legacy SVG-scale units) — that's TEN INCHES between parts on inch DXFs,
       // which blows up the raster spacing-halo so large it dissolves interlockable concavities (triangles
       // stop rotating) and leaves huge gaps in every nest. Replace only the EXACT legacy default with a
@@ -116,6 +124,89 @@ namespace DeepNestSharp.Ui.Views
         {
           DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch = session.UnfoldUnitInch.Value;
         }
+      }
+    }
+
+    /// <summary>Startup check: light up the status-bar link if a newer release exists; silent otherwise.</summary>
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+      try
+      {
+        var result = await UpdateChecker.CheckAsync();
+        if (this.isClosed || result == null || !UpdateChecker.IsNewer(result.Value.Latest, UpdateChecker.CurrentVersion))
+        {
+          return;
+        }
+
+        this.ShowUpdateNotice(result.Value.Latest, result.Value.Url);
+      }
+      catch
+      {
+        // never disturb startup
+      }
+    }
+
+    private void ShowUpdateNotice(Version latest, string url)
+    {
+      this.updateUrl = url;
+      this.updateNotice.Text = $"Update available: {latest.ToString(3)}";
+      this.updateNotice.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Help menu: check GitHub on demand and report the outcome.</summary>
+    private async void OnCheckUpdates(object sender, RoutedEventArgs e)
+    {
+      try
+      {
+        Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+        var result = await UpdateChecker.CheckAsync();
+        Mouse.OverrideCursor = null;
+        if (this.isClosed)
+        {
+          return;
+        }
+
+        var current = UpdateChecker.CurrentVersion;
+        if (result == null)
+        {
+          ViewModel.MessageService.DisplayMessageBox(
+            "Could not check for updates. Check your internet connection.",
+            "Check for Updates",
+            DeepNestLib.MessageBoxIcon.Information);
+          return;
+        }
+
+        if (!UpdateChecker.IsNewer(result.Value.Latest, current))
+        {
+          ViewModel.MessageService.DisplayMessageBox(
+            $"You are up to date (SheetNest {current.ToString(3)}).",
+            "Check for Updates",
+            DeepNestLib.MessageBoxIcon.Information);
+          return;
+        }
+
+        this.ShowUpdateNotice(result.Value.Latest, result.Value.Url);
+        var answer = ViewModel.MessageService.DisplayOkCancel(
+          $"SheetNest {result.Value.Latest.ToString(3)} is available (you have {current.ToString(3)}).\n\nOpen the download page?",
+          "Check for Updates",
+          DeepNestLib.MessageBoxIcon.Information);
+        if (answer == DeepNestLib.MessageBoxResult.OK)
+        {
+          UpdateChecker.OpenDownloadPage(result.Value.Url);
+        }
+      }
+      catch (Exception ex)
+      {
+        Mouse.OverrideCursor = null;
+        ViewModel.MessageService.DisplayMessageBox(ex.Message, "Check for Updates", DeepNestLib.MessageBoxIcon.Stop);
+      }
+    }
+
+    private void OnUpdateNoticeClick(object sender, MouseButtonEventArgs e)
+    {
+      if (!string.IsNullOrEmpty(this.updateUrl))
+      {
+        UpdateChecker.OpenDownloadPage(this.updateUrl);
       }
     }
 

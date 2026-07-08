@@ -53,6 +53,7 @@
         <MenuItem Header="Advanced Settings..." Click="OnAdvancedSettings" />
       </MenuItem>
       <MenuItem Header="_Help">
+        <MenuItem Header="Check for Updates..." Click="OnCheckUpdates" />
         <MenuItem Header="About" Command="{Binding AboutDialogCommand}" />
       </MenuItem>
     </Menu>
@@ -328,6 +329,11 @@
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Unplaced:" />
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
+        <!-- Startup update check lights this up; click opens the GitHub release page. -->
+        <TextBlock x:Name="updateNotice" Style="{DynamicResource StatusValue}" Visibility="Collapsed"
+                   Cursor="Hand" TextDecorations="Underline" Margin="18,0,0,0"
+                   MouseLeftButtonUp="OnUpdateNoticeClick"
+                   ToolTip="A newer SheetNest is available — click to open the download page." />
       </StackPanel>
     </Border>
   </Grid>
