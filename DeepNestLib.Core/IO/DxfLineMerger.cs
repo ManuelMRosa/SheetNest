@@ -159,12 +159,14 @@
           double midX = (p1.X + p2.X) / 2.0;
           double midY = (p1.Y + p2.Y) / 2.0;
 
-          // Centre sits perpendicular to the chord, on the side given by the bulge sign.
+          // Centre sits perpendicular to the chord: mid + signed-apothem * left-normal — the SAME
+          // convention DxfParser.BulgePoints uses. (A minus here put the centre on the wrong side,
+          // so corner fillets exported as the COMPLEMENTARY sweep — near-full circles in AutoCAD.)
           double d = radius * Math.Cos(theta / 2.0) * Math.Sign(a.Bulge);
           double nx = -(p2.Y - p1.Y) / chord;
           double ny = (p2.X - p1.X) / chord;
-          double cx = midX - (nx * d);
-          double cy = midY - (ny * d);
+          double cx = midX + (nx * d);
+          double cy = midY + (ny * d);
 
           double angle1 = Math.Atan2(p1.Y - cy, p1.X - cx) * 180.0 / Math.PI;
           double angle2 = Math.Atan2(p2.Y - cy, p2.X - cx) * 180.0 / Math.PI;

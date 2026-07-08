@@ -124,6 +124,55 @@ namespace DeepNestLib.CiTests.IO
       entities.Should().AllBeOfType<DxfLine>();
     }
 
+    [Theory]
+    [InlineData(0.41421356)]  // 90° fillet, CCW
+    [InlineData(-0.41421356)] // 90° fillet, CW
+    [InlineData(1.5)]         // >180° sweep, CCW
+    public void SplitThenJoinRoundTripsBulges(double bulge)
+    {
+      // A rounded-corner rectangle: LWPOLYLINE -> split (lines + bulge->ARC) -> join must give back
+      // the same vertices AND the same bulge. This anchors the arc-centre side convention to
+      // DxfParser.BulgePoints — the centre landing on the WRONG side exports corner fillets as the
+      // complementary sweep (near-full circles in AutoCAD, user-reported).
+      var original = new DxfLwPolyline(new[]
+      {
+        new DxfLwPolylineVertex { X = 0, Y = 0 },
+        new DxfLwPolylineVertex { X = 10, Y = 0 },
+        new DxfLwPolylineVertex { X = 10, Y = 8, Bulge = bulge }, // arc segment to (8, 10)
+        new DxfLwPolylineVertex { X = 8, Y = 10 },
+        new DxfLwPolylineVertex { X = 0, Y = 10 },
+      })
+      {
+        IsClosed = true,
+      };
+
+      var split = new DxfLineMerger().SplitLines(new DxfEntity[] { original }).ToList();
+      split.OfType<DxfArc>().Should().HaveCount(1);
+      split.OfType<DxfLine>().Should().HaveCount(4);
+
+      // The arc's endpoints must be the polyline's own segment endpoints (wrong-side centres break this).
+      var arc = split.OfType<DxfArc>().Single();
+      var start = arc.GetPointFromAngle(arc.StartAngle);
+      var end = arc.GetPointFromAngle(arc.EndAngle);
+      var endpoints = new[] { (start.X, start.Y), (end.X, end.Y) }
+        .OrderBy(p => p.Item1).ThenBy(p => p.Item2).ToArray();
+      endpoints[0].Item1.Should().BeApproximately(8, 1e-6);
+      endpoints[0].Item2.Should().BeApproximately(10, 1e-6);
+      endpoints[1].Item1.Should().BeApproximately(10, 1e-6);
+      endpoints[1].Item2.Should().BeApproximately(8, 1e-6);
+
+      var entities = split.ToList();
+      FlatDxfJoiner.JoinEntities(entities).Should().BeTrue();
+      var joined = entities.OfType<DxfLwPolyline>().Single();
+      joined.IsClosed.Should().BeTrue();
+
+      // Same geometry back: find the joined vertex at (10,8) — its outgoing bulge must match.
+      var arcVertex = joined.Vertices.Single(v => System.Math.Abs(v.Bulge) > 1e-9);
+      // The chain may traverse the loop in either direction; magnitude must match and the endpoints
+      // of the bulge segment must be {(10,8),(8,10)} either way.
+      System.Math.Abs(arcVertex.Bulge).Should().BeApproximately(System.Math.Abs(bulge), 1e-6);
+    }
+
     [Fact]
     public void LeavesUnclosableChainsUntouched()
     {
