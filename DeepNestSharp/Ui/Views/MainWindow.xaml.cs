@@ -135,10 +135,16 @@ namespace DeepNestSharp.Ui.Views
           DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch = session.UnfoldUnitInch.Value;
         }
 
-        // Autosave settings (Settings > Application Settings).
+        // Autosave settings (Settings > Advanced Settings).
         this.ApplyAutosaveSettings(
           session.AutosaveEnabled ?? true,
           session.AutosaveMinutes >= 1 && session.AutosaveMinutes <= 60 ? session.AutosaveMinutes : 5);
+
+        // Global default rotations (plain in-memory config property — resets to 4 without this).
+        if (session.DefaultRotations > 0)
+        {
+          cfg.Rotations = session.DefaultRotations;
+        }
       }
 
       // The config normalization above — and the initial WPF binding pass, which runs AFTER Loaded
@@ -359,9 +365,10 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
-    private void OnAppSettings(object sender, RoutedEventArgs e)
+    private void OnAdvancedSettings(object sender, RoutedEventArgs e)
     {
-      var dialog = new AppSettingsWindow(this.autosaveEnabled, this.autosaveMinutes) { Owner = this };
+      var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
+      var dialog = new AdvancedSettingsWindow(cfg, this.autosaveEnabled, this.autosaveMinutes) { Owner = this };
       if (dialog.ShowDialog() != true)
       {
         return;
@@ -369,21 +376,14 @@ namespace DeepNestSharp.Ui.Views
 
       this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
 
-      // Persist immediately (load-modify-save keeps the MRU and the other session fields intact).
+      // The settings-backed config values persisted in their setters; the rest goes to the session
+      // immediately (load-modify-save keeps the MRU and the other session fields intact).
       var session = SessionState.Load() ?? new SessionState();
       session.AutosaveEnabled = this.autosaveEnabled;
       session.AutosaveMinutes = this.autosaveMinutes;
+      session.DefaultRotations = cfg.Rotations;
+      session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.Save();
-    }
-
-    private void OnAdvancedSettings(object sender, RoutedEventArgs e)
-    {
-      var dialog = new AdvancedSettingsWindow
-      {
-        Owner = this,
-        DataContext = ViewModel.SvgNestConfigViewModel, // the editor binds SelectedObject to SvgNestConfig
-      };
-      dialog.ShowDialog();
     }
 
     /// <summary>Discards the displayed nest result and returns the sheets it consumed to the stock.</summary>
@@ -644,6 +644,7 @@ namespace DeepNestSharp.Ui.Views
         RecentProjects = SessionState.Load()?.RecentProjects ?? new List<string>(), // preserve the MRU
         AutosaveEnabled = this.autosaveEnabled,
         AutosaveMinutes = this.autosaveMinutes,
+        DefaultRotations = ViewModel.SvgNestConfigViewModel.SvgNestConfig.Rotations,
       }.Save();
     }
 

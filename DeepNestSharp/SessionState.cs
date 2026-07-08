@@ -37,6 +37,9 @@ namespace DeepNestSharp
     /// <summary>Minutes between autosaves (SigmaNEST "Auto Save Time (min)"); -1 = default (5).</summary>
     public int AutosaveMinutes { get; set; } = -1;
 
+    /// <summary>Global default rotation code for unedited parts (1/2/4/8/36); -1 = default (4).</summary>
+    public int DefaultRotations { get; set; } = -1;
+
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");
 

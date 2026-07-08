@@ -53,7 +53,6 @@
         <MenuItem Header="Exit" Command="{Binding ExitCommand}" />
       </MenuItem>
       <MenuItem Header="_Settings">
-        <MenuItem Header="Application Settings..." Click="OnAppSettings" />
         <MenuItem Header="Advanced Settings..." Click="OnAdvancedSettings" />
       </MenuItem>
       <MenuItem Header="_Help">

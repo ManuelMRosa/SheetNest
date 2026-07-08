@@ -1,18 +1,87 @@
 <Window x:Class="DeepNestSharp.Ui.Views.AdvancedSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:userControls="clr-namespace:DeepNestSharp.Ui.UserControls"
+        xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
         Title="Advanced Settings"
         FontFamily="Tahoma" FontSize="11"
-        Width="560" Height="640"
+        SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False">
-  <!-- Full engine configuration (the property grid edits the live config directly). -->
-  <DockPanel Margin="10">
-    <Button DockPanel.Dock="Bottom" Style="{StaticResource ModernButton}" Content="Close" Width="88"
-            HorizontalAlignment="Right" Margin="0,10,0,0" IsCancel="True" />
-    <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
-      <userControls:SvgNestConfigEditor />
-    </Border>
-  </DockPanel>
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{StaticResource Brush.Panel}">
+  <!-- Curated settings dialog: ONLY options the live raster engine / export / app actually consume.
+       The old auto-generated property grid exposed ~30 retired NFP/GA engine knobs. -->
+  <StackPanel Margin="14" Width="380">
+
+    <GroupBox Header="Nesting" Padding="8">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Default part rotations:" VerticalAlignment="Center" Margin="0,0,10,6" />
+        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="rotationsCombo" Width="150" HorizontalAlignment="Left" Margin="0,0,0,6"
+                  ToolTip="Rotations the nester may try for parts that have not been edited — Edit Part's per-part setting always wins.">
+          <ComboBoxItem Tag="1">As drawn</ComboBoxItem>
+          <ComboBoxItem Tag="2">0 / 180°</ComboBoxItem>
+          <ComboBoxItem Tag="4">90° steps</ComboBoxItem>
+          <ComboBoxItem Tag="8">45° steps</ComboBoxItem>
+          <ComboBoxItem Tag="36">Free</ComboBoxItem>
+        </ComboBox>
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Part spacing (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
+        <xctk:DoubleUpDown Grid.Row="1" Grid.Column="1" x:Name="spacingUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
+                           Minimum="0" Increment="0.05" FormatString="0.###"
+                           ToolTip="Default gap between parts (drawing units). Edit Part can override it per part; common-line parts touch." />
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Sheet edge margin (in):" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <xctk:DoubleUpDown Grid.Row="2" Grid.Column="1" x:Name="marginUpDown" Width="80" HorizontalAlignment="Left"
+                           Minimum="0" Increment="0.05" FormatString="0.###"
+                           ToolTip="Clear border kept between every part and the sheet edge." />
+      </Grid>
+    </GroupBox>
+
+    <GroupBox Header="DXF export" Padding="8" Margin="0,10,0,0">
+      <StackPanel>
+        <CheckBox x:Name="mergeLinesCheck" Content="Merge coincident cut lines (common-line)"
+                  ToolTip="Coincident edges of touching parts export as ONE cut line, so the laser cuts shared edges once." />
+        <CheckBox x:Name="differentiateCheck" Content="Color-differentiate hole contours" Margin="0,8,0,0"
+                  ToolTip="Hole (child) contours export in a distinct color so the CAM can treat them separately." />
+      </StackPanel>
+    </GroupBox>
+
+    <GroupBox Header="Application" Padding="8" Margin="0,10,0,0">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <CheckBox Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" x:Name="autosaveCheck" Margin="0,0,0,8"
+                  Content="Auto save the open project"
+                  Checked="OnAutosaveToggled" Unchecked="OnAutosaveToggled"
+                  ToolTip="Periodically snapshots the open project so unsaved work can be recovered after a crash." />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Auto Save Time (min):" VerticalAlignment="Center" Margin="18,0,10,0" />
+        <xctk:IntegerUpDown Grid.Row="1" Grid.Column="1" x:Name="minutesUpDown" Width="70" HorizontalAlignment="Left"
+                            Minimum="1" Maximum="60" Value="5"
+                            ToolTip="How often the open project is automatically saved for recovery." />
+      </Grid>
+    </GroupBox>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+      <Button Style="{StaticResource PrimaryButton}" Content="OK" Width="90" FontSize="13" Padding="0,6" Margin="0,0,8,0" IsDefault="True" Click="OnOk" />
+      <Button Style="{StaticResource ModernButton}" Content="Cancel" Width="80" IsCancel="True" />
+    </StackPanel>
+  </StackPanel>
 </Window>
