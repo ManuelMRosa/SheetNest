@@ -78,7 +78,8 @@
     [Fact]
     public void ShouldHaveExpectedPointsCount()
     {
-      loadedNfp.Points.Count().Should().Be(256);
+      // 634 with SheetNest's adaptive ≤6° arc tessellation (was 256 at the upstream 15° step).
+      loadedNfp.Points.Count().Should().Be(634);
     }
 
     [Fact]
@@ -108,7 +109,8 @@
     [Fact]
     public void SimplificationShouldHaveExpectedPointCount()
     {
-      simplifiedNfp.Points.Length.Should().Be(46);
+      // 64 with SheetNest's adaptive ≤6° arc tessellation feeding the simplifier (was 46 upstream).
+      simplifiedNfp.Points.Length.Should().Be(64);
     }
 
     [Fact]

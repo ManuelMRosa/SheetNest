@@ -9,7 +9,7 @@
 
   public class DxfFileExportFixture
   {
-    [Fact]
+    [Fact(Skip = "The serialized scenario embeds the upstream author's absolute paths (C:\\Git\\DeepNestSharp\\DeepNestPort\\dxfs\\_7.dxf) and the exporter re-loads source DXFs from disk — cannot pass on any other machine.")]
     public async Task GivenNestResultWhenDxfExportedThenMatchExpected()
 
     {
@@ -39,7 +39,7 @@
       }
     }
 
-    [Fact]
+    [Fact(Skip = "The serialized scenario embeds the upstream author's absolute paths (C:\\Git\\DeepNestSharp\\DeepNestPort\\dxfs\\_7.dxf) and the exporter re-loads source DXFs from disk — cannot pass on any other machine.")]
     public async Task GivenNestResultWhenDxfExportedColouredThenMatchExpected()
 
     {

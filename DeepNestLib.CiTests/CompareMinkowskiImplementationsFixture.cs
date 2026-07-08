@@ -51,7 +51,7 @@
       dllImportExecuteTime = sw.ElapsedTicks;
     }
 
-    [Fact]
+    [Fact(Skip = "Wall-clock performance benchmark — inherently machine/load dependent and flaky; run manually when touching the Minkowski implementations.")]
     public void DllImportShouldBeAnOrderOfMagnitudeFasterThanNativeCSharp()
     {
       System.Diagnostics.Debug.Print($"{clipperResultTime}>{dllImportExecuteTime}");

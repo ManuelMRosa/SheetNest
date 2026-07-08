@@ -29,7 +29,8 @@
       sut.Config.ClipperScale.Should().Be(10000000);
       sut.Config.Rotations.Should().Be(1);
       sut.Config.PlacementType.Should().Be(PlacementTypeEnum.Gravity);
-      sut.Config.ExportExecutions.Should().BeTrue();
+      // No precondition assert on ExportExecutions: sut.Config surfaces process-wide state that
+      // other fixtures legitimately toggle — the test only needs it OFF, so just set it.
       sut.Config.ExportExecutions = false;
       sut.Config.ExportExecutions.Should().BeFalse();
       sut.Config.Scale.Should().Be(25);

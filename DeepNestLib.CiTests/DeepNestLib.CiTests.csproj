@@ -278,6 +278,12 @@
     <ProjectReference Include="..\MinkowskiWrapper.Core\MinkowskiWrapper.Core.csproj" />
   </ItemGroup>
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="copy $(SolutionDir)\MinkowskiDlls\minkowski.dll $(TargetDir)&#xD;&#xA;copy $(SolutionDir)\MinkowskiDlls\minkowski_x86.dll $(TargetDir)&#xD;&#xA;copy $(SolutionDir)\MinkowskiDlls\minkowski_x64.dll $(TargetDir)" />
+    <!-- $(SolutionDir) is *Undefined* when building this project directly (dotnet build/test on
+         the csproj, not the sln) — fall back to the repo root so contributors can run either way. -->
+    <PropertyGroup>
+      <RepoRootDir Condition="'$(SolutionDir)' == '' or '$(SolutionDir)' == '*Undefined*'">$(MSBuildProjectDirectory)\..</RepoRootDir>
+      <RepoRootDir Condition="'$(RepoRootDir)' == ''">$(SolutionDir)</RepoRootDir>
+    </PropertyGroup>
+    <Exec Command="copy $(RepoRootDir)\MinkowskiDlls\minkowski.dll $(TargetDir)&#xD;&#xA;copy $(RepoRootDir)\MinkowskiDlls\minkowski_x86.dll $(TargetDir)&#xD;&#xA;copy $(RepoRootDir)\MinkowskiDlls\minkowski_x64.dll $(TargetDir)" />
   </Target>
 </Project>

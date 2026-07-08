@@ -457,6 +457,8 @@
     }
 
     /// <inheritdoc/>
+    /// <remarks>Omitted from JSON when false so pre-mirror snapshots/files stay byte-identical.</remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsMirrored { get; set; }
 
     /// <inheritdoc/>

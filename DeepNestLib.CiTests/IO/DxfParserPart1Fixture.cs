@@ -160,7 +160,9 @@
     [Fact]
     public void CircleContourShouldHave24Points()
     {
-      loadedRawDetail.Outers.First().Points.Count().Should().Be(25, "it's a circle represented by a line each 15 degrees + 1 to close");
+      // SheetNest's adaptive arc tessellation caps the step at 6° (finer nests, truer spacing),
+      // so a circle is 60 segments + 1 closing point — the upstream 15°/25-point expectation is stale.
+      loadedRawDetail.Outers.First().Points.Count().Should().Be(61, "it's a circle represented by a line each 6 degrees + 1 to close");
     }
 
     [Fact]
