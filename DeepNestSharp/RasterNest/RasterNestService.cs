@@ -353,8 +353,8 @@ namespace DeepNestSharp.RasterNest
       // (spacingA + spacingB)/2 apart. COMMON-LINE parts keep a MINIMUM 1px halo: placements born
       // literally touching can jam in chains anchored against both sheet edges that no later
       // separation can open — born 2px apart they always have slack, and the exact compaction then
-      // closes them down to the CAM-safe mini-gap (RasterCompact.CommonLineGap). Clamps keep an
-      // over-large value (units mistake) from blowing the mask size up to gigabytes.
+      // closes them to EXACT contact (CommonLineGap = 0: the shared edge exports as one cut). Clamps
+      // keep an over-large value (units mistake) from blowing the mask size up to gigabytes.
       int marginPx = (int)System.Math.Round(margin * px);
       int halfSheet = System.Math.Max(1, System.Math.Min(sw, sh) / 2);
       marginPx = System.Math.Max(0, System.Math.Min(marginPx, halfSheet));
@@ -633,7 +633,8 @@ namespace DeepNestSharp.RasterNest
 
       // Gap vetting for tight-packed (halo-0) layouts — used by the retry adoption below AND to
       // re-verify the swept tail: compact a COPY of each sheet exactly like the final build will,
-      // then require every common-line pair to keep at least half the CAM-safe mini-gap.
+      // then require every pair that involves a SPACED part to keep the safety floor (CC-CC pairs
+      // are exempt — exact contact is the goal of common-line cutting).
       bool TightGapsOk(JobResult tj, int onlySheet = -1)
       {
         var seenLayouts = new HashSet<string>();
@@ -667,7 +668,7 @@ namespace DeepNestSharp.RasterNest
           }
 
           RasterCompact.Compact(vet, sheetWin, sheetHin, System.Math.Max(0, margin));
-          if (!RasterCompact.CommonLineGapsOk(vet, RasterCompact.CommonLineGap / 2.0))
+          if (!RasterCompact.CommonLineGapsOk(vet, RasterCompact.MixedPairFloor))
           {
             return false;
           }
@@ -694,9 +695,9 @@ namespace DeepNestSharp.RasterNest
       // part(s) of a zero-spacing job onto an extra sheet even though the COMPACTED layout has room
       // (user-measured: the 26th 7"-wide rail vs a 7.94" free strip). When the safe result is
       // imperfect, re-run the selection with TRUE zero halos and adopt it only if it strictly places
-      // more parts or saves sheets — and only if compaction can still open every common-line pair to
-      // the CAM-safe mini-gap (born-touching chains can jam; a jammed pair would reintroduce the
-      // coincident-line hazard, so those results are discarded).
+      // more parts or saves sheets — and only if compaction can still keep every CC-vs-spaced pair
+      // at the safety floor (born-touching chains can jam; a jammed pair would leave a spaced
+      // neighbour nearly touching, so those results are discarded).
       var tightHalos = parsed.Select((p, i) => p.SpacingIn <= 0 ? 0 : halos[i]).ToArray();
       if (!tightHalos.SequenceEqual(halos) && (sel.Job.NotPlaced > 0 || sel.Job.Sheets > 1))
       {

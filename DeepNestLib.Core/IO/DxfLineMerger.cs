@@ -112,6 +112,17 @@
             yield return line;
           }
         }
+        else if (entity is DxfLwPolyline lwPolyline)
+        {
+          // LWPOLYLINE segments never merged before (only the classic POLYLINE was split), so a
+          // polyline source silently disabled common-line merging. Straight segments become lines
+          // (mergeable); bulge segments become the equivalent arcs. FlatDxfJoiner re-chains the
+          // survivors into closed polylines after the merge.
+          foreach (var seg in Split(lwPolyline))
+          {
+            yield return seg;
+          }
+        }
         else if (entity is DxfLine line)
         {
           yield return line;
@@ -120,6 +131,51 @@
         {
           yield return entity;
         }
+      }
+    }
+
+    private static IEnumerable<DxfEntity> Split(DxfLwPolyline polyline)
+    {
+      var verts = polyline.Vertices;
+      int count = verts.Count;
+      int segments = polyline.IsClosed ? count : count - 1;
+      for (int i = 0; i < segments; i++)
+      {
+        var a = verts[i];
+        var b = verts[(i + 1) % count];
+        var p1 = new DxfPoint(a.X, a.Y, 0);
+        var p2 = new DxfPoint(b.X, b.Y, 0);
+        DxfEntity seg;
+        if (Math.Abs(a.Bulge) < 1e-12)
+        {
+          seg = new DxfLine(p1, p2);
+        }
+        else
+        {
+          // Bulge -> arc: included angle = 4*atan(bulge); DXF arcs always run CCW start->end.
+          double theta = 4.0 * Math.Atan(a.Bulge);
+          double chord = Math.Sqrt(((p2.X - p1.X) * (p2.X - p1.X)) + ((p2.Y - p1.Y) * (p2.Y - p1.Y)));
+          double radius = Math.Abs(chord / (2.0 * Math.Sin(Math.Abs(theta) / 2.0)));
+          double midX = (p1.X + p2.X) / 2.0;
+          double midY = (p1.Y + p2.Y) / 2.0;
+
+          // Centre sits perpendicular to the chord, on the side given by the bulge sign.
+          double d = radius * Math.Cos(theta / 2.0) * Math.Sign(a.Bulge);
+          double nx = -(p2.Y - p1.Y) / chord;
+          double ny = (p2.X - p1.X) / chord;
+          double cx = midX - (nx * d);
+          double cy = midY - (ny * d);
+
+          double angle1 = Math.Atan2(p1.Y - cy, p1.X - cx) * 180.0 / Math.PI;
+          double angle2 = Math.Atan2(p2.Y - cy, p2.X - cx) * 180.0 / Math.PI;
+          seg = a.Bulge > 0
+            ? new DxfArc(new DxfPoint(cx, cy, 0), radius, angle1, angle2)
+            : new DxfArc(new DxfPoint(cx, cy, 0), radius, angle2, angle1);
+        }
+
+        seg.Layer = polyline.Layer;
+        seg.Color = polyline.Color;
+        yield return seg;
       }
     }
 

@@ -33,16 +33,24 @@
     private const double Backoff = 0.001;          // extra slack left after a slide (0.025 mm)
 
     /// <summary>
-    /// Minimum gap between common-line parts: coincident (0-gap) edges get MERGED/DELETED by the CAM,
-    /// so CC parts keep this tiny separation instead â€” â‰ˆ0.076 mm, far below the laser kerf
-    /// (~0.15-0.2 mm) yet clearly above any CAM coincidence tolerance.
+    /// Gap between common-line parts: ZERO — true common-line cutting means the shared edge is
+    /// COINCIDENT so the DXF export (MergeLines) emits it as ONE cut line. The old 0.003" "CAM-safe"
+    /// mini-gap produced two cuts three thou apart (sliver + double heat) — the opposite of what the
+    /// shop wants. Exact touch is safe engine-side: overlap tests are AREA-based (edge contact = 0).
     /// </summary>
-    internal const double CommonLineGap = 0.003;
+    internal const double CommonLineGap = 0.0;
+
+    /// <summary>
+    /// Safety floor for pairs that involve a SPACED part when vetting tight (halo-0) layouts —
+    /// a jammed separation can leave a CC part nearly touching a neighbour that asked for real
+    /// spacing. (Kept at the historic 0.003/2 hazard threshold.)
+    /// </summary>
+    internal const double MixedPairFloor = 0.0015;
 
     /// <summary>
     /// Compact one sheet's placements in place (mutates item X/Y). Every part slides toward the pack
     /// corner; clearances are preserved exactly â€” each pair keeps (spacingA + spacingB)/2 via
-    /// half-inflated shells, and common-line pairs keep the CAM-safe mini-gap.
+    /// half-inflated shells, and common-line pairs close to EXACT contact (shared cut edge).
     /// </summary>
     public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin)
     {
@@ -52,8 +60,8 @@
       }
 
       // Clearance is PER PAIR: spacing pairs need (sA+sB)/2 â€” expressed by half-inflated shells â€” and
-      // CC-CC pairs need the CAM-safe mini-gap (coincident edges get merged/deleted by the CAM). The
-      // mini-gap must NOT leak into CC-vs-spaced pairs (the raster already placed those at exactly
+      // CC-CC pairs close to EXACT contact (CommonLineGap = 0: the shared edge exports as one cut).
+      // The CC shell must NOT leak into CC-vs-spaced pairs (the raster already placed those at exactly
       // s/2, and inflating would make every one look violated), hence TWO shells per item.
       var pathsRaw = items.Select(ToPaths).ToArray();
       var pathsHalf = items.Select(it => it.Spacing > 0 ? Inflate(ToPaths(it), it.Spacing / 2.0) : ToPaths(it)).ToArray();
@@ -368,15 +376,180 @@
           break;
         }
       }
+
+      // WELD PASS: the slide's binary search + backoff leaves every contact ~0.001-0.002" short.
+      // For common-line parts that residue defeats the feature — the shared edge must be EXACTLY
+      // coincident for the DXF export (MergeLines) to emit it as one cut — so close each CC part the
+      // last fraction precisely, by geometry: the exact directional gap to the nearest constraint
+      // (sheet margin, a CC neighbour's raw outline, or a spaced neighbour's clearance shell). Only
+      // the backoff residue is welded; the packing itself already happened above.
+      double weldMax = Backoff * 4.0;
+      long weldMaxInt = (long)Math.Round(weldMax * Scale);
+      long marginInt = (long)Math.Round(margin * Scale);
+      foreach (int i in order)
+      {
+        if (items[i].Spacing > 0)
+        {
+          continue;
+        }
+
+        for (int pass = 0; pass < 2; pass++)
+        {
+          bool alongX = growX == (pass == 0);
+          long gap = DirectionalGapExact(i, alongX, weldMaxInt, marginInt, items, pathsRaw, pathsHalf);
+          if (gap > 0 && gap <= weldMaxInt)
+          {
+            double g = gap / Scale;
+            double ox = alongX ? -g : 0;
+            double oy = alongX ? 0 : -g;
+            if (RawClearAll(i, ox, oy))
+            {
+              ApplyMove(i, ox, oy);
+            }
+          }
+        }
+      }
     }
 
     /// <summary>
-    /// True when EVERY pair of parts keeps at least <paramref name="floor"/> inches of clearance.
-    /// Used to vet tight-packed (halo-0) layouts after compaction: a chain born touching can jam
-    /// mid-separation, and the separation pre-pass caps pushes at RAW contact — so a common-line
-    /// part can end up ~0.0005" from a SPACED neighbour, not just from another CC part. Any pair
-    /// under the floor is the coincident-line CAM merge/delete hazard, regardless of what spacing
-    /// the parts asked for, so all pairs are vetted.
+    /// Exact directional clearance (integer Clipper units) from item <paramref name="i"/>'s raw
+    /// outline to the nearest constraint when sliding toward the pack corner along one axis:
+    /// the sheet margin, a common-line neighbour's RAW outline (contact allowed), or a spaced
+    /// neighbour's half-inflated clearance shell. Vertex-vs-edge ray casting both ways — exact,
+    /// no search. Returns long.MaxValue when nothing constrains within range.
+    /// </summary>
+    private static long DirectionalGapExact(
+      int i,
+      bool alongX,
+      long capInt,
+      long marginInt,
+      IList<CompactItem> items,
+      List<List<IntPoint>>[] pathsRaw,
+      List<List<IntPoint>>[] pathsHalf)
+    {
+      // Work in a rotated frame where the slide is always -X: U = slide axis, V = the other.
+      long U(IntPoint p) => alongX ? p.X : p.Y;
+      long V(IntPoint p) => alongX ? p.Y : p.X;
+
+      var mine = pathsRaw[i];
+      long best = long.MaxValue;
+
+      // Sheet margin along the slide axis.
+      long myMinU = long.MaxValue;
+      foreach (var path in mine)
+      {
+        foreach (var p in path)
+        {
+          myMinU = Math.Min(myMinU, U(p));
+        }
+      }
+
+      best = Math.Min(best, myMinU - marginInt);
+
+      // Ray from vertex v toward -U against edge (a,b): hits where the edge spans v's V coordinate.
+      long RayGap(IntPoint v, IntPoint a, IntPoint b)
+      {
+        long va = V(a);
+        long vb = V(b);
+        if (va == vb)
+        {
+          // Edge parallel to the ray: only exact V alignment can constrain; endpoints handle it.
+          if (V(v) != va)
+          {
+            return long.MaxValue;
+          }
+
+          long nearest = Math.Max(U(a), U(b)) <= U(v) ? Math.Max(U(a), U(b)) : long.MaxValue;
+          return nearest == long.MaxValue ? long.MaxValue : U(v) - nearest;
+        }
+
+        if (V(v) < Math.Min(va, vb) || V(v) > Math.Max(va, vb))
+        {
+          return long.MaxValue;
+        }
+
+        // U on the edge at the ray's V, exact rational rounded to nearest integer unit.
+        double t = (double)(V(v) - va) / (vb - va);
+        long uEdge = (long)Math.Round(U(a) + (t * (U(b) - U(a))));
+        return uEdge <= U(v) ? U(v) - uEdge : long.MaxValue;
+      }
+
+      for (int j = 0; j < items.Count; j++)
+      {
+        if (j == i)
+        {
+          continue;
+        }
+
+        var theirs = items[j].Spacing <= 0 ? pathsRaw[j] : pathsHalf[j];
+
+        foreach (var pathA in mine)
+        {
+          for (int m = 0; m < pathA.Count; m++)
+          {
+            var v = pathA[m];
+            foreach (var pathB in theirs)
+            {
+              for (int n = 0; n < pathB.Count; n++)
+              {
+                // My vertex raying -U onto their edge…
+                long g1 = RayGap(v, pathB[n], pathB[(n + 1) % pathB.Count]);
+                if (g1 >= 0 && g1 < best)
+                {
+                  best = g1;
+                }
+
+                // …and their vertex raying +U onto my edge (equivalent to me sliding -U onto it).
+                long g2 = RayGapReverse(pathB[n], pathA[m], pathA[(m + 1) % pathA.Count]);
+                if (g2 >= 0 && g2 < best)
+                {
+                  best = g2;
+                }
+              }
+            }
+
+            if (best == 0)
+            {
+              return 0;
+            }
+          }
+        }
+      }
+
+      return best;
+
+      long RayGapReverse(IntPoint w, IntPoint a, IntPoint b)
+      {
+        long va = V(a);
+        long vb = V(b);
+        if (va == vb)
+        {
+          if (V(w) != va)
+          {
+            return long.MaxValue;
+          }
+
+          long nearest = Math.Min(U(a), U(b)) >= U(w) ? Math.Min(U(a), U(b)) : long.MaxValue;
+          return nearest == long.MaxValue ? long.MaxValue : nearest - U(w);
+        }
+
+        if (V(w) < Math.Min(va, vb) || V(w) > Math.Max(va, vb))
+        {
+          return long.MaxValue;
+        }
+
+        double t = (double)(V(w) - va) / (vb - va);
+        long uEdge = (long)Math.Round(U(a) + (t * (U(b) - U(a))));
+        return uEdge >= U(w) ? uEdge - U(w) : long.MaxValue;
+      }
+    }
+
+    /// <summary>
+    /// True when every pair that involves a SPACED part keeps at least <paramref name="floor"/>
+    /// inches of clearance. Used to vet tight-packed (halo-0) layouts after compaction: a chain born
+    /// touching can jam mid-separation, and the separation pre-pass caps pushes at RAW contact — so
+    /// a common-line part can end up ~0.0005" from a SPACED neighbour that asked for real spacing.
+    /// CC-CC pairs are exempt: exact contact is the GOAL there (the shared edge exports as one cut).
     /// </summary>
     internal static bool CommonLineGapsOk(IList<CompactItem> items, double floor)
     {
@@ -390,6 +563,11 @@
         var padded = new IntRect(bi.left - pad, bi.top - pad, bi.right + pad, bi.bottom + pad);
         for (int j = i + 1; j < items.Count; j++)
         {
+          if (items[i].Spacing <= 0 && items[j].Spacing <= 0)
+          {
+            continue; // common-line pair — exact contact is intended
+          }
+
           if (!BoxesTouch(padded, rawBounds[j]))
           {
             continue;
@@ -407,8 +585,8 @@
 
     /// <summary>
     /// Exact-geometry acceptance gate for REFILL insertions: the candidate must keep every pair's
-    /// required clearance against ALL placed parts â€” (spacingA + spacingB)/2, or the CAM-safe mini-gap
-    /// for a common-line pair â€” and its real contour must stay inside the sheet margin. The raster scan
+    /// required clearance against ALL placed parts â€” (spacingA + spacingB)/2, or exact contact for a
+    /// common-line pair â€” and its real contour must stay inside the sheet margin. The raster scan
     /// that proposed the position is conservative, so this should always pass; it is the safety net
     /// that guarantees a refill insertion can never violate what the compacted layout promised.
     /// </summary>

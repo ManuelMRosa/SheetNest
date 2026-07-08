@@ -127,19 +127,6 @@
         //double sheetYoffset = -sheet.Height * i;
         DxfPoint offsetdistance = new DxfPoint(polygon.X + sheetXoffset, polygon.Y, 0D);
         List<DxfEntity> newlist = OffsetToNest(fl.Outers, offsetdistance, polygon.Rotation, polygon.IsMirrored, differentiateChildren);
-
-        // Join each part's exploded LINE/ARC soup into closed LWPOLYLINEs so the laser receives
-        // real closed contours (client DXFs often arrive exploded). Per-part on purpose: touching
-        // common-line parts must never chain into each other. Failure = export exploded, as before.
-        try
-        {
-          FlatDxfJoiner.JoinEntities(newlist);
-        }
-        catch
-        {
-          // keep the exploded entities
-        }
-
         foreach (DxfEntity ent in newlist)
         {
           yield return ent;
@@ -411,7 +398,7 @@
       try
       {
         DxfFile sheetdxf = GenerateEmptyDxfFile();
-        var entities = GetOffsetDxfEntities(polygons.Where(o => o.Sheet.Id == sheet.Id), sheet, i, differentiateChildren);
+        IEnumerable<DxfEntity> entities = GetOffsetDxfEntities(polygons.Where(o => o.Sheet.Id == sheet.Id), sheet, i, differentiateChildren).ToList();
 
         if (doMergeLines)
         {
@@ -429,7 +416,22 @@
           //entities.AddRange(mergeLines.Where(o => o.IsVertical).Select(o => o.Line));
         }
 
-        foreach (var entity in entities)
+        // AFTER the merge (order matters): chain the exploded LINE/ARC soup into closed LWPOLYLINEs
+        // so the laser receives real closed contours. Common-line sheets keep their merged shared
+        // edges — a shared edge belongs to two contours, so those chains hit the joiner's
+        // ambiguous-junction guard and stay as loose (already merged) lines, which is the correct
+        // cut geometry. A join failure must never break the export.
+        var entityList = entities as List<DxfEntity> ?? entities.ToList();
+        try
+        {
+          FlatDxfJoiner.JoinEntities(entityList);
+        }
+        catch
+        {
+          // keep the unjoined entities
+        }
+
+        foreach (var entity in entityList)
         {
           sheetdxf.Entities.Add(entity);
         }
