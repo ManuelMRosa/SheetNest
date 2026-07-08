@@ -596,8 +596,11 @@ namespace DeepNestSharp.RasterNest
         bOffY.Add(by);
 
         // EXACT internal seam for common-line pairs: the pixel offset leaves the mates ~1px apart
-        // (a 0.04" double cut on the shared edge). Close the smaller-axis gap by polygon ray-cast in
-        // doubles; the corrected sub-offsets ride in the placement so the pair is BORN touching.
+        // (a 0.04" double cut on the shared edge). Candidate exact configurations by double ray-cast,
+        // keeping the one with the SMALLEST union bbox: closing only the nearest axis reached contact
+        // but left the mate slid ~1px ALONG the seam — the pair's corners poked out 0.04" and module
+        // junctions looked shifted at high zoom. The bbox-aligned candidates seat the mate flush
+        // (a right-triangle pair becomes a true rectangle).
         if (exact && pxPerInch > 0)
         {
           var polyA = t.RotationsDeg[ri] == 0 ? t.Poly : t.Poly.Rotate(t.RotationsDeg[ri]);
@@ -606,30 +609,60 @@ namespace DeepNestSharp.RasterNest
           double offYin = bestDy / pxPerInch;
           double tax = -polyA.Points.Min(p => p.X);
           double tay = -polyA.Points.Min(p => p.Y);
-          double tbx = offXin - polyB.Points.Min(p => p.X);
-          double tby = offYin - polyB.Points.Min(p => p.Y);
-          double gX = AxisGapPoly(polyA, tax, tay, polyB, tbx, tby, true);
-          double gY = AxisGapPoly(polyA, tax, tay, polyB, tbx, tby, false);
-          double snapX = offXin;
-          double snapY = offYin;
+          double wA = polyA.Points.Max(p => p.X) - polyA.Points.Min(p => p.X);
+          double hA = polyA.Points.Max(p => p.Y) - polyA.Points.Min(p => p.Y);
+          double wB = polyB.Points.Max(p => p.X) - polyB.Points.Min(p => p.X);
+          double hB = polyB.Points.Max(p => p.Y) - polyB.Points.Min(p => p.Y);
+          double bMinX = polyB.Points.Min(p => p.X);
+          double bMinY = polyB.Points.Min(p => p.Y);
+
           double closable = 3.0 / pxPerInch; // birth residue is ~1px; anything larger means no real seam on that axis
-          if (gX > 0 && gX <= closable && gX <= gY)
+          double far = wA + wB + hA + hB + 1.0;
+          double bestSnapX = offXin, bestSnapY = offYin, bestSnapArea = double.MaxValue;
+
+          // Containment: the module's stamped mask frame was sized for the pixel offset — a candidate
+          // whose exact union outgrows it would poke past the reserved clearance ring.
+          double frameWin = (pw - (2 * border)) / pxPerInch;
+          double frameHin = (ph - (2 * border)) / pxPerInch;
+
+          void Consider(double startBx, double startBy, bool alongXAxis, double maxTravel)
           {
-            snapX -= gX;
-          }
-          else if (gY > 0 && gY <= closable)
-          {
-            snapY -= gY;
+            double g = AxisGapPoly(polyA, tax, tay, polyB, startBx - bMinX, startBy - bMinY, alongXAxis);
+            if (g <= 0 || g > maxTravel)
+            {
+              return;
+            }
+
+            double px2 = alongXAxis ? startBx - g : startBx;
+            double py2 = alongXAxis ? startBy : startBy - g;
+            double uw = System.Math.Max(wA, px2 + wB) - System.Math.Min(0, px2);
+            double uh = System.Math.Max(hA, py2 + hB) - System.Math.Min(0, py2);
+            if (uw > frameWin + 1e-9 || uh > frameHin + 1e-9)
+            {
+              return;
+            }
+
+            if (uw * uh < bestSnapArea)
+            {
+              bestSnapArea = uw * uh;
+              bestSnapX = px2;
+              bestSnapY = py2;
+            }
           }
 
+          Consider(offXin, offYin, true, closable);   // close X from the pixel birth position
+          Consider(offXin, offYin, false, closable);  // close Y from the pixel birth position
+          Consider(far, 0, true, double.MaxValue);    // bbox-aligned in Y, slide B in from the right
+          Consider(0, far, false, double.MaxValue);   // bbox-aligned in X, slide B in from the top
+
           // Re-anchor so the raw union starts at the frame origin; the border ring absorbs the shift.
-          double unionMinX = System.Math.Min(0, snapX);
-          double unionMinY = System.Math.Min(0, snapY);
+          double unionMinX = System.Math.Min(0, bestSnapX);
+          double unionMinY = System.Math.Min(0, bestSnapY);
           double borderIn = border / pxPerInch;
           exactAx.Add(borderIn - unionMinX);
           exactAy.Add(borderIn - unionMinY);
-          exactBx.Add(borderIn + snapX - unionMinX);
-          exactBy.Add(borderIn + snapY - unionMinY);
+          exactBx.Add(borderIn + bestSnapX - unionMinX);
+          exactBy.Add(borderIn + bestSnapY - unionMinY);
         }
         else
         {
