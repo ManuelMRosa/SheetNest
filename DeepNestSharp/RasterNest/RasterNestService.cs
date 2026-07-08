@@ -676,7 +676,17 @@ namespace DeepNestSharp.RasterNest
         return true;
       }
 
+      var profSw = NestProfile.Enabled ? System.Diagnostics.Stopwatch.StartNew() : null;
+      void Prof(string label)
+      {
+        if (profSw != null)
+        {
+          NestProfile.Log($"PHASE {label} +{profSw.ElapsedMilliseconds}ms");
+        }
+      }
+
       var sel = SelectJob();
+      Prof("initial SelectJob");
       bool tightAdopted = false;
 
       // TIGHT-PACK RETRY for common-line jobs. Placements are born >= 1px apart (the safe minimum —
@@ -729,6 +739,7 @@ namespace DeepNestSharp.RasterNest
         halos = tightHalos;
         bool adopted = TryAdopt(SelectJob());
         halos = safeHalos;
+        Prof("tight retry");
 
         // RESOLUTION ESCALATION: even at halo 0 every mask is up to 1px wider than the true part
         // (conservative rasterization), so a row of N common-line parts drags N phantom pixels —
@@ -768,6 +779,8 @@ namespace DeepNestSharp.RasterNest
             marginPx = System.Math.Max(0, System.Math.Min((int)System.Math.Round(margin * px), halfSheet));
             halos = safeHalos;
           }
+
+          Prof("escalation 2x");
         }
       }
 
@@ -779,6 +792,8 @@ namespace DeepNestSharp.RasterNest
       {
         sel = (swept, sel.Types);
       }
+
+      Prof("tailsweep");
 
       // Replicated pattern sheets are placement-identical, and compaction is deterministic — compact
       // each DISTINCT layout once and reuse the slid positions for every copy (30 identical sheets of
@@ -837,6 +852,7 @@ namespace DeepNestSharp.RasterNest
       // run the nester's own bottom-left scan for the parts that could not be placed, and accept an
       // insertion only if the exact-geometry gate confirms every clearance. Counted against the
       // ORIGINAL demand — in pattern mode the job carries the capped probe quantity, not the real one.
+      Prof("compaction");
       var pool = new int[parsed.Count];
       {
         var placedPerSource = sel.Job.Placements.GroupBy(p => p.Source).ToDictionary(g => g.Key, g => g.Count());
@@ -1077,6 +1093,7 @@ namespace DeepNestSharp.RasterNest
         occCache.Remove(last);
       }
 
+      Prof("refill+absorb");
       var collection = new SheetPlacementCollection();
       int id = 0;
       foreach (var (jps, items, parsedIdx, _) in builtSheets)
@@ -1120,6 +1137,7 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
+      Prof("total");
       int totalParts = parsed.Sum(p => p.Qty);
       return new NestResult(totalParts, collection, unplaced, placementType, 0, 0);
     }

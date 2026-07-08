@@ -76,6 +76,8 @@ namespace DeepNestSharp.RasterNest
   {
     public static JobResult Nest(List<PartType> types, int sheetW, int sheetH, double pxPerInch, int marginPx, int maxSheets = int.MaxValue)
     {
+      var profSw = NestProfile.Enabled ? System.Diagnostics.Stopwatch.StartNew() : null;
+
       // Dilate each part by ITS OWN spacing halo (PartType.HaloPx) so two parts end up exactly
       // (haloA + haloB) apart — per-part spacing / common-line (halo 0 = copies pack touching).
       // The real part sits inset by (halo, halo) inside its dilated mask.
@@ -110,6 +112,8 @@ namespace DeepNestSharp.RasterNest
           t.Packed = keep.Select(i => t.Packed[i]).ToArray();
         }
       }
+
+      long profMaskMs = profSw?.ElapsedMilliseconds ?? 0;
 
       // Pad the grid by the LARGEST halo on every side so any part's spacing-halo can extend PAST the
       // sheet edge into a virtual border (no neighbour to keep clear of out there). The real part then
@@ -241,6 +245,12 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
+      if (profSw != null)
+      {
+        long probes = System.Threading.Interlocked.Exchange(ref ProfFitsCalls, 0);
+        NestProfile.Log($"RasterJob px={pxPerInch} types={types.Count} inst={instances.Count} rots={string.Join("/", types.Select(t => t.RotationsDeg.Length))} maskMs={profMaskMs} placeMs={profSw.ElapsedMilliseconds - profMaskMs} sheets={sheets.Count} fitsProbes={probes}");
+      }
+
       return new JobResult
       {
         Placements = placements,
@@ -322,11 +332,17 @@ namespace DeepNestSharp.RasterNest
       return bestIndex != long.MaxValue;
     }
 
+    /// <summary>Profiling only (SHEETNEST_NEST_PROFILE=1): total Fits probes across a job.</summary>
+    internal static long ProfFitsCalls;
+
     private static bool FindBottomLeft(ulong[] occ, int wpr, int sheetW, int sheetH, int insetPx, PackedMask m, int start, bool growX, out int ox, out int oy)
     {
       int hiY = sheetH - m.H - insetPx;
       int hiX = sheetW - m.W - insetPx;
+      long probes = 0;
 
+      try
+      {
       if (growX)
       {
         // Fill full columns across the short (Y) dimension, growing along X — the remnant stays a
@@ -335,6 +351,7 @@ namespace DeepNestSharp.RasterNest
         {
           for (int y = insetPx; y <= hiY; y++)
           {
+            probes++;
             if (Fits(occ, wpr, m, x, y))
             {
               ox = x;
@@ -350,6 +367,7 @@ namespace DeepNestSharp.RasterNest
         {
           for (int x = insetPx; x <= hiX; x++)
           {
+            probes++;
             if (Fits(occ, wpr, m, x, y))
             {
               ox = x;
@@ -363,6 +381,14 @@ namespace DeepNestSharp.RasterNest
       ox = -1;
       oy = -1;
       return false;
+      }
+      finally
+      {
+        if (NestProfile.Enabled)
+        {
+          System.Threading.Interlocked.Add(ref ProfFitsCalls, probes);
+        }
+      }
     }
 
     // Word-packed collision test: AND 64 columns at a time (the mask row is shifted to the candidate
@@ -371,6 +397,24 @@ namespace DeepNestSharp.RasterNest
     {
       int wordX = ox >> 6;
       int s = ox & 63;
+
+      // DEEP-FAILURE GUARD: probes over mostly-empty space that collide only hundreds of rows up
+      // used to walk every row below the obstruction first — for large (3D-unfolded) parts that made
+      // one 4-rotation candidate take ~18 s while the 2-rotation ones took ~0.2 s (measured: same
+      // probe count, ~100x the cost per probe). Sample a few spread rows first: any colliding sample
+      // is an EXACT reject; obstructions are whole parts (hundreds of px tall), so a band taller
+      // than H/4 can never hide between the samples. All samples clean -> full definitive scan.
+      if (m.H >= 32)
+      {
+        if (RowCollides(occ, wpr, m, wordX, s, oy, 0)
+            || RowCollides(occ, wpr, m, wordX, s, oy, m.H - 1)
+            || RowCollides(occ, wpr, m, wordX, s, oy, m.H >> 1)
+            || RowCollides(occ, wpr, m, wordX, s, oy, m.H >> 2)
+            || RowCollides(occ, wpr, m, wordX, s, oy, (3 * m.H) >> 2))
+        {
+          return false;
+        }
+      }
 
       for (int py = 0; py < m.H; py++)
       {
@@ -395,6 +439,26 @@ namespace DeepNestSharp.RasterNest
       }
 
       return true;
+    }
+
+    /// <summary>Collision test for a single mask row (same shifting as the full scan).</summary>
+    private static bool RowCollides(ulong[] occ, int wpr, PackedMask m, int wordX, int s, int oy, int py)
+    {
+      int mBase = py * m.WordsPerRow;
+      int oBase = ((oy + py) * wpr) + wordX;
+      ulong carry = 0;
+      for (int wi = 0; wi < m.WordsPerRow; wi++)
+      {
+        ulong mw = m.Words[mBase + wi];
+        ulong shifted = (mw << s) | carry;
+        carry = s == 0 ? 0UL : mw >> (64 - s);
+        if ((shifted & occ[oBase + wi]) != 0)
+        {
+          return true;
+        }
+      }
+
+      return carry != 0 && (carry & occ[oBase + m.WordsPerRow]) != 0;
     }
 
     internal static void Stamp(ulong[] occ, int wpr, PackedMask m, int ox, int oy)
