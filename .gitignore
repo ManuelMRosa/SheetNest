@@ -360,3 +360,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# SheetNest release artifacts (MSI, wix pdb, self-contained publish dirs)
+SheetNest-*.msi
+SheetNest-*.wixpdb
+publish-*/
