@@ -6,8 +6,24 @@ namespace DeepNestSharp.Ui.Views
   public partial class AddSheetWindow : Window
   {
     public AddSheetWindow()
+      : this(false)
+    {
+    }
+
+    /// <summary>Units drive labels, limits and defaults: metric shops need 3000x1500 sheets.</summary>
+    public AddSheetWindow(bool unitsMm)
     {
       InitializeComponent();
+      if (unitsMm)
+      {
+        this.headerText.Text = "Sheet size in millimeters (width = the long side).";
+        this.widthLabel.Text = "Width (mm)";
+        this.heightLabel.Text = "Height (mm)";
+        this.widthUpDown.Maximum = 25000;
+        this.heightUpDown.Maximum = 25000;
+        this.widthUpDown.Value = 3000;
+        this.heightUpDown.Value = 1500;
+      }
     }
 
     /// <summary>Reuses the dialog to EDIT an existing stock row: pre-filled values, edit wording.</summary>

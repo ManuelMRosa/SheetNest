@@ -214,7 +214,7 @@
               </ListView.Resources>
               <ListView.View>
                 <GridView>
-                  <GridViewColumn Header="Sheet (in)" Width="120">
+                  <GridViewColumn x:Name="sheetSizeColumn" Header="Sheet (in)" Width="120">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
                         <TextBlock FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" Margin="4,4"

@@ -40,6 +40,9 @@ namespace DeepNestSharp
     /// <summary>Global default rotation code for unedited parts (1/2/4/8/36); -1 = default (4).</summary>
     public int DefaultRotations { get; set; } = -1;
 
+    /// <summary>Drawing units are millimeters (true) vs inches (false); null = default (inches).</summary>
+    public bool? UnitsMm { get; set; }
+
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");
 

@@ -13,10 +13,15 @@ namespace DeepNestSharp.Ui.Views
   {
     private readonly ISvgNestConfig config;
 
-    public AdvancedSettingsWindow(ISvgNestConfig config, bool autosaveEnabled, int autosaveMinutes)
+    public AdvancedSettingsWindow(ISvgNestConfig config, bool autosaveEnabled, int autosaveMinutes, bool unitsMm = false)
     {
       this.config = config;
       InitializeComponent();
+
+      this.unitsCombo.SelectedIndex = unitsMm ? 1 : 0;
+      string u = unitsMm ? "mm" : "in";
+      this.spacingLabel.Text = $"Part spacing ({u}):";
+      this.marginLabel.Text = $"Sheet edge margin ({u}):";
 
       SelectRotations(config.Rotations);
       this.spacingUpDown.Value = System.Math.Max(0, config.Spacing);
@@ -30,6 +35,9 @@ namespace DeepNestSharp.Ui.Views
     }
 
     public bool AutosaveEnabled => this.autosaveCheck.IsChecked == true;
+
+    /// <summary>Drawing units are millimeters — persisted by the caller (SessionState).</summary>
+    public bool UnitsMm => this.unitsCombo.SelectedIndex == 1;
 
     public int AutosaveMinutes => this.minutesUpDown.Value ?? 5;
 

@@ -25,6 +25,7 @@ namespace DeepNestSharp.Ui.Views
     private string updateUrl;
     private System.Windows.Threading.DispatcherTimer autosaveTimer;
     private System.Threading.CancellationTokenSource nestCts;
+    private bool unitsMm; // drawing units are millimeters (SessionState.UnitsMm); inches by default
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
 
@@ -64,6 +65,20 @@ namespace DeepNestSharp.Ui.Views
       new SheetPreset("144 × 60 in   (12 × 5 ft)", 144, 60),
       new SheetPreset("120 × 72 in   (10 × 6 ft)", 120, 72),
       new SheetPreset("144 × 72 in   (12 × 6 ft)", 144, 72),
+    };
+
+    // Standard metric mill sizes (mm), width = the LONG side; grouped by the short side like above.
+    private static readonly SheetPreset[] SheetPresetsMm =
+    {
+      new SheetPreset("2000 × 1000 mm", 2000, 1000),
+      new SheetPreset("3000 × 1000 mm", 3000, 1000),
+      new SheetPreset("2500 × 1250 mm", 2500, 1250),
+      new SheetPreset("3000 × 1250 mm", 3000, 1250),
+      new SheetPreset("3000 × 1500 mm", 3000, 1500),
+      new SheetPreset("4000 × 1500 mm", 4000, 1500),
+      new SheetPreset("6000 × 1500 mm", 6000, 1500),
+      new SheetPreset("4000 × 2000 mm", 4000, 2000),
+      new SheetPreset("6000 × 2000 mm", 6000, 2000),
     };
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -131,10 +146,17 @@ namespace DeepNestSharp.Ui.Views
           DeepNestLib.IO.StepUnfoldService.FreeCadCmdPathOverride = session.FreeCadCmdPath;
         }
 
+        if (session.UnitsMm.HasValue)
+        {
+          this.unitsMm = session.UnitsMm.Value;
+        }
+
         if (session.UnfoldUnitInch.HasValue)
         {
           DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch = session.UnfoldUnitInch.Value;
         }
+
+        this.ApplyUnits();
 
         // Autosave settings (Settings > Advanced Settings).
         this.ApplyAutosaveSettings(
@@ -390,13 +412,15 @@ namespace DeepNestSharp.Ui.Views
     private void OnAdvancedSettings(object sender, RoutedEventArgs e)
     {
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
-      var dialog = new AdvancedSettingsWindow(cfg, this.autosaveEnabled, this.autosaveMinutes) { Owner = this };
+      var dialog = new AdvancedSettingsWindow(cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm) { Owner = this };
       if (dialog.ShowDialog() != true)
       {
         return;
       }
 
       this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
+      this.unitsMm = dialog.UnitsMm;
+      this.ApplyUnits();
 
       // The settings-backed config values persisted in their setters; the rest goes to the session
       // immediately (load-modify-save keeps the MRU and the other session fields intact).
@@ -405,6 +429,7 @@ namespace DeepNestSharp.Ui.Views
       session.AutosaveMinutes = this.autosaveMinutes;
       session.DefaultRotations = cfg.Rotations;
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
+      session.UnitsMm = this.unitsMm;
       session.Save();
     }
 
@@ -663,6 +688,7 @@ namespace DeepNestSharp.Ui.Views
         UnfoldKFactorStandard = DeepNestLib.IO.StepUnfoldService.KFactorStandard,
         FreeCadCmdPath = DeepNestLib.IO.StepUnfoldService.FreeCadCmdPathOverride,
         UnfoldUnitInch = DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
+        UnitsMm = this.unitsMm,
         RecentProjects = SessionState.Load()?.RecentProjects ?? new List<string>(), // preserve the MRU
         AutosaveEnabled = this.autosaveEnabled,
         AutosaveMinutes = this.autosaveMinutes,
@@ -670,12 +696,22 @@ namespace DeepNestSharp.Ui.Views
       }.Save();
     }
 
+    /// <summary>Reflects the drawing units (in/mm) in every unit-labelled UI element.</summary>
+    private void ApplyUnits()
+    {
+      string u = this.unitsMm ? "mm" : "in";
+      if (this.sheetSizeColumn != null)
+      {
+        this.sheetSizeColumn.Header = $"Sheet ({u})";
+      }
+    }
+
     /// <summary>Add Sheet opens a menu: the standard stock sizes plus "Custom size…" (Radan-style).</summary>
     private void OnAddSheetMenu(object sender, RoutedEventArgs e)
     {
       var menu = new ContextMenu();
       int lastShortSide = -1;
-      foreach (var preset in SheetPresets)
+      foreach (var preset in this.unitsMm ? SheetPresetsMm : SheetPresets)
       {
         if (lastShortSide >= 0 && preset.Height != lastShortSide)
         {
@@ -693,7 +729,7 @@ namespace DeepNestSharp.Ui.Views
       var custom = new MenuItem { Header = "Custom size…" };
       custom.Click += (_, __) =>
       {
-        var dialog = new AddSheetWindow { Owner = this };
+        var dialog = new AddSheetWindow(this.unitsMm) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
           this.AddSheetOfSize(dialog.SheetWidth, dialog.SheetHeight, dialog.SheetQuantity);
@@ -740,7 +776,7 @@ namespace DeepNestSharp.Ui.Views
 
     private void OpenEditSheet(ISheetLoadInfo row)
     {
-      var dialog = new AddSheetWindow { Owner = this };
+      var dialog = new AddSheetWindow(this.unitsMm) { Owner = this };
       dialog.PrefillForEdit(row.Width, row.Height, row.Quantity);
       if (dialog.ShowDialog() == true)
       {
@@ -1160,7 +1196,10 @@ namespace DeepNestSharp.Ui.Views
           // 24 px/inch (was 8): triples the raster resolution so the safety halo + spacing gaps shrink from
           // ~0.125"+ down to ~0.04" — much tighter nesting with the placement still overlap-free (verified
           // in GpuNestLab). Slower, but the closed-marking optimization keeps it fast enough for real jobs.
-          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, 24.0, out string err, token, progress);
+          // 24 px/in, or its metric twin ~0.945 px/mm: SAME physical resolution, so a 3000 mm
+          // sheet rasterizes to the same grid size as today's 120 in one.
+          double pxPerUnit = this.unitsMm ? 24.0 / 25.4 : 24.0;
+          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, pxPerUnit, out string err, token, progress);
           return (r, err);
         });
 
@@ -1317,7 +1356,7 @@ namespace DeepNestSharp.Ui.Views
 
       try
       {
-        Reports.NestReportPdf.Write(dialog.FileName, plan, selected.UnplacedParts?.Count ?? 0);
+        Reports.NestReportPdf.Write(dialog.FileName, plan, selected.UnplacedParts?.Count ?? 0, this.unitsMm ? "mm" : "in");
       }
       catch (System.Exception ex)
       {

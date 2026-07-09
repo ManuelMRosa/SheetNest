@@ -21,13 +21,13 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,10"
+    <TextBlock x:Name="headerText" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,10"
                Text="Sheet size in inches (width = the long side)." Foreground="{StaticResource Brush.TextMuted}" />
 
-    <TextBlock Grid.Row="1" Grid.Column="0" Text="Width (in)" VerticalAlignment="Center" Margin="0,0,10,6" />
+    <TextBlock x:Name="widthLabel" Grid.Row="1" Grid.Column="0" Text="Width (in)" VerticalAlignment="Center" Margin="0,0,10,6" />
     <xctk:IntegerUpDown x:Name="widthUpDown" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="1000" Value="120" Margin="0,0,0,6" />
 
-    <TextBlock Grid.Row="2" Grid.Column="0" Text="Height (in)" VerticalAlignment="Center" Margin="0,0,10,6" />
+    <TextBlock x:Name="heightLabel" Grid.Row="2" Grid.Column="0" Text="Height (in)" VerticalAlignment="Center" Margin="0,0,10,6" />
     <xctk:IntegerUpDown x:Name="heightUpDown" Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="1000" Value="60" Margin="0,0,0,6" />
 
     <TextBlock Grid.Row="3" Grid.Column="0" Text="Quantity" VerticalAlignment="Center" Margin="0,0,10,6" />

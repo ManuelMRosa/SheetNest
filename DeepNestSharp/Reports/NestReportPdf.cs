@@ -20,7 +20,7 @@ namespace DeepNestSharp.Reports
     private const double PageW = 612; // US Letter portrait, points
     private const double PageH = 792;
 
-    public static void Write(string path, IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts, int unplacedCount)
+    public static void Write(string path, IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts, int unplacedCount, string units = "in")
     {
       if (layouts == null || layouts.Count == 0)
       {
@@ -72,7 +72,7 @@ namespace DeepNestSharp.Reports
         foreach (var (w, h, count) in stockLines)
         {
           c.Text(56, ry, 21, bold: true, count.ToString("#,0", CultureInfo.InvariantCulture));
-          c.Text(120, ry, 13, bold: false, $"sheet{(count == 1 ? string.Empty : "s")} of  {Num(w)} x {Num(h)} in");
+          c.Text(120, ry, 13, bold: false, $"sheet{(count == 1 ? string.Empty : "s")} of  {Num(w)} x {Num(h)} {units}");
           c.SetFill(0.35, 0.35, 0.35);
           c.Text(430, ry, 10, bold: false, $"{(w * h * count / 144.0).ToString("#,0", CultureInfo.InvariantCulture)} sq ft");
           c.SetFill(0, 0, 0);
@@ -189,7 +189,7 @@ namespace DeepNestSharp.Reports
 
         c.Text(40, 700, 16, bold: true, $"Layout {i + 1} of {layouts.Count}   -   cut x {count}");
         c.Text(40, 680, 11, bold: false,
-          $"{sp.PartPlacements.Count} parts   |   {Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}% utilization   |   sheet {Num(sheetW)} x {Num(sheetH)} in");
+          $"{sp.PartPlacements.Count} parts   |   {Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}% utilization   |   sheet {Num(sheetW)} x {Num(sheetH)} {units}");
 
         // Drawing area (top, full portrait width) — sheet border + every part outline with its
         // holes, Y up like the shop; centered both ways inside the box.

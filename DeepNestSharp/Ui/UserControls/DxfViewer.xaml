@@ -53,7 +53,7 @@
         </StackPanel>
         <ToggleButton x:Name="measureToggle" Content="Measure" Margin="12,0,0,0" Padding="8,3" FontWeight="SemiBold"
                       Checked="OnMeasureModeChanged" Unchecked="OnMeasureModeChanged"
-                      ToolTip="Measure a distance: click two points on the drawing; the length shows below (in the drawing's units — inches). Use it to verify a 3D-unfolded part's size / K-factor." />
+                      ToolTip="Measure a distance: click two points on the drawing; the length shows below (in the drawing's units). Use it to verify a 3D-unfolded part's size / K-factor." />
       </StackPanel>
     </Border>
 

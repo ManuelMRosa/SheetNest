@@ -35,12 +35,12 @@
           <ComboBoxItem Tag="36">Free</ComboBoxItem>
         </ComboBox>
 
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Part spacing (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
+        <TextBlock x:Name="spacingLabel" Grid.Row="1" Grid.Column="0" Text="Part spacing (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
         <xctk:DoubleUpDown Grid.Row="1" Grid.Column="1" x:Name="spacingUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
                            Minimum="0" Increment="0.05" FormatString="0.###"
                            ToolTip="Default gap between parts (drawing units). Edit Part can override it per part; common-line parts touch." />
 
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="Sheet edge margin (in):" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <TextBlock x:Name="marginLabel" Grid.Row="2" Grid.Column="0" Text="Sheet edge margin (in):" VerticalAlignment="Center" Margin="0,0,10,0" />
         <xctk:DoubleUpDown Grid.Row="2" Grid.Column="1" x:Name="marginUpDown" Width="80" HorizontalAlignment="Left"
                            Minimum="0" Increment="0.05" FormatString="0.###"
                            ToolTip="Clear border kept between every part and the sheet edge." />
@@ -65,15 +65,23 @@
         <Grid.RowDefinitions>
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <CheckBox Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" x:Name="autosaveCheck" Margin="0,0,0,8"
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Units:" VerticalAlignment="Center" Margin="0,0,10,8" />
+        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="unitsCombo" Width="150" HorizontalAlignment="Left" Margin="0,0,0,8"
+                  ToolTip="Drawing units for parts, sheets, spacing and margins. Match the units your DXF files are drawn in.">
+          <ComboBoxItem Tag="in">Inches</ComboBoxItem>
+          <ComboBoxItem Tag="mm">Millimeters</ComboBoxItem>
+        </ComboBox>
+
+        <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" x:Name="autosaveCheck" Margin="0,0,0,8"
                   Content="Auto save the open project"
                   Checked="OnAutosaveToggled" Unchecked="OnAutosaveToggled"
                   ToolTip="Periodically snapshots the open project so unsaved work can be recovered after a crash." />
 
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Auto Save Time (min):" VerticalAlignment="Center" Margin="18,0,10,0" />
-        <xctk:IntegerUpDown Grid.Row="1" Grid.Column="1" x:Name="minutesUpDown" Width="70" HorizontalAlignment="Left"
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Auto Save Time (min):" VerticalAlignment="Center" Margin="18,0,10,0" />
+        <xctk:IntegerUpDown Grid.Row="2" Grid.Column="1" x:Name="minutesUpDown" Width="70" HorizontalAlignment="Left"
                             Minimum="1" Maximum="60" Value="5"
                             ToolTip="How often the open project is automatically saved for recovery." />
       </Grid>
