@@ -42,6 +42,9 @@ namespace DeepNestSharp.Ui.Views
 
     public int SheetQuantity { get; private set; } = 1;
 
+    /// <summary>Save this size under "My sheets" in the Add Sheet menu.</summary>
+    public bool RememberAsPreset => this.rememberCheck.IsChecked == true;
+
     private void OnOk(object sender, RoutedEventArgs e)
     {
       // Xceed up/downs only commit TYPED text on focus loss — commit before reading so pressing

@@ -43,6 +43,9 @@ namespace DeepNestSharp
     /// <summary>Drawing units are millimeters (true) vs inches (false); null = default (inches).</summary>
     public bool? UnitsMm { get; set; }
 
+    /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
+    public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
+
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");
 

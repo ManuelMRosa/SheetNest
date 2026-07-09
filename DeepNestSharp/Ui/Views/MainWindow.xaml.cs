@@ -26,6 +26,7 @@ namespace DeepNestSharp.Ui.Views
     private System.Windows.Threading.DispatcherTimer autosaveTimer;
     private System.Threading.CancellationTokenSource nestCts;
     private bool unitsMm; // drawing units are millimeters (SessionState.UnitsMm); inches by default
+    private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
 
@@ -149,6 +150,14 @@ namespace DeepNestSharp.Ui.Views
         if (session.UnitsMm.HasValue)
         {
           this.unitsMm = session.UnitsMm.Value;
+        }
+
+        if (session.SheetPresets != null)
+        {
+          this.userSheetPresets = session.SheetPresets
+            .Where(sp => sp.Width > 0 && sp.Height > 0)
+            .Select(sp => (sp.Width, sp.Height))
+            .ToList();
         }
 
         if (session.UnfoldUnitInch.HasValue)
@@ -690,6 +699,7 @@ namespace DeepNestSharp.Ui.Views
         UnfoldUnitInch = DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
         UnitsMm = this.unitsMm,
         RecentProjects = SessionState.Load()?.RecentProjects ?? new List<string>(), // preserve the MRU
+        SheetPresets = this.userSheetPresets.Select(p => new SessionSheet { Width = p.W, Height = p.H }).ToList(),
         AutosaveEnabled = this.autosaveEnabled,
         AutosaveMinutes = this.autosaveMinutes,
         DefaultRotations = ViewModel.SvgNestConfigViewModel.SvgNestConfig.Rotations,
@@ -706,10 +716,48 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
-    /// <summary>Add Sheet opens a menu: the standard stock sizes plus "Custom size…" (Radan-style).</summary>
+    /// <summary>Persists the user's sheet presets right away (load-modify-save, like the MRU).</summary>
+    private void SaveUserSheetPresets()
+    {
+      var session = SessionState.Load() ?? new SessionState();
+      session.SheetPresets = this.userSheetPresets.Select(p => new SessionSheet { Width = p.W, Height = p.H }).ToList();
+      session.Save();
+    }
+
+    /// <summary>Add Sheet opens a menu: "My sheets" (user presets) + standard stock sizes + "Custom size…".</summary>
     private void OnAddSheetMenu(object sender, RoutedEventArgs e)
     {
       var menu = new ContextMenu();
+      string unit = this.unitsMm ? "mm" : "in";
+
+      if (this.userSheetPresets.Count > 0)
+      {
+        menu.Items.Add(new MenuItem { Header = "My sheets", IsEnabled = false, FontWeight = FontWeights.Bold });
+        foreach (var preset in this.userSheetPresets.OrderBy(p => p.H).ThenBy(p => p.W))
+        {
+          var size = preset;
+          var item = new MenuItem { Header = $"{size.W} × {size.H} {unit}" };
+          item.Click += (_, __) => this.AddSheetOfSize(size.W, size.H, 1);
+          menu.Items.Add(item);
+        }
+
+        var removeMenu = new MenuItem { Header = "Remove from my sheets" };
+        foreach (var preset in this.userSheetPresets.OrderBy(p => p.H).ThenBy(p => p.W))
+        {
+          var size = preset;
+          var item = new MenuItem { Header = $"{size.W} × {size.H} {unit}" };
+          item.Click += (_, __) =>
+          {
+            this.userSheetPresets.Remove(size);
+            this.SaveUserSheetPresets();
+          };
+          removeMenu.Items.Add(item);
+        }
+
+        menu.Items.Add(removeMenu);
+        menu.Items.Add(new Separator());
+      }
+
       int lastShortSide = -1;
       foreach (var preset in this.unitsMm ? SheetPresetsMm : SheetPresets)
       {
@@ -733,6 +781,11 @@ namespace DeepNestSharp.Ui.Views
         if (dialog.ShowDialog() == true)
         {
           this.AddSheetOfSize(dialog.SheetWidth, dialog.SheetHeight, dialog.SheetQuantity);
+          if (dialog.RememberAsPreset && !this.userSheetPresets.Contains((dialog.SheetWidth, dialog.SheetHeight)))
+          {
+            this.userSheetPresets.Add((dialog.SheetWidth, dialog.SheetHeight));
+            this.SaveUserSheetPresets();
+          }
         }
       };
       menu.Items.Add(custom);
