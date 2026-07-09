@@ -10,11 +10,13 @@
 
 **Recommended:** open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download the **`SheetNest-x.y.z-win-x64.msi`** installer — double-click, done. It installs per-user (no admin needed), adds Start-menu and desktop shortcuts, and upgrades cleanly over previous versions.
 
-**Portable option:** download the `.zip` instead, extract anywhere, and run `SheetNest.exe`.
+The current release ships as the MSI installer only — it bundles the offline 3D-unfold engine, so there is no separate portable `.zip`.
 
 No .NET or anything else to install (self-contained build). The first launch may show a Windows SmartScreen prompt (the app isn't code-signed) → **More info → Run anyway**.
 
 ### What SheetNest adds (v1.1)
+- **3D import — unfold STEP/IGES (v1.1.5)** — import a 3D sheet-metal part (STEP/IGES) and SheetNest flattens it to a 2D pattern ready to nest. The unfold engine (a trimmed FreeCAD + SheetMetal workbench) ships **inside the installer** and runs fully **offline** — end users never install FreeCAD. Set a per-part **K-factor** (ANSI/DIN) in Edit Part with on-the-fly re-unfold, and check the developed length with the new **Measure tool** in the viewer.
+- **More control & safety (v1.1.5)** — **metric support** (inches/millimeters, sheets up to 6000×2000 mm), **mirrored quantity** (SigmaNEST-style normal + mirrored counts per part), your own **saved sheet presets**, a **data-safety pack** (autosave + crash recovery, `.bak` on save, Recent Projects, and double-click `.dnest` to open), **cancel a nest with a live progress bar**, and tighter/faster nesting — common-line parts pack to exact contact (0), complementary parts auto-pair, and unfolded STEP parts nest **~80× faster**.
 - **Crash-proof nesting + problem reports (v1.1.4)** — a DXF the importer can't digest no longer closes the app: the nest fails safely with a classic problem-report dialog. Every unhandled error is logged locally, and reporting is strictly opt-in: one button opens a pre-filled GitHub issue in your browser — nothing is sent unless you submit it yourself.
 - **Classic industrial look (v1.1.3)** — the whole app now wears the authentic Windows Classic chrome: gray 3D-beveled buttons, square corners, Tahoma, navy values, parts rendered in aluminum gray (viewer, thumbnails and the PDF report, now portrait). Panels are shop-floor style: always-visible **Available N/N** counters per sheet size and per part, clean text rows, and every quantity edited through its dialog (✎ or double-click).
 - **Stock lives with the job (v1.1.3)** — the app starts with an empty Sheets tab; each saved `.dnest` carries its own sheet stock together with its embedded nest, so a nest that was never saved never costs you sheets.
