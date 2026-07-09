@@ -393,12 +393,66 @@
       return RotateLocation(rotationAngle, pt);
     }
 
+    /// <summary>Rounds a coordinate to the export grid (micro-inch).</summary>
+    internal static double Snap(double v) => Math.Round(v, 6);
+
+    /// <summary>
+    /// Snaps every entity's coordinates to the micro-inch grid (in place). Positions only — bulges
+    /// are dimensionless ratios and stay untouched. Unknown entity types pass through unchanged.
+    /// </summary>
+    internal static IEnumerable<DxfEntity> SnapToGrid(IEnumerable<DxfEntity> entities)
+    {
+      foreach (var entity in entities)
+      {
+        switch (entity)
+        {
+          case DxfLine line:
+            line.P1 = new DxfPoint(Snap(line.P1.X), Snap(line.P1.Y), Snap(line.P1.Z));
+            line.P2 = new DxfPoint(Snap(line.P2.X), Snap(line.P2.Y), Snap(line.P2.Z));
+            break;
+          case DxfArc arc:
+            arc.Center = new DxfPoint(Snap(arc.Center.X), Snap(arc.Center.Y), Snap(arc.Center.Z));
+            arc.Radius = Snap(arc.Radius);
+            arc.StartAngle = Snap(arc.StartAngle);
+            arc.EndAngle = Snap(arc.EndAngle);
+            break;
+          case DxfCircle circle:
+            circle.Center = new DxfPoint(Snap(circle.Center.X), Snap(circle.Center.Y), Snap(circle.Center.Z));
+            circle.Radius = Snap(circle.Radius);
+            break;
+          case DxfLwPolyline lw:
+            foreach (var v in lw.Vertices)
+            {
+              v.X = Snap(v.X);
+              v.Y = Snap(v.Y);
+            }
+
+            break;
+          case DxfPolyline poly:
+            foreach (var v in poly.Vertices)
+            {
+              v.Location = new DxfPoint(Snap(v.Location.X), Snap(v.Location.Y), Snap(v.Location.Z));
+            }
+
+            break;
+        }
+
+        yield return entity;
+      }
+    }
+
     private DxfFile GenerateDxfFile(IEnumerable<INfp> polygons, ISheet sheet, int i, bool doMergeLines, bool differentiateChildren)
     {
       try
       {
         DxfFile sheetdxf = GenerateEmptyDxfFile();
         IEnumerable<DxfEntity> entities = GetOffsetDxfEntities(polygons.Where(o => o.Sheet.Id == sheet.Id), sheet, i, differentiateChildren).ToList();
+
+        // Snap every coordinate to the micro-inch BEFORE merging: the per-part double transforms
+        // leave coincident geometry (a common-line shared edge) ~1e-8 apart — irrelevant to the cut
+        // but visible when measured in CAD, and noise the merger's tolerance has to absorb. On the
+        // 1e-6 grid, coincident geometry is numerically IDENTICAL.
+        entities = SnapToGrid(entities).ToList();
 
         if (doMergeLines)
         {
