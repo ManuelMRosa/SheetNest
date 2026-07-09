@@ -29,21 +29,40 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $Source))        { throw "FreeCAD source not found: $Source" }
-if (-not (Test-Path $SheetMetalSrc)) { throw "SheetMetal workbench not found: $SheetMetalSrc (install it via FreeCAD Addon Manager)" }
-if (-not (Test-Path $MacroSrc))      { throw "Unfold macro not found: $MacroSrc" }
+# SELF-SUFFICIENT FALLBACK: once SheetNest ships with the payload, the build machine no longer
+# needs a FreeCAD install — the payload inside the INSTALLED SheetNest already contains the
+# workbench, the macro and networkx, so it can seed the next release's payload directly.
+$installedPayload = "$env:LOCALAPPDATA\Programs\SheetNest\freecad"
+$sourceIsPayload = $false
+if (-not (Test-Path $Source) -and (Test-Path (Join-Path $installedPayload "bin\freecadcmd.exe"))) {
+  Write-Output "FreeCAD install not found; using the installed SheetNest payload as source: $installedPayload"
+  $Source = $installedPayload
+  $sourceIsPayload = $true
+}
+
+if (-not (Test-Path $Source)) { throw "FreeCAD source not found: $Source (and no installed SheetNest payload to fall back to)" }
+if (-not $sourceIsPayload) {
+  if (-not (Test-Path $SheetMetalSrc)) { throw "SheetMetal workbench not found: $SheetMetalSrc (install it via FreeCAD Addon Manager)" }
+}
+
+if (-not (Test-Path $MacroSrc)) { throw "Unfold macro not found: $MacroSrc" }
 
 Write-Output "1/5 Copying FreeCAD  $Source -> $Dest"
 if (Test-Path $Dest) { Remove-Item $Dest -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 Copy-Item "$Source\*" $Dest -Recurse -Force
 
-Write-Output "2/5 Injecting SheetMetal workbench"
 $modDest = Join-Path $Dest "Mod\SheetMetal"
-Copy-Item $SheetMetalSrc $modDest -Recurse -Force
-Remove-Item (Join-Path $modDest ".git") -Recurse -Force -ErrorAction SilentlyContinue
+if ($sourceIsPayload) {
+  Write-Output "2/5 SheetMetal workbench already inside the payload source (skip inject)"
+}
+else {
+  Write-Output "2/5 Injecting SheetMetal workbench"
+  Copy-Item $SheetMetalSrc $modDest -Recurse -Force
+  Remove-Item (Join-Path $modDest ".git") -Recurse -Force -ErrorAction SilentlyContinue
+}
 
-Write-Output "3/5 Adding unfold macro to the workbench"
+Write-Output "3/5 Adding unfold macro to the workbench (repo copy always wins)"
 Copy-Item $MacroSrc $modDest -Force
 
 Write-Output "4/5 Ensuring networkx (V2 unfolder dependency)"
