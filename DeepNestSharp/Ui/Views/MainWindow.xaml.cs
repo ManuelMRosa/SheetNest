@@ -235,6 +235,27 @@ namespace DeepNestSharp.Ui.Views
     }
 
     /// <summary>Help menu: check GitHub on demand and report the outcome.</summary>
+    private void OnSendFeedback(object sender, RoutedEventArgs e)
+    {
+      try
+      {
+        // Feedback lands in the project's GitHub issues — the same single inbox the crash
+        // reporter uses; version and OS are pre-filled so users don't have to know them.
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+          FileName = CrashReporter.BuildFeedbackUrl(),
+          UseShellExecute = true,
+        });
+      }
+      catch
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "Could not open the browser. You can send feedback at:\nhttps://github.com/ManuelMRosa/SheetNest/issues",
+          "Send Feedback",
+          DeepNestLib.MessageBoxIcon.Information);
+      }
+    }
+
     private async void OnCheckUpdates(object sender, RoutedEventArgs e)
     {
       try

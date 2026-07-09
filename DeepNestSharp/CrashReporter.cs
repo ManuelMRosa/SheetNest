@@ -71,6 +71,19 @@ namespace DeepNestSharp
       return $"{IssuesUrl}?title={Uri.EscapeDataString(title)}&body={Uri.EscapeDataString(body)}";
     }
 
+    /// <summary>
+    /// GitHub new-issue URL pre-filled as a FEEDBACK template (Help → Send Feedback): the user
+    /// describes the idea/problem in their own words; version and OS ride along automatically.
+    /// </summary>
+    public static string BuildFeedbackUrl()
+    {
+      string body =
+        "**What happened / what would you like:**\n\n\n" +
+        "**What did you expect:**\n\n\n---\n" +
+        $"Version: {Version} · OS: {Environment.OSVersion}";
+      return $"{IssuesUrl}?labels=feedback&title=&body={Uri.EscapeDataString(body)}";
+    }
+
     /// <summary>Saves the log and shows the consent dialog. Never throws.</summary>
     public static void Show(Exception ex, string context, System.Windows.Window owner)
     {

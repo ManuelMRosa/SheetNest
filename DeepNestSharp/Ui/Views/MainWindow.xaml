@@ -57,6 +57,7 @@
       </MenuItem>
       <MenuItem Header="_Help">
         <MenuItem Header="Check for Updates..." Click="OnCheckUpdates" />
+        <MenuItem Header="Send Feedback..." Click="OnSendFeedback" ToolTip="Open a pre-filled GitHub issue to suggest ideas or report problems" />
         <MenuItem Header="About" Command="{Binding AboutDialogCommand}" />
       </MenuItem>
     </Menu>
