@@ -24,6 +24,7 @@ namespace DeepNestSharp.Ui.Views
     private bool isClosed;
     private string updateUrl;
     private System.Windows.Threading.DispatcherTimer autosaveTimer;
+    private System.Threading.CancellationTokenSource nestCts;
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
 
@@ -1108,6 +1109,22 @@ namespace DeepNestSharp.Ui.Views
         button.IsEnabled = false;
       }
 
+      // Live progress + cancel: the token threads through the engine's phase boundaries, and
+      // Progress<T> marshals reports back onto the UI thread for the status-bar readout.
+      nestCts = new System.Threading.CancellationTokenSource();
+      var progress = new System.Progress<(double Fraction, string Phase)>(p =>
+      {
+        this.nestProgressBar.Value = p.Fraction;
+        this.nestPhaseText.Text = p.Phase;
+      });
+      this.cancelNestButton.Content = "■  Cancel";
+      this.cancelNestButton.IsEnabled = true;
+      this.cancelNestButton.Visibility = Visibility.Visible;
+      this.nestProgressBar.Value = 0;
+      this.nestProgressBar.Visibility = Visibility.Visible;
+      this.nestPhaseText.Text = "Starting…";
+      this.nestPhaseText.Visibility = Visibility.Visible;
+
       try
       {
         // Hidden end-to-end test hook for the crash reporter (set SHEETNEST_CRASH_TEST=1).
@@ -1116,12 +1133,13 @@ namespace DeepNestSharp.Ui.Views
           throw new System.InvalidOperationException("Synthetic crash for testing the problem-report dialog.");
         }
 
+        var token = nestCts.Token;
         var (result, error) = await Task.Run(() =>
         {
           // 24 px/inch (was 8): triples the raster resolution so the safety halo + spacing gaps shrink from
           // ~0.125"+ down to ~0.04" — much tighter nesting with the placement still overlap-free (verified
           // in GpuNestLab). Slower, but the closed-marking optimization keeps it fast enough for real jobs.
-          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, 24.0, out string err);
+          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, 24.0, out string err, token, progress);
           return (r, err);
         });
 
@@ -1197,6 +1215,11 @@ namespace DeepNestSharp.Ui.Views
             DeepNestLib.MessageBoxIcon.Warning);
         }
       }
+      catch (System.OperationCanceledException)
+      {
+        // User pressed Cancel: not an error — discard everything and return to idle.
+        this.nestPhaseText.Text = "Nest cancelled";
+      }
       catch (System.Exception ex)
       {
         // A third-party DXF the importer chokes on (or an engine bug) must never kill the app —
@@ -1206,11 +1229,28 @@ namespace DeepNestSharp.Ui.Views
       }
       finally
       {
+        this.cancelNestButton.Visibility = Visibility.Collapsed;
+        this.nestProgressBar.Visibility = Visibility.Collapsed;
+        if (this.nestPhaseText.Text != "Nest cancelled")
+        {
+          this.nestPhaseText.Visibility = Visibility.Collapsed;
+        }
+
+        nestCts.Dispose();
+        nestCts = null;
         if (button != null)
         {
           button.IsEnabled = true;
         }
       }
+    }
+
+    private void OnCancelNest(object sender, RoutedEventArgs e)
+    {
+      // Cooperative: the engine checks the token at its phase boundaries (sub-second on real jobs).
+      this.cancelNestButton.Content = "Cancelling…";
+      this.cancelNestButton.IsEnabled = false;
+      nestCts?.Cancel();
     }
 
     private void OnNestReportPdf(object sender, RoutedEventArgs e)

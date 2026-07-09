@@ -49,7 +49,9 @@ namespace DeepNestSharp.RasterNest
       double spacing,
       double margin,
       double pxPerInch,
-      out string error)
+      out string error,
+      System.Threading.CancellationToken cancel = default,
+      System.IProgress<(double Fraction, string Phase)> progress = null)
     {
       error = null;
       var stock = (sheets ?? new List<(int, int, int)>()).Where(s => s.Win > 0 && s.Hin > 0 && s.Qty > 0).ToList();
@@ -61,7 +63,7 @@ namespace DeepNestSharp.RasterNest
 
       if (stock.Count == 1)
       {
-        return Nest(partInfos, stock[0].Win, stock[0].Hin, stock[0].Qty, placementType, rotations, spacing, margin, pxPerInch, out error);
+        return Nest(partInfos, stock[0].Win, stock[0].Hin, stock[0].Qty, placementType, rotations, spacing, margin, pxPerInch, out error, cancel, progress);
       }
 
       var remaining = partInfos
@@ -144,6 +146,10 @@ namespace DeepNestSharp.RasterNest
 
       while (remaining.Sum(p => p.Quantity) > 0 && qtyLeft.Sum() > 0)
       {
+        cancel.ThrowIfCancellationRequested();
+        int placedSoFar = totalParts - remaining.Sum(p => p.Quantity);
+        progress?.Report((totalParts > 0 ? (double)placedSoFar / totalParts : 0, $"Packing… {placedSoFar}/{totalParts} parts"));
+
         // PROBE: one sheet of every size that still has stock, against the same remaining mix, in
         // parallel (each probe is a full single-size pipeline, so per-sheet quality is unchanged).
         var snapshot = remaining
@@ -155,7 +161,7 @@ namespace DeepNestSharp.RasterNest
         {
           if (qtyLeft[i] > 0)
           {
-            probes[i] = Nest(snapshot, stock[i].Win, stock[i].Hin, 1, placementType, rotations, spacing, margin, pxPerInch, out _);
+            probes[i] = Nest(snapshot, stock[i].Win, stock[i].Hin, 1, placementType, rotations, spacing, margin, pxPerInch, out _, cancel);
           }
         });
 
@@ -297,11 +303,15 @@ namespace DeepNestSharp.RasterNest
       double spacing,
       double margin,
       double pxPerInch,
-      out string error)
+      out string error,
+      System.Threading.CancellationToken cancel = default,
+      System.IProgress<(double Fraction, string Phase)> progress = null)
     {
       int maxSheets = System.Math.Max(0, sheetCount);
       error = null;
       var helper = new NestExecutionHelper();
+      void Report(double fraction, string phase) => progress?.Report((fraction, phase));
+      Report(0.02, "Loading parts…");
 
       var parsed = new List<(int Src, INfp Nfp, int Qty, int[] Allowed, int Priority, double SpacingIn, bool Mirrored)>();
       int src = 0;
@@ -379,7 +389,11 @@ namespace DeepNestSharp.RasterNest
       (JobResult Job, List<PartType> Types)[] NestAll(int[] quantities, int allowedSheets)
       {
         var results = new (JobResult Job, List<PartType> Types)[candidates.Count];
-        System.Threading.Tasks.Parallel.For(0, candidates.Count, ci =>
+        System.Threading.Tasks.Parallel.For(
+          0,
+          candidates.Count,
+          new System.Threading.Tasks.ParallelOptions { CancellationToken = cancel },
+          ci =>
         {
           var candidateTypes = parsed
             .Select((p, i) => new PartType
@@ -393,7 +407,7 @@ namespace DeepNestSharp.RasterNest
               CommonLine = p.SpacingIn <= 0,
             })
             .ToList();
-          results[ci] = (RasterJobNester.Nest(candidateTypes, sw, sh, px, marginPx, allowedSheets), candidateTypes);
+          results[ci] = (RasterJobNester.Nest(candidateTypes, sw, sh, px, marginPx, allowedSheets, cancel), candidateTypes);
         });
 
         return results;
@@ -594,7 +608,7 @@ namespace DeepNestSharp.RasterNest
                   splitTypes.Add(new PartType { Source = t0.Source, Poly = t0.Poly, Quantity = k, RotationsDeg = secondSet, HaloPx = t0.HaloPx, Priority = 5, CommonLine = t0.CommonLine });
                 }
 
-                var attempt = RasterJobNester.Nest(splitTypes, sw, sh, px, marginPx, 1);
+                var attempt = RasterJobNester.Nest(splitTypes, sw, sh, px, marginPx, 1, cancel);
                 attempts[ci] = attempt.NotPlaced == 0 && attempt.Placements.Count == n
                   ? (attempt, ExtentIn(attempt.Placements))
                   : (null, double.MaxValue);
@@ -687,8 +701,12 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
+      cancel.ThrowIfCancellationRequested();
+      Report(0.10, "Packing…");
       var sel = SelectJob();
       Prof("initial SelectJob");
+      cancel.ThrowIfCancellationRequested();
+      Report(0.45, "Packing…");
       bool tightAdopted = false;
 
       // TIGHT-PACK RETRY for common-line jobs. Placements are born >= 1px apart (the safe minimum —
@@ -742,6 +760,8 @@ namespace DeepNestSharp.RasterNest
         bool adopted = TryAdopt(SelectJob());
         halos = safeHalos;
         Prof("tight retry");
+        cancel.ThrowIfCancellationRequested();
+        Report(0.55, "Packing tighter…");
 
         // RESOLUTION ESCALATION: even at halo 0 every mask is up to 1px wider than the true part
         // (conservative rasterization), so a row of N common-line parts drags N phantom pixels —
@@ -783,6 +803,8 @@ namespace DeepNestSharp.RasterNest
           }
 
           Prof("escalation 2x");
+          cancel.ThrowIfCancellationRequested();
+          Report(0.65, "Refining…");
         }
       }
 
@@ -796,6 +818,8 @@ namespace DeepNestSharp.RasterNest
       }
 
       Prof("tailsweep");
+      cancel.ThrowIfCancellationRequested();
+      Report(0.75, "Optimizing tail…");
 
       // Replicated pattern sheets are placement-identical, and compaction is deterministic — compact
       // each DISTINCT layout once and reuse the slid positions for every copy (30 identical sheets of
@@ -830,6 +854,7 @@ namespace DeepNestSharp.RasterNest
         // asked (conservative masks, pixel-quantized positions). Sliding closes common-line parts to
         // true contact and spaced parts to their exact clearance, concentrating the sheet's slack in
         // one free region at the pack's end — which the refill below can use.
+        cancel.ThrowIfCancellationRequested();
         string layoutSig = string.Join("|", jps.Select(p => $"{p.Source}:{p.Xpx}:{p.Ypx}:{p.RotationDeg}"));
         if (NestProfile.Enabled)
         {
@@ -871,6 +896,8 @@ namespace DeepNestSharp.RasterNest
       // insertion only if the exact-geometry gate confirms every clearance. Counted against the
       // ORIGINAL demand — in pattern mode the job carries the capped probe quantity, not the real one.
       Prof("compaction");
+      cancel.ThrowIfCancellationRequested();
+      Report(0.85, "Compacting…");
       var pool = new int[parsed.Count];
       {
         var placedPerSource = sel.Job.Placements.GroupBy(p => p.Source).ToDictionary(g => g.Key, g => g.Count());
@@ -1112,6 +1139,8 @@ namespace DeepNestSharp.RasterNest
       }
 
       Prof("refill+absorb");
+      cancel.ThrowIfCancellationRequested();
+      Report(0.95, "Refilling…");
       var collection = new SheetPlacementCollection();
       int id = 0;
       foreach (var (jps, items, parsedIdx, _) in builtSheets)
@@ -1156,6 +1185,7 @@ namespace DeepNestSharp.RasterNest
       }
 
       Prof("total");
+      Report(1.0, "Done");
       int totalParts = parsed.Sum(p => p.Qty);
       return new NestResult(totalParts, collection, unplaced, placementType, 0, 0);
     }

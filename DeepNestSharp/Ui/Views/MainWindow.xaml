@@ -74,6 +74,7 @@
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Open" Command="{Binding LoadNestProjectCommand}" ToolTip="Open an existing project" />
           <Rectangle Style="{DynamicResource ToolbarSeparator}" />
           <Button Style="{DynamicResource PrimaryButton}" Margin="3,0" MinWidth="130" Content="&#9654;  NEST" Click="OnNest" ToolTip="Run the nest." />
+          <Button x:Name="cancelNestButton" Style="{DynamicResource DangerButton}" Margin="3,0" MinWidth="130" Content="&#9632;  Cancel" Click="OnCancelNest" Visibility="Collapsed" ToolTip="Stop the running nest" />
           <Button Style="{DynamicResource DangerButton}" Margin="3,0" MinWidth="130" Content="Clear Result" Click="OnClearResult" ToolTip="Discard the nest result and return the sheets it used to the stock" />
         </StackPanel>
       </DockPanel>
@@ -331,6 +332,10 @@
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Unplaced:" />
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
+        <!-- Live nest progress: phase text + bar, visible only while a nest runs. -->
+        <TextBlock x:Name="nestPhaseText" Style="{DynamicResource StatusValue}" Visibility="Collapsed" Margin="18,0,6,0" />
+        <ProgressBar x:Name="nestProgressBar" Width="160" Height="12" VerticalAlignment="Center"
+                     Minimum="0" Maximum="1" Visibility="Collapsed" />
         <!-- Startup update check lights this up; click opens the GitHub release page. -->
         <TextBlock x:Name="updateNotice" Style="{DynamicResource StatusValue}" Visibility="Collapsed"
                    Cursor="Hand" TextDecorations="Underline" Margin="18,0,0,0"

@@ -102,7 +102,7 @@ namespace DeepNestSharp.RasterNest
   /// </summary>
   internal static class RasterJobNester
   {
-    public static JobResult Nest(List<PartType> types, int sheetW, int sheetH, double pxPerInch, int marginPx, int maxSheets = int.MaxValue)
+    public static JobResult Nest(List<PartType> types, int sheetW, int sheetH, double pxPerInch, int marginPx, int maxSheets = int.MaxValue, System.Threading.CancellationToken cancel = default)
     {
       var profSw = NestProfile.Enabled ? System.Diagnostics.Stopwatch.StartNew() : null;
 
@@ -198,6 +198,9 @@ namespace DeepNestSharp.RasterNest
       int pairGroupSeq = 0;
       for (int idx = 0; idx < instances.Count; idx++)
       {
+        // Cheap volatile read per part: a Cancel press aborts within one placement (~ms), not at
+        // the next PHASE boundary (measured 31 s on a 2000-part job before this check existed).
+        cancel.ThrowIfCancellationRequested();
         if (used[idx])
         {
           continue; // consumed as a pair buddy
