@@ -1215,9 +1215,12 @@ namespace DeepNestSharp.Ui.Views
             DeepNestLib.MessageBoxIcon.Warning);
         }
       }
-      catch (System.OperationCanceledException)
+      catch (System.Exception cancelEx) when (IsCancellation(cancelEx))
       {
-        // User pressed Cancel: not an error — discard everything and return to idle.
+        // User pressed Cancel: not an error — discard everything and return to idle. Cancellations
+        // can also arrive WRAPPED: a Parallel.For without the token in its options bundles the
+        // workers' OperationCanceledExceptions into an AggregateException (user-reported crash
+        // dialog on Cancel during the tail sweep).
         this.nestPhaseText.Text = "Nest cancelled";
       }
       catch (System.Exception ex)
@@ -1251,6 +1254,14 @@ namespace DeepNestSharp.Ui.Views
       this.cancelNestButton.Content = "Cancelling…";
       this.cancelNestButton.IsEnabled = false;
       nestCts?.Cancel();
+    }
+
+    private static bool IsCancellation(System.Exception ex)
+    {
+      return ex is System.OperationCanceledException
+        || (ex is System.AggregateException agg
+            && agg.Flatten().InnerExceptions.Count > 0
+            && agg.Flatten().InnerExceptions.All(e => e is System.OperationCanceledException));
     }
 
     private void OnNestReportPdf(object sender, RoutedEventArgs e)

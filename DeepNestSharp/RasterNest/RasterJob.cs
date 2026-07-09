@@ -235,6 +235,10 @@ namespace DeepNestSharp.RasterNest
           // mask corner must stay ≥ margin + pad − halo from the grid edge (per type).
           int insetPx = marginInset + pad - t.HaloPx;
 
+          // A single part can scan dozens of full sheets before placing; without this the per-part
+          // check alone left ~11 s cancel latency on a 2000-part / 60-sheet job.
+          cancel.ThrowIfCancellationRequested();
+
           if (si == sheets.Count && sheets.Count >= maxSheets)
           {
             break; // no more sheets available — this part stays unplaced

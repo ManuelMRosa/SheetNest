@@ -157,7 +157,11 @@ namespace DeepNestSharp.RasterNest
           .Select(p => new RasterPartInfo { Path = p.Path, Quantity = p.Quantity, Rotations = p.Rotations, Priority = p.Priority, Spacing = p.Spacing, Mirrored = p.Mirrored })
           .ToList();
         var probes = new INestResult[stock.Count];
-        System.Threading.Tasks.Parallel.For(0, stock.Count, i =>
+        System.Threading.Tasks.Parallel.For(
+          0,
+          stock.Count,
+          new System.Threading.Tasks.ParallelOptions { CancellationToken = cancel },
+          i =>
         {
           if (qtyLeft[i] > 0)
           {
@@ -594,7 +598,11 @@ namespace DeepNestSharp.RasterNest
               }
 
               var attempts = new (JobResult Job, double Extent)[combos.Count];
-              System.Threading.Tasks.Parallel.For(0, combos.Count, ci =>
+              System.Threading.Tasks.Parallel.For(
+                0,
+                combos.Count,
+                new System.Threading.Tasks.ParallelOptions { CancellationToken = cancel },
+                ci =>
               {
                 var (firstSet, secondSet, k) = combos[ci];
                 var splitTypes = new List<PartType>();
@@ -682,7 +690,7 @@ namespace DeepNestSharp.RasterNest
             });
           }
 
-          RasterCompact.Compact(vet, sheetWin, sheetHin, System.Math.Max(0, margin), sheetPl.Select(p => p.PairGroup).ToArray());
+          RasterCompact.Compact(vet, sheetWin, sheetHin, System.Math.Max(0, margin), sheetPl.Select(p => p.PairGroup).ToArray(), cancel);
           if (!RasterCompact.CommonLineGapsOk(vet, RasterCompact.MixedPairFloor))
           {
             return false;
@@ -874,7 +882,7 @@ namespace DeepNestSharp.RasterNest
         }
         else
         {
-          RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin), jps.Select(p => p.PairGroup).ToArray());
+          RasterCompact.Compact(items, sheetWin, sheetHin, System.Math.Max(0, margin), jps.Select(p => p.PairGroup).ToArray(), cancel);
           compactCache[layoutSig] = items.Select(it => (it.X, it.Y)).ToArray();
         }
 

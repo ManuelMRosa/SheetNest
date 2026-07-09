@@ -52,7 +52,7 @@
     /// corner; clearances are preserved exactly â€” each pair keeps (spacingA + spacingB)/2 via
     /// half-inflated shells, and common-line pairs close to EXACT contact (shared cut edge).
     /// </summary>
-    public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin, int[] groups = null)
+    public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin, int[] groups = null, System.Threading.CancellationToken cancel = default)
     {
       if (items == null || items.Count < 1)
       {
@@ -226,6 +226,7 @@
       int maxIterations = System.Math.Min(128, items.Count + 8);
       for (int iter = 0; iter < maxIterations; iter++)
       {
+        cancel.ThrowIfCancellationRequested();
         bool anyViolation = false;
         bool movedAny = false;
         for (int a = 0; a < items.Count; a++)
@@ -427,6 +428,7 @@
         Array.Clear(processed, 0, processed.Length);
         foreach (int i in order)
         {
+          cancel.ThrowIfCancellationRequested();
           if (processed[i])
           {
             continue; // already moved as part of its rigid module this round
@@ -483,6 +485,7 @@
         Array.Clear(processed, 0, processed.Length);
         foreach (int i in order)
         {
+          cancel.ThrowIfCancellationRequested();
           if (items[i].Spacing > 0 || processed[i])
           {
             continue;
