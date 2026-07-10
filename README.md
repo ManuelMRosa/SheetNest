@@ -1,104 +1,38 @@
 <p align="center">
-  <img src="assets/banner.png" alt="SheetNest — nesting for sheet metal" width="900">
+  <img src="assets/banner.png" alt="SheetNest — free nesting software for sheet metal" width="900">
 </p>
 
-# SheetNest
+# SheetNest — Free nesting software for sheet metal
 
-**SheetNest** is a fork of [DeepNestSharp](https://github.com/9swampy/DeepNestSharp) — itself a C# port of [Deepnest](https://github.com/Jack000/Deepnest) — focused on production sheet-metal nesting (laser / plasma) with a streamlined operator workflow.
+SheetNest is free nesting software for sheet metal fabrication — it fits your parts onto stock sheets for CNC laser cutting and plasma cutting, on Windows, with no account and no subscription.
 
-## ⬇️ Download &amp; install (Windows 10/11, 64-bit)
+If you cut sheet metal, SheetNest helps you get the most parts out of every sheet, buy less material, and hand your machine cut-ready files — all from a simple, one-toolbar app.
 
-**Recommended:** open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download the **`SheetNest-x.y.z-win-x64.msi`** installer — double-click, done. It installs per-user (no admin needed), adds Start-menu and desktop shortcuts, and upgrades cleanly over previous versions.
+## What SheetNest does
 
-The current release ships as the MSI installer only — it bundles the offline 3D-unfold engine, so there is no separate portable `.zip`.
+- **Fits the most parts on every sheet, automatically** — true-shape nesting packs your parts tightly by their real outline, so you waste less material and buy fewer sheets. Real 800-part jobs nest in seconds.
+- **Imports your DXF part drawings** — drop in the DXF files you already have and start nesting.
+- **Imports 3D parts and flattens them for you** — bring in a 3D sheet-metal part (STEP or IGES) and SheetNest unfolds it to a flat pattern that's ready to nest. The 3D unfolding engine is built in, runs offline, and needs nothing extra installed. You can set a per-part bend allowance (K-factor) and check the flat length with the built-in Measure tool.
+- **Tell it what you need** — enter how many of each part you want (including mirrored copies), and list the sheet sizes and stock you actually have. Save your own sheet-size presets so they're one click next time.
+- **Nest with one click, then fine-tune by hand** — let SheetNest lay everything out, then drag, rotate, nudge, and drop parts to contact yourself, with spacing kept safe and full undo/redo.
+- **Parts that touch can share one cut** — place matching parts on a shared common line so a single pass cuts both edges. That means less cutting time and even tighter sheets.
+- **Picks the best sheet size for you** — stock several sizes and SheetNest puts the bulk on the size that packs densest and the leftovers on the size that wastes least. Standard US sheet sizes are built in, plus your own custom sizes.
+- **Exports cut-ready DXF** — one clean DXF per layout, parts only, so your CAM software has nothing extra to trip over. Identical sheets are grouped into a simple "cut N of this layout" plan.
+- **One-click PDF report** — a purchasing-ready report showing how much material to buy (sheets per size and total area), the cutting plan, part totals, and a scaled drawing of each layout.
+- **Works in inches or millimeters** — switch units to match your shop, with sheets up to 6000 × 2000 mm.
+- **Keeps your work safe** — autosave and crash recovery, a backup copy on every save, a Recent Projects list, and double-click a project file to open it right where you left off. Each saved project remembers its own sheet stock and its finished nest.
+- **Free and open** — no account, no subscription, no license key. Open-source software you can just use.
 
-No .NET or anything else to install (self-contained build). The first launch may show a Windows SmartScreen prompt (the app isn't code-signed) → **More info → Run anyway**.
+## Download & install (Windows 10/11, 64-bit)
 
-### What SheetNest adds (v1.1)
-- **3D import — unfold STEP/IGES (v1.1.5)** — import a 3D sheet-metal part (STEP/IGES) and SheetNest flattens it to a 2D pattern ready to nest. The unfold engine (a trimmed FreeCAD + SheetMetal workbench) ships **inside the installer** and runs fully **offline** — end users never install FreeCAD. Set a per-part **K-factor** (ANSI/DIN) in Edit Part with on-the-fly re-unfold, and check the developed length with the new **Measure tool** in the viewer.
-- **More control & safety (v1.1.5)** — **metric support** (inches/millimeters, sheets up to 6000×2000 mm), **mirrored quantity** (SigmaNEST-style normal + mirrored counts per part), your own **saved sheet presets**, a **data-safety pack** (autosave + crash recovery, `.bak` on save, Recent Projects, and double-click `.dnest` to open), **cancel a nest with a live progress bar**, and tighter/faster nesting — common-line parts pack to exact contact (0), complementary parts auto-pair, and unfolded STEP parts nest **~80× faster**.
-- **Crash-proof nesting + problem reports (v1.1.4)** — a DXF the importer can't digest no longer closes the app: the nest fails safely with a classic problem-report dialog. Every unhandled error is logged locally, and reporting is strictly opt-in: one button opens a pre-filled GitHub issue in your browser — nothing is sent unless you submit it yourself.
-- **Classic industrial look (v1.1.3)** — the whole app now wears the authentic Windows Classic chrome: gray 3D-beveled buttons, square corners, Tahoma, navy values, parts rendered in aluminum gray (viewer, thumbnails and the PDF report, now portrait). Panels are shop-floor style: always-visible **Available N/N** counters per sheet size and per part, clean text rows, and every quantity edited through its dialog (✎ or double-click).
-- **Stock lives with the job (v1.1.3)** — the app starts with an empty Sheets tab; each saved `.dnest` carries its own sheet stock together with its embedded nest, so a nest that was never saved never costs you sheets.
-- **Denser nests: refill & absorption (v1.1.2)** — after the exact compaction pass slides every part to its true clearance (common-line parts to contact, spaced parts to exactly the requested spacing), the engine retries the parts that didn't fit in the space it just recovered, and even dissolves the whole remainder sheet into the earlier sheets when everything re-homes. Net faster than before, and smarter candidate ranking (a 27-part job now nests 26+1, not 24+3).
-- **Projects that remember their nest (v1.1.2)** — saving a `.dnest` now embeds the on-screen nest result; reopening the project brings the nesting back exactly as saved (with Clear Result still able to return the consumed sheets). Closing, **New** and **Open** all ask whether to save first when a result is on screen, via a Save dialog pre-filled with the project's own name.
-- **Sheet stock management (v1.1.1)** — the Sheets tab is live inventory: quantities are deducted the moment a nest completes, **Clear Result** discards the nest and puts its sheets back, and parts/sheets are locked while a result is active so the stock can't drift. Your stock and sheet edge margin survive closing the app — reopen and the leftover is waiting.
-- **Fast raster nesting engine** — bit-packed collision, best-of rotation profiles evaluated in parallel, pattern replication for production runs. Real-world 800-part jobs nest in seconds.
-- **Common-line cutting done right** — per-part "common line" nests copies at a CAM-safe mini-gap (0.003″, below kerf but above CAM merge tolerance), with a hard no-overlap guarantee and tight-pack retries that recover the last part instead of opening an extra sheet.
-- **Mixed sheet stock with optimal size selection** — list every stock size you have; the nester probes each one and puts the bulk on the size that packs densest and the tail on the sheet that wastes least. Add Sheet offers the standard US stock sizes plus custom.
-- **Radan-style per-part controls** — Edit Part dialog with the seven orientation permissions (as drawn / 90° only / 0°+90° / 0°+180° / 90°+270° / 4-way / free), per-part spacing, priority, and required + spare quantities. Geometry-detected "no turn" suggestion for circles and squares.
-- **Industrial production plan** — identical sheets group into "cut N × layout A + M × layout B"; **one DXF per distinct layout** (parts only — no sheet-outline entity for the CAM to trip on).
-- **Nest report PDF** — a one-click report: MATERIAL REQUIRED box for purchasing (sheets per size + sq ft), cutting plan, part totals, and a page per layout with a scaled drawing.
-- **Manual nest editing** — drag, rotate and nudge placed parts in the viewer with spacing/collision enforcement, undo/redo, and drop-to-contact.
-- Plus: reusable-remnant packing (the offcut is a full short-dimension strip), sheet quantity limits with honest "didn't fit" reporting, inch workflow, and a single-toolbar UI.
+1. Open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download the **`SheetNest-x.y.z-win-x64.msi`** installer.
+2. Double-click the `.msi`. It installs **per-user — no admin rights needed** — and adds Start-menu and desktop shortcuts. Installing over an older version upgrades it cleanly.
+3. There's **nothing else to install** — the app is self-contained, so you don't need any other download. The 3D unfolding engine is bundled inside, so it runs fully offline.
 
-SheetNest is built on the MIT-licensed DeepNestSharp; its original lineage and license are preserved below and in [LICENSE](LICENSE).
+The first time you launch, Windows may show a **SmartScreen** warning because the app isn't code-signed. Click **More info → Run anyway** to continue.
 
----
+## License
 
-# DeepNestSharp
-DeepNest - The Original (https://github.com/Jack000/Deepnest)<br />
-DeepNestPort - C# port (https://github.com/fel88/DeepNestPort)
+SheetNest is open-source software released under the MIT License — see [LICENSE](LICENSE).
 
-**"If I have seen further, it is by standing upon the shoulders of giants"**<br />
-Jack and Felix have done some great work but the Original's use of a remote service
-to translate between image formats was an issue and the Port just wasn't proving flexible/stable 
-enough for my needs. I really needed the ability to save projects, nest results and 
-individual sheet placements, and wanted to add the ability to seed subsequent nests with 
-the results of prior nests (outstanding) and the ability to edit placements (implemented) - to 
-slip that last piece in to the gaps on the sheet that the algorithm just wasn't finding.
-
-Felix was keen to keep true to the original DeepNest code in DeepNestPort...
-> > [Hope you consider breaking away from the legacy code base because it's getting really hard to merge.](https://github.com/fel88/DeepNestPort/issues/12#issuecomment-875273391)
-> 
-> I'll try, but it is important to keep compatibility with the original code...
-> I think we shouldn't entangle our repositories too much
-
-...so DeepNestSharp was born. It completely rebuilds the UI using WPF on Net.Core
-and is a huge refactor which has paid some dividends but also introduced some 
-compromises and issues, some of which are outstanding... 
-
-DXF Import/Export: https://github.com/IxMilia/Dxf
-
-**Project status: WIP**
-
-<img src="imgs/2.png"/>
-<img src="imgs/3.png"/>
-<img src="imgs/NestResultEditor.png"/>
-<img src="imgs/SheetPlacementEditor.png"/>
-On the Sheet Placement Editor you can edit the offsets or Shift+Click on parts to drag/drop in the Preview. 
-FYI dragging is a little out of sync so multiple small moves work better than one large move. . . and atm
-you can only move around parts already present; todo => moving from one sheet to another, adding & removing 
-additional parts etc.
-<img src="imgs/SaveFiles.png"/>
-Individual Parts, whole Nest Result sets and single Sheet Placements can be saved, edited and reloaded. You 
-can also persist and view the interim calculation objects; SheetNfp and FinalNfp - for debugging purposes.
-
-## Compiling minkowski.dll
-Included are a set of minkowski.dlls that work on various Windows setups I 
-have; AnyCpu, x86 & x64; but you'll likely need to build the dlls for your
-own setup. You can avoid the need for the C++ import altogether if you
-switch off DllImport in the settings; and use the internal C# implementation
-instead. Be warned that this internal implementation is not as performant as 
-the C++ import atm, and it sometimes generates sub-optimal nests but it's 
-an easy-start option that's proving good enough most of the time. . .
-
-1. Replace <boost_1.76_path> with your real BOOST (1.76+) path in compile.bat
-
-Example:
-```
-cl /Ox -I "D:\boost\boost_1_76_0" /LD minkowski.cc
-```
-2. Run compile.bat using Developer Command Prompt for Visual Studio
-3. Copy minkowski.dll to MinkowskiDlls folder. If you're running in Visual Studio
-DeepNestLib.CiTests has a PostBuild task to copy the DLLs from there for you. 
-Otherwise make sure the appropriate DLLs get to the DeepNestSharp.exe folder. Note
-there's preprocessor directives to pick the right DLL dependent on which Arch 
-you're running. Works for me; YMMV.
-
-## Contributors
-* https://github.com/kelyamany/DeepNestPort (port to Net.Core)
-* https://github.com/Daniel-t-1/DeepNestPort (dxf export)
-* https://github.com/9swampy/DeepNestPort (simplification features)
-* https://github.com/fel88/DeepNestPort (WinForms C# port)
-* https://github.com/Jack000/Deepnest (The original DeepNest)
+Building from source? See [BUILDING.md](BUILDING.md).
