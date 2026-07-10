@@ -65,6 +65,9 @@
     <Content Include="..\assets\freecad\unfold_macro.py" Link="unfold_macro.py">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Dirkster.AvalonDock" Version="4.70.1" />
