@@ -57,7 +57,7 @@
     }
 
     /// <summary>
-    /// Gets the always-visible "Available" indicator, SigmaNEST-style (Quantity Available):
+    /// Gets the always-visible "Available" indicator (Quantity Available):
     /// sheets of this size still available / total. The row's Quantity is already deducted while a
     /// result is on screen, so it IS the available count — no result: "31/31"; nest used 28: "3/31".
     /// </summary>

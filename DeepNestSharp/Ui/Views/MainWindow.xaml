@@ -156,7 +156,7 @@
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{Binding NestingLabel, Mode=OneWay}" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                       </StackPanel>
-                      <!-- Always-visible availability, SigmaNEST-style: copies left to nest / requested. -->
+                      <!-- Always-visible availability: copies left to nest / requested. -->
                       <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="6,0"
                                   ToolTip="Parts still to nest / requested (quantity + spares + mirrored)">
                         <TextBlock Style="{DynamicResource CaptionText}" Text="Available" FontSize="10" HorizontalAlignment="Center" Margin="0,0,0,1" />
@@ -232,7 +232,7 @@
                   <GridViewColumn Header="Available" Width="80">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
-                        <!-- Always visible, SigmaNEST-style "Quantity Available": sheets of this size
+                        <!-- Always visible "Quantity Available": sheets of this size
                              still available / total (31/31 before a nest; 3/31 after one used 28). -->
                         <Border Style="{DynamicResource CountBadge}"
                                 ToolTip="Sheets of this size still available / total">

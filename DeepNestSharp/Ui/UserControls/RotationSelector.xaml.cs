@@ -28,7 +28,7 @@ namespace DeepNestSharp.Ui.UserControls
       typeof(RotationSelector),
       new FrameworkPropertyMetadata(AnglesEnum.None, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnValueChanged));
 
-    // The seven Radan orientation permissions (photo IMG_1722), with Radan's icon language: ALL of
+    // The seven orientation permissions (photo IMG_1722), with an arrow icon language: ALL of
     // them are arrows — a single up arrow (only 0°), a single side arrow (only 90°), a bent
     // quarter-turn arrow (0+90), ↔ (0+180), ↕ (90+270), a four-way cross — and a circle for "any".
     // Codes are RasterNestService's permitted-orientation codes.

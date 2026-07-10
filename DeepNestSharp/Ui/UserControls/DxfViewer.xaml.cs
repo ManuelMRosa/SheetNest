@@ -556,7 +556,7 @@ namespace DeepNestSharp.Ui.UserControls
       this.emptyHint.Visibility = Visibility.Collapsed;
 
       // Navigate by distinct LAYOUT (not by physical sheet), labelled the way industrial nesting
-      // packages do it (SigmaNEST: one repeated layout shown with its repeat count in parentheses
+      // packages do it (one repeated layout shown with its repeat count in parentheses
       // next to the name): "Nest 1/2 (30)" = layout 1 of 2, cut it 30 times. Job totals stay in the
       // status bar and results grid — nothing verbose over the drawing.
       this.sheetLabel.Text = group.Count > 1

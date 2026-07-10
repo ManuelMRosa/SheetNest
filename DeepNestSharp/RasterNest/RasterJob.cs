@@ -12,7 +12,7 @@ namespace DeepNestSharp.RasterNest
     public int[] RotationsDeg;
     public RasterMask[] Masks;
     public PackedMask[] Packed; // 64-bit packed rows of Masks, built by the nester
-    public int Priority = 5;    // 0-10, higher nests first (Radan-style)
+    public int Priority = 5;    // 0-10, higher nests first
     public int HaloPx = 0;      // PER-PART spacing halo (px): masks dilate by this, so two parts end up (haloA + haloB) apart
     public bool CommonLine;     // spacing<=0 part: its pair module is born with the internal seam at EXACT contact (shared cut)
 

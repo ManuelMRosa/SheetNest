@@ -57,7 +57,7 @@
       </StackPanel>
     </Border>
 
-    <!-- Layout navigation, industrial style (SigmaNEST convention): one entry per DISTINCT layout,
+    <!-- Layout navigation, industrial style: one entry per DISTINCT layout,
          its repeat count in parentheses next to the name — "Nest 1/2 (30)" = layout 1 of 2, cut it
          30 times. Totals (utilization / sheets / placed) live in the status bar, not over the plot. -->
     <Border x:Name="sheetNav" Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,3"

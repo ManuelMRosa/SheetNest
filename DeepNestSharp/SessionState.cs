@@ -31,10 +31,10 @@ namespace DeepNestSharp
     /// <summary>Most-recently-used project files, newest first (File > Recent Projects).</summary>
     public List<string> RecentProjects { get; set; } = new List<string>();
 
-    /// <summary>Autosave the open project (SigmaNEST "Auto Save WS"); null = default (enabled).</summary>
+    /// <summary>Autosave the open project (auto-save workspace); null = default (enabled).</summary>
     public bool? AutosaveEnabled { get; set; }
 
-    /// <summary>Minutes between autosaves (SigmaNEST "Auto Save Time (min)"); -1 = default (5).</summary>
+    /// <summary>Minutes between autosaves; -1 = default (5).</summary>
     public int AutosaveMinutes { get; set; } = -1;
 
     /// <summary>Global default rotation code for unedited parts (1/2/4/8/36); -1 = default (4).</summary>

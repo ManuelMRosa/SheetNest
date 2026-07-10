@@ -6,7 +6,7 @@
              mc:Ignorable="d"
              d:DesignHeight="70" d:DesignWidth="340">
   <UserControl.Resources>
-    <!-- Button-like toggle that highlights clearly when selected (Radan-style). -->
+    <!-- Button-like toggle that highlights clearly when selected. -->
     <Style x:Key="RotationOptionStyle" TargetType="ToggleButton">
       <Setter Property="Margin" Value="1.5,0" />
       <Setter Property="Padding" Value="2,3" />

@@ -6,7 +6,7 @@ namespace DeepNestSharp.Ui.Views
   using DeepNestSharp.Ui.Converters;
 
   /// <summary>
-  /// Radan-style "Edit Part" dialog: part file + preview, required/extra quantity, per-part permitted
+  /// "Edit Part" dialog: part file + preview, required/extra quantity, per-part permitted
   /// orientations and nesting priority. Only writes back to the part on OK.
   /// </summary>
   public partial class EditPartWindow : Window

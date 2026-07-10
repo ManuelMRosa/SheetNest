@@ -40,7 +40,7 @@ namespace DeepNestSharp.Ui.Views
       this.Closed += (s, e) => this.isClosed = true;
       viewModel.ActiveDocumentChanged += MainWindow_ActiveDocumentChanged;
 
-      // Autosave (SigmaNEST "Auto Save WS"): snapshot the dirty project periodically; a crash then
+      // Autosave (auto-save workspace): snapshot the dirty project periodically; a crash then
       // offers recovery on the next start (clean saves/closes clear the snapshot). Enable/interval
       // live in Settings > Application Settings and the session restores them on load.
       this.autosaveTimer = new System.Windows.Threading.DispatcherTimer { Interval = System.TimeSpan.FromMinutes(5) };
@@ -1022,7 +1022,7 @@ namespace DeepNestSharp.Ui.Views
         return;
       }
 
-      // Radan-style insert flow: adding a single part opens Edit Part right away. Skipped for 3D
+      // Insert flow: adding a single part opens Edit Part right away. Skipped for 3D
       // imports (autoEditSingle=false) — their unfold is slow, so the part loads async in the grid.
       var infos = doc.ProjectInfo.DetailLoadInfos;
       if (autoEditSingle && infos.Count == before + 1 && infos[infos.Count - 1] is IDetailLoadInfo added)

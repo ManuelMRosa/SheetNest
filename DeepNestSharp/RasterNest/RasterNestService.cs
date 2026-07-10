@@ -379,7 +379,7 @@ namespace DeepNestSharp.RasterNest
         .ToArray();
 
       // Straighten angle per part (min-area bounding box) — used by the straightened profiles. It
-      // introduces OFF-AXIS angles, so (Radan semantics) only parts whose permission is 45°-step or
+      // introduces OFF-AXIS angles, so only parts whose permission is 45°-step or
       // freer get it: "four orientations permitted" means literally those four of the drawing.
       var straighten = parsed.Select(p => p.Allowed.Length >= 8 ? MinBoundingBoxAngle(p.Nfp) : 0).ToArray();
 
@@ -1393,9 +1393,9 @@ namespace DeepNestSharp.RasterNest
     }
 
     /// <summary>
-    /// Radan-style permitted-orientation codes → explicit angle sets. Legacy count codes keep their
+    /// Permitted-orientation codes → explicit angle sets. Legacy count codes keep their
     /// historical meaning (1 = as drawn, 2 = 0/180, 4 = four square orientations, 8 = 45° steps,
-    /// bigger = any); the 100x codes are the orientation choices Radan offers that a plain count
+    /// bigger = any); the 100x codes are the orientation choices that a plain count
     /// cannot express. "Any" maps to 15° steps — a superset of every candidate profile the nester
     /// actually tries (measured long ago: finer steps only slow the greedy down and pack worse).
     /// </summary>
