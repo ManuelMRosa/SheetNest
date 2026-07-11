@@ -23,6 +23,18 @@ If you cut sheet metal, SheetNest helps you get the most parts out of every shee
 - **Keeps your work safe** — autosave and crash recovery, a backup copy on every save, a Recent Projects list, and double-click a project file to open it right where you left off. Each saved project remembers its own sheet stock and its finished nest.
 - **Free and open** — no account, no subscription, no license key. Open-source software you can just use.
 
+## Screenshots
+
+<p align="center">
+  <img src="imgs/main-nest.png" alt="SheetNest nesting sheet-metal parts on a stock sheet for laser cutting" width="900"><br>
+  <em>One-click true-shape nesting — your parts packed tight on the sheet, ready to cut.</em>
+</p>
+
+<p align="center">
+  <img src="imgs/edit-nest.png" alt="Editing a nest by hand in SheetNest — select, drag, rotate and mirror parts" width="900"><br>
+  <em>Fine-tune by hand — select, drag, rotate, mirror, and snap parts to a shared common line.</em>
+</p>
+
 ## Download & install (Windows 10/11, 64-bit)
 
 1. Open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download the **`SheetNest-x.y.z-win-x64.msi`** installer.
