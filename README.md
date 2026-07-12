@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://sheetnest.io/download"><img src="https://img.shields.io/badge/Download%20for%20Windows-3aa851?style=for-the-badge&logo=windows&logoColor=white" alt="Download SheetNest for Windows"></a>
+  <a href="https://sheetnest.io"><img src="https://img.shields.io/badge/Download%20for%20Windows-3aa851?style=for-the-badge&logo=windows&logoColor=white" alt="Download SheetNest for Windows"></a>
   <a href="https://ko-fi.com/sheetnest"><img src="https://img.shields.io/badge/Support-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support SheetNest on Ko-fi"></a>
 </p>
 
@@ -43,14 +43,6 @@ If you cut sheet metal, SheetNest helps you get the most parts out of every shee
   <img src="imgs/edit-nest.png" alt="Editing a nest by hand in SheetNest — select, drag, rotate and mirror parts" width="900"><br>
   <em>Fine-tune by hand — select, drag, rotate, mirror, and snap parts to a shared common line.</em>
 </p>
-
-## Download & install (Windows 10/11, 64-bit)
-
-1. Open the [**latest release**](https://github.com/ManuelMRosa/SheetNest/releases/latest) and download the **`SheetNest-x.y.z-win-x64.msi`** installer.
-2. Double-click the `.msi`. It installs **per-user — no admin rights needed** — and adds Start-menu and desktop shortcuts. Installing over an older version upgrades it cleanly.
-3. There's **nothing else to install** — the app is self-contained, so you don't need any other download. The 3D unfolding engine is bundled inside, so it runs fully offline.
-
-The first time you launch, Windows may show a **SmartScreen** warning because the app isn't code-signed. Click **More info → Run anyway** to continue.
 
 ## License
 
