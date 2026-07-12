@@ -2,6 +2,10 @@
   <img src="assets/banner.png" alt="SheetNest — free nesting software for sheet metal" width="900">
 </p>
 
+<p align="center">
+  <a href="https://ko-fi.com/sheetnest"><img src="https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white" alt="Support SheetNest on Ko-fi"></a>
+</p>
+
 # SheetNest — Free nesting software for sheet metal
 
 SheetNest is free nesting software for sheet metal fabrication — it fits your parts onto stock sheets for CNC laser cutting and plasma cutting, on Windows, with no account and no subscription.
