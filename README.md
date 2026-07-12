@@ -3,7 +3,12 @@
 </p>
 
 <p align="center">
-  <a href="https://ko-fi.com/sheetnest"><img src="https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white" alt="Support SheetNest on Ko-fi"></a>
+  <a href="https://sheetnest.io/download"><img src="https://img.shields.io/badge/Download%20for%20Windows-3aa851?style=for-the-badge&logo=windows&logoColor=white" alt="Download SheetNest for Windows"></a>
+  <a href="https://ko-fi.com/sheetnest"><img src="https://img.shields.io/badge/Support-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support SheetNest on Ko-fi"></a>
+</p>
+
+<p align="center">
+  <sub>Free · Windows 10/11, 64-bit · no account, no subscription</sub>
 </p>
 
 # SheetNest — Free nesting software for sheet metal
