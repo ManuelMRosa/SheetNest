@@ -714,6 +714,11 @@ namespace DeepNestSharp.Ui.Views
       {
         this.sheetSizeColumn.Header = $"Sheet ({u})";
       }
+
+      if (this.dxfViewer != null)
+      {
+        this.dxfViewer.UnitsMm = this.unitsMm;
+      }
     }
 
     /// <summary>Persists the user's sheet presets right away (load-modify-save, like the MRU).</summary>

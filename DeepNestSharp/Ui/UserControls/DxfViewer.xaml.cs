@@ -94,6 +94,9 @@ namespace DeepNestSharp.Ui.UserControls
     /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
     public double DefaultPartSpacing { get; set; }
 
+    /// <summary>Drawing units are millimeters (true) vs inches (false); labels the measure readout.</summary>
+    public bool UnitsMm { get; set; }
+
     private double SpacingOf(IPartPlacement pp)
     {
       string key = pp?.Part?.Name;
@@ -1043,10 +1046,10 @@ namespace DeepNestSharp.Ui.UserControls
           this.measureDotB.Visibility = Visibility.Visible;
           this.measureDone = true;
           this.UpdateMeasureScale();
-          double d = (p - this.measureA.Value).Length; // Y-flip invariant → inches
+          double d = (p - this.measureA.Value).Length; // Y-flip invariant → drawing units
           if (this.hintText != null)
           {
-            this.hintText.Text = $"distance: {d:0.000} in  ·  click to measure again";
+            this.hintText.Text = $"distance: {d:0.000} {(this.UnitsMm ? "mm" : "in")}  ·  click to measure again";
           }
         }
 
@@ -1104,7 +1107,7 @@ namespace DeepNestSharp.Ui.UserControls
           double d = (mp - this.measureA.Value).Length;
           if (this.hintText != null)
           {
-            this.hintText.Text = $"distance: {d:0.000} in";
+            this.hintText.Text = $"distance: {d:0.000} {(this.UnitsMm ? "mm" : "in")}";
           }
         }
 
