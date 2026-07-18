@@ -67,12 +67,12 @@
     public IRawDetail LoadRawDetail(FileInfo f)
     {
       IRawDetail det = null;
-      if (f.Extension == ".svg")
+      if (f.Extension.Equals(".svg", System.StringComparison.OrdinalIgnoreCase))
       {
         det = SvgParser.LoadSvg(f.FullName);
       }
 
-      if (f.Extension == ".dxf")
+      if (f.Extension.Equals(".dxf", System.StringComparison.OrdinalIgnoreCase))
       {
         det = DxfParser.LoadDxfFile(f.FullName).Result;
       }

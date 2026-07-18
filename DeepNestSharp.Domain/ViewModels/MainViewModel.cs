@@ -167,8 +167,8 @@
 
     public IMessageService MessageService => this.messageService;
 
-    // 3-field version (1.1.2, not 1.1.2.0); the trailing asterisk is the universal "unsaved changes" marker.
-    public string Title => $"SheetNest {this.GetType().Assembly.GetName().Version?.ToString(3)}{(ActiveDocument?.IsDirty == true ? " *" : string.Empty)}";
+    // 3-field version (1.1.2, not 1.1.2.0).
+    public string Title => $"SheetNest {this.GetType().Assembly.GetName().Version?.ToString(3)}";
 
     public void SetSelectedToolView(IFileViewModel fileViewModel)
     {
