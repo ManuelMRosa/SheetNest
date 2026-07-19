@@ -310,6 +310,31 @@
     }
 
     [Fact]
+    public void GivenGridOfDuplicatedDisjointCollinearEdgesWhenMergedThenEachDuplicateCollapses()
+    {
+      // Reproduces a real common-line export (3-column grid): each column's shared edge is written
+      // once by each of its two neighbouring parts, landing a hair apart in Y (sub-tolerance floating
+      // point noise picked up independently per part) — same failure shape as the field bug
+      // (testarudo.dxf, 18 surviving duplicate edges). The three columns' first copies all sort
+      // together (nearly-equal intercept), then the three second copies sort together afterwards, so
+      // each column's true duplicate is never adjacent to its match in a single sorted pass.
+      var list = new List<DxfLine>
+      {
+        new DxfLine(new DxfPoint(0, 10.000001, 0), new DxfPoint(10, 10.000001, 0)),   // column 1, copy A
+        new DxfLine(new DxfPoint(20, 10.000001, 0), new DxfPoint(30, 10.000001, 0)),  // column 2, copy A
+        new DxfLine(new DxfPoint(40, 10.000001, 0), new DxfPoint(50, 10.000001, 0)),  // column 3, copy A
+        new DxfLine(new DxfPoint(0, 10.000002, 0), new DxfPoint(10, 10.000002, 0)),   // column 1, copy B (dup)
+        new DxfLine(new DxfPoint(20, 10.000002, 0), new DxfPoint(30, 10.000002, 0)),  // column 2, copy B (dup)
+        new DxfLine(new DxfPoint(40, 10.000002, 0), new DxfPoint(50, 10.000002, 0)),  // column 3, copy B (dup)
+      };
+
+      var sut = new DxfLineMerger();
+      var result = sut.MergeLines(list).ToList();
+
+      result.Count.Should().Be(3, "each column's duplicated shared edge must collapse to a single cut line, while the three disjoint columns must stay separate");
+    }
+
+    [Fact]
     public void GivenImpreciseOverlapWhenMergeLinesThenShouldMerge()
     {
       var dxfFile = new DxfFile();

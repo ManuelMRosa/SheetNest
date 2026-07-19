@@ -190,49 +190,40 @@
 
     internal IEnumerable<DxfLine> MergeLines(IEnumerable<DxfLine> list)
     {
-      if (list.Count() <= 1)
+      var lines = list.ToList();
+      if (lines.Count <= 1)
       {
-        return list;
+        return lines;
       }
 
-      var result = new List<MergeLine>();
-      foreach (var line in list)
+      // Grouping merge: compare each line against every group formed so far, not just the previous
+      // line in a sorted list. The old sort-then-compare-adjacent-pair approach missed duplicates on
+      // a common-line GRID (e.g. several columns sharing a row): disjoint collinear edges from other
+      // columns sort BETWEEN a shared edge and its exact duplicate — their intercepts differ only by
+      // sub-tolerance float noise picked up independently per part — so the duplicate was never
+      // compared to its match and survived in the export as a second cut line.
+      var groups = new List<MergeLine>();
+      foreach (var line in lines)
       {
-        result.Add(new MergeLine(line));
-      }
+        var current = new MergeLine(line);
 
-      var lines = result
-        .OrderBy(o => o.Slope)
-        .ThenBy(o => o.Intercept)
-        .ThenBy(o => o.IsVertical ? o.Left.Y : o.Left.X)
-        .ThenBy(o => o.Left.Y).ToList();
-      MergeLine prior = null;
-      MergeLine current = null;
-      for (var i = 0; i < lines.Count; i++)
-      {
-        if (prior == null)
+        // Coincident(a, b) only tests whether b's left endpoint falls inside a's span, so it is not
+        // symmetric when one line fully contains the other — try both orders.
+        var matchIndex = groups.FindIndex(g => Coincident(g, current) || Coincident(current, g));
+        if (matchIndex < 0)
         {
-          prior = lines[i];
+          groups.Add(current);
         }
         else
         {
-          current = lines[i];
-          if (Coincident(prior, current))
-          {
-            lines.Remove(current);
-            i--;
-            var combined = GetCombined(prior, current);
-            lines[i] = combined;
-            prior = combined;
-          }
-          else
-          {
-            prior = current;
-          }
+          var matched = groups[matchIndex];
+          groups[matchIndex] = Coincident(matched, current)
+            ? GetCombined(matched, current)
+            : GetCombined(current, matched);
         }
       }
 
-      return lines.Select(o => o.Line);
+      return groups.Select(o => o.Line);
     }
 
     private static IEnumerable<DxfLine> Split(DxfPolyline polyline)
