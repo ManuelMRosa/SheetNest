@@ -36,7 +36,7 @@
       }
     }
 
-    protected async override Task Export(string path, IEnumerable<INfp> polygons, IEnumerable<ISheet> sheets, bool doMergeLines, bool differentiateChildren)
+    protected async override Task Export(string path, IEnumerable<INfp> polygons, IEnumerable<ISheet> sheets, bool doMergeLines, bool differentiateChildren, IReadOnlyCollection<OffcutLine> offcutLines = null)
     {
       try
       {
@@ -45,7 +45,7 @@
         for (var i = 0; i < sheets.Count(); i++)
         {
           var sheet = sheetList[i];
-          DxfFile sheetdxf = GenerateDxfFile(polygons, sheet, i, doMergeLines, differentiateChildren);
+          DxfFile sheetdxf = GenerateDxfFile(polygons, sheet, i, doMergeLines, differentiateChildren, offcutLines);
           dxfexports.Add(sheetdxf, sheet.Id);
         }
 
@@ -441,7 +441,7 @@
       }
     }
 
-    private DxfFile GenerateDxfFile(IEnumerable<INfp> polygons, ISheet sheet, int i, bool doMergeLines, bool differentiateChildren)
+    private DxfFile GenerateDxfFile(IEnumerable<INfp> polygons, ISheet sheet, int i, bool doMergeLines, bool differentiateChildren, IReadOnlyCollection<OffcutLine> offcutLines = null)
     {
       try
       {
@@ -488,6 +488,18 @@
         foreach (var entity in entityList)
         {
           sheetdxf.Entities.Add(entity);
+        }
+
+        // The offcut separation cut(s) (rectangular-offcut nests): ordinary cut geometry, added
+        // AFTER the merge/join so they can never be fused into a part contour.
+        if (offcutLines != null)
+        {
+          foreach (var offcutLine in offcutLines)
+          {
+            sheetdxf.Entities.Add(new DxfLine(
+              new DxfPoint(offcutLine.X1, offcutLine.Y1, 0),
+              new DxfPoint(offcutLine.X2, offcutLine.Y2, 0)));
+          }
         }
 
         return sheetdxf;

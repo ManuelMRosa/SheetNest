@@ -43,6 +43,7 @@ namespace DeepNestSharp.Ui.UserControls
     private static readonly Brush HoleFill = new SolidColorBrush(Color.FromRgb(0xFA, 0xFA, 0xFA));
     private static readonly Brush SelectedFill = new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x80)); // classic navy selection
     private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromArgb(0x77, 0xD3, 0x2F, 0x2F));
+    private static readonly Brush OffcutStroke = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // reusable-offcut outline + label
 
     // Distinct sheet layouts and how many physical sheets use each (the production plan).
     private readonly List<SheetGroup> groups = new List<SheetGroup>();
@@ -96,6 +97,36 @@ namespace DeepNestSharp.Ui.UserControls
 
     /// <summary>Drawing units are millimeters (true) vs inches (false); labels the measure readout.</summary>
     public bool UnitsMm { get; set; }
+
+    /// <summary>Outline the clean rectangular offcut(s) on the last layout (set by the window when
+    /// the nest ran with "Prefer rectangular offcut"; null = off); computed live from the placements
+    /// each render, with the same rules the DXF export uses for the separation cut lines.</summary>
+    internal RasterNest.OffcutOptions OffcutOptions { get; set; }
+
+    /// <summary>Re-render on demand — used by the Offcut dialog so overlay changes show without
+    /// re-nesting (setting <see cref="OffcutOptions"/> alone does not redraw).</summary>
+    internal void RefreshRender() => this.Render();
+
+    /// <summary>The one sheet the offcut belongs to: the genuine remainder the engine shaped, which
+    /// is the LAST physical sheet — but only when the current view shows it faithfully (it is a
+    /// group's own representative). In the condensed production-plan view the remainder is a
+    /// synthetic representative, and a replicated pattern has no remainder at all; in both cases this
+    /// returns null and the offcut is suppressed rather than drawn on geometry the engine never
+    /// shaped.</summary>
+    internal ISheetPlacement OffcutSheet
+    {
+      get
+      {
+        var used = this.Result?.UsedSheets;
+        if (used == null || used.Count == 0)
+        {
+          return null;
+        }
+
+        var last = used[used.Count - 1];
+        return this.groups.Any(g => ReferenceEquals(g.Representative, last)) ? last : null;
+      }
+    }
 
     private double SpacingOf(IPartPlacement pp)
     {
@@ -161,6 +192,7 @@ namespace DeepNestSharp.Ui.UserControls
         PartStroke.Freeze();
         PartFill.Freeze();
         HoleFill.Freeze();
+        OffcutStroke.Freeze();
       }
 
       this.Loaded += (s, e) => this.FitToView();
@@ -632,7 +664,73 @@ namespace DeepNestSharp.Ui.UserControls
         }
       }
 
+      this.DrawOffcutOverlay(sheetPlacement, idx, w, h, stroke);
       this.BuildSnapPoints();
+    }
+
+    /// <summary>
+    /// Dashed outline + size label over the clean rectangular offcut(s) on the genuine remainder
+    /// sheet (see <see cref="OffcutSheet"/>), when the nest ran with "Prefer rectangular offcut".
+    /// Computed live from the placements with the same cut positions the DXF export writes, so manual
+    /// edits move the outline — or hide it once a part invades the strip — and what the user sees is
+    /// exactly what gets cut.
+    /// </summary>
+    private void DrawOffcutOverlay(ISheetPlacement sheetPlacement, int idx, double w, double h, double stroke)
+    {
+      if (this.OffcutOptions == null || !ReferenceEquals(sheetPlacement, this.OffcutSheet) || sheetPlacement.PartPlacements.Count == 0)
+      {
+        return;
+      }
+
+      var (cutX, cutY) = RasterNest.OffcutGeometry.CutPositions(sheetPlacement, this.OffcutOptions);
+
+      // Draw the SAME remnant rectangles the export cuts (single source: OffcutGeometry.RemnantRects).
+      // Sheet coords are Y-up; the canvas flips Y, so a rect at sheet [r.Y..r.Y+r.H] lands at canvas
+      // top [h-(r.Y+r.H)]. Empty list = no offcut worth advertising.
+      foreach (var r in RasterNest.OffcutGeometry.RemnantRects(cutX, cutY, w, h))
+      {
+        this.DrawOffcutRect(new Rect(r.X, h - (r.Y + r.H), r.W, r.H), w, h, stroke);
+      }
+    }
+
+    /// <summary>One dashed offcut rectangle (canvas coords) with its centered size label.</summary>
+    private void DrawOffcutRect(Rect rect, double w, double h, double stroke)
+    {
+      if (rect.Width <= 0 || rect.Height <= 0)
+      {
+        return;
+      }
+
+      this.canvas.Children.Add(new System.Windows.Shapes.Path
+      {
+        Data = new RectangleGeometry(rect),
+        Stroke = OffcutStroke,
+        StrokeThickness = stroke,
+        StrokeDashArray = new DoubleCollection { 4, 3 },
+        IsHitTestVisible = false,
+      });
+
+      string unit = this.UnitsMm ? "mm" : "in";
+      var label = new TextBlock
+      {
+        Text = $"{rect.Width:0.##} × {rect.Height:0.##} {unit}",
+        Foreground = OffcutStroke,
+        FontFamily = new FontFamily("Tahoma"),
+        FontSize = Math.Max(0.001, Math.Min(w, h) * 0.045),
+        IsHitTestVisible = false,
+      };
+
+      // Center the label in the strip; a strip too narrow for the text gets it turned 90°.
+      label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+      if (label.DesiredSize.Width > rect.Width && rect.Height > rect.Width)
+      {
+        label.LayoutTransform = new RotateTransform(90);
+        label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+      }
+
+      Canvas.SetLeft(label, rect.X + ((rect.Width - label.DesiredSize.Width) / 2));
+      Canvas.SetTop(label, rect.Y + ((rect.Height - label.DesiredSize.Height) / 2));
+      this.canvas.Children.Add(label);
     }
 
     private Brush FillFor(IPartPlacement pp)

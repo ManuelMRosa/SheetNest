@@ -62,7 +62,7 @@
 
     IEnumerable<IToolViewModel> Tools { get; }
 
-    Task ExportSheetPlacementAsync(ISheetPlacement sheetPlacement);
+    Task ExportSheetPlacementAsync(ISheetPlacement sheetPlacement, System.Collections.Generic.IReadOnlyCollection<DeepNestLib.IO.OffcutLine> offcutLines = null);
 
     void Close(IFileViewModel fileViewModel);
 

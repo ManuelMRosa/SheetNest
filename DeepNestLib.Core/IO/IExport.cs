@@ -7,6 +7,6 @@
   {
     string SaveFileDialogFilter { get; }
 
-    Task Export(string path, ISheetPlacement sheetPlacement, bool doMergeLines, bool differentiateChildren);
+    Task Export(string path, ISheetPlacement sheetPlacement, bool doMergeLines, bool differentiateChildren, System.Collections.Generic.IReadOnlyCollection<OffcutLine> offcutLines = null);
   }
 }

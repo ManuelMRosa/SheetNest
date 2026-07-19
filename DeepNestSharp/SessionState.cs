@@ -46,6 +46,18 @@ namespace DeepNestSharp
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
 
+    /// <summary>Pack parts to one end of the last sheet, leaving a rectangular offcut; null = default (off).</summary>
+    public bool? PreferRectangularOffcut { get; set; }
+
+    /// <summary>Offcut direction: 0 = end of sheet, 1 = side, 2 = both (L-shaped), 3 = auto (best remnant); -1 = default (end).</summary>
+    public int OffcutDirection { get; set; } = -1;
+
+    /// <summary>Gap between the packed parts and the offcut cut line; -1 = default (the part spacing).</summary>
+    public double OffcutSpacing { get; set; } = -1;
+
+    /// <summary>Narrowest offcut strip worth cutting (drawing units); -1/0 = automatic (5% of the sheet side).</summary>
+    public double OffcutMinWidth { get; set; } = -1;
+
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");
 

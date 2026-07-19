@@ -334,7 +334,7 @@
       files.Remove(fileToClose);
     }
 
-    public async Task ExportSheetPlacementAsync(ISheetPlacement sheetPlacement)
+    public async Task ExportSheetPlacementAsync(ISheetPlacement sheetPlacement, IReadOnlyCollection<OffcutLine> offcutLines = null)
     {
       try
       {
@@ -354,7 +354,7 @@
           var filePath = fileIoService.GetSaveFilePath(exporter.SaveFileDialogFilter);
           if (!string.IsNullOrWhiteSpace(filePath))
           {
-            await exporter.Export(filePath, sheetPlacement, SvgNest.Config.MergeLines, SvgNest.Config.DifferentiateChildren);
+            await exporter.Export(filePath, sheetPlacement, SvgNest.Config.MergeLines, SvgNest.Config.DifferentiateChildren, offcutLines);
           }
         }
       }

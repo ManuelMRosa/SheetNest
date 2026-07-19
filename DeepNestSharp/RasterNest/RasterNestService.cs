@@ -32,6 +32,10 @@ namespace DeepNestSharp.RasterNest
   /// </summary>
   internal static class RasterNestService
   {
+    /// <summary>Tail part count above which the offcut shrink stops trying alternative multi-start
+    /// orderings (default order only) — caps the fan-out where it's most expensive.</summary>
+    private const int OffcutMultiStartMaxTail = 16;
+
     /// <summary>
     /// MIXED STOCK: every sheet entry participates, and the engine picks the OPTIMAL size at each
     /// step — it probes ONE sheet of every size that still has quantity against the remaining parts,
@@ -51,7 +55,8 @@ namespace DeepNestSharp.RasterNest
       double pxPerInch,
       out string error,
       System.Threading.CancellationToken cancel = default,
-      System.IProgress<(double Fraction, string Phase)> progress = null)
+      System.IProgress<(double Fraction, string Phase)> progress = null,
+      OffcutOptions rectOffcut = null)
     {
       error = null;
       var stock = (sheets ?? new List<(int, int, int)>()).Where(s => s.Win > 0 && s.Hin > 0 && s.Qty > 0).ToList();
@@ -63,7 +68,7 @@ namespace DeepNestSharp.RasterNest
 
       if (stock.Count == 1)
       {
-        return Nest(partInfos, stock[0].Win, stock[0].Hin, stock[0].Qty, placementType, rotations, spacing, margin, pxPerInch, out error, cancel, progress);
+        return Nest(partInfos, stock[0].Win, stock[0].Hin, stock[0].Qty, placementType, rotations, spacing, margin, pxPerInch, out error, cancel, progress, rectOffcut);
       }
 
       var remaining = partInfos
@@ -309,7 +314,8 @@ namespace DeepNestSharp.RasterNest
       double pxPerInch,
       out string error,
       System.Threading.CancellationToken cancel = default,
-      System.IProgress<(double Fraction, string Phase)> progress = null)
+      System.IProgress<(double Fraction, string Phase)> progress = null,
+      OffcutOptions rectOffcut = null)
     {
       int maxSheets = System.Math.Max(0, sheetCount);
       error = null;
@@ -385,12 +391,14 @@ namespace DeepNestSharp.RasterNest
 
       var candidates = BuildCandidates(parsed.Select(p => p.Allowed).ToArray(), straighten);
 
-      bool growX = sw > sh; // pack grows along the longer sheet axis (keeps the remnant a short-dim strip)
+      bool growX = sw >= sh; // pack grows along the longer sheet axis; >= (not >) keeps a square sheet consistent with OffcutGeometry, which draws the cut on the same axis
 
       // Nest a set of quantities (one per parsed part, by index) with EVERY candidate profile in
       // parallel, on at most <paramref name="allowedSheets"/> sheets (the Sheets tab quantity — what
-      // doesn't fit is reported unplaced). Used for the full job, the pattern search and the leftover.
-      (JobResult Job, List<PartType> Types)[] NestAll(int[] quantities, int allowedSheets)
+      // doesn't fit is reported unplaced). Used for the full job, the pattern search, the leftover
+      // and the offcut shrink (which passes a VIRTUAL, shortened sheet size and, for its multi-start
+      // orderings, a per-type priority override — the nester places higher priority first).
+      (JobResult Job, List<PartType> Types)[] NestAll(int[] quantities, int allowedSheets, int? nestW = null, int? nestH = null, int[] priorityByType = null)
       {
         var results = new (JobResult Job, List<PartType> Types)[candidates.Count];
         System.Threading.Tasks.Parallel.For(
@@ -405,22 +413,22 @@ namespace DeepNestSharp.RasterNest
               Source = p.Src,
               Poly = p.Nfp,
               Quantity = quantities[i],
-              Priority = p.Priority,
+              Priority = priorityByType != null ? priorityByType[i] : p.Priority,
               RotationsDeg = candidates[ci][i],
               HaloPx = halos[i],
               CommonLine = p.SpacingIn <= 0,
             })
             .ToList();
-          results[ci] = (RasterJobNester.Nest(candidateTypes, sw, sh, px, marginPx, allowedSheets, cancel), candidateTypes);
+          results[ci] = (RasterJobNester.Nest(candidateTypes, nestW ?? sw, nestH ?? sh, px, marginPx, allowedSheets, cancel), candidateTypes);
         });
 
         return results;
       }
 
       // Best result across the candidates: fewest unplaced → fewest sheets → shortest strip → tidiest.
-      (JobResult Job, List<PartType> Types) NestBest(int[] quantities, int allowedSheets)
+      (JobResult Job, List<PartType> Types) NestBest(int[] quantities, int allowedSheets, int? nestW = null, int? nestH = null, int[] priorityByType = null)
       {
-        var results = NestAll(quantities, allowedSheets);
+        var results = NestAll(quantities, allowedSheets, nestW, nestH, priorityByType);
         int bestIdx = 0;
         for (int ci = 1; ci < results.Length; ci++)
         {
@@ -511,7 +519,7 @@ namespace DeepNestSharp.RasterNest
           // allows and RE-NEST the leftover parts on their own sheet(s). The shop then cuts "k× the same
           // layout + 1 remainder" — and the remainder is a real dense nest, not a display trick. Only
           // kept when it needs no more sheets than the greedy result.
-          job = TryReplicatePattern(job, types, parsed.Count, maxSheets, NestBest);
+          job = TryReplicatePattern(job, types, parsed.Count, maxSheets, (q, s) => NestBest(q, s));
         }
 
         return (job, types);
@@ -1147,6 +1155,327 @@ namespace DeepNestSharp.RasterNest
       }
 
       Prof("refill+absorb");
+
+      // ── RECTANGULAR OFFCUT SHRINK (opt-in) ─────────────────────────────────────────────────────
+      // Greedy packing happily reaches the far end of the sheet with its slack spread through the
+      // pack as useless internal gaps. When the user asked for a rectangular offcut, re-nest the
+      // LAST sheet's parts onto a VIRTUAL sheet shortened along the chosen axis (or both, one axis
+      // at a time), binary-searching the shortest length that still takes every part. The virtual
+      // sheet shares the real sheet's origin, so the winning positions transfer unchanged —
+      // everything beyond the packed strip stays clean, reusable rectangles.
+      if (rectOffcut != null && builtSheets.Count > 0 && pool.All(q => q == 0))
+      {
+        int lastSheet = builtSheets.Count - 1;
+
+        // Only a GENUINE remainder is reshaped (same rule as the tail sweep): squeezing a replicated
+        // pattern copy would break the "cut k× the same layout" plan.
+        bool genuineTail = builtSheets.Count == 1;
+        if (!genuineTail)
+        {
+          var c0 = builtSheets[0].ParsedIdx.GroupBy(i => i).ToDictionary(g => g.Key, g => g.Count());
+          var cL = builtSheets[lastSheet].ParsedIdx.GroupBy(i => i).ToDictionary(g => g.Key, g => g.Count());
+          genuineTail = c0.Count != cL.Count || c0.Any(kv => !cL.TryGetValue(kv.Key, out int v) || v != kv.Value);
+        }
+
+        if (genuineTail)
+        {
+          cancel.ThrowIfCancellationRequested();
+          Report(0.92, "Shaping offcut…");
+
+          var tailQty = new int[parsed.Count];
+          foreach (int pi in builtSheets[lastSheet].ParsedIdx)
+          {
+            tailQty[pi]++;
+          }
+
+          // The virtual sheet the next shrink pass nests into. Starts as the real sheet; a
+          // successful pass pins its axis so a later pass (Both mode) can't spread back into the
+          // strip the first one freed.
+          int fixedWpx = sw;
+          int fixedHpx = sh;
+
+          double ExtentIn(IReadOnlyList<CompactItem> its, bool axisX)
+          {
+            double max = 0;
+            foreach (var it in its)
+            {
+              max = System.Math.Max(max, axisX ? it.X + it.Poly.MaxX : it.Y + it.Poly.MaxY);
+            }
+
+            return max;
+          }
+
+          // Binary-search the shortest virtual sheet along ONE axis (the other axis stays at its
+          // pinned size) and adopt the re-nest only on a strict improvement of that axis's extent.
+          void TryShrinkAxis(bool axisX)
+          {
+            double curExtentIn = ExtentIn(builtSheets[lastSheet].Items, axisX);
+
+            // hi = the current pack plus the far-edge margin the virtual sheet re-imposes; lo = no
+            // shortening can beat the widest single part or the pure area bound.
+            int dimPx = axisX ? fixedWpx : fixedHpx;
+            int hiPx = System.Math.Min(dimPx, (int)System.Math.Ceiling(curExtentIn * px) + marginPx);
+            double maxFootprintIn = 0;
+            double tailArea = 0;
+            var axisFootprintIn = new double[parsed.Count]; // per tail type: its tightest span along this axis
+            for (int pi = 0; pi < parsed.Count; pi++)
+            {
+              if (tailQty[pi] == 0)
+              {
+                continue;
+              }
+
+              tailArea += tailQty[pi] * System.Math.Abs(parsed[pi].Nfp.NetArea);
+              double best = double.MaxValue;
+              foreach (int a in parsed[pi].Allowed)
+              {
+                var r = a == 0 ? parsed[pi].Nfp : parsed[pi].Nfp.Rotate(a);
+                best = System.Math.Min(best, axisX ? r.MaxX - r.MinX : r.MaxY - r.MinY);
+              }
+
+              axisFootprintIn[pi] = best;
+              maxFootprintIn = System.Math.Max(maxFootprintIn, best);
+            }
+
+            double usableOtherIn = System.Math.Max(0.01, ((axisX ? fixedHpx : fixedWpx) / px) - (2.0 * System.Math.Max(0, margin)));
+            int loPx = (int)System.Math.Ceiling(System.Math.Max(maxFootprintIn, tailArea / usableOtherIn) * px) + (2 * marginPx);
+
+            // MULTI-START: the nester always places by priority desc → area desc, and that single
+            // greedy order is what limits the pack density. Alternative deterministic orderings
+            // (encoded as per-type priority ranks) are tried per probe ONLY when the default order
+            // fails to fit — a shorter virtual sheet the default can't fill can still be rescued,
+            // at zero extra cost wherever the default already succeeds.
+            var tailTypes = new List<int>();
+            int tailTotal = 0;
+            for (int pi = 0; pi < parsed.Count; pi++)
+            {
+              if (tailQty[pi] > 0)
+              {
+                tailTypes.Add(pi);
+                tailTotal += tailQty[pi];
+              }
+            }
+
+            int[] Rank(IEnumerable<int> orderedPis)
+            {
+              var pr = new int[parsed.Count];
+              int rank = tailTypes.Count;
+              foreach (int pi in orderedPis)
+              {
+                pr[pi] = rank--;
+              }
+
+              return pr;
+            }
+
+            double AreaOfType(int pi) => System.Math.Abs(parsed[pi].Nfp.NetArea);
+
+            // Bound the fan-out: on a big tail the extra orderings multiply an already costly
+            // binary-search × candidate fan-out (worst on Auto, which runs this 4×) for diminishing
+            // gain — so multi-start only kicks in for small/medium tails. The default order is always
+            // tried first, so correctness is unchanged; only search breadth is trimmed where it's dear.
+            var orderings = new List<int[]> { null }; // the default (area desc) always goes first
+            if (tailTypes.Count > 1 && tailTotal <= OffcutMultiStartMaxTail)
+            {
+              var byAreaDesc = tailTypes.OrderByDescending(AreaOfType).ToList();
+              var interleaved = new List<int>(byAreaDesc.Count);
+              int front = 0;
+              int back = byAreaDesc.Count - 1;
+              bool takeFront = true;
+              while (front <= back)
+              {
+                interleaved.Add(takeFront ? byAreaDesc[front++] : byAreaDesc[back--]);
+                takeFront = !takeFront;
+              }
+
+              foreach (var alt in new[]
+              {
+                Rank(tailTypes.OrderBy(AreaOfType)),                          // smallest-first
+                Rank(tailTypes.OrderByDescending(pi => axisFootprintIn[pi])), // longest along the axis first
+                Rank(tailTypes.OrderBy(pi => axisFootprintIn[pi])),           // shortest along the axis first
+                Rank(interleaved),                                            // big, small, big, small…
+              })
+              {
+                if (!orderings.Any(o => o != null && o.SequenceEqual(alt)))
+                {
+                  orderings.Add(alt);
+                }
+              }
+            }
+
+            JobResult bestShrink = null;
+            int bestLenPx = 0;
+            int shrinkTries = 0;
+            while (hiPx - loPx > System.Math.Max(1, (int)(px / 4)) && shrinkTries < 8)
+            {
+              shrinkTries++;
+              cancel.ThrowIfCancellationRequested();
+              int midPx = (loPx + hiPx) / 2;
+              JobResult fit = null;
+              foreach (var ordering in orderings)
+              {
+                var attempt = NestBest(tailQty, 1, axisX ? midPx : fixedWpx, axisX ? fixedHpx : midPx, ordering);
+                if (attempt.Job.NotPlaced == 0)
+                {
+                  fit = attempt.Job;
+                  break;
+                }
+              }
+
+              if (fit != null)
+              {
+                hiPx = midPx;
+                bestShrink = fit;
+                bestLenPx = midPx;
+              }
+              else
+              {
+                loPx = midPx;
+              }
+            }
+
+            if (bestShrink == null)
+            {
+              return;
+            }
+
+            // Materialize + exact-compact against the VIRTUAL walls, so the slide keeps the pack
+            // inside them; positions are valid on the real sheet as-is (same origin).
+            var shrinkJps = bestShrink.Placements;
+            var shrinkItems = new List<CompactItem>(shrinkJps.Count);
+            var shrinkParsedIdx = new List<int>(shrinkJps.Count);
+            foreach (var jp in shrinkJps)
+            {
+              int pi = parsed.FindIndex(p => p.Src == jp.Source);
+              var entry = parsed[pi];
+              var rotated = jp.RotationDeg == 0 ? entry.Nfp : entry.Nfp.Rotate(jp.RotationDeg);
+              shrinkItems.Add(new CompactItem
+              {
+                Poly = rotated,
+                X = (jp.HasExact ? jp.ExactXin : jp.Xpx / px) - rotated.MinX,
+                Y = (jp.HasExact ? jp.ExactYin : jp.Ypx / px) - rotated.MinY,
+                Spacing = entry.SpacingIn,
+              });
+              shrinkParsedIdx.Add(pi);
+            }
+
+            double virtWin = (axisX ? bestLenPx : fixedWpx) / px;
+            double virtHin = (axisX ? fixedHpx : bestLenPx) / px;
+            RasterCompact.Compact(shrinkItems, virtWin, virtHin, System.Math.Max(0, margin), shrinkJps.Select(p => p.PairGroup).ToArray(), cancel);
+
+            // Adopt only a STRICT improvement that keeps every tight-pack clearance honest.
+            bool gapsOk = !tightAdopted || RasterCompact.CommonLineGapsOk(shrinkItems, RasterCompact.MixedPairFloor);
+            if (gapsOk && ExtentIn(shrinkItems, axisX) < curExtentIn - 0.05)
+            {
+              builtSheets[lastSheet] = (shrinkJps.ToList(), shrinkItems, shrinkParsedIdx, "offcut-shrink");
+              if (axisX)
+              {
+                fixedWpx = bestLenPx;
+              }
+              else
+              {
+                fixedHpx = bestLenPx;
+              }
+            }
+          }
+
+          // Pin one axis of the virtual sheet at its CURRENT pack (whether or not a pass improved
+          // it) so a later pass can never spread parts into that axis's strip. Both uses it on the
+          // short axis BEFORE its first pass too — the corner contract: neither axis may ever grow.
+          void PinAxisToPack(bool axisX)
+          {
+            int packPx = (int)System.Math.Ceiling(ExtentIn(builtSheets[lastSheet].Items, axisX) * px) + marginPx;
+            if (axisX)
+            {
+              fixedWpx = System.Math.Min(fixedWpx, packPx);
+            }
+            else
+            {
+              fixedHpx = System.Math.Min(fixedHpx, packPx);
+            }
+          }
+
+          // Both = squeeze into a corner: the long-axis pass runs with the short axis already pinned
+          // (so saving X can't cost Y), then the long axis pins and the short-axis pass runs.
+          void RunBoth()
+          {
+            PinAxisToPack(!growX);
+            TryShrinkAxis(growX);
+            PinAxisToPack(growX);
+            TryShrinkAxis(!growX);
+          }
+
+          if (rectOffcut.Direction == OffcutDirection.Auto)
+          {
+            // Try every cut plan from the SAME starting layout and keep whichever frees the largest
+            // qualifying remnant area — measured exactly as the overlay/export will (CutPositionsCore
+            // with Auto counts both axes; sub-threshold strips count as nothing). Each attempt resets
+            // to the original layout and full virtual sheet, so every attempt IS its manual mode.
+            double AreaOf(IReadOnlyList<CompactItem> its)
+            {
+              var (cutX, cutY) = OffcutGeometry.CutPositionsCore(
+                ExtentIn(its, true), ExtentIn(its, false), sw / px, sh / px, rectOffcut.Spacing, OffcutDirection.Auto, rectOffcut.MinStripWidth);
+              return OffcutGeometry.RemnantArea(cutX, cutY, sw / px, sh / px);
+            }
+
+            var orig = builtSheets[lastSheet];
+
+            TryShrinkAxis(growX);
+            var endState = builtSheets[lastSheet];
+            double endArea = AreaOf(endState.Items);
+
+            builtSheets[lastSheet] = orig;
+            fixedWpx = sw;
+            fixedHpx = sh;
+            TryShrinkAxis(!growX);
+            var sideState = builtSheets[lastSheet];
+            double sideArea = AreaOf(sideState.Items);
+
+            builtSheets[lastSheet] = orig;
+            fixedWpx = sw;
+            fixedHpx = sh;
+            RunBoth();
+            var bothState = builtSheets[lastSheet];
+            double bothArea = AreaOf(bothState.Items);
+
+            // Largest area wins; the strict > makes ties prefer the earlier, simpler plan (a single
+            // straight End or Side cut over the L) and no qualifying strip at all keeps the original.
+            var winner = orig;
+            double winnerArea = 0;
+            if (endArea > winnerArea)
+            {
+              winner = endState;
+              winnerArea = endArea;
+            }
+
+            if (sideArea > winnerArea)
+            {
+              winner = sideState;
+              winnerArea = sideArea;
+            }
+
+            if (bothArea > winnerArea)
+            {
+              winner = bothState;
+              winnerArea = bothArea;
+            }
+
+            builtSheets[lastSheet] = winner;
+          }
+          else if (rectOffcut.Direction == OffcutDirection.Both)
+          {
+            RunBoth();
+          }
+          else
+          {
+            // Manual single-cut modes: End = the growth (long) axis, Side = the short axis.
+            TryShrinkAxis(rectOffcut.Direction == OffcutDirection.End ? growX : !growX);
+          }
+
+          Prof("offcut shrink");
+        }
+      }
+
       cancel.ThrowIfCancellationRequested();
       Report(0.95, "Refilling…");
       var collection = new SheetPlacementCollection();

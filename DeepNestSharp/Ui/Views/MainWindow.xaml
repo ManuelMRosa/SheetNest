@@ -53,6 +53,7 @@
         <MenuItem Header="Exit" Command="{Binding ExitCommand}" />
       </MenuItem>
       <MenuItem Header="_Settings">
+        <MenuItem Header="Offcut..." Click="OnOffcutSettings" />
         <MenuItem Header="Advanced Settings..." Click="OnAdvancedSettings" />
       </MenuItem>
       <MenuItem Header="_Help">

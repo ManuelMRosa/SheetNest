@@ -29,6 +29,10 @@ namespace DeepNestSharp.Ui.Views
     private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
+    private bool preferRectOffcut; // pack the last sheet toward one end for a rectangular offcut (SessionState)
+    private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
+    private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
+    private double offcutMinWidth = -1; // narrowest strip worth cutting; <=0 = automatic 5% rule (SessionState)
 
     public MainWindow(IMainViewModel viewModel)
     {
@@ -176,6 +180,26 @@ namespace DeepNestSharp.Ui.Views
         if (session.DefaultRotations > 0)
         {
           cfg.Rotations = session.DefaultRotations;
+        }
+
+        if (session.PreferRectangularOffcut.HasValue)
+        {
+          this.preferRectOffcut = session.PreferRectangularOffcut.Value;
+        }
+
+        if (session.OffcutDirection >= 0 && session.OffcutDirection <= 3)
+        {
+          this.offcutDirection = session.OffcutDirection;
+        }
+
+        if (session.OffcutSpacing >= 0)
+        {
+          this.offcutSpacing = session.OffcutSpacing;
+        }
+
+        if (session.OffcutMinWidth >= 0)
+        {
+          this.offcutMinWidth = session.OffcutMinWidth;
         }
       }
 
@@ -440,6 +464,36 @@ namespace DeepNestSharp.Ui.Views
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
       session.Save();
+    }
+
+    private void OnOffcutSettings(object sender, RoutedEventArgs e)
+    {
+      double defaultSpacing = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing);
+      var dialog = new OffcutSettingsWindow(this.preferRectOffcut, this.offcutDirection, this.offcutSpacing, this.offcutMinWidth, this.unitsMm, defaultSpacing) { Owner = this };
+      if (dialog.ShowDialog() != true)
+      {
+        return;
+      }
+
+      this.preferRectOffcut = dialog.OffcutEnabled;
+      this.offcutDirection = dialog.Direction;
+      this.offcutSpacing = dialog.Spacing;
+      this.offcutMinWidth = dialog.MinWidth;
+
+      var session = SessionState.Load();
+      session.PreferRectangularOffcut = this.preferRectOffcut;
+      session.OffcutDirection = this.offcutDirection;
+      session.OffcutSpacing = this.offcutSpacing;
+      session.OffcutMinWidth = this.offcutMinWidth;
+      session.Save();
+
+      // Reflect the new settings on the on-screen result immediately (overlay only — the packing
+      // itself only changes on the next NEST).
+      if (this.dxfViewer != null)
+      {
+        this.dxfViewer.OffcutOptions = this.CurrentOffcutOptions();
+        this.dxfViewer.RefreshRender();
+      }
     }
 
     /// <summary>Discards the displayed nest result and returns the sheets it consumed to the stock.</summary>
@@ -1257,7 +1311,7 @@ namespace DeepNestSharp.Ui.Views
           // 24 px/in, or its metric twin ~0.945 px/mm: SAME physical resolution, so a 3000 mm
           // sheet rasterizes to the same grid size as today's 120 in one.
           double pxPerUnit = this.unitsMm ? 24.0 / 25.4 : 24.0;
-          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, pxPerUnit, out string err, token, progress);
+          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, pxPerUnit, out string err, token, progress, this.CurrentOffcutOptions());
           return (r, err);
         });
 
@@ -1273,6 +1327,7 @@ namespace DeepNestSharp.Ui.Views
         if (this.dxfViewer != null)
         {
           this.dxfViewer.DefaultPartSpacing = System.Math.Max(0, spacing);
+          this.dxfViewer.OffcutOptions = this.CurrentOffcutOptions();
 
           // Group by path — the same DXF may legitimately be listed twice (e.g. once common-line,
           // once spaced); a plain ToDictionary would throw and crash the app AFTER the nest ran.
@@ -1442,18 +1497,45 @@ namespace DeepNestSharp.Ui.Views
       var layouts = this.dxfViewer.GetDistinctLayoutSheets();
       if (layouts != null && layouts.Count > 0)
       {
-        foreach (var sheetPlacement in layouts)
+        var offcutSheet = this.dxfViewer.OffcutSheet;
+        for (int li = 0; li < layouts.Count; li++)
         {
-          await ViewModel.ExportSheetPlacementAsync(sheetPlacement);
+          // The offcut separation cut(s) travel only with the genuine remainder sheet the engine
+          // shaped (same rule as the viewer overlay) — never a replicated pattern or a synthetic
+          // production-plan representative — so the cut matches the packed remainder exactly.
+          var offcut = ReferenceEquals(layouts[li], offcutSheet) ? OffcutGeometry.BuildLines(layouts[li], this.CurrentOffcutOptions()) : null;
+          await ViewModel.ExportSheetPlacementAsync(layouts[li], offcut);
         }
       }
       else
       {
-        foreach (var sheetPlacement in selected.UsedSheets.ToList())
+        var used = selected.UsedSheets.ToList();
+        for (int si = 0; si < used.Count; si++)
         {
-          await ViewModel.ExportSheetPlacementAsync(sheetPlacement);
+          var offcut = si == used.Count - 1 ? OffcutGeometry.BuildLines(used[si], this.CurrentOffcutOptions()) : null;
+          await ViewModel.ExportSheetPlacementAsync(used[si], offcut);
         }
       }
+    }
+
+    /// <summary>The active offcut settings, or null when the option is off. Spacing -1 (never saved)
+    /// falls back to the global part spacing — the remnant keeps a part's clearance.</summary>
+    private OffcutOptions CurrentOffcutOptions()
+    {
+      if (!this.preferRectOffcut)
+      {
+        return null;
+      }
+
+      double spacing = this.offcutSpacing >= 0
+        ? this.offcutSpacing
+        : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing);
+      return new OffcutOptions
+      {
+        Direction = (OffcutDirection)System.Math.Max(0, System.Math.Min(3, this.offcutDirection)),
+        Spacing = spacing,
+        MinStripWidth = this.offcutMinWidth > 0 ? this.offcutMinWidth : -1,
+      };
     }
   }
 }

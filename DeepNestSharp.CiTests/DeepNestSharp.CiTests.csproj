@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net6.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
     <Platforms>AnyCPU;x64;x86</Platforms>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
@@ -30,5 +31,6 @@
   <ItemGroup>
     <ProjectReference Include="..\DeepNestLib.Core\DeepNestLib.Core.csproj" />
     <ProjectReference Include="..\DeepNestSharp.Domain\DeepNestSharp.Domain.csproj" />
+    <ProjectReference Include="..\DeepNestSharp\DeepNestSharp.csproj" />
   </ItemGroup>
 </Project>
