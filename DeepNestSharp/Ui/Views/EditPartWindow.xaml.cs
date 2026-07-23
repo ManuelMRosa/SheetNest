@@ -64,12 +64,13 @@ namespace DeepNestSharp.Ui.Views
         this.warnHint.Visibility = Visibility.Visible;
       }
 
-      for (int p = 0; p <= 10; p++)
+      for (int p = 1; p <= 10; p++)
       {
         this.priorityCombo.Items.Add($"{p} ({LabelFor(p)})");
       }
 
-      this.priorityCombo.SelectedIndex = System.Math.Max(0, System.Math.Min(10, part.Priority));
+      // 1 = highest → combo index 0. Clamp legacy/out-of-range values into 1..10.
+      this.priorityCombo.SelectedIndex = System.Math.Max(1, System.Math.Min(10, part.Priority)) - 1;
 
       // 3D-unfolded parts get an editable K-factor + a read-only detected thickness. Changing K
       // re-unfolds the part (handled by the caller after OK). Hidden for plain 2D (DXF) parts.
@@ -175,27 +176,28 @@ namespace DeepNestSharp.Ui.Views
 
     private static string LabelFor(int priority)
     {
-      if (priority <= 0)
+      // 1 = highest priority (nested first), 10 = lowest.
+      if (priority <= 1)
       {
-        return "Lowest";
+        return "Highest";
       }
 
       if (priority <= 3)
       {
-        return "Low";
+        return "High";
       }
 
       if (priority <= 6)
       {
-        return "Medium";
+        return "Normal";
       }
 
       if (priority <= 9)
       {
-        return "High";
+        return "Low";
       }
 
-      return "Highest";
+      return "Lowest";
     }
 
     private void OnCommonLineChanged(object sender, RoutedEventArgs e)
@@ -232,9 +234,9 @@ namespace DeepNestSharp.Ui.Views
         : rotations <= 4 ? AnglesEnum.Rotate90
         : AnglesEnum.None;
 
-      int priority = this.priorityCombo.SelectedIndex < 0 ? 5 : this.priorityCombo.SelectedIndex;
+      int priority = this.priorityCombo.SelectedIndex < 0 ? 5 : this.priorityCombo.SelectedIndex + 1; // combo 1..10
       this.part.Priority = priority;
-      this.part.IsPriority = priority >= 6; // the NFP engine's priority is a flag: "nest these first"
+      this.part.IsPriority = priority < 5; // legacy NFP flag "nest these first" — now 1 = highest
 
       // 3D parts: write the chosen K-factor/standard. The caller (OpenEditPart) compares against the
       // pre-dialog values and re-unfolds if they changed.

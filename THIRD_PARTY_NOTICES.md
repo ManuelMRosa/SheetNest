@@ -19,6 +19,20 @@ FreeCAD in turn bundles further third-party libraries (OpenCASCADE, Qt, Coin3D, 
 others), each under its own license; those licenses are documented in
 `freecad\doc\LICENSE.html`.
 
+## Nesting engine
+
+To arrange parts on the sheet, the SheetNest installer bundles an offline nesting engine
+(`sparrow.exe`, next to `SheetNest.exe`). SheetNest runs it as a **separate program**; it does
+**not** link against these libraries. `sparrow.exe` is a self-contained Rust binary; the
+`jagua-rs` geometry library is compiled into it **unmodified**, while `sparrow` carries a small
+local change (worker-thread count). Corresponding source is available from the upstream
+projects below.
+
+| Component | Version | License | Source |
+|-----------|---------|---------|--------|
+| sparrow | 2025 | MIT | https://github.com/JeroenGar/sparrow |
+| jagua-rs | 0.7.2 | MPL-2.0 | https://github.com/JeroenGar/jagua-rs |
+
 If you need the corresponding source for any bundled LGPL component, it is available from the
 upstream project links above; you may also request it through the
 [SheetNest repository](https://github.com/ManuelMRosa/SheetNest).

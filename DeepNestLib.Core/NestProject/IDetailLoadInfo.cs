@@ -38,7 +38,7 @@
     /// </summary>
     int Rotations { get; set; }
 
-    /// <summary>Gets or sets the nesting priority 0-10 (higher nests first); 5 = normal.</summary>
+    /// <summary>Gets or sets the nesting priority 1-10 (LOWER nests first; 1 = highest); 5 = normal.</summary>
     int Priority { get; set; }
 
     /// <summary>

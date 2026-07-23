@@ -25,6 +25,8 @@ namespace DeepNestSharp.Ui.Views
     private string updateUrl;
     private System.Windows.Threading.DispatcherTimer autosaveTimer;
     private System.Threading.CancellationTokenSource nestCts;
+    private System.Diagnostics.Stopwatch nestStopwatch;   // elapsed time while a nest runs (drives the live clock)
+    private System.Windows.Threading.DispatcherTimer nestTimer; // ticks the elapsed clock ~2×/s during a nest
     private bool unitsMm; // drawing units are millimeters (SessionState.UnitsMm); inches by default
     private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
@@ -1267,10 +1269,20 @@ namespace DeepNestSharp.Ui.Views
 
       int sheetQty = sheetStock.Sum(s => s.Quantity);   // total sheets the job may use (for the warning)
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
-      var placementType = config.PlacementType;
       int rotations = config.Rotations;
       double spacing = config.Spacing;          // part spacing (drawing units = inches)
       double margin = config.SheetSpacing;      // sheet edge margin
+
+      // The nester is the external sparrow engine (a bundled native binary). It must be present.
+      string sparrowExe = ResolveSparrowExe();
+      if (sparrowExe == null)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "The nesting engine (sparrow.exe) was not found. It ships next to the app; reinstall, or set the SHEETNEST_SPARROW environment variable to its path.",
+          "Nest",
+          DeepNestLib.MessageBoxIcon.Warning);
+        return;
+      }
 
       var button = sender as Button;
       if (button != null)
@@ -1278,22 +1290,28 @@ namespace DeepNestSharp.Ui.Views
         button.IsEnabled = false;
       }
 
-      // Live progress + cancel: the token threads through the engine's phase boundaries, and
-      // Progress<T> marshals reports back onto the UI thread for the status-bar readout.
       nestCts = new System.Threading.CancellationTokenSource();
-      var progress = new System.Progress<(double Fraction, string Phase)>(p =>
-      {
-        this.nestProgressBar.Value = p.Fraction;
-        this.nestPhaseText.Text = p.Phase;
-      });
       this.cancelNestButton.Content = "■  Cancel";
       this.cancelNestButton.IsEnabled = true;
       this.cancelNestButton.Visibility = Visibility.Visible;
-      this.nestProgressBar.Value = 0;
-      this.nestProgressBar.Visibility = Visibility.Visible;
-      this.nestPhaseText.Text = "Starting…";
+      this.nestPhaseText.Text = "Nesting…  0:00";
       this.nestPhaseText.Visibility = Visibility.Visible;
 
+      // A stopwatch + timer keep the elapsed clock ticking between engine reports (the engine only reports
+      // on sheet/density events, which can be seconds apart).
+      this.nestStopwatch = System.Diagnostics.Stopwatch.StartNew();
+      this.nestTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+      this.nestTimer.Tick += (_, __) => this.RenderNestProgress();
+      this.nestTimer.Start();
+
+      // The status just shows the elapsed clock (the DispatcherTimer keeps it ticking); the engine's per-sheet
+      // reports aren't needed for that, but we still refresh on each so the clock updates promptly.
+      var nestProgress = new System.Progress<(int Placed, int Total, int Sheet, double Density)>(_ =>
+      {
+        this.RenderNestProgress();
+      });
+
+      bool nestSucceeded = false;
       try
       {
         // Hidden end-to-end test hook for the crash reporter (set SHEETNEST_CRASH_TEST=1).
@@ -1305,13 +1323,12 @@ namespace DeepNestSharp.Ui.Views
         var token = nestCts.Token;
         var (result, error) = await Task.Run(() =>
         {
-          // 24 px/inch (was 8): triples the raster resolution so the safety halo + spacing gaps shrink from
-          // ~0.125"+ down to ~0.04" — much tighter nesting with the placement still overlap-free (verified
-          // in GpuNestLab). Slower, but the closed-marking optimization keeps it fast enough for real jobs.
-          // 24 px/in, or its metric twin ~0.945 px/mm: SAME physical resolution, so a 3000 mm
-          // sheet rasterizes to the same grid size as today's 120 in one.
-          double pxPerUnit = this.unitsMm ? 24.0 / 25.4 : 24.0;
-          var r = RasterNestService.Nest(parts, sheetStock, placementType, rotations, spacing, margin, pxPerUnit, out string err, token, progress, this.CurrentOffcutOptions());
+          // The sparrow engine: dense collision-separation nesting, per-sheet, corner-compacted, with
+          // pattern replication across identical sheets. Works in real drawing units (no raster grid).
+          // perSheetBudgetSec caps the per-try sparrow time. 5 is plenty: density does NOT converge past
+          // ~4-6s (its run-to-run spread is inherent), so best-of-K — not a longer single run — is what
+          // buys quality. Keeping this low keeps nesting fast.
+          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress);
           return (r, err);
         });
 
@@ -1320,6 +1337,8 @@ namespace DeepNestSharp.Ui.Views
           ViewModel.MessageService.DisplayMessageBox(error ?? "Nest produced no result.", "Nest", DeepNestLib.MessageBoxIcon.Information);
           return;
         }
+
+        nestSucceeded = true;
 
         // Hand the per-part spacings to the viewer BEFORE showing the result, so manual nesting
         // (drag/rotate/nudge) enforces the same clearances the nester used — common-line parts may
@@ -1405,9 +1424,21 @@ namespace DeepNestSharp.Ui.Views
       }
       finally
       {
+        string elapsed = NestElapsed();
+        this.nestTimer?.Stop();
+        this.nestTimer = null;
+        this.nestStopwatch?.Stop();
+        this.nestStopwatch = null;
+
         this.cancelNestButton.Visibility = Visibility.Collapsed;
-        this.nestProgressBar.Visibility = Visibility.Collapsed;
-        if (this.nestPhaseText.Text != "Nest cancelled")
+
+        // Keep the final time on screen after a successful nest; keep "Nest cancelled" if cancelled;
+        // otherwise (error) clear the status text.
+        if (nestSucceeded)
+        {
+          this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}");
+        }
+        else if (this.nestPhaseText.Text != "Nest cancelled")
         {
           this.nestPhaseText.Visibility = Visibility.Collapsed;
         }
@@ -1419,6 +1450,34 @@ namespace DeepNestSharp.Ui.Views
           button.IsEnabled = true;
         }
       }
+    }
+
+    /// <summary>Renders the live nest status: just the elapsed clock (no progress bar — a global % can't be
+    /// known accurately). The final time is kept on screen when the nest ends.</summary>
+    private void RenderNestProgress()
+    {
+      this.nestPhaseText.Text = FormattableString.Invariant($"Nesting…  {NestElapsed()}");
+    }
+
+    /// <summary>Elapsed nest time as m:ss (0:00 if the stopwatch isn't running).</summary>
+    private string NestElapsed()
+    {
+      return this.nestStopwatch is { } sw
+        ? FormattableString.Invariant($"{(int)sw.Elapsed.TotalMinutes}:{sw.Elapsed.Seconds:00}")
+        : "0:00";
+    }
+
+    /// <summary>Locates the external quality engine: SHEETNEST_SPARROW env var, else sparrow.exe beside the app.</summary>
+    private static string ResolveSparrowExe()
+    {
+      var env = System.Environment.GetEnvironmentVariable("SHEETNEST_SPARROW");
+      if (!string.IsNullOrWhiteSpace(env) && System.IO.File.Exists(env))
+      {
+        return env;
+      }
+
+      var beside = System.IO.Path.Combine(System.AppContext.BaseDirectory, "sparrow.exe");
+      return System.IO.File.Exists(beside) ? beside : null;
     }
 
     private void OnCancelNest(object sender, RoutedEventArgs e)

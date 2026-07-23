@@ -31,7 +31,7 @@ namespace DeepNestSharp.Ui.UserControls
     // The seven orientation permissions (photo IMG_1722), with an arrow icon language: ALL of
     // them are arrows — a single up arrow (only 0°), a single side arrow (only 90°), a bent
     // quarter-turn arrow (0+90), ↔ (0+180), ↕ (90+270), a four-way cross — and a circle for "any".
-    // Codes are RasterNestService's permitted-orientation codes.
+    // Codes are RotationCodes' permitted-orientation codes.
     private enum IconKind
     {
       ArrowUp,
@@ -46,10 +46,10 @@ namespace DeepNestSharp.Ui.UserControls
     private static readonly (string Label, int Rotations, IconKind Icon, AnglesEnum Strict, string Tip)[] Options = new[]
     {
       ("As drawn", 1, IconKind.ArrowUp, AnglesEnum.None, "Only 0° — the part stays exactly as drawn (respects grain)."),
-      ("90° only", RasterNest.RasterNestService.RotOnly90, IconKind.ArrowRight, AnglesEnum.None, "Only 90° — the part is always turned once."),
-      ("0°+90°", RasterNest.RasterNestService.RotZeroAnd90, IconKind.QuarterTurn, AnglesEnum.None, "0° and 90° permitted."),
+      ("90° only", RasterNest.RotationCodes.RotOnly90, IconKind.ArrowRight, AnglesEnum.None, "Only 90° — the part is always turned once."),
+      ("0°+90°", RasterNest.RotationCodes.RotZeroAnd90, IconKind.QuarterTurn, AnglesEnum.None, "0° and 90° permitted."),
       ("0°+180°", 2, IconKind.ArrowH, AnglesEnum.AsPreviewed, "0° and 180° — respects material grain but can flip."),
-      ("90°+270°", RasterNest.RasterNestService.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270° — always turned, either way."),
+      ("90°+270°", RasterNest.RotationCodes.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270° — always turned, either way."),
       ("4-way", 4, IconKind.FourArrows, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°)."),
       ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
     };

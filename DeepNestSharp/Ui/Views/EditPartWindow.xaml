@@ -93,7 +93,7 @@
 
           <TextBlock Text="Priority:" Margin="0,14,0,4" />
           <ComboBox x:Name="priorityCombo" Width="150" HorizontalAlignment="Left"
-                    ToolTip="Higher-priority parts are nested first — they get the best positions and are never the ones left off the sheet." />
+                    ToolTip="1 = highest priority. Higher-priority parts are nested first — they fill the earlier sheets and are never the ones left off when material runs out." />
         </StackPanel>
       </GroupBox>
     </Grid>

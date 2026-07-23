@@ -303,10 +303,8 @@
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalPlacedCount, FallbackValue=--}" />
         <TextBlock Style="{DynamicResource StatusLabel}" Text="Unplaced:" />
         <TextBlock Style="{DynamicResource StatusValue}" Text="{Binding NestMonitorViewModel.SelectedItem.TotalUnplacedCount, FallbackValue=--}" />
-        <!-- Live nest progress: phase text + bar, visible only while a nest runs. -->
+        <!-- Live nest status: elapsed time only, visible while a nest runs and the final time after it ends. -->
         <TextBlock x:Name="nestPhaseText" Style="{DynamicResource StatusValue}" Visibility="Collapsed" Margin="18,0,6,0" />
-        <ProgressBar x:Name="nestProgressBar" Width="160" Height="12" VerticalAlignment="Center"
-                     Minimum="0" Maximum="1" Visibility="Collapsed" />
         <!-- Startup update check lights this up; click opens the GitHub release page. -->
         <TextBlock x:Name="updateNotice" Style="{DynamicResource StatusValue}" Visibility="Collapsed"
                    Cursor="Hand" TextDecorations="Underline" Margin="18,0,0,0"
