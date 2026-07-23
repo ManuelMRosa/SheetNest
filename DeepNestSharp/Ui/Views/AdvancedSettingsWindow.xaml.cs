@@ -32,6 +32,8 @@ namespace DeepNestSharp.Ui.Views
       this.autosaveCheck.IsChecked = autosaveEnabled;
       this.minutesUpDown.Value = autosaveMinutes;
       this.minutesUpDown.IsEnabled = autosaveEnabled;
+
+      RefreshIntegrationStatus();
     }
 
     public bool AutosaveEnabled => this.autosaveCheck.IsChecked == true;
@@ -66,6 +68,26 @@ namespace DeepNestSharp.Ui.Views
       {
         this.minutesUpDown.IsEnabled = this.autosaveCheck.IsChecked == true;
       }
+    }
+
+    private void OnIntegrate(object sender, RoutedEventArgs e)
+    {
+      DeepNestSharp.Ui.Services.SheetCamIntegration.Integrate(this);
+      RefreshIntegrationStatus();
+    }
+
+    private void OnRestore(object sender, RoutedEventArgs e)
+    {
+      DeepNestSharp.Ui.Services.SheetCamIntegration.Restore(this);
+      RefreshIntegrationStatus();
+    }
+
+    private void RefreshIntegrationStatus()
+    {
+      bool integrated = DeepNestSharp.Ui.Services.SheetCamIntegration.IsIntegrated();
+      this.integrationStatus.Text = integrated ? "Integrated" : "Not integrated";
+      this.integrateButton.IsEnabled = !integrated;
+      this.restoreButton.IsEnabled = integrated;
     }
 
     private void OnOk(object sender, RoutedEventArgs e)

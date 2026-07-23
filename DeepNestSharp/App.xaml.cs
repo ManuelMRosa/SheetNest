@@ -76,8 +76,18 @@
           if (args != null && args.Length > 0)
           {
             var mainViewModel = services.GetRequiredService<IMainViewModel>();
+
+            // Launched by SheetCam's nester shim (NestingPrototype.exe): the job is meant to be nested and
+            // written straight back into the same file, then the window closes so SheetCam reloads it.
+            bool sheetCamReturn = Array.Exists(args, a => string.Equals(a, "--sheetcam", StringComparison.OrdinalIgnoreCase));
+
             foreach (var arg in args)
             {
+              if (arg.StartsWith("--", StringComparison.Ordinal))
+              {
+                continue; // a switch, not a file
+              }
+
               var fileInfo = new FileInfo(arg);
               if (fileInfo.Exists)
               {
@@ -103,6 +113,13 @@
                          DeepNestLib.IO.StepUnfoldService.IsStepFile(fileInfo.FullName))
                 {
                   mainViewModel.LoadPart(fileInfo.FullName);
+                }
+                else if (fileInfo.Extension == ".nest")
+                {
+                  // How SheetCam hands a job over: its AutoNesting plugin launches the nester with the
+                  // .nest path. Load it into a project and let the user nest and write it back. With
+                  // --sheetcam the window also gets a "Send to SheetCam" button and closes after it.
+                  (mainWindow as MainWindow)?.ImportSheetCamNest(fileInfo.FullName, sheetCamReturn);
                 }
                 else
                 {

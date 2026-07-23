@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A tiny launcher that stands in for SheetCam's NestingPrototype.exe. SheetCam's AutoNesting plugin
+    launches "<plugin dir>\NestingPrototype.exe <path.nest>" and waits for it to exit. This forwards the
+    job to SheetNest and blocks until SheetNest closes, so SheetCam reloads the nested result.
+
+    net48 so it runs on any Windows without a bundled runtime — the exe stays a few KB.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>NestingPrototype</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

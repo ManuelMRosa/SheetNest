@@ -27,6 +27,209 @@ namespace DeepNestSharp.CiTests.RasterNest
       this.output = output;
     }
 
+    /// <summary>
+    /// A part from a SheetCam .nest arrives already toolpathed. Packing it by its outline alone drove its
+    /// lead-in through the neighbouring part once the job was cut, so the engine has to reserve the lead
+    /// and the kerf as well — while the geometry that gets drawn and exported stays the part itself.
+    /// </summary>
+    [Fact]
+    public void ToolingFootprintReservesTheLeadAndTheKerf()
+    {
+      // 20 x 40 bar on its own origin, with a lead piercing 3.15mm clear of the right edge.
+      var bar = new NoFitPolygon(new[]
+      {
+        new SvgPoint(-10, -20), new SvgPoint(10, -20), new SvgPoint(10, 20), new SvgPoint(-10, 20),
+      });
+      var lead = new[] { (IReadOnlyList<SvgPoint>)new[] { new SvgPoint(10.15, 0), new SvgPoint(13.15, 0) } };
+      const double kerf = 0.3;
+
+      var plain = SparrowNestService.ToolingFootprint(bar, null, 0, 0);
+      var tooled = SparrowNestService.ToolingFootprint(bar, lead, kerf, 0);
+
+      plain.MaxX.Should().BeApproximately(10, 1e-6, "with no tooling the footprint is just the part");
+
+      // The pierce point plus half a kerf of beam either side of it. Tolerance is loose enough for the
+      // rounded end cap, which Clipper approximates with segments and so falls a hair short of the arc.
+      tooled.MaxX.Should().BeApproximately(13.15 + (kerf / 2), 0.01, "the lead's reach must be reserved");
+      tooled.MinX.Should().BeApproximately(-10 - (kerf / 2), 0.01, "the cut runs half a kerf outside the outline");
+      tooled.MaxY.Should().BeApproximately(20 + (kerf / 2), 0.01);
+      tooled.MaxX.Should().BeGreaterThan(plain.MaxX + 3, "the whole point is that the lead reaches well past the part");
+    }
+
+    /// <summary>
+    /// Compaction runs after sparrow and slides parts together until their polygons are `spacing` apart —
+    /// with common-line that is exact contact. Given the bare outline it therefore undid the clearance
+    /// sparrow had just respected, and a real exported job came out with 0.00mm between contours. Given the
+    /// TOOLING footprint instead, contact means the outlines sit one kerf apart: the shared cut edge, so
+    /// the kerfs may overlap each other but neither eats into a part.
+    /// </summary>
+    [Fact]
+    public void CommonLineCompactionLeavesOneKerfBetweenContours()
+    {
+      const double kerf = 0.4;
+      var square = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(20, 0), new SvgPoint(20, 20), new SvgPoint(0, 20),
+      };
+      var outline = new NoFitPolygon(square);
+      var tooling = SparrowNestService.ToolingFootprint(outline, null, kerf, 0);
+
+      // Two common-line parts (spacing 0), far apart, on a sheet big enough that compaction is free to
+      // slide them right together.
+      var items = new List<CompactItem>
+      {
+        new CompactItem { Poly = tooling, X = 1, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = tooling, X = 60, Y = 1, Spacing = 0 },
+      };
+
+      RasterCompact.Compact(items, 200, 200, 0.5);
+
+      OutlineGap(items[0], items[1], 20)
+        .Should().BeGreaterThan(kerf - 1e-3, "the shared cut has to consume a full kerf without eating either part");
+    }
+
+    /// <summary>
+    /// The combination Manuel asked about: common-line ON **and** a lead that reaches toward the neighbour.
+    /// The shared-cut compaction must still keep the lead's room clear — the parts cannot close to one kerf
+    /// where a lead sticks out; they must sit the lead's reach apart instead. And it has to scale: a bigger
+    /// kerf pushes them further, so the gap is never a fixed number. Proven for two kerf widths.
+    /// </summary>
+    [Theory]
+    [InlineData(0.3)]
+    [InlineData(0.6)]
+    public void CommonLineStillReservesTheLeadForAnyKerf(double kerf)
+    {
+      var square = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(20, 0), new SvgPoint(20, 20), new SvgPoint(0, 20),
+      };
+      var outline = new NoFitPolygon(square);
+
+      // Part A carries a lead-in that pierces 3.15 past its right edge (x = 20 → 23.15) — pointing straight
+      // at its neighbour. Part B is a plain square. Both are common-line (spacing 0).
+      const double pierceX = 23.15;
+      var lead = new[] { (IReadOnlyList<SvgPoint>)new[] { new SvgPoint(20, 10), new SvgPoint(pierceX, 10) } };
+      var withLead = SparrowNestService.ToolingFootprint(outline, lead, kerf, 0);
+      var plain = SparrowNestService.ToolingFootprint(outline, null, kerf, 0);
+
+      var items = new List<CompactItem>
+      {
+        new CompactItem { Poly = withLead, X = 1, Y = 1, Spacing = 0 },   // lead points right, toward B
+        new CompactItem { Poly = plain, X = 60, Y = 1, Spacing = 0 },
+      };
+
+      RasterCompact.Compact(items, 400, 200, 0.5);
+
+      // Gap between the two 20-wide square outlines. Compaction slides B left until B's left edge meets A's
+      // footprint — which the lead pushed out to (20-edge + reach + half a kerf). So the outline gap is the
+      // lead's reach (3.15) plus one kerf, NOT one kerf. Loose tolerance for Clipper's rounded lead caps.
+      double gap = OutlineGap(items[0], items[1], 20);
+      double leadReach = pierceX - 20; // 3.15
+      gap.Should().BeApproximately(leadReach + kerf, 0.1,
+        "the lead's room stays clear even in common-line, and the gap grows with the kerf");
+      gap.Should().BeGreaterThan(2 * kerf,
+        "a lead pointing at the neighbour cannot be packed to the shared-cut one-kerf distance");
+    }
+
+    /// <summary>The same compaction on parts with no tooling must still close to true contact, which is
+    /// what common-line means for a plain DXF job.</summary>
+    [Fact]
+    public void CommonLineCompactionStillTouchesWithoutTooling()
+    {
+      var outline = new NoFitPolygon(new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(20, 0), new SvgPoint(20, 20), new SvgPoint(0, 20),
+      });
+
+      var items = new List<CompactItem>
+      {
+        new CompactItem { Poly = outline, X = 1, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = outline, X = 60, Y = 1, Spacing = 0 },
+      };
+
+      RasterCompact.Compact(items, 200, 200, 0.5);
+
+      OutlineGap(items[0], items[1], 20).Should().BeLessThan(1e-3, "no tooling means the outlines themselves touch");
+    }
+
+    /// <summary>Shortest distance between the two square outlines at their compacted positions.</summary>
+    private static double OutlineGap(CompactItem a, CompactItem b, double side)
+    {
+      double gapX = Math.Max(0, Math.Max(a.X - (b.X + side), b.X - (a.X + side)));
+      double gapY = Math.Max(0, Math.Max(a.Y - (b.Y + side), b.Y - (a.Y + side)));
+      return gapX > 0 && gapY > 0 ? Math.Sqrt((gapX * gapX) + (gapY * gapY)) : Math.Max(gapX, gapY);
+    }
+
+    /// <summary>
+    /// The common-line snap: two identical bars that sparrow left a hair over one kerf apart and misaligned
+    /// get nudged to exactly one kerf, edges aligned — so the post sees a shared cut. All-or-nothing per
+    /// group, and it must not push a cut into a neighbour.
+    /// </summary>
+    [Fact]
+    public void SnapAlignsNearNeighboursToExactlyOneKerf()
+    {
+      const double kerf = 0.3;
+      var barPts = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(2, 0), new SvgPoint(2, 10), new SvgPoint(0, 10),
+      };
+      INfp Bar() => new NoFitPolygon(barPts);
+      var tooling = SparrowNestService.ToolingFootprint(new NoFitPolygon(barPts), null, kerf, 0);
+
+      // A at (1,1): right edge x=3. B just over a kerf to the right (gap 0.35) and shifted up 0.2.
+      var a = new PartPlacement(Bar()) { X = 1, Y = 1, Rotation = 0, Source = 0 };
+      var b = new PartPlacement(Bar()) { X = 3.35, Y = 1.2, Rotation = 0, Source = 0 };
+      var all = new List<IPartPlacement> { a, b };
+      var kerfById = new Dictionary<int, double> { { 0, kerf } };
+      var toolingById = new Dictionary<int, INfp> { { 0, tooling } };
+
+      SparrowNestService.SnapCommonLineEdges(all, kerfById, toolingById);
+
+      // B's left edge now sits exactly one kerf off A's right edge, and their edges line up in Y.
+      (b.PlacedPart.MinX - a.PlacedPart.MaxX).Should().BeApproximately(kerf, 1e-6, "the shared cut is exactly one kerf");
+      b.PlacedPart.MinY.Should().BeApproximately(a.PlacedPart.MinY, 1e-6, "the shared edges align end to end");
+    }
+
+    /// <summary>Parts that are nowhere near a shareable edge are left exactly where sparrow put them.</summary>
+    [Fact]
+    public void SnapLeavesFarApartPartsUntouched()
+    {
+      const double kerf = 0.3;
+      var barPts = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(2, 0), new SvgPoint(2, 10), new SvgPoint(0, 10),
+      };
+      INfp Bar() => new NoFitPolygon(barPts);
+      var tooling = SparrowNestService.ToolingFootprint(new NoFitPolygon(barPts), null, kerf, 0);
+
+      var a = new PartPlacement(Bar()) { X = 1, Y = 1, Rotation = 0, Source = 0 };
+      var b = new PartPlacement(Bar()) { X = 20, Y = 1, Rotation = 0, Source = 0 }; // far away
+      var all = new List<IPartPlacement> { a, b };
+
+      SparrowNestService.SnapCommonLineEdges(
+        all,
+        new Dictionary<int, double> { { 0, kerf } },
+        new Dictionary<int, INfp> { { 0, tooling } });
+
+      b.X.Should().Be(20, "nothing to snap to means no move");
+      b.Y.Should().Be(1);
+    }
+
+    /// <summary>Plain DXF parts carry no tooling, and must keep nesting exactly as they did before.</summary>
+    [Fact]
+    public void PartsWithoutToolingAreUnaffected()
+    {
+      var bar = new NoFitPolygon(new[]
+      {
+        new SvgPoint(-10, -20), new SvgPoint(10, -20), new SvgPoint(10, 20), new SvgPoint(-10, 20),
+      });
+
+      var spacingOnly = SparrowNestService.ToolingFootprint(bar, null, 0, 1.0);
+
+      spacingOnly.MaxX.Should().BeApproximately(10.5, 1e-6, "only the usual half-spacing shell is applied");
+      spacingOnly.MinY.Should().BeApproximately(-20.5, 1e-6);
+    }
+
     [Fact]
     public void ProducesRenderableOverlapFreeResult()
     {

@@ -27,10 +27,12 @@ namespace DeepNestSharp.RasterNest
     {
       public int Source;
       public INfp Nfp;        // original (rendered) geometry
-      public INfp Dilated;    // grown by spacing/2 — what sparrow packs
+      public INfp Dilated;    // tooling footprint grown by spacing/2 — what sparrow packs
+      public INfp Tooling;    // tooling footprint WITHOUT the spacing shell — what compaction must respect
       public int[] Angles;    // allowed orientations (discrete fallback + used by hole-filling)
       public bool Continuous; // "Free" rotation → send NO orientation list so sparrow rotates continuously
       public double EffSpacing;
+      public double Kerf;     // cut width (drawing units) — the exact gap common-line neighbours snap to
       public int Qty;
       public bool Mirrored;   // this population is X-flipped — placements carry IsMirrored for the exporter
       public int Priority;    // 1-10, LOWER nests first (1 = highest); decides which parts fill earlier sheets
@@ -62,7 +64,8 @@ namespace DeepNestSharp.RasterNest
       string sparrowExePath,
       out string error,
       CancellationToken cancel = default,
-      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null)
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
+      bool commonLine = false)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -99,13 +102,33 @@ namespace DeepNestSharp.RasterNest
         slots = slots.Take(MaxSheets).ToList();
       }
 
-      var loaded = LoadAll(parts, rotations, spacing, out error);
+      // Common-line packs as densely as sparrow can (mixing orientations); the snap then aligns whatever
+      // near-parallel edges it left, and the post decides which shared edges to cut once. The snap needs
+      // straight H/V edges, so common-line uses axis-aligned rotation (4-way) rather than free/fine angles.
+      var loaded = LoadAll(parts, rotations, spacing, commonLine, out error);
       if (loaded == null || loaded.Count == 0)
       {
         error ??= "No valid parts to nest.";
         return null;
       }
 
+      return RunNestBody(loaded, slots, margin, perSheetBudgetSec, sparrowExePath, commonLine, cancel, progress, out error);
+    }
+
+    /// <summary>The per-sheet nest loop: fills sheets from the stock (best-of-K sparrow packs, corner
+    /// compaction, pattern replication) and maps to an <see cref="INestResult"/>.</summary>
+    private static INestResult RunNestBody(
+      List<Loaded> loaded,
+      List<(int W, int H)> slots,
+      double margin,
+      int perSheetBudgetSec,
+      string sparrowExePath,
+      bool commonLine,
+      CancellationToken cancel,
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
+      out string error)
+    {
+      error = null;
       var loadedById = loaded.ToDictionary(l => l.Source);
       var pool = loaded.ToDictionary(l => l.Source, l => l.Qty);
       int totalParts = pool.Values.Sum();
@@ -144,7 +167,7 @@ namespace DeepNestSharp.RasterNest
 
         // packW/packH = the sheet dims PackOneSheet packed in (always the stock slot's own orientation — the
         // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
-        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, tries, sparrowExePath, cancel, onDensity, out string perr);
+        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, tries, sparrowExePath, cancel, onDensity, commonLine, out string perr);
         if (cancel.IsCancellationRequested)
         {
           error = "Cancelled.";
@@ -215,7 +238,7 @@ namespace DeepNestSharp.RasterNest
 
     /// <summary>Loads each part's contour once (arcs tessellated by the app pipeline) and pre-computes its
     /// spacing-dilated shell + allowed orientations. Holes (INfp.Children) are not yet forwarded.</summary>
-    private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, out string error)
+    private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, bool commonLine, out string error)
     {
       error = null;
       var helper = new NestExecutionHelper();
@@ -240,15 +263,40 @@ namespace DeepNestSharp.RasterNest
           }
 
           int code = part.Rotations > 0 ? part.Rotations : rotations;
+
+          // Common-line needs straight H/V edges for the snap to line up neighbours. Fine/continuous
+          // rotation (45° steps, free 15°) would leave edges at odd angles the snap can't use, so drop it
+          // to 4-way. Decide by the ANGLES, not the code number: the special codes 1001/1002/1003 are
+          // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept — an
+          // earlier `code >= 8` test wrongly turned 0/90 into 4-way, adding 180/270.
+          if (commonLine && RotationCodes.PermittedSet(code).Any(a => a % 90 != 0))
+          {
+            code = 4;
+          }
+
           double effSpacing = part.Spacing >= 0 ? part.Spacing : Math.Max(0, spacing);
+
+          // Mirroring is baked into the geometry above, so the tooling has to follow it.
+          var toolPaths = part.ToolPaths;
+          if (part.Mirrored && toolPaths != null)
+          {
+            toolPaths = toolPaths.Select(p => (IReadOnlyList<SvgPoint>)p.Select(v => new SvgPoint(-v.X, v.Y)).ToList()).ToList();
+          }
+
           loaded.Add(new Loaded
           {
             Source = source,
             Nfp = nfp,
-            Dilated = OffsetOutward(nfp, effSpacing / 2.0),
+            Dilated = ToolingFootprint(nfp, toolPaths, part.Kerf, effSpacing),
+
+            // Same shape without the spacing shell: compaction adds the spacing itself, so handing it
+            // the dilated one would double-count. With no tooling this IS the outline, which keeps plain
+            // DXF parts compacting exactly as they did.
+            Tooling = ToolingFootprint(nfp, toolPaths, part.Kerf, 0),
             Angles = RotationCodes.PermittedSet(code),
             Continuous = code == 36, // only "Free" (sentinel 36) is continuous; 1001/1002/1003 are discrete sets
             EffSpacing = effSpacing,
+            Kerf = Math.Max(0, part.Kerf),
             Qty = part.Quantity,
             Mirrored = part.Mirrored,
             Priority = part.Priority,
@@ -326,7 +374,7 @@ namespace DeepNestSharp.RasterNest
     /// Packs ONLY in the user's chosen sheet orientation — the sheet is never auto-rotated (a 120×60 preset must
     /// render 120×60); to use the other orientation the operator picks that preset.</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int tries, string exe, CancellationToken cancel, Action<double> onDensity, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int tries, string exe, CancellationToken cancel, Action<double> onDensity, bool commonLine, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
@@ -386,7 +434,7 @@ namespace DeepNestSharp.RasterNest
               return;
             }
 
-            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, cancel);
+            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, commonLine, cancel);
             wPl[j] = pl;
             wBy[j] = by;
             wSt[j] = (pl.Count, ParseDensity(outJson), seed);
@@ -443,11 +491,13 @@ namespace DeepNestSharp.RasterNest
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
     /// and splits off anything past the sheet edge (not placed).</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource) MapAndCompact(
-      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CancellationToken cancel)
+      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, bool commonLine, CancellationToken cancel)
     {
       using var doc = JsonDocument.Parse(outputJson);
       var placed = doc.RootElement.GetProperty("solution").GetProperty("layout").GetProperty("placed_items");
       var spacingById = batch.ToDictionary(l => l.Source, l => l.EffSpacing);
+      var kerfById = batch.ToDictionary(l => l.Source, l => l.Kerf);
+      var toolingById = batch.ToDictionary(l => l.Source, l => l.Tooling);
 
       var all = new List<IPartPlacement>();
       foreach (var pi in placed.EnumerateArray())
@@ -481,9 +531,16 @@ namespace DeepNestSharp.RasterNest
         pp.Y += margin - minY;
       }
 
+      // Compact against the TOOLING footprint, not the bare outline. Compaction slides parts together
+      // until their polygons are `spacing` apart — with common-line that is exact contact, which on a
+      // toolpathed part would drive the kerf and the lead-ins into the neighbour, undoing the clearance
+      // sparrow just respected. Feeding it the footprint makes "exact contact" mean the outlines sit one
+      // kerf apart: the shared cut edge, with neither part losing material.
       var compactItems = all.Select(pp => new CompactItem
       {
-        Poly = pp.Part,
+        Poly = toolingById.TryGetValue(pp.Source, out var tooling) && tooling != null
+          ? tooling.Rotate(pp.Rotation)   // same frame as pp.Part: rotated about the origin, mirror baked in
+          : pp.Part,
         X = pp.X,
         Y = pp.Y,
         Spacing = spacingById.TryGetValue(pp.Source, out double sp) ? sp : 0,
@@ -493,6 +550,14 @@ namespace DeepNestSharp.RasterNest
       {
         all[k].X = compactItems[k].X;
         all[k].Y = compactItems[k].Y;
+      }
+
+      // Common-line: nudge near-parallel neighbour edges onto exactly one kerf apart and aligned, so the
+      // post processor recognises the shared cut and cuts it once. Best-effort per part (all-or-nothing):
+      // a part only moves if the shift keeps every part's tooling clear of every other.
+      if (commonLine)
+      {
+        SnapCommonLineEdges(all, kerfById, toolingById);
       }
 
       const double tol = 1e-3;
@@ -512,6 +577,272 @@ namespace DeepNestSharp.RasterNest
 
       return (placements, placedBySource);
     }
+
+    /// <summary>An axis-aligned straight edge of a placed part, in absolute sheet coordinates.</summary>
+    private readonly struct AaEdge
+    {
+      public AaEdge(int part, bool vertical, double pos, double lo, double hi, bool materialBelow)
+      {
+        this.Part = part;
+        this.Vertical = vertical;   // true = runs along Y at X=Pos; false = runs along X at Y=Pos
+        this.Pos = pos;             // the constant coordinate (X for vertical, Y for horizontal)
+        this.Lo = lo;
+        this.Hi = hi;               // the edge spans [Lo, Hi] on the other axis
+        this.MaterialBelow = materialBelow; // material is on the lower-Pos side (a "right"/"top" edge)
+      }
+
+      public int Part { get; }
+
+      public bool Vertical { get; }
+
+      public double Pos { get; }
+
+      public double Lo { get; }
+
+      public double Hi { get; }
+
+      public bool MaterialBelow { get; }
+    }
+
+    /// <summary>
+    /// Common-line snap: nudges parts so a near-parallel neighbour edge pair lands exactly one kerf apart
+    /// and aligned, giving the post processor coincident toolpath endpoints to recognise. Only axis-aligned
+    /// edges (parts are restricted to 0/180 for common-line, so shared edges are horizontal or vertical).
+    /// All-or-nothing per connected group: a group of parts only moves if, after moving, every part's
+    /// tooling footprint still clears every other part (no cut eating into a neighbour).
+    /// </summary>
+    internal static void SnapCommonLineEdges(List<IPartPlacement> all, Dictionary<int, double> kerfById, Dictionary<int, INfp> toolingById)
+    {
+      int n = all.Count;
+      if (n < 2)
+      {
+        return;
+      }
+
+      double kerf = kerfById.Values.Where(k => k > 0).DefaultIfEmpty(0).Max();
+      if (kerf <= 0)
+      {
+        return;
+      }
+
+      // Absolute geometry + axis-aligned edges per part.
+      var absPts = new List<System.Windows.Point>[n];
+      var edges = new List<AaEdge>();
+      const double angTol = 1e-3;                 // how "axis-aligned" an edge must be
+      double minLen = kerf * 2;                    // ignore tiny edges (chamfers etc.)
+      for (int i = 0; i < n; i++)
+      {
+        var pts = all[i].PlacedPart.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
+        absPts[i] = pts;
+        double cx = pts.Average(p => p.X);
+        int m = pts.Count;
+        for (int k = 0; k < m; k++)
+        {
+          var a = pts[k];
+          var b = pts[(k + 1) % m];
+          double dx = b.X - a.X, dy = b.Y - a.Y;
+          double len = Math.Sqrt((dx * dx) + (dy * dy));
+          if (len < minLen)
+          {
+            continue;
+          }
+
+          if (Math.Abs(dx) < angTol * len) // vertical
+          {
+            double lo = Math.Min(a.Y, b.Y), hi = Math.Max(a.Y, b.Y);
+            edges.Add(new AaEdge(i, true, a.X, lo, hi, cx < a.X)); // material left of the edge → "right" edge
+          }
+          else if (Math.Abs(dy) < angTol * len) // horizontal
+          {
+            double lo = Math.Min(a.X, b.X), hi = Math.Max(a.X, b.X);
+            double cy = pts.Average(p => p.Y);
+            edges.Add(new AaEdge(i, false, a.Y, lo, hi, cy < a.Y)); // material below the edge → "top" edge
+          }
+        }
+      }
+
+      // Find neighbour edge pairs one kerf apart and aligned, and the shift that makes it exact. A "right"
+      // edge of A (material below Pos) facing a "left" edge of B (material above Pos), one kerf apart.
+      var shifts = new Dictionary<(int A, int B), (double Dx, double Dy)>();
+      foreach (var ea in edges.Where(e => e.MaterialBelow))
+      {
+        foreach (var eb in edges.Where(e => !e.MaterialBelow && e.Vertical == ea.Vertical && e.Part != ea.Part))
+        {
+          double gap = eb.Pos - ea.Pos; // B sits above A on the Pos axis
+          if (gap < 0.4 * kerf || gap > 1.6 * kerf)
+          {
+            continue;
+          }
+
+          double overlap = Math.Min(ea.Hi, eb.Hi) - Math.Max(ea.Lo, eb.Lo);
+          if (overlap < minLen)
+          {
+            continue; // must actually run alongside each other
+          }
+
+          // Shift B: perpendicular to land exactly one kerf off A, and along the edge to align the ends.
+          double perp = (ea.Pos + kerf) - eb.Pos;   // move B's Pos to A.Pos + kerf
+          double along = ea.Lo - eb.Lo;              // align the low ends
+          var s = ea.Vertical ? (perp, along) : (along, perp);
+          var key = (ea.Part, eb.Part);
+          if (!shifts.ContainsKey(key))
+          {
+            shifts[key] = s;
+          }
+        }
+      }
+
+      if (shifts.Count == 0)
+      {
+        return;
+      }
+
+      // Connected groups by union-find; propagate a per-part offset from an anchor via BFS. A group whose
+      // constraints disagree (a cycle wants two different offsets) is left as sparrow placed it.
+      var adj = new Dictionary<int, List<(int Other, double Dx, double Dy, bool Forward)>>();
+      void AddEdge(int a, int b, double dx, double dy)
+      {
+        (adj.TryGetValue(a, out var la) ? la : adj[a] = new()).Add((b, dx, dy, true));
+        (adj.TryGetValue(b, out var lb) ? lb : adj[b] = new()).Add((a, dx, dy, false));
+      }
+
+      foreach (var kv in shifts)
+      {
+        AddEdge(kv.Key.A, kv.Key.B, kv.Value.Dx, kv.Value.Dy);
+      }
+
+      var offset = new (double X, double Y)?[n];
+      var visited = new bool[n];
+      var groups = new List<List<int>>();
+      var badGroup = new HashSet<int>();
+      foreach (var start in adj.Keys)
+      {
+        if (visited[start])
+        {
+          continue;
+        }
+
+        var group = new List<int>();
+        var queue = new Queue<int>();
+        offset[start] = (0, 0);
+        visited[start] = true;
+        queue.Enqueue(start);
+        bool consistent = true;
+        while (queue.Count > 0)
+        {
+          int u = queue.Dequeue();
+          group.Add(u);
+          foreach (var (v, dx, dy, forward) in adj[u])
+          {
+            // Constraint: B_offset = A_offset + shift. Forward edge is A→B (u is A), else u is B.
+            var want = forward
+              ? (offset[u].Value.X + dx, offset[u].Value.Y + dy)
+              : (offset[u].Value.X - dx, offset[u].Value.Y - dy);
+            if (offset[v] is { } have)
+            {
+              if (Math.Abs(have.X - want.Item1) > 1e-4 || Math.Abs(have.Y - want.Item2) > 1e-4)
+              {
+                consistent = false;
+              }
+            }
+            else
+            {
+              offset[v] = want;
+              visited[v] = true;
+              queue.Enqueue(v);
+            }
+          }
+        }
+
+        groups.Add(group);
+        if (!consistent)
+        {
+          foreach (var g in group)
+          {
+            badGroup.Add(g);
+          }
+        }
+      }
+
+      // Apply tentatively, then verify no tooling footprint invades another part. Revert failing groups.
+      var origX = all.Select(p => p.X).ToArray();
+      var origY = all.Select(p => p.Y).ToArray();
+      foreach (var group in groups)
+      {
+        if (group.Any(g => badGroup.Contains(g)))
+        {
+          continue;
+        }
+
+        foreach (int i in group)
+        {
+          all[i].X = origX[i] + offset[i].Value.X;
+          all[i].Y = origY[i] + offset[i].Value.Y;
+        }
+      }
+
+      if (!ToolingClearsEveryone(all, toolingById))
+      {
+        // Something invaded — snap made it worse. Roll the whole pass back (safe: sparrow's layout stands).
+        for (int i = 0; i < n; i++)
+        {
+          all[i].X = origX[i];
+          all[i].Y = origY[i];
+        }
+      }
+    }
+
+    /// <summary>True when no part's tooling footprint overlaps another part's outline by more than a sliver
+    /// (kerf bands may touch/overlap each other, but a cut must never eat into a neighbouring part).</summary>
+    private static bool ToolingClearsEveryone(List<IPartPlacement> all, Dictionary<int, INfp> toolingById)
+    {
+      double scale = SvgNest.Config.ClipperScale;
+      int n = all.Count;
+      var partPaths = new List<IntPoint>[n];
+      var toolPaths = new List<IntPoint>[n];
+      for (int i = 0; i < n; i++)
+      {
+        partPaths[i] = ShiftPath(DeepNestClipper.ScaleUpPath(all[i].Part.Points, scale), (long)Math.Round(all[i].X * scale), (long)Math.Round(all[i].Y * scale));
+        if (toolingById.TryGetValue(all[i].Source, out var tool) && tool != null)
+        {
+          var rot = Math.Abs(all[i].Rotation % 360) < 1e-9 ? tool : tool.Rotate(all[i].Rotation);
+          toolPaths[i] = ShiftPath(DeepNestClipper.ScaleUpPath(rot.Points, scale), (long)Math.Round(all[i].X * scale), (long)Math.Round(all[i].Y * scale));
+        }
+        else
+        {
+          toolPaths[i] = partPaths[i];
+        }
+      }
+
+      double invadeLimit = 0.02 * scale * scale; // area units²; ignore rounding slivers
+      for (int i = 0; i < n; i++)
+      {
+        for (int j = 0; j < n; j++)
+        {
+          if (i == j)
+          {
+            continue;
+          }
+
+          // Does i's cut (tooling) eat into j's actual part? intersection(tool_i, part_j) area.
+          var clip = new Clipper();
+          clip.AddPath(toolPaths[i], PolyType.ptSubject, true);
+          clip.AddPath(partPaths[j], PolyType.ptClip, true);
+          var sol = new List<List<IntPoint>>();
+          clip.Execute(ClipType.ctIntersection, sol);
+          double area = sol.Sum(p => Math.Abs(Clipper.Area(p)));
+          if (area > invadeLimit)
+          {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    private static List<IntPoint> ShiftPath(List<IntPoint> path, long dx, long dy)
+      => path.Select(p => new IntPoint(p.X + dx, p.Y + dy)).ToList();
 
     private static void Deduct(Dictionary<int, int> pool, Dictionary<int, int> counts)
     {
@@ -629,7 +960,11 @@ namespace DeepNestSharp.RasterNest
                 foreach (int rot in loaded.Angles)
                 {
                   var rotated = Math.Abs(rot % 360) < 1e-9 ? loaded.Nfp : loaded.Nfp.Rotate(rot);
-                  var dil = OffsetOutward(rotated, loaded.EffSpacing / 2.0);
+
+                  // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline — a part dropped
+                  // into a hole has to keep its cut clear of the surrounding part just like any other.
+                  var forFit = loaded.Tooling ?? loaded.Nfp;
+                  var dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), loaded.EffSpacing / 2.0);
                   if ((dil.MaxX - dil.MinX) > (hb.MaxX - hb.MinX) / scale || (dil.MaxY - dil.MinY) > (hb.MaxY - hb.MinY) / scale)
                   {
                     continue;
@@ -767,6 +1102,55 @@ namespace DeepNestSharp.RasterNest
     /// <summary>Grows a polygon outward by <paramref name="offset"/> (drawing units) via a miter Clipper
     /// offset — the part-spacing halo. Orientation is normalised to CCW so a +delta always GROWS (a CW
     /// ring would shrink). offset ≤ 0 returns the polygon unchanged.</summary>
+    /// <summary>
+    /// The shape the engine must keep clear for one part. For a plain DXF part that is just its outline
+    /// grown by half the spacing, exactly as before. A part from a SheetCam .nest is already toolpathed:
+    /// the cut runs half a kerf outside the outline, and its lead-ins/outs reach further still — on a real
+    /// job the outer lead pierced 2.9 mm beyond the contour, so packing to the outline drove leads straight
+    /// through the neighbouring part. Growing the outline AND the lead paths in one offset pass unions them
+    /// into a single footprint (the leads meet the contour, so the result stays connected).
+    /// <para>Only the packing shape changes — the rendered, reported and exported geometry stays the part.</para>
+    /// </summary>
+    internal static INfp ToolingFootprint(INfp poly, IReadOnlyList<IReadOnlyList<SvgPoint>> toolPaths, double kerf, double spacing)
+    {
+      double delta = Math.Max(0, spacing / 2.0) + (Math.Max(0, kerf) / 2.0);
+      bool hasPaths = toolPaths != null && toolPaths.Any(p => p != null && p.Count >= 2);
+      if (!hasPaths)
+      {
+        return OffsetOutward(poly, delta);
+      }
+
+      double scale = SvgNest.Config.ClipperScale;
+      var outline = DeepNestClipper.ScaleUpPath(poly.Points, scale);
+      if (Clipper.Area(outline) < 0)
+      {
+        outline.Reverse(); // ClipperOffset shrinks clockwise rings, so normalise the winding first
+      }
+
+      var co = new ClipperOffset(4, SvgNest.Config.CurveTolerance * scale);
+      co.AddPath(outline, JoinType.jtMiter, EndType.etClosedPolygon);
+      foreach (var path in toolPaths)
+      {
+        if (path == null || path.Count < 2)
+        {
+          continue;
+        }
+
+        // Open path: a round cap models the pierce and the beam turning a corner.
+        co.AddPath(DeepNestClipper.ScaleUpPath(path.ToArray(), scale), JoinType.jtRound, EndType.etOpenRound);
+      }
+
+      var solution = new List<List<IntPoint>>();
+      co.Execute(ref solution, delta * scale);
+      if (solution.Count == 0)
+      {
+        return OffsetOutward(poly, delta);
+      }
+
+      var biggest = solution.OrderByDescending(p => Math.Abs(Clipper.Area(p))).First();
+      return new NoFitPolygon(biggest.Select(ip => new SvgPoint(ip.X / scale, ip.Y / scale)));
+    }
+
     private static INfp OffsetOutward(INfp poly, double offset)
     {
       if (offset <= 1e-9)

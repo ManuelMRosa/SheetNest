@@ -32,6 +32,7 @@ namespace DeepNestSharp.Ui.UserControls
 
     // Target on-screen line width in device pixels (constant at any zoom level).
     private const double StrokeScreenPx = 1.0;
+    private const double KerfBandPx = 7.0; // cut-band width in device pixels; fixed on screen so it reads at any zoom
 
     // Measure snap: how close (device px) the cursor must be to a vertex to snap onto it.
     private const double SnapScreenPx = 12.0;
@@ -44,6 +45,8 @@ namespace DeepNestSharp.Ui.UserControls
     private static readonly Brush SelectedFill = new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x80)); // classic navy selection
     private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromArgb(0x77, 0xD3, 0x2F, 0x2F));
     private static readonly Brush OffcutStroke = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // reusable-offcut outline + label
+    private static readonly Brush LeadStroke = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28)); // lead-in/out cut path
+    private static readonly Brush KerfBand = new SolidColorBrush(Color.FromArgb(0xE0, 0xC6, 0x28, 0x28)); // cut band (contour + leads), bold so it reads at any zoom
 
     // Distinct sheet layouts and how many physical sheets use each (the production plan).
     private readonly List<SheetGroup> groups = new List<SheetGroup>();
@@ -102,6 +105,14 @@ namespace DeepNestSharp.Ui.UserControls
     /// the nest ran with "Prefer rectangular offcut"; null = off); computed live from the placements
     /// each render, with the same rules the DXF export uses for the separation cut lines.</summary>
     internal RasterNest.OffcutOptions OffcutOptions { get; set; }
+
+    /// <summary>Lead-in/out paths per part (keyed by <c>Part.Name</c>, i.e. its file path), in the part's
+    /// own local frame — set by the window for jobs imported from a SheetCam .nest; null = nothing to draw.</summary>
+    internal System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>>> LeadPaths { get; set; }
+
+    /// <summary>Cut width (kerf) per part in drawing units (keyed by <c>Part.Name</c>) — set for jobs from a
+    /// SheetCam .nest so the cut is drawn as a band of its real width; absent/0 = draw the outline hairline.</summary>
+    internal System.Collections.Generic.IReadOnlyDictionary<string, double> KerfByPart { get; set; }
 
     /// <summary>Re-render on demand — used by the Offcut dialog so overlay changes show without
     /// re-nesting (setting <see cref="OffcutOptions"/> alone does not redraw).</summary>
@@ -665,7 +676,126 @@ namespace DeepNestSharp.Ui.UserControls
       }
 
       this.DrawOffcutOverlay(sheetPlacement, idx, w, h, stroke);
+      this.DrawKerfOverlay(sheetPlacement, h, stroke);
+      this.DrawLeadsOverlay(sheetPlacement, h, stroke);
       this.BuildSnapPoints();
+    }
+
+    /// <summary>
+    /// For parts that came from a SheetCam .nest, highlights the cut — the outline and every hole edge —
+    /// as a bold band. The band is a FIXED width on screen (not the real kerf, which is sub-pixel on a
+    /// full-sheet view and so invisible); the point is to see where the cut and its lead-ins run. Nothing
+    /// for plain DXF parts, so their thin outline is unchanged.
+    /// </summary>
+    private void DrawKerfOverlay(ISheetPlacement sheetPlacement, double h, double stroke)
+    {
+      if (this.KerfByPart == null || this.KerfByPart.Count == 0)
+      {
+        return;
+      }
+
+      // stroke is StrokeScreenPx (1) device pixel in drawing units; scale it up to the band width. Constant
+      // on screen at any zoom.
+      double band = stroke * KerfBandPx;
+
+      foreach (var pp in sheetPlacement.PartPlacements)
+      {
+        // kerf just flags "this part came in toolpathed"; the band width is the fixed on-screen one.
+        if (pp.Part?.Name == null || !this.KerfByPart.TryGetValue(pp.Part.Name, out double kerf) || kerf <= 0)
+        {
+          continue;
+        }
+
+        var geometry = BuildPlacedGeometry(pp, h);
+        if (geometry == null)
+        {
+          continue;
+        }
+
+        this.canvas.Children.Add(new System.Windows.Shapes.Path
+        {
+          Data = geometry,
+          Fill = null,
+          Stroke = KerfBand,
+          StrokeThickness = band,
+          StrokeLineJoin = PenLineJoin.Round,
+        });
+      }
+    }
+
+    /// <summary>
+    /// The lead-in/out paths of parts that came from a SheetCam .nest, drawn where they will actually be
+    /// cut. They reach outside the part outline, and the nester reserves that room — showing them is what
+    /// explains the gaps it left, and makes a lead running into a neighbour visible here instead of after
+    /// the job is back in SheetCam.
+    /// </summary>
+    private void DrawLeadsOverlay(ISheetPlacement sheetPlacement, double h, double stroke)
+    {
+      if (this.LeadPaths == null || this.LeadPaths.Count == 0)
+      {
+        return;
+      }
+
+      foreach (var pp in sheetPlacement.PartPlacements)
+      {
+        if (pp.Part?.Name == null || !this.LeadPaths.TryGetValue(pp.Part.Name, out var paths))
+        {
+          continue;
+        }
+
+        // Draw the lead as the same bold cut band as the outline when this part came in toolpathed;
+        // otherwise a thin line.
+        double kerf = 0;
+        this.KerfByPart?.TryGetValue(pp.Part.Name, out kerf);
+        bool asBand = kerf > 0;
+        var leadBrush = asBand ? KerfBand : LeadStroke;
+        double leadThickness = asBand ? stroke * KerfBandPx : stroke * 1.5;
+
+        double radians = pp.Rotation * Math.PI / 180d;
+        double cos = Math.Cos(radians);
+        double sin = Math.Sin(radians);
+
+        foreach (var path in paths)
+        {
+          if (path == null || path.Count < 2)
+          {
+            continue;
+          }
+
+          var figure = new PathFigure { IsClosed = false, IsFilled = false };
+          for (int i = 0; i < path.Count; i++)
+          {
+            // Same transform the placement applies: mirror, rotate about the part origin, then translate.
+            // The canvas is Y-down, so the sheet's Y is flipped last.
+            double lx = pp.IsMirrored ? -path[i].X : path[i].X;
+            double ly = path[i].Y;
+            double x = pp.X + ((lx * cos) - (ly * sin));
+            double y = pp.Y + ((lx * sin) + (ly * cos));
+            var point = new Point(x, h - y);
+
+            if (i == 0)
+            {
+              figure.StartPoint = point;
+            }
+            else
+            {
+              figure.Segments.Add(new LineSegment(point, true));
+            }
+          }
+
+          var geometry = new PathGeometry();
+          geometry.Figures.Add(figure);
+          this.canvas.Children.Add(new System.Windows.Shapes.Path
+          {
+            Data = geometry,
+            Stroke = leadBrush,
+            StrokeThickness = leadThickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+          });
+        }
+      }
     }
 
     /// <summary>

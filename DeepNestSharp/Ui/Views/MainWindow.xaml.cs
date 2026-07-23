@@ -28,6 +28,8 @@ namespace DeepNestSharp.Ui.Views
     private System.Diagnostics.Stopwatch nestStopwatch;   // elapsed time while a nest runs (drives the live clock)
     private System.Windows.Threading.DispatcherTimer nestTimer; // ticks the elapsed clock ~2×/s during a nest
     private bool unitsMm; // drawing units are millimeters (SessionState.UnitsMm); inches by default
+    private string sheetCamReturnPath; // set when SheetCam launched us; "Send to SheetCam" writes here
+    private bool sentToSheetCam;       // the nest was written back to SheetCam — skip the save-on-close prompt
     private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
@@ -711,7 +713,7 @@ namespace DeepNestSharp.Ui.Views
       // Closing with a nest result on screen: offer to save the project first. Yes runs the same
       // Save as the File menu (Save As dialog when the project has no file yet — declining THAT
       // dialog aborts the close so no work is silently lost); No closes without saving; Cancel stays.
-      if (ViewModel.NestMonitorViewModel.SelectedItem != null && ViewModel.ActiveDocument != null)
+      if (!this.sentToSheetCam && ViewModel.NestMonitorViewModel.SelectedItem != null && ViewModel.ActiveDocument != null)
       {
         var answer = MessageBox.Show(
           this,
@@ -1199,8 +1201,7 @@ namespace DeepNestSharp.Ui.Views
 
     private async void OnNest(object sender, RoutedEventArgs e)
     {
-      // SheetNest has ONE engine: the raster nester (pure C#, CPU — runs on any machine). The old
-      // NFP/GA engine was removed from the product: slower and consistently worse on real parts.
+      // SheetNest has ONE engine: sparrow, run as a bundled native subprocess.
       var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
       if (project == null || project.DetailLoadInfos.Count == 0)
       {
@@ -1221,10 +1222,16 @@ namespace DeepNestSharp.Ui.Views
 
       // Read the UI-bound project data on the UI thread, then do the heavy nest off-thread so the app
       // stays responsive (it was freezing because the whole nest ran on the UI thread).
+
+      // Parts that came from a SheetCam .nest are already toolpathed: the engine has to keep room for the
+      // kerf and for the lead-ins/outs, which reach outside the outline.
+      var tooling = this.LoadNestTooling(project);
+
       var parts = project.DetailLoadInfos
         .Where(o => o.IsIncluded && !string.IsNullOrWhiteSpace(o.Path))
         .SelectMany(o =>
         {
+          tooling.TryGetValue(o.Path, out var tool);
           var populations = new List<RasterPartInfo>
           {
             new RasterPartInfo
@@ -1234,6 +1241,9 @@ namespace DeepNestSharp.Ui.Views
               Rotations = o.Rotations,                       // -1 = engine default
               Priority = o.Priority,                         // higher nests first
               Spacing = o.CommonLine ? 0.0 : o.Spacing,      // common-line = touch; -1 = job default
+              CommonLine = o.CommonLine,
+              ToolPaths = tool.Paths,
+              Kerf = tool.Kerf,
             },
           };
 
@@ -1247,7 +1257,10 @@ namespace DeepNestSharp.Ui.Views
               Rotations = o.Rotations,
               Priority = o.Priority,
               Spacing = o.CommonLine ? 0.0 : o.Spacing,
+              CommonLine = o.CommonLine,
               Mirrored = true,
+              ToolPaths = tool.Paths,
+              Kerf = tool.Kerf,
             });
           }
 
@@ -1320,6 +1333,10 @@ namespace DeepNestSharp.Ui.Views
           throw new System.InvalidOperationException("Synthetic crash for testing the problem-report dialog.");
         }
 
+        // Common-line jobs need aligned grid layout (identical parts one kerf apart, edges coinciding) so
+        // the post processor sees the shared cut and cuts it once — sparrow's irregular packing never does.
+        bool commonLineJob = parts.Count > 0 && parts.All(p => p.CommonLine);
+
         var token = nestCts.Token;
         var (result, error) = await Task.Run(() =>
         {
@@ -1328,7 +1345,9 @@ namespace DeepNestSharp.Ui.Views
           // perSheetBudgetSec caps the per-try sparrow time. 5 is plenty: density does NOT converge past
           // ~4-6s (its run-to-run spread is inherent), so best-of-K — not a longer single run — is what
           // buys quality. Keeping this low keeps nesting fast.
-          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress);
+          // commonLineJob: sparrow restricts rotation to 0/180 and snaps shared edges to one exact kerf so
+          // the post can cut each shared edge once (still dense/irregular, unlike a grid).
+          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, commonLineJob);
           return (r, err);
         });
 
@@ -1358,6 +1377,15 @@ namespace DeepNestSharp.Ui.Views
               g => g.Key,
               g => g.Min(p => p.Spacing >= 0 ? p.Spacing : System.Math.Max(0, spacing)),
               System.StringComparer.OrdinalIgnoreCase);
+
+          // Draw the lead-ins/outs the engine just reserved room for, so the gaps it left make sense, and
+          // the cut itself as a band of the real kerf width. Null clears any tooling from a previous nest.
+          this.dxfViewer.LeadPaths = tooling.Count == 0
+            ? null
+            : tooling.ToDictionary(kv => kv.Key, kv => kv.Value.Paths, System.StringComparer.OrdinalIgnoreCase);
+          this.dxfViewer.KerfByPart = tooling.Count == 0
+            ? null
+            : tooling.ToDictionary(kv => kv.Key, kv => kv.Value.Kerf, System.StringComparer.OrdinalIgnoreCase);
         }
 
         // Show it in the results list + viewer + status bar so utilization / placed / sheets / fitness /
@@ -1575,6 +1603,507 @@ namespace DeepNestSharp.Ui.Views
           await ViewModel.ExportSheetPlacementAsync(used[si], offcut);
         }
       }
+    }
+
+    /// <summary>
+    /// Brings in a job SheetCam exported for external nesting ("Export to Auto Nesting"). Each part is
+    /// materialised as a temporary DXF so the rest of the app treats it like any other part.
+    /// <para>
+    /// The file's sheet and spacings are deliberately NOT applied — the current project's settings win —
+    /// so the dialog reports what the job expects and lets the user match it if they want to.
+    /// </para>
+    /// </summary>
+    private void OnImportNestClicked(object sender, RoutedEventArgs e)
+    {
+      var picker = new Microsoft.Win32.OpenFileDialog
+      {
+        Filter = DeepNestLib.IO.SheetCamNestFile.FileDialogFilter,
+        Title = "Import SheetCam Nest",
+      };
+      if (picker.ShowDialog(this) == true)
+      {
+        this.ImportSheetCamNest(picker.FileName);
+      }
+    }
+
+    /// <summary>Loads a SheetCam .nest into the active project, creating one if there is none. Also the
+    /// entry point when SheetCam launches this app with a .nest on the command line.</summary>
+    /// <param name="returnToSheetCam">True when SheetCam launched us: show "Send to SheetCam", which writes
+    /// the nest back to this same file and closes.</param>
+    internal void ImportSheetCamNest(string nestPath, bool returnToSheetCam = false)
+    {
+      if (returnToSheetCam)
+      {
+        this.sheetCamReturnPath = nestPath;
+        this.sendToSheetCamButton.Visibility = Visibility.Visible;
+      }
+
+      if (ViewModel.ActiveDocument as NestProjectViewModel == null)
+      {
+        ViewModel.CreateNestProjectCommand.Execute(null);
+      }
+
+      var doc = ViewModel.ActiveDocument as NestProjectViewModel;
+      if (doc == null)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "Open or create a project first, then import the nest into it.",
+          "Import SheetCam Nest",
+          DeepNestLib.MessageBoxIcon.Information);
+        return;
+      }
+
+      try
+      {
+        System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.AppStarting;
+        DeepNestLib.IO.SheetCamNestFile nest;
+        System.Collections.Generic.IReadOnlyList<(DeepNestLib.IO.SheetCamNestPart Part, string DxfPath)> written;
+        try
+        {
+          nest = DeepNestLib.IO.SheetCamNestFile.Load(nestPath);
+
+          // The file's geometry is millimetres whatever its Units attribute says; scale it into the
+          // drawing units this app is working in.
+          double scale = 1d / DeepNestLib.IO.SheetCamNestFile.MmPerDrawingUnit(this.unitsMm);
+          written = DeepNestLib.IO.SheetCamNestPartWriter.WriteAll(nest, nestPath, scale);
+        }
+        finally
+        {
+          System.Windows.Input.Mouse.OverrideCursor = null;
+        }
+
+        // PartSpacing="0" means common-line: nest the copies touching so they share the cut.
+        bool commonLine = IsCommonLineJob(nest);
+        doc.AddNestParts(written.Select(w => new NestProjectViewModel.NestPartInfo(
+          w.DxfPath, nestPath, w.Part.Name, !this.unitsMm, w.Part.Quantity, commonLine)));
+
+        this.ApplyNestSpacings(nest);
+
+        // Use the sheet the job was set up for, so the nest matches what SheetCam expects and NEST does not
+        // fail on an empty project when SheetCam launched us. The .nest geometry is millimetres.
+        double sheetMm = DeepNestLib.IO.SheetCamNestFile.MmPerDrawingUnit(this.unitsMm);
+        doc.SetSheets(nest.Sheets.Select(s => (
+          (int)System.Math.Round(s.Width / sheetMm),
+          (int)System.Math.Round(s.Height / sheetMm),
+          s.Quantity)));
+
+        ViewModel.MessageService.DisplayMessageBox(
+          BuildNestImportSummary(nest, written.Count),
+          "Import SheetCam Nest",
+          DeepNestLib.MessageBoxIcon.Information);
+      }
+      catch (System.IO.InvalidDataException ex)
+      {
+        ViewModel.MessageService.DisplayMessageBox(ex.Message, "Import SheetCam Nest", DeepNestLib.MessageBoxIcon.Stop);
+      }
+      catch (System.Exception ex)
+      {
+        System.Windows.Input.Mouse.OverrideCursor = null;
+        CrashReporter.Show(ex, "import-nest", this);
+      }
+    }
+
+    /// <summary>Menu opening: Import/Export SheetCam Nest are only offered once SheetNest is integrated
+    /// with SheetCam (before that the .nest round-trip has no counterpart to talk to).</summary>
+    private void OnFileMenuOpened(object sender, RoutedEventArgs e)
+    {
+      var v = DeepNestSharp.Ui.Services.SheetCamIntegration.IsIntegrated() ? Visibility.Visible : Visibility.Collapsed;
+      this.importNestMenu.Visibility = v;
+      this.exportNestMenu.Visibility = v;
+      this.importExportNestSeparator.Visibility = v;
+    }
+
+    /// <summary>
+    /// Collects the tooling of every part that came from a SheetCam .nest, keyed by the part's DXF path:
+    /// its lead-in/out paths in drawing units and the job's kerf. Each source file is read once. Parts
+    /// with no nest provenance are simply absent, so plain DXF jobs nest exactly as before.
+    /// </summary>
+    private System.Collections.Generic.Dictionary<string, (System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>> Paths, double Kerf)> LoadNestTooling(IProjectInfo project)
+    {
+      var result = new System.Collections.Generic.Dictionary<string, (System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>> Paths, double Kerf)>(System.StringComparer.OrdinalIgnoreCase);
+
+      var bySource = project.DetailLoadInfos
+        .Where(o => !string.IsNullOrEmpty(o.NestSourcePath) && !string.IsNullOrEmpty(o.Path))
+        .GroupBy(o => o.NestSourcePath, System.StringComparer.OrdinalIgnoreCase);
+
+      foreach (var group in bySource)
+      {
+        DeepNestLib.IO.SheetCamNestFile nest;
+        try
+        {
+          nest = DeepNestLib.IO.SheetCamNestFile.Load(group.Key);
+        }
+        catch (System.Exception)
+        {
+          continue; // the job just nests without tooling awareness, as it did before
+        }
+
+        double kerfMm = nest.DeriveKerfMm();
+        foreach (var info in group)
+        {
+          var part = nest.Parts.FirstOrDefault(p => string.Equals(p.Name, info.NestPartName, System.StringComparison.Ordinal));
+          if (part == null || result.ContainsKey(info.Path))
+          {
+            continue;
+          }
+
+          // The part's DXF was written at this scale, so its tooling has to match that frame.
+          double scale = info.NestUnitInch ? 1d / 25.4d : 1d;
+          var paths = part.ToolPaths
+            .Select(p => (System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>)p
+              .Select(v => new DeepNestLib.SvgPoint(v.X * scale, v.Y * scale)).ToList())
+            .ToList();
+
+          result.Add(info.Path, (paths, kerfMm * scale));
+        }
+      }
+
+      return result;
+    }
+
+    /// <summary>
+    /// Adopts the job's clearances. Nesting tighter than SheetCam asked for produces parts that touch,
+    /// which is unusable as a cut file — so the file's spacings win over whatever the app had.
+    /// </summary>
+    /// <summary>True when the job is common-line: SheetCam signals it with PartSpacing="0" — the parts
+    /// share the cut and end up a single kerf apart, not a part gap.</summary>
+    private static bool IsCommonLineJob(DeepNestLib.IO.SheetCamNestFile nest)
+      => nest.PartSpacing * nest.SettingsToDrawingUnits(false) <= 0;
+
+    private void ApplyNestSpacings(DeepNestLib.IO.SheetCamNestFile nest)
+    {
+      // Settings are in the unit the file declares, which need not be the drawing unit.
+      double scale = nest.SettingsToDrawingUnits(this.unitsMm);
+      var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
+
+      // A stated part gap (> 0) becomes the job spacing. PartSpacing="0" is NOT "no gap to adopt" — it is
+      // SheetCam's flag for common-line, handled per part in the import (CommonLine = true), so leave the
+      // global spacing alone in that case.
+      double partFromFile = nest.PartSpacing * scale;
+      if (partFromFile > 0)
+      {
+        config.Spacing = partFromFile;
+      }
+
+      double edgeFromFile = nest.EdgeSpacing * scale;
+      if (edgeFromFile > 0)
+      {
+        config.SheetSpacing = edgeFromFile;
+      }
+
+      // SvgNestConfig raises no change notifications, so the bound editor has to be told to re-read.
+      this.sheetEdgeMarginBox?.GetBindingExpression(Xceed.Wpf.Toolkit.DoubleUpDown.ValueProperty)?.UpdateTarget();
+
+      var session = SessionState.Load() ?? new SessionState();
+      session.SheetEdgeMargin = System.Math.Max(0, config.SheetSpacing);
+      session.Save();
+    }
+
+    /// <summary>Reports what came in and what was adopted from the job.</summary>
+    private string BuildNestImportSummary(DeepNestLib.IO.SheetCamNestFile nest, int partCount)
+    {
+      double mm = DeepNestLib.IO.SheetCamNestFile.MmPerDrawingUnit(this.unitsMm);
+      double scale = nest.SettingsToDrawingUnits(this.unitsMm);
+      string units = this.unitsMm ? "mm" : "in";
+      var text = new System.Text.StringBuilder();
+      text.AppendLine($"Imported {partCount} part(s), {nest.Parts.Sum(p => p.Quantity)} piece(s) in total.");
+      text.AppendLine();
+
+      // PartSpacing="0" is SheetCam's common-line flag, not a zero gap; a stated value is the part gap.
+      double edge = ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing;
+      if (nest.PartSpacing * scale > 0)
+      {
+        text.AppendLine(FormattableString.Invariant(
+          $"Part spacing {nest.PartSpacing * scale:0.###} {units} taken from the job; edge margin {edge:0.###} {units}."));
+      }
+      else
+      {
+        text.AppendLine(FormattableString.Invariant(
+          $"Common-line: the parts share the cut and sit one kerf apart. Edge margin {edge:0.###} {units}."));
+      }
+
+      text.AppendLine();
+      // The file never states the kerf, so it is measured off the lead geometry. Show it: it widens every
+      // part's footprint, and a wrong reading here is easiest to catch by eye.
+      int leadCount = nest.Parts.Sum(p => p.ToolPaths.Count);
+      if (leadCount > 0)
+      {
+        double kerf = nest.DeriveKerfMm() / mm;
+        text.AppendLine(FormattableString.Invariant(
+          $"{leadCount} lead-in/out path(s) found; kerf measured at {kerf:0.####} {units}."));
+        text.AppendLine("Both are kept clear when nesting, so leads cannot run into the next part.");
+        text.AppendLine();
+      }
+
+      text.AppendLine("Sheet set to the job's:");
+      foreach (var s in nest.Sheets)
+      {
+        text.AppendLine(FormattableString.Invariant(
+          $"  {s.Width / mm:0.###} x {s.Height / mm:0.###} {units}  (x{s.Quantity})"));
+      }
+
+      return text.ToString();
+    }
+
+    /// <summary>
+    /// Writes the arrangement back into the .nest it came from, asking the user where to save. Only the
+    /// positions are rewritten, so the part geometry SheetCam re-matches on — and anything this app does
+    /// not model, like lead-ins — returns untouched.
+    /// </summary>
+    private void OnExportNestClicked(object sender, RoutedEventArgs e)
+    {
+      if (!this.TryBuildReturnNest(out var nest, out string source, out int unplaced))
+      {
+        return;
+      }
+
+      var dialog = new Microsoft.Win32.SaveFileDialog
+      {
+        Filter = DeepNestLib.IO.SheetCamNestFile.FileDialogFilter,
+        FileName = System.IO.Path.GetFileName(source),
+        InitialDirectory = System.IO.Path.GetDirectoryName(source),
+        Title = "Export SheetCam Nest",
+      };
+      if (dialog.ShowDialog(this) != true)
+      {
+        return;
+      }
+
+      try
+      {
+        nest.Save(dialog.FileName);
+      }
+      catch (System.Exception ex)
+      {
+        CrashReporter.Show(ex, "export-nest", this);
+        return;
+      }
+
+      var placed = ViewModel.NestMonitorViewModel.SelectedItem?.TotalPlacedCount ?? 0;
+      var done = new System.Text.StringBuilder();
+      done.AppendLine($"Wrote {placed} placement(s).");
+      if (unplaced > 0)
+      {
+        done.AppendLine($"{unplaced} piece(s) did not fit and were left unplaced at the origin.");
+      }
+
+      done.AppendLine();
+      done.Append("Read it back in SheetCam with \"Import nest from Auto Nesting\".");
+      ViewModel.MessageService.DisplayMessageBox(done.ToString(), "Export SheetCam Nest", DeepNestLib.MessageBoxIcon.Information);
+    }
+
+    /// <summary>
+    /// "Send to SheetCam" (shown only when SheetCam launched this app): writes the nest straight back into
+    /// the file SheetCam handed over, no dialog, then closes so SheetCam reloads the result.
+    /// </summary>
+    private void OnSendToSheetCamClicked(object sender, RoutedEventArgs e)
+    {
+      if (string.IsNullOrEmpty(this.sheetCamReturnPath))
+      {
+        return;
+      }
+
+      if (!this.TryBuildReturnNest(out var nest, out _, out _))
+      {
+        return;
+      }
+
+      try
+      {
+        nest.Save(this.sheetCamReturnPath);
+      }
+      catch (System.Exception ex)
+      {
+        CrashReporter.Show(ex, "send-to-sheetcam", this);
+        return;
+      }
+
+      // The result is now in the .nest; there is nothing to save on the way out.
+      this.sentToSheetCam = true;
+      this.Close();
+    }
+
+    /// <summary>
+    /// Maps the selected result back onto its source .nest and runs all the export guards (single source,
+    /// no mirrors, quantity overrun, sheet-size mismatch), showing a message and returning false on any
+    /// stop. On success <paramref name="nest"/> is loaded and its positions rewritten, ready to Save.
+    /// </summary>
+    private bool TryBuildReturnNest(out DeepNestLib.IO.SheetCamNestFile nest, out string source, out int unplaced)
+    {
+      nest = null;
+      source = null;
+      unplaced = 0;
+
+      var selected = ViewModel.NestMonitorViewModel?.SelectedItem;
+      if (selected == null || selected.UsedSheets == null || selected.UsedSheets.Count == 0)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "Run a nest and select a result first, then export.",
+          "Export SheetCam Nest",
+          DeepNestLib.MessageBoxIcon.Information);
+        return false;
+      }
+
+      // Map each part's temp DXF back to the <Part> it came from. Matching on the path rather than on
+      // IPartPlacement.Source keeps this independent of the order OnNest happened to build its list in.
+      var doc = ViewModel.ActiveDocument as NestProjectViewModel;
+      var byPath = new System.Collections.Generic.Dictionary<string, IDetailLoadInfo>(System.StringComparer.OrdinalIgnoreCase);
+      foreach (var d in doc?.ProjectInfo?.DetailLoadInfos ?? System.Linq.Enumerable.Empty<IDetailLoadInfo>())
+      {
+        if (!string.IsNullOrEmpty(d.NestSourcePath) && !byPath.ContainsKey(d.Path))
+        {
+          byPath.Add(d.Path, d);
+        }
+      }
+
+      var sources = byPath.Values.Select(d => d.NestSourcePath).Distinct(System.StringComparer.OrdinalIgnoreCase).ToList();
+      if (sources.Count == 0)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "These parts did not come from a SheetCam nest file, so there is no job to write them back into.\n\n" +
+          "Use File > Import SheetCam Nest... to start from a file SheetCam exported.",
+          "Export SheetCam Nest",
+          DeepNestLib.MessageBoxIcon.Information);
+        return false;
+      }
+
+      if (sources.Count > 1)
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "This project mixes parts from more than one nest file. Export needs a single source job.",
+          "Export SheetCam Nest",
+          DeepNestLib.MessageBoxIcon.Stop);
+        return false;
+      }
+
+      // A mirrored copy is a different physical part and the format has no way to say so.
+      if (selected.UsedSheets.Any(sp => sp.PartPlacements.Any(pp => pp.IsMirrored)))
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "This nest contains mirrored parts, which a SheetCam nest file cannot represent.\n\n" +
+          "Set the mirrored quantity to 0 and nest again before exporting.",
+          "Export SheetCam Nest",
+          DeepNestLib.MessageBoxIcon.Stop);
+        return false;
+      }
+
+      try
+      {
+        var loaded = DeepNestLib.IO.SheetCamNestFile.Load(sources[0]);
+        double mm = DeepNestLib.IO.SheetCamNestFile.MmPerDrawingUnit(this.unitsMm);
+
+        var positions = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<DeepNestLib.IO.SheetCamNestPosition>>();
+        for (int sheetIndex = 0; sheetIndex < selected.UsedSheets.Count; sheetIndex++)
+        {
+          foreach (var pp in selected.UsedSheets[sheetIndex].PartPlacements)
+          {
+            if (pp.Part?.Name == null || !byPath.TryGetValue(pp.Part.Name, out var info))
+            {
+              continue;
+            }
+
+            if (!positions.TryGetValue(info.NestPartName, out var list))
+            {
+              list = new System.Collections.Generic.List<DeepNestLib.IO.SheetCamNestPosition>();
+              positions.Add(info.NestPartName, list);
+            }
+
+            // Position = rotate the part's own points about the origin, then translate — exactly what a
+            // placement is, so X/Y go straight across once scaled and the angle turned into radians.
+            list.Add(new DeepNestLib.IO.SheetCamNestPosition(
+              pp.X * mm, pp.Y * mm, pp.Rotation * System.Math.PI / 180d, sheetIndex));
+          }
+        }
+
+        // SheetCam expects one Position per copy it asked for; anything that did not fit goes back at the
+        // origin, which is how an un-nested file arrives in the first place.
+        int discarded = 0;
+        foreach (var part in loaded.Parts)
+        {
+          positions.TryGetValue(part.Name, out var list);
+          list ??= new System.Collections.Generic.List<DeepNestLib.IO.SheetCamNestPosition>();
+          while (list.Count < part.Quantity)
+          {
+            list.Add(new DeepNestLib.IO.SheetCamNestPosition(0, 0, 0, 0));
+            unplaced++;
+          }
+
+          // The job asks for a fixed number of copies; nesting more than that cannot be expressed, so
+          // the extras are dropped — say so rather than truncating silently.
+          discarded += list.Count - part.Quantity;
+          loaded.SetPositions(part.Name, list.Take(part.Quantity));
+        }
+
+        if (discarded > 0 && MessageBox.Show(
+              this,
+              $"This nest places {discarded} more piece(s) than the SheetCam job asks for.\n\n" +
+              "A nest file can only carry the quantities the job defines, so the extras will be dropped.\n" +
+              "Change the quantities in SheetCam and re-export the job if you want them all.\n\nExport anyway?",
+              "Export SheetCam Nest",
+              MessageBoxButton.OKCancel,
+              MessageBoxImage.Warning) != MessageBoxResult.OK)
+        {
+          return false;
+        }
+
+        loaded.SetSheetCount(selected.UsedSheets.Count);
+
+        if (!ConfirmNestSheetMatches(loaded, selected, mm))
+        {
+          return false;
+        }
+
+        nest = loaded;
+        source = sources[0];
+        return true;
+      }
+      catch (System.IO.InvalidDataException ex)
+      {
+        ViewModel.MessageService.DisplayMessageBox(ex.Message, "Export SheetCam Nest", DeepNestLib.MessageBoxIcon.Stop);
+        return false;
+      }
+      catch (System.Exception ex)
+      {
+        CrashReporter.Show(ex, "export-nest", this);
+        return false;
+      }
+    }
+
+    /// <summary>
+    /// The sheets are the project's, not the file's (import leaves the sheet list alone), so a nest run on
+    /// a different sheet than SheetCam's would put parts where there is no material. Warn before writing.
+    /// </summary>
+    private bool ConfirmNestSheetMatches(DeepNestLib.IO.SheetCamNestFile nest, DeepNestLib.Placement.INestResult selected, double mm)
+    {
+      if (nest.Sheets.Count == 0)
+      {
+        return true;
+      }
+
+      var expected = nest.Sheets[0];
+      var mismatched = selected.UsedSheets
+        .Select(sp => (W: sp.Sheet.WidthCalculated * mm, H: sp.Sheet.HeightCalculated * mm))
+        .Where(s => System.Math.Abs(s.W - expected.Width) > 1.0 || System.Math.Abs(s.H - expected.Height) > 1.0)
+        .ToList();
+
+      if (mismatched.Count == 0)
+      {
+        return true;
+      }
+
+      string units = this.unitsMm ? "mm" : "in";
+      var message = new System.Text.StringBuilder();
+      message.AppendLine("The nest does not use the sheet this job was set up for in SheetCam.");
+      message.AppendLine();
+      message.AppendLine(FormattableString.Invariant(
+        $"  SheetCam expects  {expected.Width / mm:0.###} x {expected.Height / mm:0.###} {units}"));
+      message.AppendLine(FormattableString.Invariant(
+        $"  this nest uses    {mismatched[0].W / mm:0.###} x {mismatched[0].H / mm:0.###} {units}"));
+      message.AppendLine();
+      message.Append("The positions would land outside SheetCam's material. Export anyway?");
+
+      return MessageBox.Show(this, message.ToString(), "Export SheetCam Nest", MessageBoxButton.OKCancel, MessageBoxImage.Warning)
+        == MessageBoxResult.OK;
     }
 
     /// <summary>The active offcut settings, or null when the option is off. Spacing -1 (never saved)

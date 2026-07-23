@@ -246,6 +246,24 @@
       set => SetProperty(nameof(ThicknessMm), () => detailLoadInfo.ThicknessMm, v => detailLoadInfo.ThicknessMm = v, value);
     }
 
+    public string NestSourcePath
+    {
+      get => detailLoadInfo.NestSourcePath;
+      set => SetProperty(nameof(NestSourcePath), () => detailLoadInfo.NestSourcePath, v => detailLoadInfo.NestSourcePath = v, value);
+    }
+
+    public string NestPartName
+    {
+      get => detailLoadInfo.NestPartName;
+      set => SetProperty(nameof(NestPartName), () => detailLoadInfo.NestPartName, v => detailLoadInfo.NestPartName = v, value);
+    }
+
+    public bool NestUnitInch
+    {
+      get => detailLoadInfo.NestUnitInch;
+      set => SetProperty(nameof(NestUnitInch), () => detailLoadInfo.NestUnitInch, v => detailLoadInfo.NestUnitInch = v, value);
+    }
+
     /// <summary>Gets whether this part was 3D-unfolded from a STEP/IGES (has an editable K-factor).</summary>
     public bool Is3D => !string.IsNullOrEmpty(detailLoadInfo.SourceStepPath);
 
@@ -302,6 +320,19 @@
               int idx = (detailLoadInfo.UnfoldIndex >= 0 && detailLoadInfo.UnfoldIndex < rebuilt.Paths.Count) ? detailLoadInfo.UnfoldIndex : 0;
               detailLoadInfo.Path = rebuilt.Paths[idx];
             }
+          }
+
+          // Same story for a part imported from a SheetCam .nest: its DXF is a temp materialisation, so
+          // rebuild it from the nest file when it has been reclaimed.
+          if (!new FileInfo(detailLoadInfo.Path).Exists
+              && !string.IsNullOrEmpty(detailLoadInfo.NestSourcePath)
+              && new FileInfo(detailLoadInfo.NestSourcePath).Exists)
+          {
+            await Task.Run(() => SheetCamNestPartWriter.TryRebuild(
+              detailLoadInfo.NestSourcePath,
+              detailLoadInfo.NestPartName,
+              detailLoadInfo.NestUnitInch ? 1d / 25.4d : 1d,
+              detailLoadInfo.Path));
           }
 
           if (new FileInfo(detailLoadInfo.Path).Exists)

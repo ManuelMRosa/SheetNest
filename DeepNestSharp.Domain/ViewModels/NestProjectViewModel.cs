@@ -223,6 +223,58 @@
       this.IsDirty = true;
     }
 
+    /// <summary>Metadata for one part imported from a SheetCam .nest — lets the arrangement be written
+    /// back into that file and the temp DXF rebuilt if it is gone.</summary>
+    public readonly record struct NestPartInfo(
+      string DxfPath, string NestSourcePath, string NestPartName, bool NestUnitInch, int Quantity, bool CommonLine);
+
+    /// <summary>Adds the parts of a SheetCam .nest, each carrying its source file and the quantity the job wants.</summary>
+    public void AddNestParts(System.Collections.Generic.IEnumerable<NestPartInfo> parts)
+    {
+      foreach (var p in parts)
+      {
+        if (string.IsNullOrWhiteSpace(p.DxfPath))
+        {
+          continue;
+        }
+
+        observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo()
+        {
+          Path = p.DxfPath,
+          Quantity = p.Quantity,
+          NestSourcePath = p.NestSourcePath,
+          NestPartName = p.NestPartName,
+          NestUnitInch = p.NestUnitInch,
+          CommonLine = p.CommonLine,
+        });
+      }
+
+      Contextualise();
+      this.IsDirty = true;
+    }
+
+    /// <summary>Replaces the project's sheet stock with the given sizes — used when a SheetCam .nest is
+    /// imported, so the job nests on the sheet SheetCam set it up for.</summary>
+    public void SetSheets(System.Collections.Generic.IEnumerable<(int Width, int Height, int Quantity)> sheets)
+    {
+      if (observableProjectInfo == null)
+      {
+        return;
+      }
+
+      observableProjectInfo.SheetLoadInfos.Clear();
+      foreach (var s in sheets)
+      {
+        if (s.Width > 0 && s.Height > 0 && s.Quantity > 0)
+        {
+          observableProjectInfo.SheetLoadInfos.Add(new SheetLoadInfo(s.Width, s.Height, s.Quantity));
+        }
+      }
+
+      Contextualise();
+      this.IsDirty = true;
+    }
+
     private void OnAddSheet()
     {
       var newSheet = new SheetLoadInfo(this.ProjectInfo.Config);

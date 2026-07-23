@@ -77,5 +77,17 @@
 
     /// <summary>Gets or sets the detected sheet thickness (mm) of this 3D part; 0 = unknown.</summary>
     double ThicknessMm { get; set; }
+
+    /// <summary>
+    /// Gets or sets the SheetCam .nest file this part came from. Empty = not imported from a nest file.
+    /// When set, the nested arrangement can be written back into that document.
+    /// </summary>
+    string NestSourcePath { get; set; }
+
+    /// <summary>Gets or sets the name of the &lt;Part&gt; element this part came from in <see cref="NestSourcePath"/>.</summary>
+    string NestPartName { get; set; }
+
+    /// <summary>Gets or sets whether the nest geometry was scaled into inches (true) or left in millimetres.</summary>
+    bool NestUnitInch { get; set; }
   }
 }

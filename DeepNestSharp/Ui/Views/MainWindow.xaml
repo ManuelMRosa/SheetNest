@@ -39,13 +39,16 @@
     <!-- Menu bar (branding lives in the title-bar icon only). -->
     <DockPanel Grid.Row="0" Background="{DynamicResource Brush.Window}">
       <Menu Background="Transparent" VerticalAlignment="Center">
-      <MenuItem Header="_File">
+      <MenuItem Header="_File" SubmenuOpened="OnFileMenuOpened">
         <MenuItem Header="New Project" Command="{Binding CreateNestProjectCommand}" />
         <MenuItem Header="Open Project..." Command="{Binding LoadNestProjectCommand}" />
         <MenuItem x:Name="recentProjectsMenu" Header="Recent Projects" SubmenuOpened="OnRecentProjectsOpened">
           <MenuItem Header="(empty)" IsEnabled="False" />
         </MenuItem>
         <MenuItem Header="Import 3D (STEP / IGES)..." Click="OnImport3DClicked" />
+        <Separator x:Name="importExportNestSeparator" />
+        <MenuItem x:Name="importNestMenu" Header="Import SheetCam Nest..." Click="OnImportNestClicked" />
+        <MenuItem x:Name="exportNestMenu" Header="Export SheetCam Nest..." Click="OnExportNestClicked" />
         <Separator />
         <MenuItem Header="Save" Command="{Binding ActiveDocumentSaveCommand}" />
         <MenuItem Header="Save As..." Command="{Binding ActiveDocumentSaveAsCommand}" />
@@ -68,6 +71,9 @@
     <Border Grid.Row="1" Background="{DynamicResource Brush.Panel}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="8,6">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+          <Button x:Name="sendToSheetCamButton" Style="{DynamicResource ModernButton}" Margin="3,0" Content="Send to SheetCam"
+                  Click="OnSendToSheetCamClicked" Visibility="Collapsed"
+                  ToolTip="Write the nested result back to the SheetCam job and close" />
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Export DXF" Click="OnExportDxf" ToolTip="Export the selected nest result to DXF" />
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Report PDF" Click="OnNestReportPdf" ToolTip="Save a PDF nest report: cutting plan, layouts, quantities and utilization" />
         </StackPanel>
@@ -280,7 +286,7 @@
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Style="{DynamicResource SettingLabel}" Text="Sheet edge margin" />
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
-                  <xctk:DoubleUpDown Width="100" Minimum="0" Increment="0.5"
+                  <xctk:DoubleUpDown x:Name="sheetEdgeMarginBox" Width="100" Minimum="0" Increment="0.5"
                                      Value="{Binding SvgNestConfig.SheetSpacing}"
                                      ToolTip="Empty border kept clear around the sheet (in the drawing's units)." />
                 </StackPanel>

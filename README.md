@@ -50,4 +50,6 @@ SheetNest is open-source software released under the MIT License — see [LICENS
 
 SheetNest bundles an offline 3D-unfolding engine built from open-source software (FreeCAD and the SheetMetal workbench under the GNU LGPL, and NetworkX under the BSD license) — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list, licenses and sources.
 
+SheetCam is a trademark of its respective owner. SheetNest is an independent project, not affiliated with or endorsed by SheetCam; "SheetCam" is used only to describe compatibility.
+
 Building from source? See [BUILDING.md](BUILDING.md).

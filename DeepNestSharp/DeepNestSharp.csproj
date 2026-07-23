@@ -8,10 +8,10 @@
     <PublishSingleFile>false</PublishSingleFile>
     <ApplicationIcon>Branding\sheetnest.ico</ApplicationIcon>
     <DebugType>embedded</DebugType>
-    <AssemblyVersion>1.2.0.0</AssemblyVersion>
-    <FileVersion>1.2.0.0</FileVersion>
-    <InformationalVersion>1.2.0</InformationalVersion>
-    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.1.0</AssemblyVersion>
+    <FileVersion>1.2.1.0</FileVersion>
+    <InformationalVersion>1.2.1</InformationalVersion>
+    <Version>1.2.1</Version>
     <Product>SheetNest</Product>
     <AssemblyTitle>SheetNest</AssemblyTitle>
     <AssemblyName>SheetNest</AssemblyName>
@@ -68,6 +68,11 @@
     <Content Include="..\SparrowEngine\sparrow.exe" Link="sparrow.exe">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <!-- SheetCam launcher shim: sits next to the app so "Integrate with SheetCam" can drop it in.
+         The ProjectReference only orders the build (net48 vs net6-windows, so no assembly is referenced). -->
+    <Content Include="..\SheetCamNestShim\bin\$(Configuration)\net48\NestingPrototype.exe" Link="NestingPrototype.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -106,6 +111,9 @@
   <ItemGroup>
     <ProjectReference Include="..\DeepNestLib.Core\DeepNestLib.Core.csproj" />
     <ProjectReference Include="..\DeepNestSharp.Domain\DeepNestSharp.Domain.csproj" />
+    <!-- Build the shim first; don't reference its assembly (different target framework). -->
+    <ProjectReference Include="..\SheetCamNestShim\SheetCamNestShim.csproj"
+                      ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" Private="false" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="Ui\UserControls\DrawingContextBoundZoomPreview.xaml.cs">

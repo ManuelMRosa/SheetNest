@@ -52,6 +52,15 @@
 
     public double ThicknessMm { get; set; } = 0; // detected sheet thickness (mm); 0 = unknown (display only)
 
+    // SheetCam .nest provenance: when a part came in from a SheetCam nest file, these say which file and
+    // which <Part> in it, so the arrangement can be written back into that same document and the temp DXF
+    // rebuilt if it is gone. Empty NestSourcePath = not from a nest file. Both persist to the .dnest.
+    public string NestSourcePath { get; set; } = string.Empty;
+
+    public string NestPartName { get; set; } = string.Empty;
+
+    public bool NestUnitInch { get; set; } = true; // drawing units the nest geometry was scaled into (its mm / 25.4)
+
     public override string ToJson(bool writeIndented = false)
     {
       var options = new JsonSerializerOptions();
