@@ -23,6 +23,16 @@ namespace DeepNestSharp.RasterNest
   /// </summary>
   internal static class SparrowNestService
   {
+    // Stage timers, read by MetricUnitsPerfFixture.MeasureRealJobStageBreakdown. The wall time of a nest
+    // is (waves x per-sheet budget) and everything else is noise — but only a breakdown proves that, so
+    // keep these: they are what a "nesting is slow" report gets measured with. Caller resets them.
+    internal static long DiagLoadMs;
+    internal static long DiagSparrowMs;
+    internal static long DiagMapMs;
+    internal static long DiagHolesMs;
+    internal static long DiagWaves;
+    internal static long DiagTries;
+
     private sealed class Loaded
     {
       public int Source;
@@ -105,7 +115,9 @@ namespace DeepNestSharp.RasterNest
       // Common-line packs as densely as sparrow can (mixing orientations); the snap then aligns whatever
       // near-parallel edges it left, and the post decides which shared edges to cut once. The snap needs
       // straight H/V edges, so common-line uses axis-aligned rotation (4-way) rather than free/fine angles.
+      var diagLoad = System.Diagnostics.Stopwatch.StartNew();
       var loaded = LoadAll(parts, rotations, spacing, commonLine, out error);
+      DiagLoadMs = diagLoad.ElapsedMilliseconds;
       if (loaded == null || loaded.Count == 0)
       {
         error ??= "No valid parts to nest.";
@@ -208,7 +220,9 @@ namespace DeepNestSharp.RasterNest
 
       // jagua ignores item holes, so sparrow never nests inside them. Recover that density ourselves:
       // drop leftover parts into the holes of already-placed parts (exact geometry, spacing preserved).
+      var diagHoles = System.Diagnostics.Stopwatch.StartNew();
       FillHoles(sheetLayouts, pool, loadedById, cancel);
+      DiagHolesMs = diagHoles.ElapsedMilliseconds;
 
       var collection = new SheetPlacementCollection();
       int id = 0;
@@ -410,7 +424,13 @@ namespace DeepNestSharp.RasterNest
 
         // Concurrency cap: sparrow is multi-threaded but scales sub-linearly, so several run at once for
         // almost the same wall-clock (measured on 20 cores: 1 run 4.3s, 8 parallel 5.2s). One wave = maxConc.
-        int maxConc = Math.Max(2, Math.Min(tries, Environment.ProcessorCount / 3));
+        // sparrow stops on WALL CLOCK, so a wave costs one budget no matter how many tries are in it — the
+        // wall time of a sheet is (waves x budget). The cap used to be ProcessorCount/3, which split the
+        // 8 tries of a single-sheet job into 2 waves and charged it twice for tries that fit in one
+        // (measured on the 26-part reference job: 2 waves x 6.4s = 13.3s, one wave = 7.2s, same 87.2%
+        // utilisation). Half the cores fits those 8 in one wave; a heavily replicated template (up to 16
+        // tries) still splits, which is right — that many concurrent searches would just starve each other.
+        int maxConc = Math.Max(2, Math.Min(tries, Environment.ProcessorCount / 2));
 
         var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Density, int Seed)>();
         int bestCount = -1, launched = 0;
@@ -428,19 +448,25 @@ namespace DeepNestSharp.RasterNest
             int seed = startSeed + j;
             string tryDir = Path.Combine(workDir, "try" + seed.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(tryDir);
+            var diagRun = System.Diagnostics.Stopwatch.StartNew();
             string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, seed, cancel, aggDensity, out _);
+            System.Threading.Interlocked.Add(ref DiagSparrowMs, diagRun.ElapsedMilliseconds);
             if (outJson == null || cancel.IsCancellationRequested)
             {
               return;
             }
 
+            var diagMap = System.Diagnostics.Stopwatch.StartNew();
             var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, commonLine, cancel);
+            System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
             wSt[j] = (pl.Count, ParseDensity(outJson), seed);
           });
 
           launched += waveSize;
+          System.Threading.Interlocked.Increment(ref DiagWaves);
+          System.Threading.Interlocked.Add(ref DiagTries, waveSize);
           for (int j = 0; j < waveSize; j++)
           {
             if (wSt[j].HasValue)

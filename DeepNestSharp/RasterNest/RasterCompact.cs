@@ -828,7 +828,14 @@
         outer.Reverse(); // positive offset expands only positively-oriented paths
       }
 
-      var offset = new ClipperOffset();
+      // ClipperOffset's default ArcTolerance is ABSOLUTE (0.25 integer units), while the point count a
+      // round join is resampled into is pi/acos(1 - tolerance/delta) — so it grows with the offset
+      // measured in INTEGER units, not with the part. A metric job offsets ~25x more units than the same
+      // job in inches (9 mm spacing at 1e6 = 4.5e6 vs 0.354" = 1.77e5), which blew every clearance shell
+      // up to ~10k vertices and made each collision test ~13x dearer — a 14-part metric sheet spent
+      // minutes here. Tying the tolerance to the offset keeps the shell's accuracy relative (0.05% of the
+      // offset, i.e. ~100 points per full circle) and identical in every unit system.
+      var offset = new ClipperOffset(2.0, Math.Abs(inches * Scale) * 0.0005);
       offset.AddPath(outer, JoinType.jtRound, EndType.etClosedPolygon);
       var grown = new List<List<IntPoint>>();
       offset.Execute(ref grown, inches * Scale);
