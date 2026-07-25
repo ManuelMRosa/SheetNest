@@ -1,0 +1,276 @@
+From 4f7ddcaa761a239e13ac19a3e3f198644c7595f2 Mon Sep 17 00:00:00 2001
+From: SheetNest <noreply@sheetnest.io>
+Date: Sat, 25 Jul 2026 16:48:14 -0400
+Subject: [PATCH] Make the search reproducible: iteration budget, fixed worker
+ count, failure-based compression decay
+
+---
+ src/main.rs                 | 78 +++++++++++++++++++++++++++-------
+ src/util/io.rs              |  8 ++++
+ src/util/iter_terminator.rs | 83 +++++++++++++++++++++++++++++++++++++
+ src/util/mod.rs             |  3 ++
+ 4 files changed, 156 insertions(+), 16 deletions(-)
+ create mode 100755 src/util/iter_terminator.rs
+
+diff --git a/src/main.rs b/src/main.rs
+index 0e73962..8e2a4b9 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -17,12 +17,20 @@ use anyhow::{bail, Result};
+ use rand::rngs::Xoshiro256PlusPlus;
+ use sparrow::consts::{DEFAULT_COMPRESS_TIME_RATIO, DEFAULT_EXPLORE_TIME_RATIO, DEFAULT_FAIL_DECAY_RATIO_CMPR, DEFAULT_MAX_CONSEQ_FAILS_EXPL, LOG_LEVEL_FILTER_DEBUG, LOG_LEVEL_FILTER_RELEASE};
+ use sparrow::util::ctrlc_terminator::CtrlCTerminator;
++use sparrow::util::iter_terminator::IterTerminator;
+ use sparrow::util::svg_exporter::SvgExporter;
+ 
+ pub const OUTPUT_DIR: &str = "output";
+ 
+ pub const LIVE_DIR: &str = "data/live";
+ 
++/// Separator worker threads. This is part of the SEARCH, not just of how fast it runs: every worker
++/// owns an RNG seeded from the master and the best of their competing proposals is kept, so a different
++/// worker count explores a different sequence and lands on a different layout. It is therefore a
++/// constant — deriving it from the machine's core count (as this build used to, via
++/// `available_parallelism().clamp(3, 12)`) means the same job nests differently on different machines.
++pub const N_WORKERS: usize = 8;
++
+ fn main() -> Result<()>{
+     let mut config = DEFAULT_SPARROW_CONFIG;
+ 
+@@ -34,6 +42,11 @@ fn main() -> Result<()>{
+     }
+ 
+     let args = MainCli::parse();
++
++    let n_workers = args.workers.unwrap_or(N_WORKERS).max(1);
++    config.expl_cfg.separator_config.n_workers = n_workers;
++    config.cmpr_cfg.separator_config.n_workers = n_workers;
++
+     let input_file_path = &args.input;
+     let (explore_dur, compress_dur) = match (args.global_time, args.exploration, args.compression) {
+         (Some(gt), None, None) => {
+@@ -43,7 +56,9 @@ fn main() -> Result<()>{
+             (Duration::from_secs(et), Duration::from_secs(ct))
+         },
+         (None, None, None) => {
+-            warn!("[MAIN] no time limit specified");
++            if args.max_iterations.is_none() {
++                warn!("[MAIN] no time limit specified");
++            }
+             (Duration::from_secs(600).mul_f32(DEFAULT_EXPLORE_TIME_RATIO), Duration::from_secs(600).mul_f32(DEFAULT_COMPRESS_TIME_RATIO))
+         },
+         _ => bail!("invalid cli pattern (clap should have caught this)"),
+@@ -55,11 +70,22 @@ fn main() -> Result<()>{
+         config.cmpr_cfg.shrink_decay = ShrinkDecayStrategy::FailureBased(DEFAULT_FAIL_DECAY_RATIO_CMPR);
+         warn!("[MAIN] early termination enabled!");
+     }
++    if args.max_iterations.is_some() {
++        // The compression phase's default decay reads the clock: its shrink step is
++        // `range.0 + (elapsed / time_limit) * range`, so how hard it compresses depends on how busy the
++        // machine was. That is a second, independent source of run-to-run variation from the terminator,
++        // and it only shows up once a run is long enough to reach compression. The failure-based decay
++        // is the deterministic equivalent, so a deterministic budget always implies it.
++        config.cmpr_cfg.shrink_decay = ShrinkDecayStrategy::FailureBased(DEFAULT_FAIL_DECAY_RATIO_CMPR);
++    }
+     if let Some(arg_rng_seed) = args.rng_seed {
+         config.rng_seed = Some(arg_rng_seed as usize);
+     }
+ 
+-    info!("[MAIN] configured to explore for {}s and compress for {}s", explore_dur.as_secs(), compress_dur.as_secs());
++    match args.max_iterations {
++        Some(n) => info!("[MAIN] deterministic mode: {} termination checks, {} workers", n, n_workers),
++        None => info!("[MAIN] configured to explore for {}s and compress for {}s, {} workers", explore_dur.as_secs(), compress_dur.as_secs(), n_workers),
++    }
+ 
+     let rng = match config.rng_seed {
+         Some(seed) => {
+@@ -85,7 +111,7 @@ fn main() -> Result<()>{
+     );
+ 
+     info!("[MAIN] loaded instance {} with #{} items", ext_instance.name, instance.total_item_qty());
+-    
++
+     let mut svg_exporter = {
+         let final_svg_path = Some(format!("{OUTPUT_DIR}/final_{}.svg", ext_instance.name));
+ 
+@@ -98,25 +124,45 @@ fn main() -> Result<()>{
+             true => Some(format!("{LIVE_DIR}/.live_solution.svg")),
+             false => None
+         };
+-        
++
+         SvgExporter::new(
+             final_svg_path,
+             intermediate_svg_dir,
+             live_svg_path
+         )
+     };
+-    
+-    let mut ctrlc_terminator = CtrlCTerminator::new();
+-
+-    let solution = optimize(
+-        instance.clone(),
+-        rng,
+-        &mut svg_exporter,
+-        &mut ctrlc_terminator,
+-        &config.expl_cfg,
+-        &config.cmpr_cfg,
+-        initial_solution.as_ref()
+-    );
++
++    // With --max-iterations the outer loops are cut on a counter rather than on elapsed time, which is
++    // the only non-reproducible input the search has; the same instance and seed then always produce the
++    // same solution. Without it the original wall-clock behaviour is kept.
++    let solution = match args.max_iterations {
++        Some(total) => {
++            let explore = ((total as f32) * DEFAULT_EXPLORE_TIME_RATIO).round() as usize;
++            let compress = total.saturating_sub(explore);
++            let mut terminator = IterTerminator::new(vec![explore, compress]);
++            optimize(
++                instance.clone(),
++                rng,
++                &mut svg_exporter,
++                &mut terminator,
++                &config.expl_cfg,
++                &config.cmpr_cfg,
++                initial_solution.as_ref()
++            )
++        }
++        None => {
++            let mut terminator = CtrlCTerminator::new();
++            optimize(
++                instance.clone(),
++                rng,
++                &mut svg_exporter,
++                &mut terminator,
++                &config.expl_cfg,
++                &config.cmpr_cfg,
++                initial_solution.as_ref()
++            )
++        }
++    };
+ 
+     let json_path = format!("{OUTPUT_DIR}/final_{}.json", ext_instance.name);
+     let json_output = ExtSPOutput {
+diff --git a/src/util/io.rs b/src/util/io.rs
+index 5897188..149a986 100644
+--- a/src/util/io.rs
++++ b/src/util/io.rs
+@@ -34,6 +34,14 @@ pub struct MainCli {
+ 
+     #[arg(short = 's', long, help = "Fixed seed for the random number generator")]
+     pub rng_seed: Option<u64>,
++
++    /// Deterministic stop: a fixed number of termination checks instead of a wall-clock deadline.
++    #[arg(long, help = "Stop after N termination checks instead of on the clock (reproducible)")]
++    pub max_iterations: Option<usize>,
++
++    /// Separator worker threads. Part of the search, so it must match across machines to reproduce a run.
++    #[arg(long, help = "Number of separator worker threads")]
++    pub workers: Option<usize>,
+ }
+ 
+ #[derive(Serialize, Deserialize, Clone)]
+diff --git a/src/util/iter_terminator.rs b/src/util/iter_terminator.rs
+new file mode 100755
+index 0000000..bb13111
+--- /dev/null
++++ b/src/util/iter_terminator.rs
+@@ -0,0 +1,83 @@
++use crate::util::terminator::Terminator;
++use jagua_rs::Instant;
++use log::warn;
++use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
++use std::sync::Arc;
++use std::time::Duration;
++
++/// A terminator that stops the search after a fixed number of termination checks instead of after a
++/// wall-clock deadline, so that two runs of the same instance with the same seed produce exactly the
++/// same solution.
++///
++/// The wall clock is the only non-reproducible input the search has: the separator's inner loops are
++/// already bounded by counters (`iter_no_imprv_limit`, `strike_limit`), each worker owns an RNG seeded
++/// deterministically from the master, and the workers' results are merged in index order. Cutting the
++/// outer loops on elapsed time is what makes an identical job land differently on a busy machine, on a
++/// slower machine, or simply on the next run.
++///
++/// The budget is consumed by every `kill()` call, which is one check of an outer loop: the exploration
++/// loop, the compression loop and the separator's strike loop all poll it. That mixes the phases into a
++/// single monotonically decreasing budget, which is exactly what makes it reproducible.
++///
++/// `new_timeout` is how the optimizer announces a phase change; the durations it passes are ignored and
++/// the next phase's iteration budget is taken instead. Ctrl-C still terminates immediately.
++#[derive(Debug)]
++pub struct IterTerminator {
++    /// Per-phase budgets, consumed in the order the optimizer starts the phases (explore, then compress).
++    phase_budgets: Vec<usize>,
++    /// Index of the next budget to hand out on `new_timeout`.
++    next_phase: usize,
++    /// Checks remaining in the current phase.
++    remaining: AtomicUsize,
++    pub ctrlc: Arc<AtomicBool>,
++}
++
++impl IterTerminator {
++    /// `phase_budgets` are the termination checks each phase may spend, in phase order. A phase started
++    /// after the list is exhausted gets no budget and stops immediately.
++    pub fn new(phase_budgets: Vec<usize>) -> Self {
++        let ctrlc = Arc::new(AtomicBool::new(false));
++        let c = ctrlc.clone();
++
++        ctrlc::set_handler(move || {
++            warn!(" terminating...");
++            c.store(true, Ordering::SeqCst);
++        })
++        .expect("Error setting Ctrl-C handler");
++
++        Self {
++            phase_budgets,
++            next_phase: 0,
++            remaining: AtomicUsize::new(0),
++            ctrlc,
++        }
++    }
++}
++
++impl Terminator for IterTerminator {
++    fn kill(&self) -> bool {
++        if self.ctrlc.load(Ordering::SeqCst) {
++            return true;
++        }
++
++        // Saturating decrement: once the budget is spent every further check kills, and the counter can
++        // never wrap back into "budget available".
++        let spent = self
++            .remaining
++            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |r| Some(r.saturating_sub(1)));
++
++        matches!(spent, Ok(0))
++    }
++
++    fn new_timeout(&mut self, _timeout: Duration) {
++        self.ctrlc.store(false, Ordering::SeqCst);
++        let budget = self.phase_budgets.get(self.next_phase).copied().unwrap_or(0);
++        self.next_phase += 1;
++        self.remaining.store(budget, Ordering::SeqCst);
++    }
++
++    /// There is no deadline — nothing in the optimizer reads this.
++    fn timeout_at(&self) -> Option<Instant> {
++        None
++    }
++}
+diff --git a/src/util/mod.rs b/src/util/mod.rs
+index 645d757..91584da 100644
+--- a/src/util/mod.rs
++++ b/src/util/mod.rs
+@@ -8,3 +8,6 @@ pub mod terminator;
+ 
+ #[cfg(not(target_arch = "wasm32"))]
+ pub mod ctrlc_terminator;
++
++#[cfg(not(target_arch = "wasm32"))]
++pub mod iter_terminator;
+-- 
+2.53.0
+

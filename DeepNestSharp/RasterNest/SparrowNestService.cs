@@ -1,4 +1,4 @@
-namespace DeepNestSharp.RasterNest
+﻿namespace DeepNestSharp.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -24,7 +24,7 @@ namespace DeepNestSharp.RasterNest
   internal static class SparrowNestService
   {
     // Stage timers, read by MetricUnitsPerfFixture.MeasureRealJobStageBreakdown. The wall time of a nest
-    // is (waves x per-sheet budget) and everything else is noise — but only a breakdown proves that, so
+    // is (waves x per-sheet budget) and everything else is noise â€” but only a breakdown proves that, so
     // keep these: they are what a "nesting is slow" report gets measured with. Caller resets them.
     internal static long DiagLoadMs;
     internal static long DiagSparrowMs;
@@ -33,18 +33,25 @@ namespace DeepNestSharp.RasterNest
     internal static long DiagWaves;
     internal static long DiagTries;
 
+    // Every best-of-K candidate as "sheet,seed,count,density,extentX,extentY", appended as each try lands.
+    // A user reported the same job producing a different offcut on every run; this is what shows whether
+    // the winner sparrow's own density picks is also the one that leaves the largest remnant. Caller resets.
+    internal static readonly List<string> DiagCandidates = new List<string>();
+
+    private static int diagPackSeq;
+
     private sealed class Loaded
     {
       public int Source;
       public INfp Nfp;        // original (rendered) geometry
-      public INfp Dilated;    // tooling footprint grown by spacing/2 — what sparrow packs
-      public INfp Tooling;    // tooling footprint WITHOUT the spacing shell — what compaction must respect
+      public INfp Dilated;    // tooling footprint grown by spacing/2 â€” what sparrow packs
+      public INfp Tooling;    // tooling footprint WITHOUT the spacing shell â€” what compaction must respect
       public int[] Angles;    // allowed orientations (discrete fallback + used by hole-filling)
-      public bool Continuous; // "Free" rotation → send NO orientation list so sparrow rotates continuously
+      public bool Continuous; // "Free" rotation â†’ send NO orientation list so sparrow rotates continuously
       public double EffSpacing;
-      public double Kerf;     // cut width (drawing units) — the exact gap common-line neighbours snap to
+      public double Kerf;     // cut width (drawing units) â€” the exact gap common-line neighbours snap to
       public int Qty;
-      public bool Mirrored;   // this population is X-flipped — placements carry IsMirrored for the exporter
+      public bool Mirrored;   // this population is X-flipped â€” placements carry IsMirrored for the exporter
       public int Priority;    // 1-10, LOWER nests first (1 = highest); decides which parts fill earlier sheets
     }
 
@@ -63,7 +70,11 @@ namespace DeepNestSharp.RasterNest
       => Nest(parts, new[] { ((int)Math.Round(sheetWin), (int)Math.Round(sheetHin), 1) }, rotations, spacing, margin, timeLimitSec, sparrowExePath, out error, cancel);
 
     /// <summary>Multi-sheet nest: fills sheets from <paramref name="stock"/> until the pool is empty or
-    /// the stock is exhausted; whatever cannot fit is returned as unplaced.</summary>
+    /// the stock is exhausted; whatever cannot fit is returned as unplaced.
+    /// <para><paramref name="perSheetBudgetSec"/> no longer bounds the search â€” how hard a sheet is
+    /// searched is a fixed iteration count (see <see cref="IterationBudget"/>), because a budget in
+    /// seconds means a busy or slower machine returns a different nest. It survives as the scale for the
+    /// watchdog that kills a hung engine process.</para></summary>
     internal static INestResult Nest(
       IReadOnlyList<RasterPartInfo> parts,
       IReadOnlyList<(int Win, int Hin, int Qty)> stock,
@@ -159,27 +170,33 @@ namespace DeepNestSharp.RasterNest
         var (w, h) = slots[slot];
         var batchQty = SelectBatch(pool, loadedById, w, h);
 
-        // Adaptive time budget: a sheet with few parts converges quickly, so don't spend the full cap on
-        // it (matters for the sparse tail sheet and for many small sheets). Early termination (-x) still
-        // trims sheets that plateau even sooner. The density curve knees ~6s for a full sheet (~26 parts).
+        // Search budget, in ITERATIONS rather than seconds â€” see RunSparrowOnce. A sheet with few parts
+        // converges sooner, so the budget scales with the batch (this matters for the sparse tail sheet
+        // and for many small sheets); early termination (-x) still trims a sheet that gets stuck. The
+        // wall clock a sheet takes is now a consequence of the machine, not an input to the answer.
         int batchParts = batchQty.Values.Sum();
-        int budget = Math.Max(3, Math.Min(perSheetBudgetSec, (int)Math.Ceiling(batchParts * 0.22)));
+        int budget = IterationBudget(batchParts);
 
         // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
-        // A batch that governs many clones is worth many best-of-K tries — the cost is amortized over all
-        // the clones — which makes the template sheet converge to a consistent, dense layout (more time
+        // A batch that governs many clones is worth many best-of-K tries â€” the cost is amortized over all
+        // the clones â€” which makes the template sheet converge to a consistent, dense layout (more time
         // does NOT reduce sparrow's run-to-run variance, but more tries do).
         int replicas = batchQty.Count == 0 ? 1 : batchQty.Min(kv => pool[kv.Key] / Math.Max(1, kv.Value));
 
         // The final/tail sheet takes the whole remaining pool (a leftover count that won't fill a sheet).
-        // It is a single one-off — replicas=1 → base tries → it varies run-to-run. Since it's just ONE
+        // It is a single one-off â€” replicas=1 â†’ base tries â†’ it varies run-to-run. Since it's just ONE
         // sheet, invest more best-of-K in it so it lands consistently, like the replicated body already does.
         bool isFinalSheet = batchParts == pool.Values.Sum();
         int tries = TriesFor(replicas, isFinalSheet);
 
-        // packW/packH = the sheet dims PackOneSheet packed in (always the stock slot's own orientation — the
+        // packW/packH = the sheet dims PackOneSheet packed in (always the stock slot's own orientation â€” the
         // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
-        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, tries, sparrowExePath, cancel, onDensity, commonLine, out string perr);
+        // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
+        // of seconds. Scaled off the caller's time preference so a user who asks for longer nests also
+        // gets a longer leash, but far above any healthy run â€” it exists to catch a hung process.
+        int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
+
+        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, commonLine, out string perr);
         if (cancel.IsCancellationRequested)
         {
           error = "Cancelled.";
@@ -188,7 +205,7 @@ namespace DeepNestSharp.RasterNest
 
         if (placements == null || placements.Count == 0)
         {
-          // Nothing fit this sheet size (a part is bigger than it) — try the next slot/size.
+          // Nothing fit this sheet size (a part is bigger than it) â€” try the next slot/size.
           slot++;
           continue;
         }
@@ -199,7 +216,7 @@ namespace DeepNestSharp.RasterNest
         slot++;
 
         // Pattern replication: while the pool still holds the SAME composition and the next slots are
-        // the same size, clone this layout instead of re-nesting (uniform jobs → 1 run + replicate).
+        // the same size, clone this layout instead of re-nesting (uniform jobs â†’ 1 run + replicate).
         while (slot < slots.Count && slots[slot].W == w && slots[slot].H == h && PoolContains(pool, placedBySrc))
         {
           sheetLayouts.Add(ClonePlacements(placements));
@@ -271,17 +288,17 @@ namespace DeepNestSharp.RasterNest
           if (part.Mirrored)
           {
             // Bake the mirror into the RENDERED geometry; the placement also carries IsMirrored so the
-            // DXF exporter (which reloads the ORIGINAL file) mirrors it once too — same order the
-            // exporter uses (MirrorX about origin → rotate → translate), so both paths agree.
+            // DXF exporter (which reloads the ORIGINAL file) mirrors it once too â€” same order the
+            // exporter uses (MirrorX about origin â†’ rotate â†’ translate), so both paths agree.
             nfp = nfp.MirrorX();
           }
 
           int code = part.Rotations > 0 ? part.Rotations : rotations;
 
           // Common-line needs straight H/V edges for the snap to line up neighbours. Fine/continuous
-          // rotation (45° steps, free 15°) would leave edges at odd angles the snap can't use, so drop it
+          // rotation (45Â° steps, free 15Â°) would leave edges at odd angles the snap can't use, so drop it
           // to 4-way. Decide by the ANGLES, not the code number: the special codes 1001/1002/1003 are
-          // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept — an
+          // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept â€” an
           // earlier `code >= 8` test wrongly turned 0/90 into 4-way, adding 180/270.
           if (commonLine && RotationCodes.PermittedSet(code).Any(a => a % 90 != 0))
           {
@@ -322,7 +339,7 @@ namespace DeepNestSharp.RasterNest
       return loaded;
     }
 
-    /// <summary>Picks a batch from the pool up to ~1.3× the sheet area (extra choice for sparrow), keeping
+    /// <summary>Picks a batch from the pool up to ~1.3Ã— the sheet area (extra choice for sparrow), keeping
     /// source variety for mixed jobs. Always returns at least one part so an oversize part gets a try.</summary>
     private static Dictionary<int, int> SelectBatch(Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, int w, int h)
     {
@@ -333,7 +350,7 @@ namespace DeepNestSharp.RasterNest
       int prevPriority = int.MinValue;
 
       // Highest priority first (1 = highest, lower number wins) so preferred parts fill earlier
-      // sheets and the leftover tail — what ends up unplaced when material runs out — is lowest priority.
+      // sheets and the leftover tail â€” what ends up unplaced when material runs out â€” is lowest priority.
       foreach (var kv in pool.OrderBy(kv => loadedById[kv.Key].Priority).ThenBy(kv => kv.Key))
       {
         if (kv.Value <= 0)
@@ -372,7 +389,7 @@ namespace DeepNestSharp.RasterNest
 
       if (batch.Count == 0)
       {
-        // Nothing fit the area cap — force the single highest-priority remaining part onto the sheet.
+        // Nothing fit the area cap â€” force the single highest-priority remaining part onto the sheet.
         var first = pool.Where(k => k.Value > 0)
           .OrderBy(k => loadedById[k.Key].Priority).ThenBy(k => k.Key).First();
         batch[first.Key] = 1;
@@ -383,12 +400,12 @@ namespace DeepNestSharp.RasterNest
 
     /// <summary>Packs one batch onto one sheet, best-of-K with EARLY-STOP: races sparrow searches (fixed seeds)
     /// in waves and keeps the candidate that PLACES THE MOST parts (tie: denser, then lower seed). Stops
-    /// launching more tries as soon as a whole wave fails to improve the best part-count — easy/uniform sheets
+    /// launching more tries as soon as a whole wave fails to improve the best part-count â€” easy/uniform sheets
     /// converge in a wave or two, so they don't burn all `tries`; hard/variable sheets keep going up to `tries`.
-    /// Packs ONLY in the user's chosen sheet orientation — the sheet is never auto-rotated (a 120×60 preset must
-    /// render 120×60); to use the other orientation the operator picks that preset.</summary>
+    /// Packs ONLY in the user's chosen sheet orientation â€” the sheet is never auto-rotated (a 120Ã—60 preset must
+    /// render 120Ã—60); to use the other orientation the operator picks that preset.</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int tries, string exe, CancellationToken cancel, Action<double> onDensity, bool commonLine, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, bool commonLine, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
@@ -422,22 +439,26 @@ namespace DeepNestSharp.RasterNest
         string inputPath = Path.Combine(workDir, "job.json");
         File.WriteAllText(inputPath, BuildJaguaJson("job", stripHeight, batch, batchQty));
 
-        // Concurrency cap: sparrow is multi-threaded but scales sub-linearly, so several run at once for
-        // almost the same wall-clock (measured on 20 cores: 1 run 4.3s, 8 parallel 5.2s). One wave = maxConc.
-        // sparrow stops on WALL CLOCK, so a wave costs one budget no matter how many tries are in it — the
-        // wall time of a sheet is (waves x budget). The cap used to be ProcessorCount/3, which split the
-        // 8 tries of a single-sheet job into 2 waves and charged it twice for tries that fit in one
-        // (measured on the 26-part reference job: 2 waves x 6.4s = 13.3s, one wave = 7.2s, same 87.2%
-        // utilisation). Half the cores fits those 8 in one wave; a heavily replicated template (up to 16
-        // tries) still splits, which is right — that many concurrent searches would just starve each other.
-        int maxConc = Math.Max(2, Math.Min(tries, Environment.ProcessorCount / 2));
+        // WHICH seeds are raced against each other, and how many, decides the result â€” so the wave is a
+        // FIXED size on every machine. How many of those run at the same instant is just scheduling, and
+        // that is what the core count is allowed to decide: a machine with fewer cores takes longer to
+        // finish the same wave, but computes the same nest. Tying the wave itself to ProcessorCount (it
+        // used to be the whole story) meant a 4-core laptop and a 20-core desktop nested the same job
+        // differently.
+        int waveTries = Math.Min(tries, WaveSize);
+        int maxConc = Math.Max(1, Math.Min(waveTries, Concurrency()));
 
-        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Density, int Seed)>();
+        // The pack is gravity-compacted along the sheet's LONG axis, so that extent is what decides how
+        // much of the sheet is left in one piece. It is the metric the operator sees; sparrow's density
+        // is measured on its own strip BEFORE the compaction, so the two can disagree.
+        bool longAxisIsX = sheetW >= sheetH;
+        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed)>();
         int bestCount = -1, launched = 0;
+        int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
 
         while (launched < tries && !cancel.IsCancellationRequested)
         {
-          int waveSize = Math.Min(maxConc, tries - launched);
+          int waveSize = Math.Min(waveTries, tries - launched);
           var wPl = new List<IPartPlacement>[waveSize];
           var wBy = new Dictionary<int, int>[waveSize];
           var wSt = new (int Count, double Density, int Seed)?[waveSize];
@@ -449,7 +470,7 @@ namespace DeepNestSharp.RasterNest
             string tryDir = Path.Combine(workDir, "try" + seed.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(tryDir);
             var diagRun = System.Diagnostics.Stopwatch.StartNew();
-            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, seed, cancel, aggDensity, out _);
+            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, hardTimeoutSec, seed, cancel, aggDensity, out _);
             System.Threading.Interlocked.Add(ref DiagSparrowMs, diagRun.ElapsedMilliseconds);
             if (outJson == null || cancel.IsCancellationRequested)
             {
@@ -471,11 +492,17 @@ namespace DeepNestSharp.RasterNest
           {
             if (wSt[j].HasValue)
             {
-              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, wSt[j].Value.Density, wSt[j].Value.Seed));
+              var (ex, ey) = Extent(wPl[j]);
+              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed));
+              lock (DiagCandidates)
+              {
+                DiagCandidates.Add(FormattableString.Invariant(
+                  $"{packIndex},{wSt[j].Value.Seed},{wSt[j].Value.Count},{wSt[j].Value.Density:F5},{ex:F3},{ey:F3}"));
+              }
             }
           }
 
-          // Plateau: stop once a full wave fails to beat the best part-count so far (≥1 wave already ran).
+          // Plateau: stop once a full wave fails to beat the best part-count so far (â‰¥1 wave already ran).
           // Part-count is a hard metric that plateaus fast on easy sheets and correlates with density.
           int waveBest = winners.Count == 0 ? -1 : winners.Max(w => w.Count);
           if (bestCount >= 0 && waveBest <= bestCount)
@@ -498,7 +525,7 @@ namespace DeepNestSharp.RasterNest
           return (null, null, sheetW, sheetH);
         }
 
-        int bi = PickBest(winners.Select(w => (w.Count, w.Density, w.Seed)).ToList());
+        int bi = PickBest(winners.Select(w => (w.Count, w.Extent, w.Density, w.Seed)).ToList());
         var sel = winners[bi];
         return (sel.Pl, sel.By, sheetW, sheetH);
       }
@@ -548,7 +575,7 @@ namespace DeepNestSharp.RasterNest
         return (new List<IPartPlacement>(), new Dictionary<int, int>());
       }
 
-      // Pre-anchor min → margin so compaction starts on-sheet, then gravity-compact to the corner.
+      // Pre-anchor min â†’ margin so compaction starts on-sheet, then gravity-compact to the corner.
       double minX = all.Min(p => p.PlacedPart.MinX);
       double minY = all.Min(p => p.PlacedPart.MinY);
       foreach (var pp in all)
@@ -558,7 +585,7 @@ namespace DeepNestSharp.RasterNest
       }
 
       // Compact against the TOOLING footprint, not the bare outline. Compaction slides parts together
-      // until their polygons are `spacing` apart — with common-line that is exact contact, which on a
+      // until their polygons are `spacing` apart â€” with common-line that is exact contact, which on a
       // toolpathed part would drive the kerf and the lead-ins into the neighbour, undoing the clearance
       // sparrow just respected. Feeding it the footprint makes "exact contact" mean the outlines sit one
       // kerf apart: the shared cut edge, with neither part losing material.
@@ -594,7 +621,7 @@ namespace DeepNestSharp.RasterNest
         var ppp = pp.PlacedPart;
         if (ppp.MinX < -tol || ppp.MinY < -tol || ppp.MaxX > sheetWin + tol || ppp.MaxY > sheetHin + tol)
         {
-          continue; // past the sheet edge → not placed on this sheet (stays in the pool)
+          continue; // past the sheet edge â†’ not placed on this sheet (stays in the pool)
         }
 
         placements.Add(pp);
@@ -676,13 +703,13 @@ namespace DeepNestSharp.RasterNest
           if (Math.Abs(dx) < angTol * len) // vertical
           {
             double lo = Math.Min(a.Y, b.Y), hi = Math.Max(a.Y, b.Y);
-            edges.Add(new AaEdge(i, true, a.X, lo, hi, cx < a.X)); // material left of the edge → "right" edge
+            edges.Add(new AaEdge(i, true, a.X, lo, hi, cx < a.X)); // material left of the edge â†’ "right" edge
           }
           else if (Math.Abs(dy) < angTol * len) // horizontal
           {
             double lo = Math.Min(a.X, b.X), hi = Math.Max(a.X, b.X);
             double cy = pts.Average(p => p.Y);
-            edges.Add(new AaEdge(i, false, a.Y, lo, hi, cy < a.Y)); // material below the edge → "top" edge
+            edges.Add(new AaEdge(i, false, a.Y, lo, hi, cy < a.Y)); // material below the edge â†’ "top" edge
           }
         }
       }
@@ -760,7 +787,7 @@ namespace DeepNestSharp.RasterNest
           group.Add(u);
           foreach (var (v, dx, dy, forward) in adj[u])
           {
-            // Constraint: B_offset = A_offset + shift. Forward edge is A→B (u is A), else u is B.
+            // Constraint: B_offset = A_offset + shift. Forward edge is Aâ†’B (u is A), else u is B.
             var want = forward
               ? (offset[u].Value.X + dx, offset[u].Value.Y + dy)
               : (offset[u].Value.X - dx, offset[u].Value.Y - dy);
@@ -809,7 +836,7 @@ namespace DeepNestSharp.RasterNest
 
       if (!ToolingClearsEveryone(all, toolingById))
       {
-        // Something invaded — snap made it worse. Roll the whole pass back (safe: sparrow's layout stands).
+        // Something invaded â€” snap made it worse. Roll the whole pass back (safe: sparrow's layout stands).
         for (int i = 0; i < n; i++)
         {
           all[i].X = origX[i];
@@ -840,7 +867,7 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
-      double invadeLimit = 0.02 * scale * scale; // area units²; ignore rounding slivers
+      double invadeLimit = 0.02 * scale * scale; // area unitsÂ²; ignore rounding slivers
       for (int i = 0; i < n; i++)
       {
         for (int j = 0; j < n; j++)
@@ -909,7 +936,7 @@ namespace DeepNestSharp.RasterNest
 
     /// <summary>
     /// Post-pass: drop leftover parts INTO the holes of already-placed parts. jagua ignores item holes
-    /// (so sparrow never nests inside them); this recovers that density with exact Clipper geometry —
+    /// (so sparrow never nests inside them); this recovers that density with exact Clipper geometry â€”
     /// the spacing-dilated candidate must fit fully inside the hole and clear anything already in it.
     /// </summary>
     private static void FillHoles(List<List<IPartPlacement>> sheetLayouts, Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, CancellationToken cancel)
@@ -926,7 +953,7 @@ namespace DeepNestSharp.RasterNest
       {
         for (int si = 0; si < sheetLayouts.Count && pool.Values.Sum() > 0; si++)
         {
-          // Every hole on this sheet (sheet coords, biggest first — big parts into big holes).
+          // Every hole on this sheet (sheet coords, biggest first â€” big parts into big holes).
           var holes = new List<List<IntPoint>>();
           foreach (var pp in sheetLayouts[si].ToList())
           {
@@ -987,7 +1014,7 @@ namespace DeepNestSharp.RasterNest
                 {
                   var rotated = Math.Abs(rot % 360) < 1e-9 ? loaded.Nfp : loaded.Nfp.Rotate(rot);
 
-                  // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline — a part dropped
+                  // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline â€” a part dropped
                   // into a hole has to keep its cut clear of the surrounding part just like any other.
                   var forFit = loaded.Tooling ?? loaded.Nfp;
                   var dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), loaded.EffSpacing / 2.0);
@@ -1021,7 +1048,7 @@ namespace DeepNestSharp.RasterNest
       }
       catch (Exception)
       {
-        // Hole-filling is a best-effort bonus — never let a geometry edge case fail the whole nest.
+        // Hole-filling is a best-effort bonus â€” never let a geometry edge case fail the whole nest.
       }
     }
 
@@ -1077,7 +1104,7 @@ namespace DeepNestSharp.RasterNest
     }
 
     /// <summary>Robust area overlap via DIFFERENCE (handles coincident/contained polygons, where a plain
-    /// Clipper intersection can return 0): overlap = area(a) − area(a − b).</summary>
+    /// Clipper intersection can return 0): overlap = area(a) âˆ’ area(a âˆ’ b).</summary>
     private static bool Overlaps(List<IntPoint> a, List<IntPoint> b, double eps)
     {
       var clipper = new Clipper();
@@ -1126,16 +1153,16 @@ namespace DeepNestSharp.RasterNest
     }
 
     /// <summary>Grows a polygon outward by <paramref name="offset"/> (drawing units) via a miter Clipper
-    /// offset — the part-spacing halo. Orientation is normalised to CCW so a +delta always GROWS (a CW
-    /// ring would shrink). offset ≤ 0 returns the polygon unchanged.</summary>
+    /// offset â€” the part-spacing halo. Orientation is normalised to CCW so a +delta always GROWS (a CW
+    /// ring would shrink). offset â‰¤ 0 returns the polygon unchanged.</summary>
     /// <summary>
     /// The shape the engine must keep clear for one part. For a plain DXF part that is just its outline
     /// grown by half the spacing, exactly as before. A part from a SheetCam .nest is already toolpathed:
-    /// the cut runs half a kerf outside the outline, and its lead-ins/outs reach further still — on a real
+    /// the cut runs half a kerf outside the outline, and its lead-ins/outs reach further still â€” on a real
     /// job the outer lead pierced 2.9 mm beyond the contour, so packing to the outline drove leads straight
     /// through the neighbouring part. Growing the outline AND the lead paths in one offset pass unions them
     /// into a single footprint (the leads meet the contour, so the result stays connected).
-    /// <para>Only the packing shape changes — the rendered, reported and exported geometry stays the part.</para>
+    /// <para>Only the packing shape changes â€” the rendered, reported and exported geometry stays the part.</para>
     /// </summary>
     internal static INfp ToolingFootprint(INfp poly, IReadOnlyList<IReadOnlyList<SvgPoint>> toolPaths, double kerf, double spacing)
     {
@@ -1215,7 +1242,7 @@ namespace DeepNestSharp.RasterNest
         int n = pts.Length;
         if (n > 1 && Math.Abs(pts[0].X - pts[n - 1].X) < 1e-9 && Math.Abs(pts[0].Y - pts[n - 1].Y) < 1e-9)
         {
-          n--; // jagua implies closure — drop a repeated closing vertex
+          n--; // jagua implies closure â€” drop a repeated closing vertex
         }
 
         var data = new List<double[]>(n);
@@ -1224,7 +1251,7 @@ namespace DeepNestSharp.RasterNest
           data.Add(new[] { pts[i].X, pts[i].Y });
         }
 
-        // Omit allowed_orientations entirely for "Free" parts → jagua treats it as RotationRange::Continuous
+        // Omit allowed_orientations entirely for "Free" parts â†’ jagua treats it as RotationRange::Continuous
         // and sparrow rotates to any angle (denser). Restricted parts keep their discrete angle set.
         var item = new Dictionary<string, object>
         {
@@ -1243,8 +1270,52 @@ namespace DeepNestSharp.RasterNest
       return JsonSerializer.Serialize(new { name, strip_height = stripHeight, items });
     }
 
-    /// <summary>How many independent sparrow searches to race per sheet (best-of-N). ≥12 logical cores →
-    /// 3, otherwise 2; overridable via SHEETNEST_NEST_TRIES. Always ≥2 so a single unlucky run can't stand.</summary>
+    /// <summary>How many independent sparrow searches are raced in one wave. Fixed, because the wave's
+    /// composition is part of the answer, not part of the scheduling.</summary>
+    private const int WaveSize = 8;
+
+    /// <summary>Search iterations per part in the batch. An "iteration" here is one pass of sparrow's outer
+    /// loop, which is coarse â€” the reference two-sheet job (40 parts on its first sheet) reaches its best
+    /// result by about 20 and does not improve at 40, 70, 100, 200 or 400, while the wall clock triples.
+    /// Calibrated to land on that knee, which also puts a nest back at the time the clock budget took.</summary>
+    private const double IterationsPerPart = 0.5;
+
+    /// <summary>The floor for a tiny batch, which would otherwise get a budget too small to separate.</summary>
+    private const int MinIterations = 15;
+
+    /// <summary>How many searches run at the same instant. This is the ONLY place the machine is allowed
+    /// to influence a nest, and it influences only how long it takes â€” a slower machine finishes the same
+    /// wave later, it does not compute a different one. SHEETNEST_MAX_CONC overrides it, which is how the
+    /// "any machine, same nest" claim is actually tested rather than asserted.</summary>
+    private static int Concurrency()
+    {
+      var env = Environment.GetEnvironmentVariable("SHEETNEST_MAX_CONC");
+      if (int.TryParse(env, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 1)
+      {
+        return n;
+      }
+
+      return Environment.ProcessorCount / 2;
+    }
+
+    /// <summary>How long a sheet's search runs, in sparrow iterations. Deliberately NOT a function of the
+    /// clock or of the machine: this is the number that has to match for two computers to agree on a
+    /// nest. Overridable via SHEETNEST_NEST_ITERS for calibration.</summary>
+    internal static int IterationBudget(int batchParts)
+    {
+      var env = Environment.GetEnvironmentVariable("SHEETNEST_NEST_ITERS");
+      if (int.TryParse(env, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > 0)
+      {
+        return n;
+      }
+
+      return Math.Max(MinIterations, (int)Math.Ceiling(batchParts * IterationsPerPart));
+    }
+
+    /// <summary>How many independent sparrow searches to race per sheet (best-of-N). A constant: it used
+    /// to be <c>ProcessorCount >= 12 ? 3 : 2</c>, which handed a smaller machine fewer attempts and so a
+    /// different â€” and on average worse â€” nest for the very same job. Overridable via
+    /// SHEETNEST_NEST_TRIES for experiments. Always â‰¥2 so a single unlucky run can't stand.</summary>
     private static int NestTries()
     {
       var env = Environment.GetEnvironmentVariable("SHEETNEST_NEST_TRIES");
@@ -1253,13 +1324,14 @@ namespace DeepNestSharp.RasterNest
         return Math.Min(n, 8);
       }
 
-      return Environment.ProcessorCount >= 12 ? 3 : 2;
+      return 3;
     }
 
     /// <summary>Best-of-K count for a batch that will pattern-replicate onto `replicas` identical sheets.
     /// A one-off sheet uses the base <see cref="NestTries"/>; a template governing many clones gets more
     /// tries (up to 16) because that cost is amortized over all the clones and drives the layout to a
-    /// consistent, dense result (more tries reduce sparrow's variance where more TIME does not).</summary>
+    /// denser result â€” a search is one draw from a wide spread (measured: 30 to 40 parts on the same
+    /// sheet across seeds), so racing more of them is what raises the floor.</summary>
     internal static int TriesForReplicas(int replicas) => Math.Clamp(replicas, NestTries(), 16);
 
     /// <summary>Best-of-K for a sheet: scales with its clone count (<see cref="TriesForReplicas"/>), and the
@@ -1269,6 +1341,28 @@ namespace DeepNestSharp.RasterNest
     {
       int t = TriesForReplicas(replicas);
       return isFinalSheet ? Math.Max(t, 8) : t;
+    }
+
+    /// <summary>The bounding box the placed parts actually occupy. This is what decides the offcut the
+    /// operator gets, and it is measured AFTER the gravity compaction â€” sparrow's own density is measured
+    /// before it, on its own strip.</summary>
+    internal static (double W, double H) Extent(IReadOnlyList<IPartPlacement> placements)
+    {
+      if (placements == null || placements.Count == 0)
+      {
+        return (0, 0);
+      }
+
+      double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+      foreach (var p in placements)
+      {
+        minX = Math.Min(minX, p.PlacedPart.MinX);
+        minY = Math.Min(minY, p.PlacedPart.MinY);
+        maxX = Math.Max(maxX, p.PlacedPart.MaxX);
+        maxY = Math.Max(maxY, p.PlacedPart.MaxY);
+      }
+
+      return (maxX - minX, maxY - minY);
     }
 
     /// <summary>Reads the strip density (0..1) from a sparrow solution JSON; 0 if it can't be parsed.</summary>
@@ -1285,10 +1379,23 @@ namespace DeepNestSharp.RasterNest
       }
     }
 
-    /// <summary>Picks the best sheet candidate: most parts placed wins, then higher strip density, then lower
-    /// seed (stable, repeatable). Pure — unit-testable. Returns the winner's index in <paramref name="cands"/>,
-    /// or -1 if empty.</summary>
-    internal static int PickBest(IReadOnlyList<(int Count, double Density, int Seed)> cands)
+    /// <summary>
+    /// Picks the best sheet candidate: most parts placed wins, then the SHORTEST extent along the sheet's
+    /// long axis, then higher strip density, then lower seed (stable, repeatable).
+    /// <para>
+    /// Extent beats density because they are measured at different moments: density is sparrow's, taken on
+    /// its own strip BEFORE the gravity compaction, while the extent is what is left after it â€” and the
+    /// extent is what the operator sees as the leftover. Ranking by density discarded real material: on a
+    /// measured sheet where all eight candidates placed the same ten parts, the density winner (0.94448)
+    /// left an extent of 118.72 while a candidate 0.00002 less dense left 115.79. Worse, two candidates
+    /// separated in the fifth decimal of density trade places between runs, so the same job produced a
+    /// different leftover every time (reported in issue #2).
+    /// </para>
+    /// Density stays as the next tie-break: it still discriminates when the extents match, which is the
+    /// normal case on a sheet packed full. Pure â€” unit-testable. Returns the winner's index in
+    /// <paramref name="cands"/>, or -1 if empty.
+    /// </summary>
+    internal static int PickBest(IReadOnlyList<(int Count, double Extent, double Density, int Seed)> cands)
     {
       int best = -1;
       foreach (var (c, i) in cands.Select((v, i) => (v, i)))
@@ -1300,9 +1407,31 @@ namespace DeepNestSharp.RasterNest
         }
 
         var b = cands[best];
-        if (c.Count > b.Count
-          || (c.Count == b.Count && c.Density > b.Density)
-          || (c.Count == b.Count && c.Density == b.Density && c.Seed < b.Seed))
+        if (c.Count != b.Count)
+        {
+          if (c.Count > b.Count)
+          {
+            best = i;
+          }
+
+          continue;
+        }
+
+        // Extents that differ only in float noise are a tie, so the ordering falls cleanly through to
+        // density instead of being decided by the last bits of two equivalent layouts.
+        double eps = 1e-6 * Math.Max(1, Math.Max(Math.Abs(c.Extent), Math.Abs(b.Extent)));
+        if (Math.Abs(c.Extent - b.Extent) > eps)
+        {
+          if (c.Extent < b.Extent)
+          {
+            best = i;
+          }
+
+          continue;
+        }
+
+        if (c.Density > b.Density
+          || (c.Density == b.Density && c.Seed < b.Seed))
         {
           best = i;
         }
@@ -1311,7 +1440,12 @@ namespace DeepNestSharp.RasterNest
       return best;
     }
 
-    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int timeLimitSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
+    /// <summary>Runs one sparrow search. The search is bounded by a fixed number of iterations, NEVER by
+    /// the clock: a wall-clock deadline makes the same job land differently depending on how busy the
+    /// machine is, which is what made a repeated nest come back with a different offcut every time.
+    /// <paramref name="hardTimeoutSec"/> is only a watchdog for a hung process â€” if it ever fires the
+    /// result is discarded rather than used, because a truncated search is not reproducible.</summary>
+    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
     {
       error = null;
       var psi = new ProcessStartInfo
@@ -1325,10 +1459,10 @@ namespace DeepNestSharp.RasterNest
       };
       psi.ArgumentList.Add("-i");
       psi.ArgumentList.Add(inputPath);
-      psi.ArgumentList.Add("-t");
-      psi.ArgumentList.Add(timeLimitSec.ToString(CultureInfo.InvariantCulture));
-      psi.ArgumentList.Add("-x"); // early termination: stop as soon as the search plateaus
-      psi.ArgumentList.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
+      psi.ArgumentList.Add("--max-iterations"); // deterministic budget; also forces the failure-based
+      psi.ArgumentList.Add(iterations.ToString(CultureInfo.InvariantCulture)); // compression decay
+      psi.ArgumentList.Add("-x"); // stop a search that is stuck (counts failures, not seconds)
+      psi.ArgumentList.Add("-s"); // fixed RNG seed â†’ repeatable per-seed run for best-of-N
       psi.ArgumentList.Add(seed.ToString(CultureInfo.InvariantCulture));
 
       Process proc;
@@ -1372,7 +1506,7 @@ namespace DeepNestSharp.RasterNest
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
 
-        int waitMs = (timeLimitSec + 60) * 1000;
+        int waitMs = Math.Max(60, hardTimeoutSec) * 1000;
         using (cancel.Register(() => TryKill(proc)))
         {
           bool exited = proc.WaitForExit(waitMs);
