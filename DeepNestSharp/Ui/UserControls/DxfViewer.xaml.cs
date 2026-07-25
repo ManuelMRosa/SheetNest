@@ -68,6 +68,7 @@ namespace DeepNestSharp.Ui.UserControls
     private Point dragStartCanvas;
     private double dragStartX;
     private double dragStartY;
+    private RasterNest.DragCollisionCache dragCache; // valid only for the drag in progress; null = query the live placements
     private double currentSheetW;
     private double currentSheetH;
 
@@ -574,6 +575,7 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void Render()
     {
+      this.dragCache = null; // placements may have been replaced wholesale — never answer from stale geometry
       this.canvas.Children.Clear();
       this.partPaths.Clear();
       this.ClearMeasure(); // canvas was cleared; drop dangling measure-shape references
@@ -1299,6 +1301,7 @@ namespace DeepNestSharp.Ui.UserControls
             this.dragStartCanvas = pt;
             this.dragStartX = this.selectedPp.X;
             this.dragStartY = this.selectedPp.Y;
+            this.dragCache = this.BuildDragCache(this.selectedPp);
             this.host.CaptureMouse();
             this.host.Cursor = Cursors.Hand;
             return;
@@ -1448,6 +1451,7 @@ namespace DeepNestSharp.Ui.UserControls
           this.PushEdit(before, after, nudge: false);
         }
 
+        this.dragCache = null; // the layout changed — every later query rebuilds from the live placements
         this.SetSelectedFill(SelectedFill);
         this.CommitManualEdit();
         return;
@@ -1648,6 +1652,20 @@ namespace DeepNestSharp.Ui.UserControls
     /// <paramref name="exclude"/> is the placement the candidate replaces (skipped in the pair tests).</summary>
     private bool IsPositionValid(IPartPlacement candidate, IPartPlacement exclude)
     {
+      // Interactive drag: the neighbours and the dragged part's shape are fixed, so answer from the cache
+      // built when the drag started (see BuildDragCache) instead of rebuilding every polygon per query.
+      if (this.dragCache != null && ReferenceEquals(candidate, this.selectedPp) && ReferenceEquals(exclude, this.selectedPp))
+      {
+        var (bMinX, bMinY, bMaxX, bMaxY) = this.dragCache.BoundsAt(candidate.X, candidate.Y);
+        const double Tol = 0.002;
+        if (bMinX < -Tol || bMinY < -Tol || bMaxX > this.currentSheetW + Tol || bMaxY > this.currentSheetH + Tol)
+        {
+          return false;
+        }
+
+        return !this.dragCache.AnyTooClose(candidate.X, candidate.Y);
+      }
+
       if (this.OutOfSheet(candidate))
       {
         return false;
@@ -1681,29 +1699,37 @@ namespace DeepNestSharp.Ui.UserControls
     /// fails. Tested as: A's outline grown by the clearance intersects B.
     /// </summary>
     private bool TooClose(IPartPlacement a, IPartPlacement b)
+      => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, this.ClearanceBetween(a, b));
+
+    /// <summary>The clearance this pair must keep: (spacingA + spacingB) / 2, or the CAM-safe common-line
+    /// gap when either side is a common-line part (spacing 0 — they may touch, only real overlap fails).</summary>
+    private double ClearanceBetween(IPartPlacement a, IPartPlacement b)
     {
       double clearance = (this.SpacingOf(a) + this.SpacingOf(b)) / 2.0;
-      if (clearance <= 0)
+      return clearance <= 0 ? RasterNest.RasterCompact.CommonLineGap : clearance;
+    }
+
+    /// <summary>Precomputes the geometry that stays put while <paramref name="dragged"/> is moved, so a
+    /// drag costs one Clipper intersection per touching neighbour instead of rebuilding every path and
+    /// re-running a ClipperOffset on every mouse move.</summary>
+    private RasterNest.DragCollisionCache BuildDragCache(IPartPlacement dragged)
+    {
+      var group = this.CurrentGroup();
+      if (group == null || dragged?.Part == null)
       {
-        // Common-line pair: keep the CAM-safe mini-gap (coincident lines get merged/deleted by CAM).
-        clearance = RasterNest.RasterCompact.CommonLineGap;
+        return null;
       }
 
-      var pa = a.PlacedPart;
-      var pb = b.PlacedPart;
-      if (pa.MaxX + clearance <= pb.MinX || pb.MaxX <= pa.MinX - clearance
-          || pa.MaxY + clearance <= pb.MinY || pb.MaxY <= pa.MinY - clearance)
+      var others = new List<(INfp Placed, double Clearance)>();
+      foreach (var other in group.Representative.PartPlacements)
       {
-        return false;
+        if (other != dragged)
+        {
+          others.Add((other.PlacedPart, this.ClearanceBetween(dragged, other)));
+        }
       }
 
-      var pathsA = ToClipperPaths(pa);
-      if (clearance > 0)
-      {
-        pathsA = InflateOuter(pathsA, clearance);
-      }
-
-      return PathsOverlap(pathsA, ToClipperPaths(pb));
+      return new RasterNest.DragCollisionCache(dragged.Part, others);
     }
 
     private void SetSelectedFill(Brush fill)
@@ -2009,85 +2035,6 @@ namespace DeepNestSharp.Ui.UserControls
       var placed = pp.PlacedPart;
       return placed.MinX < -Tol || placed.MinY < -Tol
         || placed.MaxX > this.currentSheetW + Tol || placed.MaxY > this.currentSheetH + Tol;
-    }
-
-    private const double ClipScale = 1e6;
-
-    private static List<List<ClipperLib.IntPoint>> ToClipperPaths(INfp nfp)
-    {
-      var paths = new List<List<ClipperLib.IntPoint>>();
-      void Add(INfp contour)
-      {
-        if (contour?.Points == null || contour.Points.Length < 3)
-        {
-          return;
-        }
-
-        var path = new List<ClipperLib.IntPoint>(contour.Points.Length);
-        foreach (var p in contour.Points)
-        {
-          path.Add(new ClipperLib.IntPoint((long)Math.Round(p.X * ClipScale), (long)Math.Round(p.Y * ClipScale)));
-        }
-
-        paths.Add(path);
-      }
-
-      Add(nfp);
-      if (nfp.Children != null)
-      {
-        foreach (var child in nfp.Children)
-        {
-          Add(child);
-        }
-      }
-
-      return paths;
-    }
-
-    /// <summary>Grow the outer contour by <paramref name="inches"/> (round join = uniform Euclidean
-    /// clearance, matching the nesting engine's halo). Holes kept as-is.</summary>
-    private static List<List<ClipperLib.IntPoint>> InflateOuter(List<List<ClipperLib.IntPoint>> paths, double inches)
-    {
-      if (paths.Count == 0)
-      {
-        return paths;
-      }
-
-      var outer = new List<ClipperLib.IntPoint>(paths[0]);
-      if (!ClipperLib.Clipper.Orientation(outer))
-      {
-        outer.Reverse();
-      }
-
-      var offset = new ClipperLib.ClipperOffset();
-      offset.AddPath(outer, ClipperLib.JoinType.jtRound, ClipperLib.EndType.etClosedPolygon);
-      var grown = new List<List<ClipperLib.IntPoint>>();
-      offset.Execute(ref grown, inches * ClipScale);
-
-      var result = new List<List<ClipperLib.IntPoint>>(grown);
-      for (int i = 1; i < paths.Count; i++)
-      {
-        result.Add(paths[i]);
-      }
-
-      return result.Count > 0 ? result : paths;
-    }
-
-    private static bool PathsOverlap(List<List<ClipperLib.IntPoint>> a, List<List<ClipperLib.IntPoint>> b)
-    {
-      const double EpsArea = 1e-6 * ClipScale * ClipScale;
-      var clipper = new ClipperLib.Clipper();
-      clipper.AddPaths(a, ClipperLib.PolyType.ptSubject, true);
-      clipper.AddPaths(b, ClipperLib.PolyType.ptClip, true);
-      var solution = new List<List<ClipperLib.IntPoint>>();
-      clipper.Execute(ClipperLib.ClipType.ctIntersection, solution, ClipperLib.PolyFillType.pftEvenOdd, ClipperLib.PolyFillType.pftEvenOdd);
-      double area = 0;
-      foreach (var path in solution)
-      {
-        area += Math.Abs(ClipperLib.Clipper.Area(path));
-      }
-
-      return area > EpsArea;
     }
   }
 }
