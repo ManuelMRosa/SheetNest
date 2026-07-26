@@ -96,9 +96,15 @@ namespace DeepNestSharp.Ui.UserControls
     private Point measureSnapAt;
 
     // Vertices / edge midpoints / hole centres (canvas coords) the measure tool snaps to, and the
-    // edge segments for "nearest point on an edge" projection — all rebuilt each Render.
+    // edge segments for "nearest point on an edge" projection.
     private readonly List<Point> snapPoints = new List<Point>();
     private readonly List<(Point A, Point B)> snapSegments = new List<(Point, Point)>();
+
+    // Set by every edit, cleared by BuildSnapPoints. Manual editing does NOT re-render - it repaints the one
+    // part it moved - so these used to go on describing where the part WAS, and the measure tool kept
+    // snapping there. Rebuilding is walking every contour on the sheet, far too much for an auto-repeating
+    // arrow key, so it happens on the next snap query instead of on the edit.
+    private bool snapPointsStale;
 
     // Undo/redo history of manual edits (cleared when a new result arrives).
     private readonly Stack<EditRecord> undoStack = new Stack<EditRecord>();
@@ -1157,6 +1163,7 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void BuildSnapPoints()
     {
+      this.snapPointsStale = false;
       this.snapPoints.Clear();
       this.snapSegments.Clear();
       double h = this.currentSheetH;
@@ -1231,6 +1238,11 @@ namespace DeepNestSharp.Ui.UserControls
     /// threshold; returns the cursor unchanged (snapped=false) when none is close enough.</summary>
     private Point SnapToNearest(Point cursor, out bool snapped)
     {
+      if (this.snapPointsStale)
+      {
+        this.BuildSnapPoints(); // an edit moved a part; catch up now that someone is actually measuring
+      }
+
       snapped = false;
       Point result = cursor;
       double thresh = SnapScreenPx / Math.Max(0.0001, this.scale.ScaleX);
@@ -1452,6 +1464,7 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void RefreshSelectedPath()
     {
+      this.snapPointsStale = true; // the part's outline moved, so the measure tool's snap points did too
       for (int i = 0; i < this.partPaths.Count; i++)
       {
         if (this.partPaths[i].Pp == this.selectedPp)
@@ -2406,6 +2419,7 @@ namespace DeepNestSharp.Ui.UserControls
     /// </summary>
     private void CommitManualEdit()
     {
+      this.snapPointsStale = true;
       var group = this.CurrentGroup();
       if (group == null)
       {
