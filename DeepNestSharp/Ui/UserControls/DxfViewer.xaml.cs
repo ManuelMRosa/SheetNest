@@ -33,6 +33,7 @@ namespace DeepNestSharp.Ui.UserControls
     // Target on-screen line width in device pixels (constant at any zoom level).
     private const double StrokeScreenPx = 1.0;
     private const double KerfBandPx = 7.0; // cut-band width in device pixels; fixed on screen so it reads at any zoom
+    private const double OffcutCutPx = 4.0; // offcut cut line, same idea: it decides where the material is split
 
     // Measure snap: how close (device px) the cursor must be to a vertex to snap onto it.
     private const double SnapScreenPx = 12.0;
@@ -47,7 +48,10 @@ namespace DeepNestSharp.Ui.UserControls
     // sheet, which read as "faded" rather than "wrong" once the parts around it became solid colours -
     // reported as moving a part that was "normal, not red" when the code had it flagged all along.
     private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F));
-    private static readonly Brush OffcutStroke = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // reusable-offcut outline + label
+    // The offcut cut line and its size label: the darkest thing on a near-white sheet, so they are spotted
+    // without being looked for. Close to the part outline (#101010) on purpose - the line separates from it
+    // by WEIGHT, four solid pixels against one, not by colour.
+    private static readonly Brush OffcutStroke = new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x00));
     private static readonly Brush LeadStroke = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28)); // lead-in/out cut path
     private static readonly Brush KerfBand = new SolidColorBrush(Color.FromArgb(0xE0, 0xC6, 0x28, 0x28)); // cut band (contour + leads), bold so it reads at any zoom
 
@@ -821,7 +825,7 @@ namespace DeepNestSharp.Ui.UserControls
     }
 
     /// <summary>
-    /// Dashed outline + size label over the clean rectangular offcut(s) on the genuine remainder
+    /// Dashed cut line + size label over the clean rectangular offcut(s) on the genuine remainder
     /// sheet (see <see cref="OffcutSheet"/>), when the nest ran with "Prefer rectangular offcut".
     /// Computed live from the placements with the same cut positions the DXF export writes, so manual
     /// edits move the outline — or hide it once a part invades the strip — and what the user sees is
@@ -836,29 +840,40 @@ namespace DeepNestSharp.Ui.UserControls
 
       var (cutX, cutY) = RasterNest.OffcutGeometry.CutPositions(sheetPlacement, this.OffcutOptions);
 
-      // Draw the SAME remnant rectangles the export cuts (single source: OffcutGeometry.RemnantRects).
-      // Sheet coords are Y-up; the canvas flips Y, so a rect at sheet [r.Y..r.Y+r.H] lands at canvas
-      // top [h-(r.Y+r.H)]. Empty list = no offcut worth advertising.
-      foreach (var r in RasterNest.OffcutGeometry.RemnantRects(cutX, cutY, w, h))
+      // Draw the SAME cut the export writes (single source: OffcutGeometry.RemnantRects), edge overlap
+      // included, so the line visibly runs past the sheet exactly as far as it will on the machine.
+      // Empty list = no offcut worth advertising.
+      foreach (var r in RasterNest.OffcutGeometry.RemnantRects(cutX, cutY, w, h, this.OffcutOptions.EdgeOverlap))
       {
-        this.DrawOffcutRect(new Rect(r.X, h - (r.Y + r.H), r.W, r.H), w, h, stroke);
+        // Sheet coords are Y-up; the canvas flips Y, so a rect at sheet [r.Y..r.Y+r.H] lands at canvas
+        // top [h-(r.Y+r.H)].
+        this.DrawOffcutCut(r.Cut, new Rect(r.X, h - (r.Y + r.H), r.W, r.H), w, h, stroke);
       }
     }
 
-    /// <summary>One dashed offcut rectangle (canvas coords) with its centered size label.</summary>
-    private void DrawOffcutRect(Rect rect, double w, double h, double stroke)
+    /// <summary>Sheet coordinates are Y-up and the canvas is Y-down. Its own method because the flip is
+    /// hand-written all over this file and getting it wrong shows up late and reads as a geometry bug.</summary>
+    internal static (Point A, Point B) CutToCanvas(DeepNestLib.IO.OffcutLine cut, double sheetHeight)
+      => (new Point(cut.X1, sheetHeight - cut.Y1), new Point(cut.X2, sheetHeight - cut.Y2));
+
+    /// <summary>
+    /// The offcut's dashed CUT LINE with the remnant's size label beside it. Only the one edge that is
+    /// really cut is drawn: the other three sides of the remnant are the sheet's own edges, and outlining
+    /// the whole rectangle implied cuts that never happen.
+    /// </summary>
+    private void DrawOffcutCut(DeepNestLib.IO.OffcutLine cut, Rect rect, double w, double h, double stroke)
     {
       if (rect.Width <= 0 || rect.Height <= 0)
       {
         return;
       }
 
+      var (a, b) = CutToCanvas(cut, h);
       this.canvas.Children.Add(new System.Windows.Shapes.Path
       {
-        Data = new RectangleGeometry(rect),
+        Data = new LineGeometry(a, b),
         Stroke = OffcutStroke,
-        StrokeThickness = stroke,
-        StrokeDashArray = new DoubleCollection { 4, 3 },
+        StrokeThickness = stroke * OffcutCutPx, // fixed width on screen, like the kerf band
         IsHitTestVisible = false,
       });
 

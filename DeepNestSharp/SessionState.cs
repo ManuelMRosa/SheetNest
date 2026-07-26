@@ -55,8 +55,22 @@ namespace DeepNestSharp
     /// <summary>Gap between the packed parts and the offcut cut line; -1 = default (the part spacing).</summary>
     public double OffcutSpacing { get; set; } = -1;
 
-    /// <summary>Narrowest offcut strip worth cutting (drawing units); -1/0 = automatic (5% of the sheet side).</summary>
+    /// <summary>Narrowest offcut strip worth cutting (drawing units); -1/0 = automatic (5% of the sheet side).
+    /// Superseded by the per-axis pair below, which it seeds when they have never been set.</summary>
     public double OffcutMinWidth { get; set; } = -1;
+
+    /// <summary>Smallest remnant worth cutting off, across and up (drawing units); -1/0 = automatic.</summary>
+    public double OffcutMinX { get; set; } = -1;
+
+    public double OffcutMinY { get; set; } = -1;
+
+    /// <summary>Largest remnant still worth cutting off; past it the sheet is kept whole. -1/0 = no limit.</summary>
+    public double OffcutMaxX { get; set; } = -1;
+
+    public double OffcutMaxY { get; set; } = -1;
+
+    /// <summary>How far the offcut cut runs past the sheet edge at each end; -1/0 = flush with the edge.</summary>
+    public double OffcutEdgeOverlap { get; set; } = -1;
 
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");

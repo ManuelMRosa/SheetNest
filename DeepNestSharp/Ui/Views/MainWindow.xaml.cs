@@ -37,6 +37,11 @@ namespace DeepNestSharp.Ui.Views
     private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
     private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
     private double offcutMinWidth = -1; // narrowest strip worth cutting; <=0 = automatic 5% rule (SessionState)
+    private double offcutMinX = -1; // the remnant size window, SheetCam's remnant cutoff (SessionState)
+    private double offcutMinY = -1;
+    private double offcutMaxX = -1;
+    private double offcutMaxY = -1;
+    private double offcutEdgeOverlap = -1; // how far the cut runs past the sheet edge; <=0 = flush
 
     public MainWindow(IMainViewModel viewModel)
     {
@@ -205,6 +210,14 @@ namespace DeepNestSharp.Ui.Views
         {
           this.offcutMinWidth = session.OffcutMinWidth;
         }
+
+        // The single minimum came first and applied to both axes. Seed the pair from it so a session that
+        // already had one does not silently lose it the first time the new dialog is opened.
+        this.offcutMinX = session.OffcutMinX >= 0 ? session.OffcutMinX : this.offcutMinWidth;
+        this.offcutMinY = session.OffcutMinY >= 0 ? session.OffcutMinY : this.offcutMinWidth;
+        this.offcutMaxX = session.OffcutMaxX;
+        this.offcutMaxY = session.OffcutMaxY;
+        this.offcutEdgeOverlap = session.OffcutEdgeOverlap;
       }
 
       // The config normalization above — and the initial WPF binding pass, which runs AFTER Loaded
@@ -472,8 +485,8 @@ namespace DeepNestSharp.Ui.Views
 
     private void OnOffcutSettings(object sender, RoutedEventArgs e)
     {
-      double defaultSpacing = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing);
-      var dialog = new OffcutSettingsWindow(this.preferRectOffcut, this.offcutDirection, this.offcutSpacing, this.offcutMinWidth, this.unitsMm, defaultSpacing) { Owner = this };
+      var (limits, spacing, edgeOverlap) = this.EffectiveOffcutLimits();
+      var dialog = new OffcutSettingsWindow(this.preferRectOffcut, this.offcutDirection, spacing, limits, edgeOverlap, this.unitsMm) { Owner = this };
       if (dialog.ShowDialog() != true)
       {
         return;
@@ -482,13 +495,21 @@ namespace DeepNestSharp.Ui.Views
       this.preferRectOffcut = dialog.OffcutEnabled;
       this.offcutDirection = dialog.Direction;
       this.offcutSpacing = dialog.Spacing;
-      this.offcutMinWidth = dialog.MinWidth;
+      this.offcutMinX = dialog.Limits.MinX;
+      this.offcutMinY = dialog.Limits.MinY;
+      this.offcutMaxX = dialog.Limits.MaxX;
+      this.offcutMaxY = dialog.Limits.MaxY;
+      this.offcutEdgeOverlap = dialog.EdgeOverlap;
 
       var session = SessionState.Load();
       session.PreferRectangularOffcut = this.preferRectOffcut;
       session.OffcutDirection = this.offcutDirection;
       session.OffcutSpacing = this.offcutSpacing;
-      session.OffcutMinWidth = this.offcutMinWidth;
+      session.OffcutMinX = this.offcutMinX;
+      session.OffcutMinY = this.offcutMinY;
+      session.OffcutMaxX = this.offcutMaxX;
+      session.OffcutMaxY = this.offcutMaxY;
+      session.OffcutEdgeOverlap = this.offcutEdgeOverlap;
       session.Save();
 
       // Reflect the new settings on the on-screen result immediately (overlay only — the packing
@@ -2275,8 +2296,28 @@ namespace DeepNestSharp.Ui.Views
         == MessageBoxResult.OK;
     }
 
-    /// <summary>The active offcut settings, or null when the option is off. Spacing -1 (never saved)
-    /// falls back to the global part spacing — the remnant keeps a part's clearance.</summary>
+    /// <summary>
+    /// The size window and edge overlap in force: what was saved, or the recommended figure for the
+    /// drawing's units. Resolved HERE, where the geometry is built, and handed to the dialog already
+    /// resolved — a default that lived only in the window would be a lie, showing 12 on screen while the
+    /// cut was still computed the automatic way.
+    /// <para>-1 means never saved and takes the default; an explicit 0 is the user asking for automatic
+    /// (the 5% rule on a minimum, no limit on a maximum) and is left alone.</para>
+    /// </summary>
+    private (OffcutLimits Limits, double Spacing, double EdgeOverlap) EffectiveOffcutLimits()
+    {
+      var (d, defaultSpacing, defaultOverlap) = OffcutOptions.Defaults(this.unitsMm);
+      return (
+        new OffcutLimits(
+          this.offcutMinX >= 0 ? this.offcutMinX : d.MinX,
+          this.offcutMinY >= 0 ? this.offcutMinY : d.MinY,
+          this.offcutMaxX >= 0 ? this.offcutMaxX : d.MaxX,
+          this.offcutMaxY >= 0 ? this.offcutMaxY : d.MaxY),
+        this.offcutSpacing >= 0 ? this.offcutSpacing : defaultSpacing,
+        this.offcutEdgeOverlap >= 0 ? this.offcutEdgeOverlap : defaultOverlap);
+    }
+
+    /// <summary>The active offcut settings, or null when the option is off.</summary>
     private OffcutOptions CurrentOffcutOptions()
     {
       if (!this.preferRectOffcut)
@@ -2284,14 +2325,16 @@ namespace DeepNestSharp.Ui.Views
         return null;
       }
 
-      double spacing = this.offcutSpacing >= 0
-        ? this.offcutSpacing
-        : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing);
+      var (limits, spacing, edgeOverlap) = this.EffectiveOffcutLimits();
       return new OffcutOptions
       {
         Direction = (OffcutDirection)System.Math.Max(0, System.Math.Min(3, this.offcutDirection)),
         Spacing = spacing,
-        MinStripWidth = this.offcutMinWidth > 0 ? this.offcutMinWidth : -1,
+        MinX = limits.MinX > 0 ? limits.MinX : -1,
+        MinY = limits.MinY > 0 ? limits.MinY : -1,
+        MaxX = limits.MaxX > 0 ? limits.MaxX : -1,
+        MaxY = limits.MaxY > 0 ? limits.MaxY : -1,
+        EdgeOverlap = System.Math.Max(0, edgeOverlap),
       };
     }
   }

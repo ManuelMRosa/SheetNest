@@ -16,13 +16,15 @@ namespace DeepNestSharp.CiTests
   /// </summary>
   public class PartColorsFixture
   {
-    // The colours that already MEAN something in the viewer; a part must never be mistaken for a state.
+    // The colours that already MEAN something in the viewer or the offcut dialog; a part must never be
+    // mistaken for a state.
     private static readonly (byte R, byte G, byte B)[] Reserved =
     {
       (0x00, 0x00, 0x80), // navy   - selected
       (0xD3, 0x2F, 0x2F), // red    - invalid position
       (0xC6, 0x28, 0x28), // red    - lead-in / kerf band
-      (0x2E, 0x7D, 0x32), // green  - reusable offcut
+      (0x2E, 0x7D, 0x32), // green  - the remnant tint on the offcut dialog's preview cards
+      (0x00, 0x00, 0x00), // black  - the offcut cut line and its size label
     };
 
     [Fact]
