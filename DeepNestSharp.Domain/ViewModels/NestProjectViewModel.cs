@@ -183,12 +183,43 @@
         }
         else
         {
+          // Nothing checked the file here before: the part went in as a bare path, the thumbnail swallowed
+          // whatever went wrong, and the operator only found out at NEST - by which time the job is built
+          // around a part that cannot be cut. Read it now and refuse what cannot be used, saying why.
+          var reason = await Task.Run(() => DescribeLoadFailure(filePath));
+          if (reason != null)
+          {
+            this.MainViewModel.MessageService.DisplayMessageBox(reason, "Add Part", MessageBoxIcon.Stop);
+            continue;
+          }
+
           observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo() { Path = filePath });
         }
       }
 
       Contextualise();
       this.IsDirty = true;
+    }
+
+    /// <summary>Null when the file yields a shape that can be nested; otherwise why it cannot, in words an
+    /// operator can act on.</summary>
+    private static string DescribeLoadFailure(string filePath)
+    {
+      var name = System.IO.Path.GetFileName(filePath);
+      try
+      {
+        var detail = new NestExecutionHelper().LoadRawDetail(new System.IO.FileInfo(filePath));
+        if (detail == null || !detail.TryConvertToNfp(0, out INfp nfp) || nfp.Points.Length < 3)
+        {
+          return $"{name} holds no shape that can be nested.";
+        }
+
+        return null;
+      }
+      catch (Exception ex)
+      {
+        return $"{name} cannot be used:{Environment.NewLine}{Environment.NewLine}{ex.GetBaseException().Message}";
+      }
     }
 
     /// <summary>Metadata for one flat produced by a 3D unfold — lets the part be re-unfolded later

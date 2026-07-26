@@ -8,6 +8,7 @@
   using System.Reflection;
   using System.Threading.Tasks;
   using IxMilia.Dxf;
+  using IxMilia.Dxf.Blocks;
   using IxMilia.Dxf.Entities;
 
   public class DxfParser
@@ -24,6 +25,21 @@
     private const double CurveChordTolerance = 0.05;
     private const double MinArcStepDeg = 1.0;
     private const double MaxArcStepDeg = 6.0;
+
+    /// <summary>Entity types that are never a cut path, so dropping them is the right answer: notes,
+    /// dimensions, construction lines, raster underlays. Anything NOT here and not tessellated is
+    /// reported instead of dropped — silently losing real geometry would nest a part that is missing a
+    /// piece, and that ends up as scrap metal.</summary>
+    private static readonly HashSet<DxfEntityType> AnnotationTypes = new HashSet<DxfEntityType>
+    {
+      DxfEntityType.Text, DxfEntityType.MText, DxfEntityType.ArcAlignedText, DxfEntityType.RText,
+      DxfEntityType.Attribute, DxfEntityType.AttributeDefinition, DxfEntityType.Dimension,
+      DxfEntityType.Leader, DxfEntityType.Tolerance, DxfEntityType.Point, DxfEntityType.Seqend,
+      DxfEntityType.Vertex, DxfEntityType.XLine, DxfEntityType.Ray, DxfEntityType.Hatch,
+      DxfEntityType.Image, DxfEntityType.WipeOut, DxfEntityType.OleFrame, DxfEntityType.Ole2Frame,
+      DxfEntityType.DgnUnderlay, DxfEntityType.DwfUnderlay, DxfEntityType.PdfUnderlay,
+      DxfEntityType.Underlay, DxfEntityType.Light, DxfEntityType.Shape, DxfEntityType.Section,
+    };
 
     private static double ArcStepDegrees(double radius)
     {
@@ -115,6 +131,15 @@
       RawDetail<DxfEntity> s = new RawDetail<DxfEntity>();
       s.Name = fullFilename;
       Dictionary<DxfEntity, IList<LineElement>> approximations = ApproximateEntities(entities);
+
+      // Annotation is now dropped rather than fatal, so a drawing can reach here with nothing to cut.
+      // Say that plainly: ConnectElements would otherwise fail on an empty contour list, and "Sequence
+      // contains no elements" tells the operator nothing about their file.
+      if (!approximations.Any(kvp => kvp.Value.Count > 0))
+      {
+        throw new ArgumentException($"'{fullFilename}' has no geometry to nest - it holds only text, dimensions or other annotation.");
+      }
+
       s.AddRangeContour(ConnectElements(approximations));
       if (s.Outers.Any(z => z.Points.Count < 3))
       {
@@ -122,6 +147,11 @@
       }
 
       return s;
+    }
+
+    private static ArgumentException UnmeasurableGeometry(DxfEntity ent)
+    {
+      return new ArgumentException($"This drawing contains a {ent.EntityTypeString}, which SheetNest cannot measure. Explode it or redraw it as lines, arcs, polylines, ellipses or splines and import again.");
     }
 
     private static Dictionary<DxfEntity, IList<LineElement>> ApproximateEntities(IEnumerable<DxfEntity> entities)
@@ -245,8 +275,75 @@
               break;
             }
 
+          case DxfEntityType.Ellipse:
+            {
+              DxfEllipse ellipse = (DxfEllipse)ent;
+              double ax = ellipse.MajorAxis.X;
+              double ay = ellipse.MajorAxis.Y;
+              double major = Math.Sqrt((ax * ax) + (ay * ay));
+              if (major < 1e-12)
+              {
+                continue;
+              }
+
+              double ratio = Math.Abs(ellipse.MinorAxisRatio);
+              double from = ellipse.StartParameter;
+              double to = ellipse.EndParameter;
+              if (to <= from)
+              {
+                to = from + (2 * Math.PI); // a full ellipse, which is also what an unset sweep means
+              }
+
+              double ellipseStep = ArcStepDegrees(major) * Math.PI / 180.0;
+              int steps = Math.Max(2, (int)Math.Ceiling((to - from) / ellipseStep));
+              var ee = new List<PointF>();
+              for (int i = 0; i <= steps; i++)
+              {
+                double t = from + ((to - from) * i / steps);
+                double c = Math.Cos(t);
+                double s = Math.Sin(t);
+
+                // The minor axis is the major one turned a quarter turn and shortened by the ratio.
+                ee.Add(new PointF(
+                  (float)(ellipse.Center.X + (ax * c) - (ay * ratio * s)),
+                  (float)(ellipse.Center.Y + (ay * c) + (ax * ratio * s))));
+              }
+
+              elems.AddRange(Chain(ee));
+            }
+
+            break;
+          case DxfEntityType.Spline:
+            {
+              List<PointF> sp = SplinePoints((DxfSpline)ent);
+              if (sp.Count < 2)
+              {
+                continue;
+              }
+
+              elems.AddRange(Chain(sp));
+            }
+
+            break;
+          case DxfEntityType.Insert:
+            {
+              // A part drawn as a block is not nested. Every nesting package in the trade expects the
+              // blocks exploded before import, and the ones that do not say so read the part in EMPTY or
+              // drop the reference in silence - a sheet that gets cut with a piece missing. Say it instead.
+              throw new ArgumentException("This file is not compatible with SheetNest: its geometry is drawn as a block (a block reference). Open it in your CAD program, explode the blocks, and save the DXF again.");
+            }
+
           default:
-            throw new ArgumentException("unsupported entity type: " + ent);
+            {
+              // Annotation draws nothing that gets cut, so dropping it is right. Anything else might be
+              // real geometry, and quietly losing that would nest a part with a piece missing.
+              if (!AnnotationTypes.Contains(ent.EntityType))
+              {
+                throw UnmeasurableGeometry(ent);
+              }
+
+              continue;
+            }
         }
 
         elems = elems.Where(z => z.Start.DistTo(z.End) > RemoveThreshold).ToList();
@@ -285,6 +382,127 @@
       DxfFile dxffile = DxfFile.Load(inputStream);
       IEnumerable<DxfEntity> entities = dxffile.Entities.ToArray();
       return ConvertDxfToRawDetail(name, entities);
+    }
+
+    /// <summary>Segments joining the points in the order given. Unlike <see cref="ConnectTheDots"/> this
+    /// does not wrap the last point back to the first, so a partial sweep stays open.</summary>
+    private static IEnumerable<LineElement> Chain(IList<PointF> points)
+    {
+      for (var i = 1; i < points.Count; i++)
+      {
+        yield return new LineElement() { Start = points[i - 1], End = points[i] };
+      }
+    }
+
+    /// <summary>
+    /// Samples a SPLINE finely enough that it strays less than <see cref="CurveChordTolerance"/> from the
+    /// true curve - the same accuracy arcs and circles get. Control point weights are honoured: a rational
+    /// spline is how a DXF stores an exact circle or ellipse in spline form, and ignoring the weights bows
+    /// the curve visibly inwards.
+    /// </summary>
+    private static List<PointF> SplinePoints(DxfSpline spline)
+    {
+      IList<DxfControlPoint> control = spline.ControlPoints;
+      int degree = Math.Max(1, spline.DegreeOfCurve);
+      IList<double> knots = spline.KnotValues;
+
+      // Fit points are the points the curve was drawn THROUGH, so they are a faithful fallback when the
+      // knot vector is missing or inconsistent. Inventing a knot vector would draw a different curve.
+      if (control.Count < degree + 1 || knots.Count != control.Count + degree + 1)
+      {
+        if (spline.FitPoints.Count >= 2)
+        {
+          return spline.FitPoints.Select(p => new PointF((float)p.X, (float)p.Y)).ToList();
+        }
+
+        throw new ArgumentException($"This drawing contains a SPLINE whose {control.Count} control points and {knots.Count} knots do not describe a curve. Convert it to a polyline and import again.");
+      }
+
+      double first = knots[degree];
+      double last = knots[control.Count];
+      if (last - first < 1e-12)
+      {
+        return new List<PointF>();
+      }
+
+      // Double the sampling until the curve's own midpoints sit within tolerance of the chords being
+      // emitted. A handful of extra evaluations, and it adapts to how much the spline actually bends.
+      int segments = 8 * Math.Max(1, control.Count - degree);
+      List<PointF> points = SampleSpline(spline, knots, degree, first, last, segments);
+      for (int attempt = 0; attempt < 5 && !IsFlatEnough(spline, knots, degree, first, last, segments, points); attempt++)
+      {
+        segments *= 2;
+        points = SampleSpline(spline, knots, degree, first, last, segments);
+      }
+
+      return points;
+    }
+
+    private static List<PointF> SampleSpline(DxfSpline spline, IList<double> knots, int degree, double first, double last, int segments)
+    {
+      var points = new List<PointF>(segments + 1);
+      for (int i = 0; i <= segments; i++)
+      {
+        points.Add(SplinePoint(spline, knots, degree, first + ((last - first) * i / segments)));
+      }
+
+      return points;
+    }
+
+    /// <summary>Compares the curve at the middle of every emitted chord against that chord's midpoint.</summary>
+    private static bool IsFlatEnough(DxfSpline spline, IList<double> knots, int degree, double first, double last, int segments, List<PointF> points)
+    {
+      for (int i = 1; i < points.Count; i++)
+      {
+        PointF mid = SplinePoint(spline, knots, degree, first + ((last - first) * (i - 0.5) / segments));
+        double dx = mid.X - ((points[i - 1].X + points[i].X) / 2.0);
+        double dy = mid.Y - ((points[i - 1].Y + points[i].Y) / 2.0);
+        if (Math.Sqrt((dx * dx) + (dy * dy)) > CurveChordTolerance)
+        {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>De Boor's algorithm, run in homogeneous coordinates so the weights come out for free.</summary>
+    private static PointF SplinePoint(DxfSpline spline, IList<double> knots, int degree, double u)
+    {
+      IList<DxfControlPoint> control = spline.ControlPoints;
+      int span = degree;
+      while (span < control.Count - 1 && u >= knots[span + 1])
+      {
+        span++;
+      }
+
+      var x = new double[degree + 1];
+      var y = new double[degree + 1];
+      var w = new double[degree + 1];
+      for (int j = 0; j <= degree; j++)
+      {
+        DxfControlPoint cp = control[span - degree + j];
+        double weight = cp.Weight > 0 ? cp.Weight : 1; // some writers leave an unused weight at zero
+        x[j] = cp.Point.X * weight;
+        y[j] = cp.Point.Y * weight;
+        w[j] = weight;
+      }
+
+      for (int r = 1; r <= degree; r++)
+      {
+        for (int j = degree; j >= r; j--)
+        {
+          int i = span - degree + j;
+          double denominator = knots[i + degree - r + 1] - knots[i];
+          double a = denominator <= 0 ? 0 : (u - knots[i]) / denominator;
+          x[j] = ((1 - a) * x[j - 1]) + (a * x[j]);
+          y[j] = ((1 - a) * y[j - 1]) + (a * y[j]);
+          w[j] = ((1 - a) * w[j - 1]) + (a * w[j]);
+        }
+      }
+
+      double divisor = Math.Abs(w[degree]) < 1e-12 ? 1 : w[degree];
+      return new PointF((float)(x[degree] / divisor), (float)(y[degree] / divisor));
     }
 
     /// <summary>

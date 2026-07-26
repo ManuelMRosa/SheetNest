@@ -333,6 +333,19 @@
 
             break;
 
+          case DxfEntityType.Spline:
+            {
+              // An affine map of a NURBS is a NURBS with mapped control points, so the knots and weights
+              // ride along untouched. Mirroring reflects the control points; the curve follows.
+              DxfSpline dxfSpline = (DxfSpline)entity;
+              Replace(dxfSpline.ControlPoints, dxfSpline.ControlPoints
+                .Select(cp => new DxfControlPoint(TransformLocation(mirror, rotationAngle, cp.Point) + offset, cp.Weight)).ToList());
+              Replace(dxfSpline.FitPoints, dxfSpline.FitPoints
+                .Select(p => TransformLocation(mirror, rotationAngle, p) + offset).ToList());
+              result.Add(dxfSpline);
+              break;
+            }
+
           case DxfEntityType.Body:
           case DxfEntityType.DgnUnderlay:
           case DxfEntityType.Dimension:
@@ -355,7 +368,6 @@
           case DxfEntityType.Seqend:
           case DxfEntityType.Shape:
           case DxfEntityType.Solid:
-          case DxfEntityType.Spline:
           case DxfEntityType.Text:
           case DxfEntityType.Tolerance:
           case DxfEntityType.Trace:
@@ -391,6 +403,16 @@
       }
 
       return RotateLocation(rotationAngle, pt);
+    }
+
+    /// <summary>Swaps the contents of a list in place; the entities own their collections.</summary>
+    private static void Replace<T>(IList<T> target, IList<T> replacement)
+    {
+      target.Clear();
+      foreach (T item in replacement)
+      {
+        target.Add(item);
+      }
     }
 
     /// <summary>Rounds a coordinate to the export grid (micro-inch).</summary>

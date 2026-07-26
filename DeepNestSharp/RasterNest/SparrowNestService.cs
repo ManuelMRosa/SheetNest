@@ -282,7 +282,19 @@
           continue;
         }
 
-        var det = helper.LoadRawDetail(new FileInfo(part.Path));
+        DeepNestLib.IO.IRawDetail det;
+        try
+        {
+          det = helper.LoadRawDetail(new FileInfo(part.Path));
+        }
+        catch (Exception ex)
+        {
+          // A file that cannot be read stops the nest and says which one and why. Nesting the rest quietly
+          // would hand the operator a sheet that is missing a part, and that gets cut before anyone counts.
+          error = $"{Path.GetFileName(part.Path)} could not be read.{Environment.NewLine}{Environment.NewLine}{ex.GetBaseException().Message}";
+          return null;
+        }
+
         if (det != null && det.TryConvertToNfp(source, out INfp nfp) && nfp.Points.Length > 2)
         {
           if (part.Mirrored)
