@@ -237,6 +237,45 @@ namespace DeepNestSharp.CiTests
       cutX.Should().BeNull();
     }
 
+    /// <summary>
+    /// In an L, one end of one cut does not reach the sheet at all — it dies against the other cut. Running
+    /// past THERE saws into the remnant the other cut frees, which is what Manuel spotted: "overlap solo
+    /// debe hacer overlap para afuera de la lámina". The corner is still severed, because both cuts pass
+    /// through it.
+    /// </summary>
+    [Fact]
+    public void AnLCutStopsDeadAtTheCornerInsteadOfRunningPastIt()
+    {
+      var rects = OffcutGeometry.RemnantRects(90, 40, W, H, 0.25);
+
+      var down = rects[0].Cut; // vertical: both ends ARE the sheet, top and bottom
+      down.Y1.Should().Be(-0.25);
+      down.Y2.Should().Be(H + 0.25);
+
+      var across = rects[1].Cut; // horizontal: out at the left edge, stopped at the corner on the right
+      across.X1.Should().Be(-0.25);
+      across.X2.Should().Be(90, "the right end meets the vertical cut, it does not reach the sheet");
+    }
+
+    /// <summary>
+    /// The mirror image on a sheet that is taller than it is wide: now the VERTICAL cut is the one stopped
+    /// at the corner. The pair is what proves the rule follows the sheet's long axis rather than being
+    /// hand-written for one case.
+    /// </summary>
+    [Fact]
+    public void OnATallSheetItIsTheOtherCutThatStops()
+    {
+      var rects = OffcutGeometry.RemnantRects(40, 90, H, W, 0.25); // 60 wide, 120 tall
+
+      var down = rects[0].Cut;
+      down.Y1.Should().Be(-0.25);
+      down.Y2.Should().Be(90, "the top end meets the horizontal cut");
+
+      var across = rects[1].Cut; // this one spans the full width, so both its ends are the sheet
+      across.X1.Should().Be(-0.25);
+      across.X2.Should().Be(H + 0.25);
+    }
+
     /// <summary>An unset bound constrains nothing, so a window of all zeros leaves the answer alone.</summary>
     [Fact]
     public void AnEmptyWindowChangesNothing()

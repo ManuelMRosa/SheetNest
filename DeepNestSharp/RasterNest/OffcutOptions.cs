@@ -257,9 +257,10 @@ namespace DeepNestSharp.RasterNest
     /// SINGLE source the cut lines, the remnant area and the viewer overlay all derive from, so the
     /// "what you see is what the laser cuts" promise can never drift between them.
     /// </summary>
-    /// <param name="edgeOverlap">How far each cut runs past its own ends, so the remnant comes away
-    /// instead of hanging on by a bridge at the corners. It lengthens the cut; it never moves it, and it
-    /// never changes the rectangle the cut frees.</param>
+    /// <param name="edgeOverlap">How far a cut runs PAST THE SHEET, so the remnant comes away instead of
+    /// hanging on by a bridge at the corners. Only ends that sit on the sheet's boundary are extended: in an
+    /// L one end of one cut dies against the other cut, and running past THAT would saw into the remnant the
+    /// other cut frees. The two already pass through that corner, so the material parts anyway.</param>
     public static IReadOnlyList<RemnantRect> RemnantRects(double? cutX, double? cutY, double w, double h, double edgeOverlap = 0)
     {
       var rects = new List<RemnantRect>(2);
@@ -269,13 +270,15 @@ namespace DeepNestSharp.RasterNest
       if (cutX.HasValue)
       {
         double top = growX ? h : cutY ?? h;
-        rects.Add(new RemnantRect(cutX.Value, 0, w - cutX.Value, top, new OffcutLine { X1 = cutX.Value, Y1 = -o, X2 = cutX.Value, Y2 = top + o }));
+        double over = growX || !cutY.HasValue ? o : 0; // top is the sheet's edge, or the L's corner
+        rects.Add(new RemnantRect(cutX.Value, 0, w - cutX.Value, top, new OffcutLine { X1 = cutX.Value, Y1 = -o, X2 = cutX.Value, Y2 = top + over }));
       }
 
       if (cutY.HasValue)
       {
         double right = growX ? cutX ?? w : w;
-        rects.Add(new RemnantRect(0, cutY.Value, right, h - cutY.Value, new OffcutLine { X1 = -o, Y1 = cutY.Value, X2 = right + o, Y2 = cutY.Value }));
+        double over = !growX || !cutX.HasValue ? o : 0; // same question on the other axis
+        rects.Add(new RemnantRect(0, cutY.Value, right, h - cutY.Value, new OffcutLine { X1 = -o, Y1 = cutY.Value, X2 = right + over, Y2 = cutY.Value }));
       }
 
       return rects;
