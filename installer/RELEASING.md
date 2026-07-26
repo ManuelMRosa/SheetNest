@@ -18,6 +18,13 @@ users (see *Why betas never reach stable users* below).
   ~2 GB FreeCAD payload; just bump instead). A strictly increasing ProductVersion keeps
   every upgrade path clean: stable → beta → beta → stable.
 
+> **Departure, 2026-07-26 — v1.1.7 shipped stable while betas 1.2.0–1.2.2 were already published.**
+> Manuel's call, made knowing the cost: `MajorUpgrade` refuses a downgrade, and the in-app updater compares
+> the three numbers, so **anyone running a 1.2.x beta cannot install 1.1.7 and is never offered it** — they
+> have to uninstall the beta first. GitHub still flags it Latest, because that goes by publish date, not by
+> version. If this comes up again, prefer the next unused patch; it is the only number that upgrades cleanly
+> from both the last stable and the betas.
+
 Example timeline:
 
 | Release            | Tag           | MSI ProductVersion | GitHub flag  |
