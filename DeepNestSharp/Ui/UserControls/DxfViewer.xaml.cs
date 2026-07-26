@@ -1863,12 +1863,30 @@ namespace DeepNestSharp.Ui.UserControls
       {
         // Fine positioning: arrows nudge the selected part (Shift = coarser). Screen-up is +Y in sheet
         // coordinates (the canvas is Y-flipped). A nudge into another part's clearance is simply refused.
-        double step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 0.25 : 0.05;
+        double step = NudgeStep(this.UnitsMm, (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
         double dx = e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0;
         double dy = e.Key == Key.Up ? step : e.Key == Key.Down ? -step : 0;
         this.NudgeSelected(dx, dy);
         e.Handled = true;
       }
+    }
+
+    /// <summary>
+    /// How far one arrow press moves a part, IN THE DRAWING'S OWN UNITS. A single pair of numbers cannot
+    /// serve both: 0.05 and 0.25 are a fine and a coarse nudge in inches, but the same figures in a metric
+    /// job are a quarter of a millimetre at most - which is what "the increments are still very small, even
+    /// holding Shift" was. The metric pair is the round equivalent of the imperial one (1.27 and 6.35 mm).
+    /// <para>Its own method so it can be tested: this class of bug - a constant that is silently in drawing
+    /// units - has bitten this project before.</para>
+    /// </summary>
+    internal static double NudgeStep(bool unitsMm, bool shift)
+    {
+      if (unitsMm)
+      {
+        return shift ? 5.0 : 1.0;
+      }
+
+      return shift ? 0.25 : 0.05;
     }
 
     private void NudgeSelected(double dx, double dy)

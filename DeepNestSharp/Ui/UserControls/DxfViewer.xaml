@@ -27,9 +27,14 @@
                Text="Run a nest to see the result here."
                Foreground="#EFEFEF" FontSize="14"
                HorizontalAlignment="Center" VerticalAlignment="Center" />
-    <TextBlock x:Name="hintText" Text="scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit"
-               Foreground="#DCDCDC" FontSize="11" IsHitTestVisible="False"
-               HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8" />
+    <!-- This also carries the MEASURE readout, and pale grey text put it somewhere between hard to read on
+         the #808080 workspace and invisible on the near-white sheet - which is where it lands once a nest
+         fills the view. Same classic gray panel as the edit bar, so it reads over either. -->
+    <Border Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,2"
+            IsHitTestVisible="False" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
+      <TextBlock x:Name="hintText" Text="scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit"
+                 Foreground="#101010" FontSize="11" />
+    </Border>
 
     <!-- Manual nesting: select, drag and rotate parts to refine the nest by hand.
          Classic raised gray panel — square corners, no translucency (retro chrome). -->
