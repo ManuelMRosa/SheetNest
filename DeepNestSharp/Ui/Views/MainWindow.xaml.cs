@@ -584,6 +584,7 @@ namespace DeepNestSharp.Ui.Views
         if (this.dxfViewer != null)
         {
           this.dxfViewer.DefaultPartSpacing = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing);
+          this.dxfViewer.SheetEdgeMargin = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing);
           this.dxfViewer.PartSpacings = doc.ProjectInfo.DetailLoadInfos
             .Where(o => !string.IsNullOrWhiteSpace(o.Path))
             .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
@@ -1492,6 +1493,9 @@ namespace DeepNestSharp.Ui.Views
         if (this.dxfViewer != null)
         {
           this.dxfViewer.DefaultPartSpacing = System.Math.Max(0, spacing);
+
+          // The same edge margin the engine packed to, so hand-editing keeps the parts off the sheet edge.
+          this.dxfViewer.SheetEdgeMargin = System.Math.Max(0, margin);
           this.dxfViewer.OffcutOptions = this.CurrentOffcutOptions();
 
           // Group by path — the same DXF may legitimately be listed twice (e.g. once common-line,
@@ -1651,6 +1655,29 @@ namespace DeepNestSharp.Ui.Views
             && agg.Flatten().InnerExceptions.All(e => e is System.OperationCanceledException));
     }
 
+    /// <summary>
+    /// Manual editing may leave a part on top of a neighbour or off the sheet — that is what makes
+    /// rearranging possible — so the check that used to live in the editor lives here instead: nothing
+    /// leaves the app while any layout is still wrong. Checks EVERY layout, not the one on screen.
+    /// </summary>
+    private bool RefuseWhileAnythingOverlaps(string title)
+    {
+      var unfit = this.dxfViewer?.FindUnfitLayouts();
+      if (unfit == null || unfit.Count == 0)
+      {
+        return false;
+      }
+
+      int parts = unfit.Sum(u => u.Parts);
+      var where = string.Join("\n", unfit.Select(u => $"    {u.Layout}: {u.Parts} part(s)"));
+      ViewModel.MessageService.DisplayMessageBox(
+        $"{parts} part(s) are still overlapping a neighbour or hanging off the sheet, so this nest is not ready to cut:\n\n{where}\n\n" +
+        "They are drawn in red. Move them clear in Edit nest and try again.",
+        title,
+        DeepNestLib.MessageBoxIcon.Stop);
+      return true;
+    }
+
     private void OnNestReportPdf(object sender, RoutedEventArgs e)
     {
       var selected = ViewModel.NestMonitorViewModel?.SelectedItem;
@@ -1660,6 +1687,11 @@ namespace DeepNestSharp.Ui.Views
           "Run a nest and select a result first, then save the report.",
           "Nest report",
           DeepNestLib.MessageBoxIcon.Information);
+        return;
+      }
+
+      if (this.RefuseWhileAnythingOverlaps("Nest report"))
+      {
         return;
       }
 
@@ -1708,6 +1740,11 @@ namespace DeepNestSharp.Ui.Views
           "Run a nest and select a result first, then export.",
           "Export DXF",
           DeepNestLib.MessageBoxIcon.Information);
+        return;
+      }
+
+      if (this.RefuseWhileAnythingOverlaps("Export DXF"))
+      {
         return;
       }
 

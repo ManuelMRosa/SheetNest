@@ -43,10 +43,16 @@ namespace DeepNestSharp.Ui.UserControls
     private static readonly Brush PartFill = new SolidColorBrush(Color.FromArgb(0xC0, 0xB4, 0xB8, 0xBC)); // aluminum gray
     private static readonly Brush HoleFill = new SolidColorBrush(Color.FromRgb(0xFA, 0xFA, 0xFA));
     private static readonly Brush SelectedFill = new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x80)); // classic navy selection
-    private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromArgb(0x77, 0xD3, 0x2F, 0x2F));
+    // OPAQUE, like the per-type fills. At 47% alpha this composited to a pale salmon over the near-white
+    // sheet, which read as "faded" rather than "wrong" once the parts around it became solid colours -
+    // reported as moving a part that was "normal, not red" when the code had it flagged all along.
+    private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F));
     private static readonly Brush OffcutStroke = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // reusable-offcut outline + label
     private static readonly Brush LeadStroke = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28)); // lead-in/out cut path
     private static readonly Brush KerfBand = new SolidColorBrush(Color.FromArgb(0xE0, 0xC6, 0x28, 0x28)); // cut band (contour + leads), bold so it reads at any zoom
+
+    // The directions the magnets probe. Nests are orthogonal, so a diagonal earns nothing.
+    private static readonly (double X, double Y)[] Axes = { (1, 0), (-1, 0), (0, 1), (0, -1) };
 
     // Distinct sheet layouts and how many physical sheets use each (the production plan).
     private readonly List<SheetGroup> groups = new List<SheetGroup>();
@@ -101,6 +107,10 @@ namespace DeepNestSharp.Ui.UserControls
 
     /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
     public double DefaultPartSpacing { get; set; }
+
+    /// <summary>How far every part must stay from the sheet edge (drawing units) — the same margin the
+    /// nester was given, so editing by hand cannot break what the job asked for. Set by the window.</summary>
+    public double SheetEdgeMargin { get; set; }
 
     /// <summary>Colour per part file (see <see cref="PartColors"/>), set by the window from the PROJECT's
     /// part list — not derived from the result here, or a part that was excluded or did not fit would shift
@@ -599,6 +609,7 @@ namespace DeepNestSharp.Ui.UserControls
       }
 
       this.editBar.Visibility = Visibility.Visible;
+      this.UpdateOverlapCount();
 
       int idx = Math.Max(0, Math.Min(this.SheetIndex, this.groups.Count - 1));
       var group = this.groups[idx];
@@ -1399,9 +1410,9 @@ namespace DeepNestSharp.Ui.UserControls
     }
 
     /// <summary>
-    /// Finds the valid position nearest the drop point along the drag path (coarse scan from the drop
-    /// backward, then binary refinement toward the drop) and leaves the part there. t=0 (the drag
-    /// start) is always valid, so the part never ends up in an illegal spot.
+    /// Settles an Alt-drop at the last valid position along the drag path. Same walk the arrows use, with
+    /// no magnet past the drop point (tMax = 1) - the mouse is asking to go exactly where it was released
+    /// and no further.
     /// </summary>
     private void ResolveDropToContact()
     {
@@ -1417,34 +1428,10 @@ namespace DeepNestSharp.Ui.UserControls
         return this.IsPositionValid(this.selectedPp, this.selectedPp);
       }
 
-      const int CoarseSteps = 48;
-      double lo = 0; // known valid
-      double hi = 1; // known invalid (that's why we're here)
-      for (int i = CoarseSteps - 1; i >= 1; i--)
-      {
-        double t = (double)i / CoarseSteps;
-        if (ValidAt(t))
-        {
-          lo = t;
-          hi = (double)(i + 1) / CoarseSteps;
-          break;
-        }
-      }
-
-      for (int i = 0; i < 20; i++)
-      {
-        double mid = (lo + hi) / 2.0;
-        if (ValidAt(mid))
-        {
-          lo = mid;
-        }
-        else
-        {
-          hi = mid;
-        }
-      }
-
-      ValidAt(lo); // land on the best known-valid position
+      // t=0 is where the drag began, which is NOT necessarily legal - a part that was already overlapping
+      // can be picked up and dragged. TrySnap handles that by carrying it out to the first legal spot;
+      // failing that, it goes back where it came from.
+      ValidAt(TrySnap(ValidAt, 1, out double t) ? t : 0);
       this.RefreshSelectedPath();
     }
 
@@ -1468,14 +1455,22 @@ namespace DeepNestSharp.Ui.UserControls
         this.host.ReleaseMouseCapture();
         this.host.Cursor = null;
 
-        if (this.dragInvalid)
+        // A drop lands where it was released, on top of a neighbour if that is what was asked: rearranging a
+        // full sheet means parking a part somewhere occupied while its neighbour is moved next, and sliding
+        // it back to the last free spot - sometimes all the way to where the drag began - made that "almost
+        // impossible" (reported). What it does NOT do is land a hair away from its clearance: within half an
+        // inch of something the part settles against it, exactly. Deeper than that it stays put and goes red,
+        // so parking on top still works. Alt keeps the long slide back down the drag path.
+        if (this.dragInvalid && (Keyboard.Modifiers & ModifierKeys.Alt) != 0)
         {
-          // Dropped too close / on top of a neighbour: slide back along the drag path only as far as
-          // needed, so the part settles at its required clearance — touching for common-line parts,
-          // (spacingA + spacingB)/2 otherwise. Worst case it returns to where the drag began.
-          this.dragInvalid = false;
           this.ResolveDropToContact();
         }
+        else
+        {
+          this.SnapDropToSpacing();
+        }
+
+        this.dragInvalid = false;
 
         bool moved = Math.Abs(this.selectedPp.X - this.dragStartX) > 1e-9 || Math.Abs(this.selectedPp.Y - this.dragStartY) > 1e-9;
         if (moved)
@@ -1588,14 +1583,8 @@ namespace DeepNestSharp.Ui.UserControls
         Id = pp.Id,
       };
 
-      // Overlaps are not allowed: refuse the rotation (brief red flash) if the turned part would
-      // collide with a neighbour or leave the sheet.
-      if (!this.IsPositionValid(replacement, pp))
-      {
-        this.FlashSelectedInvalid();
-        return;
-      }
-
+      // The turn always applies, even into a neighbour - "rotated and repositioned before being placed in
+      // their final location" is the whole point of editing by hand. An overlap shows red instead.
       this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
       list[index] = replacement;
       this.invalid.Remove(pp);
@@ -1660,13 +1649,7 @@ namespace DeepNestSharp.Ui.UserControls
         Id = pp.Id,
       };
 
-      // Overlaps aren't allowed: refuse the mirror (brief red flash) if it would collide or leave the sheet.
-      if (!this.IsPositionValid(replacement, pp))
-      {
-        this.FlashSelectedInvalid();
-        return;
-      }
-
+      // Like the turn, the mirror always applies; an overlap shows red rather than refusing the edit.
       this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
       list[index] = replacement;
       this.invalid.Remove(pp);
@@ -1693,8 +1676,7 @@ namespace DeepNestSharp.Ui.UserControls
       if (this.dragCache != null && ReferenceEquals(candidate, this.selectedPp) && ReferenceEquals(exclude, this.selectedPp))
       {
         var (bMinX, bMinY, bMaxX, bMaxY) = this.dragCache.BoundsAt(candidate.X, candidate.Y);
-        const double Tol = 0.002;
-        if (bMinX < -Tol || bMinY < -Tol || bMaxX > this.currentSheetW + Tol || bMaxY > this.currentSheetH + Tol)
+        if (IsOutsideUsableArea(bMinX, bMinY, bMaxX, bMaxY, this.currentSheetW, this.currentSheetH, this.SheetEdgeMargin))
         {
           return false;
         }
@@ -1787,7 +1769,7 @@ namespace DeepNestSharp.Ui.UserControls
       timer.Tick += (s, e) =>
       {
         timer.Stop();
-        this.SetSelectedFill(this.selectedPp != null ? SelectedFill : PartFill);
+        this.SetSelectedFill(this.selectedPp != null ? this.FillFor(this.selectedPp) : PartFill);
       };
       timer.Start();
     }
@@ -1862,7 +1844,8 @@ namespace DeepNestSharp.Ui.UserControls
                && (e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down))
       {
         // Fine positioning: arrows nudge the selected part (Shift = coarser). Screen-up is +Y in sheet
-        // coordinates (the canvas is Y-flipped). A nudge into another part's clearance is simply refused.
+        // coordinates (the canvas is Y-flipped). Within half an inch of a neighbour or of the sheet's edge
+        // margin the part settles against it at exactly the clearance it owes - see NudgeSelected.
         double step = NudgeStep(this.UnitsMm, (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
         double dx = e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0;
         double dy = e.Key == Key.Up ? step : e.Key == Key.Down ? -step : 0;
@@ -1889,6 +1872,387 @@ namespace DeepNestSharp.Ui.UserControls
       return shift ? 0.25 : 0.05;
     }
 
+    /// <summary>
+    /// How close a part has to come before the arrows settle it against what it is approaching: "una margen
+    /// de 0.5 inch, cuando sea menos que se vaya automáticamente al part spacing y sheet spacing". The
+    /// metric figure is the same physical distance, so a part settles identically whichever units the job
+    /// is drawn in.
+    /// </summary>
+    internal static double SnapZone(bool unitsMm) => unitsMm ? 12.7 : 0.5;
+
+    /// <summary>
+    /// Where an arrow press should leave the part, as a multiple of the step it asked for: 1 is the plain
+    /// step, less than 1 is settled short of it, more than 1 is pulled on to what lies ahead. False means
+    /// nowhere on that line is legal and the press does nothing.
+    /// <para>The point is that an arrow never leaves a part overlapping. Instead of refusing the press (which
+    /// left a badly placed part stuck) or allowing it (which is how a part "se está quedando overlaping"),
+    /// the part LANDS at exactly the clearance it owes - the part spacing against a neighbour, the sheet
+    /// spacing against the edge. Both come for free: <paramref name="validAt"/> is the same test that paints
+    /// the part red, so the boundary it settles on is precisely the one the operator is shown.</para>
+    /// <para>Four situations, one walk along the line. A clear step with nothing within reach stays put at 1;
+    /// a wall within reach ahead pulls it on to contact; a step that overshot backs off to contact; and a
+    /// part that was ALREADY overlapping is carried out to the first legal spot, which is the clearance
+    /// exactly. Pure, and tested as such - the geometry arrives through the delegate.</para>
+    /// </summary>
+    /// <param name="validAt">Whether the part may rest at t along the line, t=0 being where it started.</param>
+    /// <param name="tMax">How far past the plain step the magnet reaches, as a multiple of the step.</param>
+    internal static bool TrySnap(Func<double, bool> validAt, double tMax, out double t)
+    {
+      const int Steps = 48;
+      const int Refine = 24;
+
+      // Narrows onto the boundary between a known-good t and a known-bad one; returns the good side, so the
+      // part rests just inside what it is allowed - that is where "exact" comes from.
+      double Settle(double good, double bad)
+      {
+        for (int i = 0; i < Refine; i++)
+        {
+          double mid = (good + bad) / 2;
+          if (validAt(mid))
+          {
+            good = mid;
+          }
+          else
+          {
+            bad = mid;
+          }
+        }
+
+        return good;
+      }
+
+      // Started overlapping: out to the first legal spot ahead, which is the clearance exactly. This is
+      // asked FIRST on purpose. A plain step that happens to clear the neighbour would also be legal, but it
+      // leaves a wider gap than the job asked for - the part belongs AT the spacing, not past it.
+      if (!validAt(0))
+      {
+        double lastBad = 0;
+        for (int i = 1; i <= Steps; i++)
+        {
+          double c = tMax * i / Steps;
+          if (validAt(c))
+          {
+            t = Settle(c, lastBad); // narrow from the far side: the least it can move and still be legal
+            return true;
+          }
+
+          lastBad = c;
+        }
+
+        t = 0;
+        return false;
+      }
+
+      if (validAt(1))
+      {
+        double lastGood = 1;
+        for (int i = 1; tMax > 1 && i <= Steps; i++)
+        {
+          double c = 1 + ((tMax - 1) * i / Steps);
+          if (!validAt(c))
+          {
+            t = Settle(lastGood, c);
+            return true;
+          }
+
+          lastGood = c;
+        }
+
+        t = 1; // nothing within reach: the plain step, untouched
+        return true;
+      }
+
+      // Overshot: back off to where it just fits.
+      double good = 0;
+      for (int i = 1; i <= Steps; i++)
+      {
+        double c = (double)i / Steps;
+        if (!validAt(c))
+        {
+          t = Settle(good, c);
+          return true;
+        }
+
+        good = c;
+      }
+
+      t = good;
+      return true;
+    }
+
+    /// <summary>
+    /// Where a DROP should settle, as an offset from where the part was released. An arrow press has an
+    /// obvious direction for the magnet to travel along; a drag has none - its vector points back to
+    /// wherever the part was picked up, which may be nowhere near what it was dropped against - so this
+    /// works outward from the drop instead, over the four axes, and the smallest correction wins.
+    /// <para>Three outcomes. Dropped overlapping: pushed out by the least that makes it legal. Dropped free:
+    /// drawn on to whatever is nearest within reach, resting at exactly the clearance. Already touching
+    /// something: left alone - without that a part settled against its right-hand neighbour would slide off
+    /// on its own to a wall 0.4in to its left.</para>
+    /// <para>False means nothing is within reach, or the overlap is too deep to escape, and the part stays
+    /// exactly where it was dropped. That is what keeps "park it on top while I move its neighbour" working,
+    /// which is the whole reason a drop is allowed to overlap in the first place.</para>
+    /// </summary>
+    /// <param name="validAtOffset">Whether the part may rest this far from where it was dropped.</param>
+    /// <param name="reach">How far the magnet reaches — see <see cref="SnapZone"/>.</param>
+    internal static bool TrySnapToNearest(Func<double, double, bool> validAtOffset, double reach, out double ox, out double oy)
+    {
+      const double Tol = 1e-6;
+
+      ox = 0;
+      oy = 0;
+      bool droppedFree = validAtOffset(0, 0);
+      double best = double.MaxValue;
+
+      foreach (var (dx, dy) in Axes)
+      {
+        if (!TrySnap(t => validAtOffset(t * reach * dx, t * reach * dy), 1, out double t))
+        {
+          continue; // nothing legal that way
+        }
+
+        if (droppedFree)
+        {
+          if (t >= 1 - Tol)
+          {
+            continue; // walked the whole reach without meeting anything
+          }
+
+          if (t <= Tol)
+          {
+            return false; // already resting against this - the drop is settled, leave it
+          }
+        }
+
+        double distance = t * reach;
+        if (distance < best)
+        {
+          best = distance;
+          ox = distance * dx;
+          oy = distance * dy;
+        }
+      }
+
+      return best < double.MaxValue;
+    }
+
+    /// <summary>True when the part is already up against something: legal where it stands, but not if it
+    /// moves a hair in any direction. A part that is settled must not be pulled off to somewhere else by
+    /// either magnet — one resting against its right-hand neighbour would otherwise go looking for the next
+    /// nearest thing and slide away on its own.</summary>
+    internal static bool RestsAgainstSomething(Func<double, double, bool> validAtOffset, double hair)
+    {
+      if (!validAtOffset(0, 0))
+      {
+        return false; // overlapping, not resting
+      }
+
+      foreach (var (dx, dy) in Axes)
+      {
+        if (!validAtOffset(dx * hair, dy * hair))
+        {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    /// <summary>The two offsets along one axis that seat the part against a neighbour — before it or after
+    /// it — at exactly the clearance the pair owes. With a common-line pair the clearance is 0, so the two
+    /// edges land EXACTLY on top of each other and the exporter emits the shared edge as a single cut.</summary>
+    internal static (double Before, double After) EdgeAlignOffsets(
+      double partMin, double partMax, double otherMin, double otherMax, double clearance)
+      => (otherMin - clearance - partMax, otherMax + clearance - partMin);
+
+    /// <summary>
+    /// Drops the part into the nearest seat its neighbours offer, X and Y TOGETHER. The shortest valid
+    /// combination within reach wins; false leaves the part exactly where it is.
+    /// <para>This is what a search along one axis at a time cannot do. Every direction of
+    /// <see cref="TrySnapToNearest"/> has to reach a fully legal position ON ITS OWN, so a part wedged
+    /// between two neighbours AND out by a little in Y matches nothing and there is nothing to snap to —
+    /// "cuando está en rojo muy pegado de dos partes es muy difícil o imposible centrarlo en esas dos partes,
+    /// digamos con common line".</para>
+    /// <para>The seats are computed, not hunted for: with a clearance of 0 the legal band can be narrower
+    /// than any sweep would sample, but `neighbour.MinX - part.MaxX` is exact arithmetic. Each candidate is
+    /// still put to the same validity test as everything else, so a seat that would foul a third part is
+    /// simply not taken.</para>
+    /// </summary>
+    internal static bool TryFitToNeighbours(
+      Func<double, double, bool> validAtOffset,
+      IReadOnlyList<double> xCandidates,
+      IReadOnlyList<double> yCandidates,
+      double reach,
+      out double ox,
+      out double oy)
+    {
+      const double Tol = 1e-9;
+
+      ox = 0;
+      oy = 0;
+      double best = double.MaxValue;
+
+      foreach (double x in xCandidates)
+      {
+        foreach (double y in yCandidates)
+        {
+          double d = Math.Sqrt((x * x) + (y * y));
+          if (d <= Tol || d > reach || d >= best)
+          {
+            continue; // no move at all, out of reach, or already beaten - and no probe wasted on it
+          }
+
+          if (validAtOffset(x, y))
+          {
+            best = d;
+            ox = x;
+            oy = y;
+          }
+        }
+      }
+
+      return best < double.MaxValue;
+    }
+
+    /// <summary>The offsets that would seat the part against each neighbour within reach, and against the
+    /// sheet's own usable edge. A 0 in each list so a correction on one axis alone is a candidate too.</summary>
+    private (List<double> Xs, List<double> Ys) BuildFitCandidates(IPartPlacement pp)
+    {
+      var xs = new List<double> { 0 };
+      var ys = new List<double> { 0 };
+      double reach = SnapZone(this.UnitsMm);
+      var placements = this.CurrentGroup()?.Representative?.PartPlacements;
+      var placed = pp.PlacedPart;
+
+      void Offer(List<double> into, (double Before, double After) offsets)
+      {
+        if (Math.Abs(offsets.Before) <= reach)
+        {
+          into.Add(offsets.Before);
+        }
+
+        if (Math.Abs(offsets.After) <= reach)
+        {
+          into.Add(offsets.After);
+        }
+      }
+
+      for (int i = 0; placements != null && i < placements.Count; i++)
+      {
+        var other = placements[i];
+        if (other == pp)
+        {
+          continue;
+        }
+
+        var o = other.PlacedPart;
+        if (o.MinX > placed.MaxX + reach || o.MaxX < placed.MinX - reach
+            || o.MinY > placed.MaxY + reach || o.MaxY < placed.MinY - reach)
+        {
+          continue; // too far away to seat against
+        }
+
+        double clearance = this.ClearanceBetween(pp, other);
+        Offer(xs, EdgeAlignOffsets(placed.MinX, placed.MaxX, o.MinX, o.MaxX, clearance));
+        Offer(ys, EdgeAlignOffsets(placed.MinY, placed.MaxY, o.MinY, o.MaxY, clearance));
+      }
+
+      double m = Math.Max(0, this.SheetEdgeMargin);
+      Offer(xs, (m - placed.MinX, this.currentSheetW - m - placed.MaxX));
+      Offer(ys, (m - placed.MinY, this.currentSheetH - m - placed.MaxY));
+      return (xs, ys);
+    }
+
+    /// <summary>Seats the part against its neighbours if one of their edges is within reach of where it
+    /// stands. Returns whether it moved.</summary>
+    private bool TryFitInPlace(IPartPlacement pp)
+    {
+      double x = pp.X;
+      double y = pp.Y;
+      bool ValidAtOffset(double ox, double oy)
+      {
+        pp.X = x + ox;
+        pp.Y = y + oy;
+        return this.IsPositionValid(pp, pp);
+      }
+
+      var (xs, ys) = this.BuildFitCandidates(pp);
+      bool fitted = TryFitToNeighbours(ValidAtOffset, xs, ys, SnapZone(this.UnitsMm), out double fx, out double fy);
+      ValidAtOffset(fitted ? fx : 0, fitted ? fy : 0);
+      return fitted;
+    }
+
+    /// <summary>Settles a dropped part against whatever it landed near, at exactly the clearance it owes:
+    /// "moviéndolo con el mouse debería detectar el margen de .5 pulgadas y hacer el snap automático al part
+    /// spacing o sheet spacing". Part spacing and sheet spacing both fall out of the same validity test that
+    /// paints the part red, so the two never disagree.
+    /// <para>The seat is tried before the slide because it is the more precise answer of the two: it lands on
+    /// an edge exactly, and it can correct both axes at once. The slide is what is left for a part that is
+    /// merely near something rather than near a seat.</para></summary>
+    private void SnapDropToSpacing()
+    {
+      var pp = this.selectedPp;
+      if (pp == null)
+      {
+        return;
+      }
+
+      double x = pp.X;
+      double y = pp.Y;
+      bool ValidAtOffset(double ox, double oy)
+      {
+        pp.X = x + ox;
+        pp.Y = y + oy;
+        return this.IsPositionValid(pp, pp);
+      }
+
+      double reach = SnapZone(this.UnitsMm);
+      bool resting = RestsAgainstSomething(ValidAtOffset, reach * 1e-4);
+      ValidAtOffset(0, 0);
+      if (resting)
+      {
+        return; // already up against something: the drop is settled as it stands
+      }
+
+      if (this.TryFitInPlace(pp))
+      {
+        this.RefreshSelectedPath();
+        return;
+      }
+
+      bool snapped = TrySnapToNearest(ValidAtOffset, reach, out double sx, out double sy);
+      ValidAtOffset(snapped ? sx : 0, snapped ? sy : 0); // settled, or back to exactly where it was dropped
+      if (snapped)
+      {
+        this.RefreshSelectedPath();
+      }
+    }
+
+    /// <summary>
+    /// How far along the step an arrow press lands. False refuses the press outright.
+    /// <para>Three rules, one per thing the operator asked for. A properly placed part settles at exactly the
+    /// clearance when there is something within reach ("que se vaya automáticamente al part spacing"), and is
+    /// REFUSED when it would have to overlap to move at all ("no estando en rojo que no haga overlaping").
+    /// A part that is already overlapping moves regardless: it settles if a legal spot is within reach, and
+    /// otherwise takes the plain step and stays red — because a part buried deeper than the magnet reaches
+    /// had all four arrows dead, reported as "los arrow keys no están funcionando cuando está en rojo". That
+    /// it can be pushed further in is the price of the keyboard always being able to walk it out, and it is
+    /// payable now that the red is opaque enough to tell the operator which mode they are in.</para>
+    /// </summary>
+    internal static bool TryNudgeLanding(Func<double, bool> validAt, double tMax, out double t)
+    {
+      const double Tol = 1e-6;
+
+      bool startedFree = validAt(0);
+      if (TrySnap(validAt, tMax, out t) && (!startedFree || t > Tol))
+      {
+        return true;
+      }
+
+      t = 1;
+      return !startedFree;
+    }
+
     private void NudgeSelected(double dx, double dy)
     {
       var pp = this.selectedPp;
@@ -1898,10 +2262,38 @@ namespace DeepNestSharp.Ui.UserControls
       }
 
       var before = PlacementSnapshot.Of(pp);
-      pp.X += dx;
-      pp.Y += dy;
+      bool ValidAt(double t)
+      {
+        pp.X = before.X + (t * dx);
+        pp.Y = before.Y + (t * dy);
+        return this.IsPositionValid(pp, pp);
+      }
 
-      if (!this.IsPositionValid(pp, pp))
+      double step = Math.Sqrt((dx * dx) + (dy * dy));
+      double tMax = 1 + (SnapZone(this.UnitsMm) / step);
+
+      // Settling probes the line dozens of times, and the drag already has the answer to "what does this
+      // one part hit while nothing else moves" - the same invariant holds for a keypress. Without it a full
+      // sheet would run a Clipper offset per neighbour per probe and the key would feel like it stuck.
+      bool landed;
+      this.dragCache = this.BuildDragCache(pp);
+      try
+      {
+        landed = TryNudgeLanding(ValidAt, tMax, out double t);
+        if (landed && !ValidAt(t))
+        {
+          // Walked to a spot that still overlaps. If a seat against the neighbours is within reach of there,
+          // drop into it - that is how a part wedged between two others finds the one position that fits,
+          // which stepping along a single axis never can.
+          this.TryFitInPlace(pp);
+        }
+      }
+      finally
+      {
+        this.dragCache = null;
+      }
+
+      if (!landed)
       {
         pp.X = before.X;
         pp.Y = before.Y;
@@ -2081,14 +2473,126 @@ namespace DeepNestSharp.Ui.UserControls
       {
         path.Fill = this.FillFor(p);
       }
+
+      this.UpdateOverlapCount();
     }
 
+    /// <summary>Says in words how many parts are still on top of something, because on a full sheet the
+    /// offending one is often off screen and its red is easy to miss.</summary>
+    private void UpdateOverlapCount()
+    {
+      if (this.overlapCount == null)
+      {
+        return;
+      }
+
+      // Only what is wrong on the sheet being shown: `invalid` keeps entries from other layouts until they
+      // are re-checked, and a count that counts another sheet's parts would send the operator hunting.
+      var group = this.CurrentGroup();
+      int n = group?.Representative?.PartPlacements == null
+        ? 0
+        : this.invalid.Count(p => group.Representative.PartPlacements.Contains(p));
+
+      this.overlapCount.Text = n == 1 ? "1 part overlapping" : $"{n} parts overlapping";
+      this.overlapCount.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Outside the usable area — which is the sheet less its edge margin on all four sides, the
+    /// same margin the nester packed to. Without it a part could be dragged right to the sheet edge and the
+    /// nest would quietly stop honouring what the job asked for.</summary>
     private bool OutOfSheet(IPartPlacement pp)
+      => IsOutsideUsableArea(pp, this.currentSheetW, this.currentSheetH, this.SheetEdgeMargin);
+
+    private static bool IsOutsideUsableArea(IPartPlacement pp, double sheetWidth, double sheetHeight, double margin)
+    {
+      var placed = pp.PlacedPart;
+      return IsOutsideUsableArea(placed.MinX, placed.MinY, placed.MaxX, placed.MaxY, sheetWidth, sheetHeight, margin);
+    }
+
+    /// <summary>The same rule over plain numbers, so the drag's cached bounds are judged by it too. It was
+    /// written out twice and the copies drifted: the cached path kept testing the raw sheet edge after the
+    /// margin arrived, so a drag went red at a different place than the drop did.</summary>
+    internal static bool IsOutsideUsableArea(
+      double minX, double minY, double maxX, double maxY, double sheetWidth, double sheetHeight, double margin)
     {
       const double Tol = 0.002;
-      var placed = pp.PlacedPart;
-      return placed.MinX < -Tol || placed.MinY < -Tol
-        || placed.MaxX > this.currentSheetW + Tol || placed.MaxY > this.currentSheetH + Tol;
+      double m = Math.Max(0, margin);
+      return minX < m - Tol || minY < m - Tol
+        || maxX > sheetWidth - m + Tol || maxY > sheetHeight - m + Tol;
+    }
+
+    /// <summary>
+    /// The placements on one sheet that are not fit to cut: overlapping a neighbour, or hanging off the
+    /// sheet. Both sides of an overlap count, the same way both go red on screen.
+    /// <para>Takes the sheet's OWN size rather than reading the viewer's: <see cref="OutOfSheet"/> measures
+    /// against the sheet being LOOKED AT, which is right while editing one layout and wrong for checking a
+    /// whole job - every other layout would be judged by the visible one's dimensions.</para>
+    /// </summary>
+    internal static int CountUnfit(
+      IReadOnlyList<IPartPlacement> placements,
+      double sheetWidth,
+      double sheetHeight,
+      double sheetEdgeMargin,
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween)
+    {
+      var unfit = new HashSet<IPartPlacement>();
+      for (int i = 0; i < placements.Count; i++)
+      {
+        var a = placements[i];
+        var placedA = a?.PlacedPart;
+        if (placedA == null)
+        {
+          continue;
+        }
+
+        if (IsOutsideUsableArea(a, sheetWidth, sheetHeight, sheetEdgeMargin))
+        {
+          unfit.Add(a);
+        }
+
+        for (int j = i + 1; j < placements.Count; j++)
+        {
+          var b = placements[j];
+          if (b?.PlacedPart != null && RasterNest.PlacementCollision.TooClose(placedA, b.PlacedPart, clearanceBetween(a, b)))
+          {
+            unfit.Add(a);
+            unfit.Add(b);
+          }
+        }
+      }
+
+      return unfit.Count;
+    }
+
+    /// <summary>
+    /// Layouts that must not be cut yet, and how many parts are wrong on each. Empty means the job is fit
+    /// to export. Checks EVERY layout, not the one on screen: a part left overlapping on sheet two is just
+    /// as much scrap, and the operator cannot see it from here.
+    /// </summary>
+    public IReadOnlyList<(string Layout, int Parts)> FindUnfitLayouts()
+    {
+      var unfit = new List<(string Layout, int Parts)>();
+      for (int i = 0; i < this.groups.Count; i++)
+      {
+        var sheet = this.groups[i].Representative;
+        if (sheet?.PartPlacements == null || sheet.Sheet == null)
+        {
+          continue;
+        }
+
+        int count = CountUnfit(
+          sheet.PartPlacements.ToList(),
+          sheet.Sheet.WidthCalculated,
+          sheet.Sheet.HeightCalculated,
+          this.SheetEdgeMargin,
+          this.ClearanceBetween);
+        if (count > 0)
+        {
+          unfit.Add((string.IsNullOrWhiteSpace(this.groups[i].Name) ? $"Layout {i + 1}" : this.groups[i].Name, count));
+        }
+      }
+
+      return unfit;
     }
   }
 }
