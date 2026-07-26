@@ -51,6 +51,9 @@ namespace DeepNestSharp.Ui.UserControls
     // Distinct sheet layouts and how many physical sheets use each (the production plan).
     private readonly List<SheetGroup> groups = new List<SheetGroup>();
 
+    // Brushes made from PartColours, one per part file, frozen and cached — a sheet can hold hundreds.
+    private readonly Dictionary<string, Brush> partBrushes = new Dictionary<string, Brush>(StringComparer.OrdinalIgnoreCase);
+
     private double fittedW = -1;
     private double fittedH = -1;
     private bool isPanning;
@@ -98,6 +101,11 @@ namespace DeepNestSharp.Ui.UserControls
 
     /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
     public double DefaultPartSpacing { get; set; }
+
+    /// <summary>Colour per part file (see <see cref="PartColors"/>), set by the window from the PROJECT's
+    /// part list — not derived from the result here, or a part that was excluded or did not fit would shift
+    /// the other colours and the thumbnails in the parts list would stop matching the sheet.</summary>
+    public IReadOnlyDictionary<string, (byte R, byte G, byte B)> PartColours { get; set; }
 
     /// <summary>Drawing units are millimeters (true) vs inches (false); labels the measure readout.</summary>
     public bool UnitsMm { get; set; }
@@ -254,6 +262,7 @@ namespace DeepNestSharp.Ui.UserControls
     private void BuildGroups()
     {
       this.groups.Clear();
+      this.partBrushes.Clear();
       var result = this.Result;
       if (result?.UsedSheets == null || result.UsedSheets.Count == 0)
       {
@@ -867,7 +876,34 @@ namespace DeepNestSharp.Ui.UserControls
 
     private Brush FillFor(IPartPlacement pp)
     {
-      return this.invalid.Contains(pp) ? InvalidFill : pp == this.selectedPp ? SelectedFill : PartFill;
+      return this.invalid.Contains(pp) ? InvalidFill : pp == this.selectedPp ? SelectedFill : this.TypeFill(pp);
+    }
+
+    /// <summary>The fill for a part's FILE, so several different parts on one sheet can be told apart at a
+    /// glance — the matching thumbnail in the parts list is what names the colour. Every part in the job
+    /// gets one, a single-part job included; the classic aluminium fill is only the fallback for a part the
+    /// window never gave a colour. Brushes are cached and frozen — a sheet can hold hundreds of placements.</summary>
+    private Brush TypeFill(IPartPlacement pp)
+    {
+      string key = PartColors.ColourKeyFor(pp);
+      if (this.PartColours == null || pp == null || !this.PartColours.ContainsKey(key))
+      {
+        return PartFill;
+      }
+
+      if (!this.partBrushes.TryGetValue(key, out Brush brush))
+      {
+        var (r, g, b) = this.PartColours[key];
+
+        // OPAQUE on purpose. The classic fill was translucent, and any colour drawn that way blends a
+        // quarter of the near-white sheet into itself and comes out pastel - which is what made the first
+        // attempt at this look grey.
+        brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        this.partBrushes[key] = brush;
+      }
+
+      return brush;
     }
 
     /// <summary>

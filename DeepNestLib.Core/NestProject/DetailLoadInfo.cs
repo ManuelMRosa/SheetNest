@@ -26,6 +26,11 @@
 
     public bool CommonLine { get; set; } = false; // nest copies TOUCHING (shared edges cut once)
 
+    // Colour this part is drawn in (0xRRGGBB); -1 = none chosen, so it takes the palette colour for its
+    // POSITION in the part list (part 1 the first colour, part 2 the second...). Persists to the .dnest;
+    // a project saved before this existed simply has no such property and comes back as -1.
+    public int ColorRgb { get; set; } = -1;
+
     [JsonIgnore]
     public bool IsExists => new FileInfo(this.Path).Exists;
 

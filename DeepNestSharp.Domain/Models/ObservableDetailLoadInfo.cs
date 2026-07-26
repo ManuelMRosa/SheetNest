@@ -15,6 +15,7 @@
     private readonly DetailLoadInfo detailLoadInfo;
     private int? netArea;
     private INfp nfp;
+    private int effectiveColorRgb = -1;
 
     private static JoinableTaskContext joinableTaskContext = new JoinableTaskContext();
 
@@ -151,6 +152,31 @@
     {
       get => detailLoadInfo.CommonLine;
       set => SetProperty(nameof(CommonLine), () => detailLoadInfo.CommonLine, v => detailLoadInfo.CommonLine = v, value);
+    }
+
+    /// <summary>The colour this part is drawn in (0xRRGGBB), or -1 to take the one for its place in the list.</summary>
+    public int ColorRgb
+    {
+      get => detailLoadInfo.ColorRgb;
+      set => SetProperty(nameof(ColorRgb), () => detailLoadInfo.ColorRgb, v => detailLoadInfo.ColorRgb = v, value);
+    }
+
+    /// <summary>
+    /// The colour this part actually appears in — the chosen one, or the palette colour for its place in
+    /// the list. Filled in by the window, which is the only thing that knows the whole list; NOT saved with
+    /// the project (only the user's own choice is), and it must not mark the project dirty.
+    /// </summary>
+    public int EffectiveColorRgb
+    {
+      get => this.effectiveColorRgb;
+      set
+      {
+        if (this.effectiveColorRgb != value)
+        {
+          this.effectiveColorRgb = value;
+          OnPropertyChanged(nameof(EffectiveColorRgb));
+        }
+      }
     }
 
     /// <summary>Human-readable nesting summary for the part card (spacing / common line / rotation).</summary>

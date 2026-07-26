@@ -20,7 +20,17 @@ namespace DeepNestSharp.Reports
     private const double PageW = 612; // US Letter portrait, points
     private const double PageH = 792;
 
-    public static void Write(string path, IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts, int unplacedCount, string units = "in")
+    /// <summary>
+    /// <paramref name="partColours"/> comes from the window, not from the placements: the colours follow
+    /// the order of the PART LIST and the owner may have picked their own, and neither of those can be read
+    /// off a sheet. Null falls back to colouring by the order the parts appear in the layouts.
+    /// </summary>
+    public static void Write(
+      string path,
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int unplacedCount,
+      string units = "in",
+      IReadOnlyDictionary<string, (byte R, byte G, byte B)> partColours = null)
     {
       if (layouts == null || layouts.Count == 0)
       {
@@ -36,12 +46,22 @@ namespace DeepNestSharp.Reports
 
       // Total quantity per source part across the whole job (mirrored copies listed separately —
       // a left-hand and a right-hand part are different physical parts on the shop floor).
+      // Colour rides alongside the label: they are keyed differently on purpose — a mirrored copy is its own
+      // LINE (different physical part to count) but shares its original's COLOUR (the parts list has one
+      // thumbnail per file, and that thumbnail is what names the colour).
       var partTotals = layouts
-        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: Label(p), l.Count)))
+        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: Label(p), Colour: PartColors.ColourKeyFor(p), l.Count)))
         .GroupBy(t => t.File, StringComparer.OrdinalIgnoreCase)
-        .Select(g => (File: g.Key, Qty: g.Sum(t => t.Count)))
+        .Select(g => (File: g.Key, Colour: g.First().Colour, Qty: g.Sum(t => t.Count)))
         .OrderByDescending(t => t.Qty)
         .ToList();
+
+      var colours = partColours
+        ?? PartColors.Build(layouts.SelectMany(l => l.Sheet.PartPlacements).Select(p => p.Part?.Name));
+
+      // Every part in the job is coloured, a single-type job included — the paper has to match the screen.
+      bool colourCoded = colours.Count > 0;
+      double nameX = colourCoded ? 60 : 48;
 
       var pdf = new MiniPdf();
       string stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
@@ -151,18 +171,23 @@ namespace DeepNestSharp.Reports
         c.Text(40, py, 13, bold: true, "PART TOTALS");
         py -= 20;
         c.FillRect(40, py - 5, 532, 19, 0.92, 0.92, 0.92);
-        c.Text(48, py, 10, bold: true, "Part");
+        c.Text(nameX, py, 10, bold: true, "Part");
         c.Text(520, py, 10, bold: true, "Qty");
         py -= 19;
         int totalsShown = 0;
-        foreach (var (file, qty) in partTotals)
+        foreach (var (file, colourKey, qty) in partTotals)
         {
           if (py < 40)
           {
             break;
           }
 
-          c.Text(48, py, 10, bold: false, Trunc(file, 60));
+          if (colourCoded && colours.TryGetValue(colourKey, out var swatch))
+          {
+            c.FillRect(48, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
+          }
+
+          c.Text(nameX, py, 10, bold: false, Trunc(file, 60));
           c.Text(520, py, 10, bold: false, qty.ToString("#,0", CultureInfo.InvariantCulture));
           c.Line(40, py - 5, 572, py - 5, 0.3);
           py -= 17;
@@ -207,7 +232,10 @@ namespace DeepNestSharp.Reports
             continue;
           }
 
-          c.Polygon(poly.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), fill: true);
+          c.Polygon(
+            poly.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))),
+            fill: true,
+            fillColour: colourCoded ? PartColors.For(colours, pp) : (ValueTuple<byte, byte, byte>?)null);
           if (poly.Children != null)
           {
             foreach (var hole in poly.Children)
@@ -223,21 +251,26 @@ namespace DeepNestSharp.Reports
         // Parts on this layout (below the drawing, portrait flow). Mirrored copies list separately.
         var onSheet = sp.PartPlacements
           .GroupBy(p => Label(p), StringComparer.OrdinalIgnoreCase)
-          .Select(g => (File: g.Key, Qty: g.Count()))
+          .Select(g => (File: g.Key, Colour: PartColors.ColourKeyFor(g.First()), Qty: g.Count()))
           .OrderByDescending(t => t.Qty)
           .ToList();
 
         double py = 204;
         c.Text(40, 222, 12, bold: true, "Parts on this layout");
         int listShown = 0;
-        foreach (var (file, qty) in onSheet)
+        foreach (var (file, colourKey, qty) in onSheet)
         {
           if (py < 40)
           {
             break;
           }
 
-          c.Text(40, py, 10, bold: false, $"{qty} x  {Trunc(file, 60)}");
+          if (colourCoded && colours.TryGetValue(colourKey, out var swatch))
+          {
+            c.FillRect(40, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
+          }
+
+          c.Text(colourCoded ? 52 : 40, py, 10, bold: false, $"{qty} x  {Trunc(file, 60)}");
           py -= 15;
           listShown++;
         }
@@ -285,8 +318,7 @@ namespace DeepNestSharp.Reports
     }
 
     /// <summary>Report label for a placement — mirrored copies count as their own line item.</summary>
-    private static string Label(IPartPlacement p)
-      => DisplayName(p.Part.Name) + (p.IsMirrored ? " (mirrored)" : string.Empty);
+    private static string Label(IPartPlacement p) => PartColors.LabelFor(p);
 
     private static string Trunc(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "~";
 
@@ -326,8 +358,9 @@ namespace DeepNestSharp.Reports
           $"{lineWidth:0.##} w 0.15 0.15 0.15 RG {x:0.##} {y:0.##} {w:0.##} {h:0.##} re S"));
       }
 
-      /// <summary>Part outline (aluminum-gray fill) or hole (white fill), always stroked.</summary>
-      public void Polygon(IEnumerable<(double X, double Y)> pts, bool fill, bool holeFill = false)
+      /// <summary>Part outline (its part-type colour, or aluminum-gray when uncoloured) or hole (white
+      /// fill), always stroked.</summary>
+      public void Polygon(IEnumerable<(double X, double Y)> pts, bool fill, bool holeFill = false, (byte R, byte G, byte B)? fillColour = null)
       {
         bool first = true;
         foreach (var (x, y) in pts)
@@ -343,8 +376,11 @@ namespace DeepNestSharp.Reports
 
         // The trailing "0 0 0 rg" restores the text fill color — without it every Text() drawn after
         // a polygon inherits the part/hole fill (white holes made whole part lists invisible).
-        // Aluminum-gray part fill + near-black outline, matching the app's classic look.
-        string paint = fill ? "0.71 0.72 0.74 rg b" : holeFill ? "1 1 1 rg b" : "s";
+        // Part fill (its type's colour, else aluminum-gray) + near-black outline, matching the app.
+        string partRg = fillColour.HasValue
+          ? FormattableString.Invariant($"{fillColour.Value.R / 255.0:0.###} {fillColour.Value.G / 255.0:0.###} {fillColour.Value.B / 255.0:0.###}")
+          : "0.71 0.72 0.74";
+        string paint = fill ? partRg + " rg b" : holeFill ? "1 1 1 rg b" : "s";
         this.sb.AppendLine(FormattableString.Invariant($"h 0.5 w 0.15 0.15 0.15 RG {paint} 0 0 0 rg"));
       }
 

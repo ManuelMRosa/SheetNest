@@ -20,6 +20,13 @@ namespace DeepNestSharp.Ui.Converters
   {
     private static readonly Dictionary<string, ImageSource> Cache = new Dictionary<string, ImageSource>();
 
+    /// <summary>
+    /// Colour per part file, so each thumbnail is drawn in the colour that part has on the sheet — the parts
+    /// list IS the legend. Set by the window that owns the part list, because a converter is created in XAML
+    /// and only ever receives the bound value.
+    /// </summary>
+    private static IReadOnlyDictionary<string, (byte R, byte G, byte B)> colours;
+
     /// <summary>Drops the cached thumbnail for a path so it rebuilds — used after a 3D part is
     /// re-unfolded (new K-factor) and its flat DXF changes.</summary>
     public static void Invalidate(string path)
@@ -28,6 +35,14 @@ namespace DeepNestSharp.Ui.Converters
       {
         Cache.Remove(path);
       }
+    }
+
+    /// <summary>Hands the thumbnails the job's part colours. The whole cache goes: it is keyed by path, and
+    /// the image now depends on the colour too.</summary>
+    public static void SetColours(IReadOnlyDictionary<string, (byte R, byte G, byte B)> partColours)
+    {
+      colours = partColours;
+      Cache.Clear();
     }
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
@@ -78,7 +93,7 @@ namespace DeepNestSharp.Ui.Converters
         var raw = load.GetAwaiter().GetResult();
         if (raw != null && raw.TryConvertToNfp(0, out INfp nfp))
         {
-          image = Build(nfp);
+          image = Build(nfp, PartColors.For(colours, path));
         }
       }
       catch
@@ -92,7 +107,7 @@ namespace DeepNestSharp.Ui.Converters
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
 
-    private static ImageSource Build(INfp nfp)
+    private static ImageSource Build(INfp nfp, (byte R, byte G, byte B) colour)
     {
       var g = new StreamGeometry { FillRule = FillRule.EvenOdd };
       using (var ctx = g.Open())
@@ -116,7 +131,9 @@ namespace DeepNestSharp.Ui.Converters
       double dim = Math.Max(g.Bounds.Width, g.Bounds.Height);
       var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)), dim / 60.0);
       pen.Freeze();
-      var fill = new SolidColorBrush(Color.FromArgb(0xD0, 0xB4, 0xB8, 0xBC)); // aluminum gray, matches the viewer
+      // The part's own colour, opaque, exactly as the viewer paints it on the sheet — this thumbnail is how
+      // the operator maps a colour back to a part name.
+      var fill = new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
       fill.Freeze();
 
       var drawing = new GeometryDrawing(fill, pen, g);

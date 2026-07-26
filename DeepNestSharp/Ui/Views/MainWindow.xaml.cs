@@ -593,6 +593,8 @@ namespace DeepNestSharp.Ui.Views
               System.StringComparer.OrdinalIgnoreCase);
         }
 
+        this.ApplyPartColours(doc.ProjectInfo.DetailLoadInfos);
+
         monitor.TopNestResults.SetSingleResult(result);
         monitor.SelectedItem = result;
 
@@ -1066,6 +1068,123 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
+    /// <summary>
+    /// Hands the job's part colours to everything that draws a part: the nest viewer, and the thumbnails in
+    /// the parts list — which ARE the legend, one row per colour.
+    /// <para>Built from EVERY row that has a path, included or not. Keyed off only the included ones,
+    /// ticking a part's checkbox would silently shift all the other colours, and that checkbox is bound
+    /// straight to the view model with no hook here to catch it. An excluded part just holds a colour
+    /// nobody uses.</para>
+    /// </summary>
+    private void ApplyPartColours(System.Collections.Generic.IEnumerable<DeepNestLib.NestProject.IDetailLoadInfo> parts)
+    {
+      var map = PartColors.Build(parts?.Select(o => (o.Path, o.ColorRgb)));
+      if (this.dxfViewer != null)
+      {
+        this.dxfViewer.PartColours = map;
+      }
+
+      DeepNestSharp.Ui.Converters.PartPreviewConverter.SetColours(map);
+
+      // Tell each row the colour it ENDED UP with, so its swatch shows the real thing even when the user
+      // never picked one. Only the user's own choice is saved with the project; this is display only.
+      foreach (var row in parts ?? System.Linq.Enumerable.Empty<DeepNestLib.NestProject.IDetailLoadInfo>())
+      {
+        if (row is DeepNestSharp.Domain.Models.ObservableDetailLoadInfo observable)
+        {
+          observable.EffectiveColorRgb = PartColors.ToRgb(PartColors.For(map, row.Path));
+        }
+      }
+
+      this.partsListView?.Items.Refresh();
+    }
+
+    /// <summary>One palette entry as the popup's swatch grid shows it.</summary>
+    private sealed class PaletteSwatch
+    {
+      public int Rgb { get; set; }
+
+      public string Label { get; set; }
+
+      public System.Windows.Media.Brush Brush { get; set; }
+    }
+
+    /// <summary>The row whose colour the popup is currently editing.</summary>
+    private DeepNestLib.NestProject.IDetailLoadInfo partBeingColoured;
+
+    /// <summary>True while the canvas is being SET to the part's current colour — that is not the user
+    /// choosing anything, and acting on it would recolour a part just by opening the picker.</summary>
+    private bool suppressPartColorCanvas;
+
+    /// <summary>Opens the colour picker over the swatch that was clicked.</summary>
+    private void OnPartColorClick(object sender, RoutedEventArgs e)
+    {
+      if (!(sender is FrameworkElement swatch) || !(swatch.Tag is DeepNestLib.NestProject.IDetailLoadInfo part))
+      {
+        return;
+      }
+
+      this.partBeingColoured = part;
+
+      if (this.partColorSwatches.ItemsSource == null)
+      {
+        var palette = new System.Collections.Generic.List<PaletteSwatch>();
+        for (int i = 0; i < PartColors.PaletteLength; i++)
+        {
+          var (r, g, b) = PartColors.PaletteAt(i);
+          var brush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b));
+          brush.Freeze();
+          palette.Add(new PaletteSwatch { Rgb = PartColors.ToRgb((r, g, b)), Label = $"Part {i + 1}", Brush = brush });
+        }
+
+        this.partColorSwatches.ItemsSource = palette;
+      }
+
+      // Start the canvas on the colour the part has now, without that assignment counting as a change.
+      var (cr, cg, cb) = PartColors.FromRgb(Math.Max(0, part.ColorRgb >= 0 ? part.ColorRgb : this.EffectiveColorOf(part)));
+      this.partColorPopup.PlacementTarget = swatch;
+      this.suppressPartColorCanvas = true;
+      this.partColorCanvas.SelectedColor = System.Windows.Media.Color.FromRgb(cr, cg, cb);
+      this.suppressPartColorCanvas = false;
+      this.partColorPopup.IsOpen = true;
+    }
+
+    private void OnPartColorSwatchClick(object sender, RoutedEventArgs e)
+    {
+      if (sender is FrameworkElement swatch && swatch.Tag is int rgb)
+      {
+        this.ApplyChosenPartColour(rgb);
+        this.partColorPopup.IsOpen = false;
+      }
+    }
+
+    private void OnPartColorCanvasChanged(object sender, RoutedPropertyChangedEventArgs<System.Windows.Media.Color?> e)
+    {
+      if (!this.suppressPartColorCanvas && e.NewValue.HasValue)
+      {
+        this.ApplyChosenPartColour(PartColors.ToRgb((e.NewValue.Value.R, e.NewValue.Value.G, e.NewValue.Value.B)));
+      }
+    }
+
+    /// <summary>Remembers the colour on the part, then repaints everything that draws it — the row's
+    /// swatch, its thumbnail and the sheet.</summary>
+    private void ApplyChosenPartColour(int rgb)
+    {
+      var part = this.partBeingColoured;
+      if (part == null || part.ColorRgb == rgb)
+      {
+        return;
+      }
+
+      part.ColorRgb = rgb;
+      var doc = ViewModel.ActiveDocument as NestProjectViewModel;
+      this.ApplyPartColours(doc?.ProjectInfo?.DetailLoadInfos);
+      this.dxfViewer?.RefreshRender();
+    }
+
+    private int EffectiveColorOf(DeepNestLib.NestProject.IDetailLoadInfo part)
+      => PartColors.ToRgb(PartColors.For(this.dxfViewer?.PartColours, part.Path));
+
     private async System.Threading.Tasks.Task AddPartsToActiveProject(
       System.Func<NestProjectViewModel, Microsoft.Toolkit.Mvvm.Input.IAsyncRelayCommand> commandSelector,
       bool autoEditSingle)
@@ -1084,6 +1203,9 @@ namespace DeepNestSharp.Ui.Views
       {
         return;
       }
+
+      // A new part changes the set of colours, and the thumbnails have to follow.
+      this.ApplyPartColours(doc.ProjectInfo.DetailLoadInfos);
 
       // Insert flow: adding a single part opens Edit Part right away. Skipped for 3D
       // imports (autoEditSingle=false) — their unfold is slow, so the part loads async in the grid.
@@ -1181,6 +1303,9 @@ namespace DeepNestSharp.Ui.Views
         DeepNestSharp.Ui.Converters.PartPreviewConverter.Invalidate(oldPath);
         DeepNestSharp.Ui.Converters.PartPreviewConverter.Invalidate(newFlat);
         obs?.InvalidateGeometry();
+
+        // The flat's path changed, and the path is what names the colour.
+        this.ApplyPartColours((ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo?.DetailLoadInfos);
         this.partsListView.Items.Refresh();
       }
       catch (DeepNestLib.IO.StepUnfoldException ex)
@@ -1362,6 +1487,8 @@ namespace DeepNestSharp.Ui.Views
         // Hand the per-part spacings to the viewer BEFORE showing the result, so manual nesting
         // (drag/rotate/nudge) enforces the same clearances the nester used — common-line parts may
         // touch, spaced parts keep (spacingA + spacingB) / 2.
+        this.ApplyPartColours(project.DetailLoadInfos);
+
         if (this.dxfViewer != null)
         {
           this.dxfViewer.DefaultPartSpacing = System.Math.Max(0, spacing);
@@ -1556,7 +1683,12 @@ namespace DeepNestSharp.Ui.Views
 
       try
       {
-        Reports.NestReportPdf.Write(dialog.FileName, plan, selected.UnplacedParts?.Count ?? 0, this.unitsMm ? "mm" : "in");
+        Reports.NestReportPdf.Write(
+          dialog.FileName,
+          plan,
+          selected.UnplacedParts?.Count ?? 0,
+          this.unitsMm ? "mm" : "in",
+          this.dxfViewer?.PartColours);
       }
       catch (System.Exception ex)
       {

@@ -16,6 +16,29 @@
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
     <converters:PartPreviewConverter x:Key="PartPreview" />
+    <converters:RgbToBrushConverter x:Key="RgbToBrush" />
+
+    <!-- A colour swatch is the colour and nothing else. The default button template paints a background,
+         a raised border and padding around its content, which framed every colour in a white box. -->
+    <Style x:Key="ColourSwatchButton" TargetType="Button">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <ContentPresenter x:Name="content" />
+            <ControlTemplate.Triggers>
+              <!-- Nothing is raised any more, so the hover cue has to come from the colour itself. -->
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="content" Property="Opacity" Value="0.75" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <ObjectDataProvider x:Key="PlacementTypeValues" MethodName="GetValues" ObjectType="{x:Type sys:Enum}">
       <ObjectDataProvider.MethodParameters>
         <x:Type TypeName="placement:PlacementTypeEnum" />
@@ -154,6 +177,7 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
                       <Border Grid.Column="0" Width="48" Height="48" Background="{DynamicResource Brush.Card}"
                               BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" Margin="0,0,8,0">
@@ -171,10 +195,20 @@
                           <TextBlock Style="{DynamicResource CountBadgeText}" Text="{Binding NestedInfo, Mode=OneWay}" />
                         </Border>
                       </StackPanel>
-                      <Button Grid.Column="3" Style="{DynamicResource IconButton}" Content="&#9998;" VerticalAlignment="Center" Margin="2,0,0,0"
+                      <!-- The colour this part is drawn in: the swatch IS the button — no arrow, no text,
+                           just the colour it currently has. Clicking it opens the picker. -->
+                      <Button Grid.Column="3" Style="{DynamicResource ColourSwatchButton}"
+                              Width="24" Height="22" VerticalAlignment="Center" Margin="4,0,0,0"
+                              ToolTip="Colour this part is drawn in"
+                              Click="OnPartColorClick" Tag="{Binding}">
+                        <!-- A size of its own: an empty Border asks for nothing and would vanish. -->
+                        <Border Width="24" Height="22"
+                                Background="{Binding EffectiveColorRgb, Converter={StaticResource RgbToBrush}}" />
+                      </Button>
+                      <Button Grid.Column="4" Style="{DynamicResource IconButton}" Content="&#9998;" VerticalAlignment="Center" Margin="2,0,0,0"
                               ToolTip="Edit part (quantity, orientations, priority)"
                               Click="OnEditPart" Tag="{Binding}" />
-                      <Button Grid.Column="4" Style="{DynamicResource IconButton}" Content="&#10005;" VerticalAlignment="Center" Margin="2,0,0,0"
+                      <Button Grid.Column="5" Style="{DynamicResource IconButton}" Content="&#10005;" VerticalAlignment="Center" Margin="2,0,0,0"
                               ToolTip="Remove part"
                               Command="{Binding DataContext.ActiveDocument.RemovePartCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                               CommandParameter="{Binding}" />
@@ -318,5 +352,38 @@
                    ToolTip="A newer SheetNest is available — click to open the download page." />
       </StackPanel>
     </Border>
+
+    <!-- Part colour picker. One popup for the whole list, moved onto whichever row's swatch was clicked.
+         Built here rather than with the toolkit's ColorPicker: that control's Advanced tab does not switch,
+         so its colour canvas was unreachable. This uses the same canvas directly, with no tabs in the way. -->
+    <!-- Opens to the LEFT of the swatch, i.e. INTO the window. The swatch sits near the right edge of the
+         Parts panel, so anchoring below it pushed the panel past the window edge - and a Popup is a
+         top-level window, so WPF only keeps it on the SCREEN, never inside its parent. -->
+    <Popup x:Name="partColorPopup" StaysOpen="False" AllowsTransparency="True"
+           Placement="Left" HorizontalOffset="-4" PopupAnimation="Fade">
+      <Border Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" Padding="6">
+        <StackPanel>
+          <TextBlock Text="Part colour" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <ItemsControl x:Name="partColorSwatches">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Rows="2" Columns="4" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Style="{DynamicResource ColourSwatchButton}" Width="34" Height="26" Margin="2"
+                        Click="OnPartColorSwatchClick" Tag="{Binding Rgb}" ToolTip="{Binding Label}">
+                  <Border Width="34" Height="26" Background="{Binding Brush}" />
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Separator Margin="0,6" />
+          <xctk:ColorCanvas x:Name="partColorCanvas" UsingAlphaChannel="False" Width="230"
+                            SelectedColorChanged="OnPartColorCanvasChanged" />
+        </StackPanel>
+      </Border>
+    </Popup>
   </Grid>
 </Window>

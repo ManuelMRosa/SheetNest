@@ -53,6 +53,12 @@
     /// </summary>
     bool CommonLine { get; set; }
 
+    /// <summary>
+    /// Gets or sets the colour this part is drawn in, as 0xRRGGBB. -1 means the user has not chosen one,
+    /// so it takes the palette colour for its POSITION in the part list.
+    /// </summary>
+    int ColorRgb { get; set; }
+
     AnglesEnum StrictAngle { get; set; }
 
     bool IsExists { get; }
