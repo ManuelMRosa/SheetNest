@@ -60,7 +60,7 @@ namespace DeepNestSharp.Ui.Views
       {
         this.warnHint.Text = $"⚠ This DXF looks like a FULL NESTED SHEET ({(poly.Children?.Count ?? 0)} shapes inside a "
           + $"{poly.MaxX - poly.MinX:0.#}×{poly.MaxY - poly.MinY:0.#} frame), not a single part. SheetNest imports each DXF "
-          + "as ONE part — the gaps between the inner shapes come from the original drawing. Export each part as its own DXF instead.";
+          + "as ONE part, and the gaps between the inner shapes come from the original drawing. Export each part as its own DXF instead.";
         this.warnHint.Visibility = Visibility.Visible;
       }
 
@@ -87,7 +87,7 @@ namespace DeepNestSharp.Ui.Views
     {
       if (thicknessMm <= 0)
       {
-        return "—";
+        return "n/a";
       }
 
       return inch

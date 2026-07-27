@@ -36,7 +36,7 @@ To build it:
    ```
 2. Run `compile.bat` from a **Developer Command Prompt for Visual Studio**.
 3. Copy the resulting `minkowski.dll` next to `SheetNest.exe` (or into the `MinkowskiDlls`
-   folder — the test project copies them for you). Preprocessor directives select the right
+   folder, which the test project copies for you). Preprocessor directives select the right
    DLL for the architecture.
 
 ## Installer (MSI)

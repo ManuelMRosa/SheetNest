@@ -1361,7 +1361,7 @@ namespace DeepNestSharp.Ui.Views
       if (!ViewModel.NestMonitorViewModel.TopNestResults.IsEmpty)
       {
         ViewModel.MessageService.DisplayMessageBox(
-          "There is already a nest result. Press Clear Result first — it returns the sheets that nest used to the stock.",
+          "There is already a nest result. Press Clear Result first; it returns the sheets that nest used to the stock.",
           "Nest",
           DeepNestLib.MessageBoxIcon.Information);
         return;

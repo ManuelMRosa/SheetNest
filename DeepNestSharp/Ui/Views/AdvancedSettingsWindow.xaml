@@ -27,7 +27,7 @@
 
         <TextBlock Grid.Row="0" Grid.Column="0" Text="Default part rotations:" VerticalAlignment="Center" Margin="0,0,10,6" />
         <ComboBox Grid.Row="0" Grid.Column="1" x:Name="rotationsCombo" Width="150" HorizontalAlignment="Left" Margin="0,0,0,6"
-                  ToolTip="Rotations the nester may try for parts that have not been edited — Edit Part's per-part setting always wins.">
+                  ToolTip="Rotations the nester may try for parts that have not been edited. Edit Part's per-part setting always wins.">
           <ComboBoxItem Tag="1">As drawn</ComboBoxItem>
           <ComboBoxItem Tag="2">0 / 180°</ComboBoxItem>
           <ComboBoxItem Tag="4">90° steps</ComboBoxItem>

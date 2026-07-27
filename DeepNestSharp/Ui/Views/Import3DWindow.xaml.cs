@@ -43,7 +43,7 @@ namespace DeepNestSharp.Ui.Views
       var vals = this.thicknessMm.Where(t => t > 0).ToArray();
       if (vals.Length == 0)
       {
-        this.thicknessText.Text = "— (not detected)";
+        this.thicknessText.Text = "Not detected";
         return;
       }
 

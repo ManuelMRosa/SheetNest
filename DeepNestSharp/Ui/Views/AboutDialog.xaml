@@ -9,7 +9,7 @@
   <Grid>
     <StackPanel Orientation="Vertical">
       <TextBlock TextWrapping="Wrap" Margin="5,5,5,8" FontWeight="Bold" FontSize="16" Foreground="{StaticResource Brush.Accent}">
-SheetNest — a fork of DeepNestSharp, adding a GPU / raster nesting engine, an industrial production plan with grouped-layout DXF export, and a streamlined operator UI. MIT licensed; full lineage below.
+SheetNest is a fork of DeepNestSharp, adding a GPU / raster nesting engine, an industrial production plan with grouped-layout DXF export, and a streamlined operator UI. MIT licensed; full lineage below.
       </TextBlock>
       <StackPanel Orientation="Horizontal">
         <TextBlock TextWrapping="Wrap" Margin="5,0" FontWeight="Bold">

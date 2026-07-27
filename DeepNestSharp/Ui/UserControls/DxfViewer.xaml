@@ -43,7 +43,7 @@
       <StackPanel Orientation="Horizontal">
         <ToggleButton x:Name="editToggle" Content="&#9995; Edit nest" Padding="8,3" FontWeight="SemiBold"
                       Checked="OnEditModeChanged" Unchecked="OnEditModeChanged"
-                      ToolTip="Manual nesting: click a part to select it, drag to move, rotate with the buttons. Dragging may leave a part on top of another while you rearrange — it turns red, and the export refuses until nothing is red. Hold Alt as you drop to slide it against its neighbour instead. The arrow keys will not push a properly placed part into a neighbour, but they do move one that is already red, so you can walk it clear. Edits apply to every copy of this layout and flow into the DXF export." />
+                      ToolTip="Manual nesting: click a part to select it, drag to move, rotate with the buttons. Dragging may leave a part on top of another while you rearrange: it turns red, and the export refuses until nothing is red. Hold Alt as you drop to slide it against its neighbour instead. The arrow keys will not push a properly placed part into a neighbour, but they do move one that is already red, so you can walk it clear. Edits apply to every copy of this layout and flow into the DXF export." />
         <Button x:Name="undoBtn" Content="&#8630;" Margin="6,0,0,0" Padding="8,3" FontSize="14" IsEnabled="False"
                 Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)" />
         <Button x:Name="redoBtn" Content="&#8631;" Margin="3,0,0,0" Padding="8,3" FontSize="14" IsEnabled="False"
@@ -54,7 +54,7 @@
           <Button Content="&#8634; 5" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw5" ToolTip="Rotate selected part 5° counter-clockwise" />
           <Button Content="&#8635; 5" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw5" ToolTip="Rotate selected part 5° clockwise" />
           <Button Content="&#8646; Mirror" Margin="10,0,0,0" Padding="6,3" Click="OnMirror"
-                  ToolTip="Mirror the selected part (left ↔ right hand). The DXF export reflects it too, so the cut part is really mirrored — not just on screen." />
+                  ToolTip="Mirror the selected part (left ↔ right hand). The DXF export reflects it too, so the cut part is really mirrored, not just on screen." />
         </StackPanel>
         <!-- On a full sheet the part left on top of another can be off screen, so say so in words. -->
         <TextBlock x:Name="overlapCount" Margin="12,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"

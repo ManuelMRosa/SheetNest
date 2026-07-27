@@ -59,10 +59,10 @@ namespace DeepNestSharp.Ui.Services
       }
 
       Info(owner, "Integrate with SheetCam",
-        "Done — SheetCam's nesting now runs through SheetNest.\n\n" +
+        "Done. SheetCam's nesting now runs through SheetNest.\n\n" +
         "Don't open SheetNest yourself for this. In SheetCam use \"Export to Auto Nesting\" and " +
         "SheetNest will open with the job. Nest it, review, then press \"Send to SheetCam\".\n\n" +
-        "The original nester was backed up; a SheetCam update may undo this — just run Integrate again if so.");
+        "The original nester was backed up; a SheetCam update may undo this, so just run Integrate again if so.");
     }
 
     /// <summary>Restores SheetCam's own nester and removes the shim files. Shows its own messages.</summary>

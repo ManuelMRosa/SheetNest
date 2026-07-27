@@ -471,7 +471,7 @@
         this.Stop();
         if (State.TopNestResults == null || State.TopNestResults.Top == null)
         {
-          this.messageService.DisplayMessageBox("Could not produce a nest — check that the parts fit the sheet (size, spacing, margin).", "Nesting Stopped", MessageBoxIcon.Information);
+          this.messageService.DisplayMessageBox("Could not produce a nest. Check that the parts fit the sheet (size, spacing, margin).", "Nesting Stopped", MessageBoxIcon.Information);
         }
       }
 #endif

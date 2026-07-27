@@ -34,7 +34,7 @@ namespace DeepNestSharp.Reports
     {
       if (layouts == null || layouts.Count == 0)
       {
-        throw new InvalidOperationException("Nothing to report — run a nest first.");
+        throw new InvalidOperationException("Nothing to report. Run a nest first.");
       }
 
       // Mixed stock: every layout carries ITS OWN sheet size — never assume the first one's.

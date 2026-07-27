@@ -259,7 +259,7 @@
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
                         <TextBlock FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" Margin="4,4"
-                                   ToolTip="Sheet size, width × height (width = the long side) — edit with ✎ or double-click">
+                                   ToolTip="Sheet size, width × height (width = the long side). Edit with ✎ or double-click">
                           <TextBlock.Text>
                             <MultiBinding StringFormat="{}{0} × {1}">
                               <Binding Path="Width" Mode="OneWay" />
@@ -349,7 +349,7 @@
         <TextBlock x:Name="updateNotice" Style="{DynamicResource StatusValue}" Visibility="Collapsed"
                    Cursor="Hand" TextDecorations="Underline" Margin="18,0,0,0"
                    MouseLeftButtonUp="OnUpdateNoticeClick"
-                   ToolTip="A newer SheetNest is available — click to open the download page." />
+                   ToolTip="A newer SheetNest is available. Click to open the download page." />
       </StackPanel>
     </Border>
 

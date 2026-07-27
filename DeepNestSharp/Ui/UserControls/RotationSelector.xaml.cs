@@ -45,11 +45,11 @@ namespace DeepNestSharp.Ui.UserControls
 
     private static readonly (string Label, int Rotations, IconKind Icon, AnglesEnum Strict, string Tip)[] Options = new[]
     {
-      ("As drawn", 1, IconKind.ArrowUp, AnglesEnum.None, "Only 0° — the part stays exactly as drawn (respects grain)."),
-      ("90° only", RasterNest.RotationCodes.RotOnly90, IconKind.ArrowRight, AnglesEnum.None, "Only 90° — the part is always turned once."),
+      ("As drawn", 1, IconKind.ArrowUp, AnglesEnum.None, "Only 0°, so the part stays exactly as drawn (respects grain)."),
+      ("90° only", RasterNest.RotationCodes.RotOnly90, IconKind.ArrowRight, AnglesEnum.None, "Only 90°, so the part is always turned once."),
       ("0°+90°", RasterNest.RotationCodes.RotZeroAnd90, IconKind.QuarterTurn, AnglesEnum.None, "0° and 90° permitted."),
-      ("0°+180°", 2, IconKind.ArrowH, AnglesEnum.AsPreviewed, "0° and 180° — respects material grain but can flip."),
-      ("90°+270°", RasterNest.RotationCodes.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270° — always turned, either way."),
+      ("0°+180°", 2, IconKind.ArrowH, AnglesEnum.AsPreviewed, "0° and 180°: respects material grain but can flip."),
+      ("90°+270°", RasterNest.RotationCodes.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270°: always turned, either way."),
       ("4-way", 4, IconKind.FourArrows, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°)."),
       ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
     };

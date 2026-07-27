@@ -67,7 +67,7 @@
             <TextBlock Grid.Row="2" Grid.Column="0" Text="Mirrored:" VerticalAlignment="Center" Margin="0,0,10,0" />
             <xctk:IntegerUpDown Grid.Row="2" Grid.Column="1" x:Name="mirroredUpDown" Minimum="0" Maximum="100000"
                                 Width="70" HorizontalAlignment="Left"
-                                ToolTip="Copies nested MIRRORED (X-flipped) on top of the quantities above — for left-hand/right-hand pairs. The exported DXF cuts these mirrored." />
+                                ToolTip="Copies nested MIRRORED (X-flipped) on top of the quantities above, for left-hand/right-hand pairs. The exported DXF cuts these mirrored." />
           </Grid>
         </GroupBox>
       </StackPanel>
@@ -93,7 +93,7 @@
 
           <TextBlock Text="Priority:" Margin="0,14,0,4" />
           <ComboBox x:Name="priorityCombo" Width="150" HorizontalAlignment="Left"
-                    ToolTip="1 = highest priority. Higher-priority parts are nested first — they fill the earlier sheets and are never the ones left off when material runs out." />
+                    ToolTip="1 = highest priority. Higher-priority parts are nested first, so they fill the earlier sheets and are never the ones left off when material runs out." />
         </StackPanel>
       </GroupBox>
     </Grid>
