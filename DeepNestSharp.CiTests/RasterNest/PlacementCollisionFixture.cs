@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests.RasterNest
+﻿namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -19,6 +19,11 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// </summary>
   public class PlacementCollisionFixture
   {
+    /// <summary>An ordinary laser kerf: the depth a cut removes, and so the depth an overlap has to beat
+    /// before it means anything. The same figure on both sides of every comparison here, because what is
+    /// being pinned is that the cache and the rule agree, not what the figure is.</summary>
+    private const double Sliver = 0.006;
+
     private readonly ITestOutputHelper output;
 
     public PlacementCollisionFixture(ITestOutputHelper output)
@@ -32,7 +37,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       const double Clearance = 0.25;
       var neighbours = BuildSheet();
       var dragged = Part(0);
-      var cache = new DragCollisionCache(dragged, neighbours.Select(n => (n, Clearance)).ToList());
+      var cache = new DragCollisionCache(dragged, neighbours.Select(n => (n, Clearance, Sliver)).ToList());
 
       // Deterministic sweep across the whole sheet, deliberately including positions that land ON a
       // neighbour, just clear of one, and exactly at the clearance boundary.
@@ -45,7 +50,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
         bool cached = cache.AnyTooClose(x, y);
         var placed = dragged.Shift(new PartPlacement(dragged) { X = x, Y = y });
-        bool direct = neighbours.Any(n => PlacementCollision.TooClose(placed, n, Clearance));
+        bool direct = neighbours.Any(n => PlacementCollision.TooClose(placed, n, Clearance, Sliver));
 
         if (cached != direct)
         {
@@ -70,7 +75,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       // Every neighbour asks for a different clearance, including 0 (common-line: touching is allowed).
       var clearances = neighbours.Select((_, i) => i % 3 == 0 ? 0.0 : 0.1 + (i * 0.05)).ToList();
       var dragged = Part(0);
-      var cache = new DragCollisionCache(dragged, neighbours.Select((n, i) => (n, clearances[i])).ToList());
+      var cache = new DragCollisionCache(dragged, neighbours.Select((n, i) => (n, clearances[i], Sliver)).ToList());
 
       var rng = new Random(99);
       for (int i = 0; i < 400; i++)
@@ -80,7 +85,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
         bool cached = cache.AnyTooClose(x, y);
         var placed = dragged.Shift(new PartPlacement(dragged) { X = x, Y = y });
-        bool direct = neighbours.Where((n, k) => PlacementCollision.TooClose(placed, n, clearances[k])).Any();
+        bool direct = neighbours.Where((n, k) => PlacementCollision.TooClose(placed, n, clearances[k], Sliver)).Any();
 
         cached.Should().Be(direct, $"position ({x:F3}, {y:F3}) must get the same verdict either way");
       }
@@ -92,7 +97,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       const double Clearance = 0.25;
       var neighbours = BuildSheet();
       var dragged = Part(0);
-      var cache = new DragCollisionCache(dragged, neighbours.Select(n => (n, Clearance)).ToList());
+      var cache = new DragCollisionCache(dragged, neighbours.Select(n => (n, Clearance, Sliver)).ToList());
 
       cache.AnyTooClose(5, 5); // warm up
 
@@ -109,7 +114,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       long cachedMs = sw.ElapsedMilliseconds;
 
       // The same queries the way the viewer used to run them, faithfully: TooClose(a.PlacedPart,
-      // b.PlacedPart, ...) per neighbour — and PlacedPart is `Part.Shift(this)`, i.e. a FULL copy of the
+      // b.PlacedPart, ...) per neighbour â€” and PlacedPart is `Part.Shift(this)`, i.e. a FULL copy of the
       // polygon and its holes, allocated twice per pair.
       var dragPp = new PartPlacement(dragged);
       var neighbourPps = BuildSheetPlacements();
@@ -120,7 +125,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         dragPp.Y = 6.0;
         foreach (var n in neighbourPps)
         {
-          if (PlacementCollision.TooClose(dragPp.PlacedPart, n.PlacedPart, Clearance))
+          if (PlacementCollision.TooClose(dragPp.PlacedPart, n.PlacedPart, Clearance, Sliver))
           {
             break;
           }
@@ -136,7 +141,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         2000, "manual mode must stay responsive while dragging (it used to rebuild every polygon per query)");
     }
 
-    /// <summary>Same drag benchmark at an arbitrary unit scale — a metric job runs the same shapes with
+    /// <summary>Same drag benchmark at an arbitrary unit scale â€” a metric job runs the same shapes with
     /// coordinates ~25x larger, which is where the drag cost used to explode.</summary>
     private string MeasureDrag(double u, int queries)
     {
@@ -144,7 +149,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       var pps = BuildSheetPlacements(u);
       var placed = pps.Select(p => p.PlacedPart).ToList();
       var dragged = Part(0, u);
-      var cache = new DragCollisionCache(dragged, placed.Select(n => (n, clearance)).ToList());
+      var cache = new DragCollisionCache(dragged, placed.Select(n => (n, clearance, Sliver)).ToList());
       cache.AnyTooClose(5 * u, 5 * u);
 
       var sw = Stopwatch.StartNew();
@@ -164,7 +169,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         dragPp.Y = 6.0 * u;
         foreach (var n in pps)
         {
-          if (PlacementCollision.TooClose(dragPp.PlacedPart, n.PlacedPart, clearance))
+          if (PlacementCollision.TooClose(dragPp.PlacedPart, n.PlacedPart, clearance, Sliver))
           {
             break;
           }
@@ -175,7 +180,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       return $"{queries} drag queries: cached {cachedMs} ms, uncached {sw.ElapsedMilliseconds} ms";
     }
 
-    /// <summary>26 placed parts in two rows — the reference sheet from the user's job.</summary>
+    /// <summary>26 placed parts in two rows â€” the reference sheet from the user's job.</summary>
     private static List<INfp> BuildSheet()
       => BuildSheetPlacements().Select(pp => pp.PlacedPart).ToList();
 

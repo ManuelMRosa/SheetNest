@@ -2,6 +2,7 @@ namespace DeepNestSharp.Ui.UserControls
 {
   using System;
   using System.Collections.Generic;
+  using System.Globalization;
   using System.Linq;
   using System.Windows;
   using System.Windows.Controls;
@@ -730,6 +731,9 @@ namespace DeepNestSharp.Ui.UserControls
       this.DrawKerfOverlay(sheetPlacement, h, stroke);
       this.DrawLeadsOverlay(sheetPlacement, h, stroke);
       this.BuildSnapPoints();
+
+      // A selection can survive a re-render (undo, a settings change), so its panel has to catch up.
+      this.UpdatePartInfo(measureGap: true);
     }
 
     /// <summary>
@@ -1208,7 +1212,7 @@ namespace DeepNestSharp.Ui.UserControls
       if (this.hintText != null)
       {
         this.hintText.Text = this.EditMode
-          ? "click = select part  ·  drag = move  ·  buttons = rotate  ·  overlaps show red"
+          ? "click = select part  ·  drag = move  ·  arrows = nudge  ·  type a coordinate to place it exactly  ·  overlaps show red"
           : "scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit";
       }
     }
@@ -1445,6 +1449,218 @@ namespace DeepNestSharp.Ui.UserControls
       }
 
       this.UpdateEditButtons();
+      this.UpdatePartInfo(measureGap: true);
+    }
+
+    /// <summary>
+    /// Fills the panel that says where the selected part is. X and Y are its BOTTOM-LEFT CORNER on the
+    /// sheet, which is the thing an operator can go and measure; the placement's own X/Y is an internal
+    /// offset into the polygon's frame and would mean nothing.
+    /// </summary>
+    /// <param name="measureGap">Whether to work out the distance to the nearest neighbour, which is a
+    /// search and so is only done when the part is at rest, not on every mouse move.</param>
+    private void UpdatePartInfo(bool measureGap)
+    {
+      if (this.partInfo == null)
+      {
+        return;
+      }
+
+      var pp = this.selectedPp;
+      var placed = pp?.PlacedPart;
+      if (placed == null || !this.EditMode)
+      {
+        this.partInfo.Visibility = Visibility.Collapsed;
+        return;
+      }
+
+      this.partInfo.Visibility = Visibility.Visible;
+      this.partInfoName.Text = string.IsNullOrEmpty(pp.Part?.Name)
+        ? "part"
+        : System.IO.Path.GetFileName(pp.Part.Name);
+
+      // Don't fight the operator for a field they are typing in.
+      if (!this.partX.IsKeyboardFocusWithin)
+      {
+        this.partX.Text = placed.MinX.ToString("0.###", CultureInfo.CurrentCulture);
+      }
+
+      if (!this.partY.IsKeyboardFocusWithin)
+      {
+        this.partY.Text = placed.MinY.ToString("0.###", CultureInfo.CurrentCulture);
+      }
+
+      if (!this.partAngle.IsKeyboardFocusWithin)
+      {
+        this.partAngle.Text = pp.Rotation.ToString("0.##", CultureInfo.CurrentCulture);
+      }
+
+      if (measureGap)
+      {
+        this.partGap.Text = this.DescribeNearestGap(pp);
+      }
+    }
+
+    /// <summary>How far the part is from its nearest neighbour, in words, or blank when nothing is near
+    /// enough to be worth a number.</summary>
+    private string DescribeNearestGap(IPartPlacement pp)
+    {
+      var group = this.CurrentGroup();
+      if (group?.Representative?.PartPlacements == null)
+      {
+        return string.Empty;
+      }
+
+      double cap = this.UnitsMm ? 25.0 : 1.0;
+      double gap = NearestGap(
+        pp,
+        group.Representative.PartPlacements,
+        cap,
+        (a, b, d) => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, d, this.SliverBetween(a, b)));
+
+      string unit = this.UnitsMm ? "mm" : "in";
+      return gap >= cap
+        ? string.Empty
+        : $"gap {gap.ToString("0.###", CultureInfo.CurrentCulture)} {unit}";
+    }
+
+    /// <summary>
+    /// The distance from one placement to the nearest of its neighbours, capped: past <paramref name="cap"/>
+    /// nothing is close enough to be worth measuring, and the cap is what keeps this cheap on a full sheet.
+    /// Overlapping reads as 0.
+    /// <para>Found by bisection on "are these closer than d", because that question is the one the collision
+    /// rule can answer and it is the same rule that decides red, so the number and the colour can never tell
+    /// different stories.</para>
+    /// </summary>
+    internal static double NearestGap(
+      IPartPlacement pp,
+      IReadOnlyList<IPartPlacement> all,
+      double cap,
+      Func<IPartPlacement, IPartPlacement, double, bool> tooClose)
+    {
+      double best = cap;
+      foreach (var other in all)
+      {
+        if (other == pp || other?.PlacedPart == null)
+        {
+          continue;
+        }
+
+        if (!tooClose(pp, other, best))
+        {
+          continue; // further off than anything found so far
+        }
+
+        if (tooClose(pp, other, 0))
+        {
+          return 0; // touching or overlapping; nothing can beat that
+        }
+
+        // 12 halvings of a 1in cap land inside a quarter of a thou, which is far finer than a number on
+        // screen needs and keeps the arrow keys from stuttering. Neighbours in contact never get here at
+        // all: they answer 0 above and end the search.
+        double lo = 0, hi = best;
+        for (int i = 0; i < 12; i++)
+        {
+          double mid = (lo + hi) / 2;
+          if (tooClose(pp, other, mid))
+          {
+            hi = mid;
+          }
+          else
+          {
+            lo = mid;
+          }
+        }
+
+        best = lo;
+      }
+
+      return best;
+    }
+
+    /// <summary>
+    /// Landing in one of these fields selects what is in it, so the next keystroke replaces the number
+    /// instead of appending to it. That is what these fields are for: you come here to put the part
+    /// somewhere else, not to touch up a digit. WPF does not do it on its own, and it takes both halves -
+    /// this one covers arriving by Tab.
+    /// </summary>
+    private void OnPartFieldFocus(object sender, RoutedEventArgs e) => (sender as TextBox)?.SelectAll();
+
+    /// <summary>
+    /// The other half, for arriving by mouse: the click has to be swallowed, because letting it through
+    /// drops the caret where it landed and throws the selection away again. A second click, once the field
+    /// already has the keyboard, behaves normally - that is how you get in to edit one digit.
+    /// </summary>
+    private void OnPartFieldClick(object sender, MouseButtonEventArgs e)
+    {
+      if (sender is TextBox box && !box.IsKeyboardFocusWithin)
+      {
+        box.Focus();
+        e.Handled = true;
+      }
+    }
+
+    /// <summary>Enter applies what was typed, Escape puts the field back to where the part actually is.</summary>
+    private void OnPartFieldKey(object sender, KeyEventArgs e)
+    {
+      if (e.Key == Key.Enter)
+      {
+        this.CommitPartFields();
+        this.host.Focus();
+        e.Handled = true;
+      }
+      else if (e.Key == Key.Escape)
+      {
+        this.UpdatePartInfo(measureGap: false);
+        this.host.Focus();
+        e.Handled = true;
+      }
+    }
+
+    private void OnPartFieldCommit(object sender, RoutedEventArgs e) => this.CommitPartFields();
+
+    /// <summary>
+    /// Puts the selected part exactly where the numbers say. Typed coordinates are the part's bottom-left
+    /// corner, so they become a translation; the angle goes through the same rotate the buttons use, which
+    /// turns about the part's centre and records one undo step.
+    /// </summary>
+    private void CommitPartFields()
+    {
+      var pp = this.selectedPp;
+      var placed = pp?.PlacedPart;
+      if (placed == null)
+      {
+        return;
+      }
+
+      if (double.TryParse(this.partAngle.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double angle))
+      {
+        double delta = angle - pp.Rotation;
+        if (Math.Abs(delta) > 1e-9)
+        {
+          this.RotateSelected(delta);
+          pp = this.selectedPp; // rotating REPLACES the placement
+          placed = pp.PlacedPart;
+        }
+      }
+
+      bool haveX = double.TryParse(this.partX.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double x);
+      bool haveY = double.TryParse(this.partY.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double y);
+      double dx = haveX ? x - placed.MinX : 0;
+      double dy = haveY ? y - placed.MinY : 0;
+      if (Math.Abs(dx) > 1e-9 || Math.Abs(dy) > 1e-9)
+      {
+        var before = PlacementSnapshot.Of(pp);
+        pp.X += dx;
+        pp.Y += dy;
+        this.PushEdit(before, PlacementSnapshot.Of(pp), nudge: false);
+        this.RefreshSelectedPath();
+        this.RefreshInvalid();
+        this.CommitManualEdit();
+      }
+
+      this.UpdatePartInfo(measureGap: true);
     }
 
     private void UpdateEditButtons()
@@ -1624,6 +1840,9 @@ namespace DeepNestSharp.Ui.UserControls
 
       this.RefreshPartOverlays(this.selectedPp);
       this.RefreshOffcutOverlay();
+
+      // Position live, distance to the neighbour only when it stops: measuring that exactly is a search.
+      this.UpdatePartInfo(measureGap: !this.isDraggingPart);
     }
 
     private void OnPanEnd(object sender, MouseButtonEventArgs e)
@@ -1904,7 +2123,7 @@ namespace DeepNestSharp.Ui.UserControls
     /// fails. Tested as: A's outline grown by the clearance intersects B.
     /// </summary>
     private bool TooClose(IPartPlacement a, IPartPlacement b)
-      => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, this.ClearanceBetween(a, b));
+      => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, this.ClearanceBetween(a, b), this.SliverBetween(a, b));
 
     /// <summary>The clearance this pair must keep: (spacingA + spacingB) / 2, or the CAM-safe common-line
     /// gap when either side is a common-line part (spacing 0 — they may touch, only real overlap fails).</summary>
@@ -1912,6 +2131,32 @@ namespace DeepNestSharp.Ui.UserControls
     {
       double clearance = (this.SpacingOf(a) + this.SpacingOf(b)) / 2.0;
       return clearance <= 0 ? RasterNest.RasterCompact.CommonLineGap : clearance;
+    }
+
+    /// <summary>
+    /// How deep this pair may bite into each other before it means anything: the width of the cut that is
+    /// about to run between them.
+    /// <para>A common-line pair shares ONE cut and that cut takes out a kerf of material, so an overlap
+    /// shallower than the kerf is not there once the sheet is cut - it was in the slot. Where a clearance
+    /// was asked for, what overlaps is the grown shells rather than the parts, so the same figure reads as
+    /// clearance the pair is short of, and a cut's width of that is nothing either. Reported as parts
+    /// turning red when two radii met: they were a THOUSANDTH of an inch into each other, on a job whose
+    /// kerf is six.</para>
+    /// <para>The kerf is known for a job that came in toolpathed from SheetCam. For a plain DXF nobody has
+    /// said how wide the cut is, so fall back to just under an ordinary laser kerf.</para>
+    /// </summary>
+    private double SliverBetween(IPartPlacement a, IPartPlacement b)
+    {
+      double kerf = Math.Max(this.KerfOf(a), this.KerfOf(b));
+      return kerf > 0 ? kerf : RasterNest.PlacementCollision.DefaultSliver(this.UnitsMm);
+    }
+
+    private double KerfOf(IPartPlacement pp)
+    {
+      string key = pp?.Part?.Name;
+      return key != null && this.KerfByPart != null && this.KerfByPart.TryGetValue(key, out double kerf)
+        ? Math.Max(0, kerf)
+        : 0;
     }
 
     /// <summary>Precomputes the geometry that stays put while <paramref name="dragged"/> is moved, so a
@@ -1925,12 +2170,12 @@ namespace DeepNestSharp.Ui.UserControls
         return null;
       }
 
-      var others = new List<(INfp Placed, double Clearance)>();
+      var others = new List<(INfp Placed, double Clearance, double Sliver)>();
       foreach (var other in group.Representative.PartPlacements)
       {
         if (other != dragged)
         {
-          others.Add((other.PlacedPart, this.ClearanceBetween(dragged, other)));
+          others.Add((other.PlacedPart, this.ClearanceBetween(dragged, other), this.SliverBetween(dragged, other)));
         }
       }
 
@@ -2017,6 +2262,14 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void OnViewerKeyDown(object sender, KeyEventArgs e)
     {
+      // Typing a coordinate is typing, not nesting: while a field has the keyboard, arrows move the caret
+      // and Ctrl+Z undoes the text. This handler is on the whole viewer, so without this every keystroke
+      // meant for a box also moved the part.
+      if (Keyboard.FocusedElement is TextBox)
+      {
+        return;
+      }
+
       if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z)
       {
         this.Undo();
@@ -2723,8 +2976,9 @@ namespace DeepNestSharp.Ui.UserControls
       double sheetWidth,
       double sheetHeight,
       double sheetEdgeMargin,
-      Func<IPartPlacement, IPartPlacement, double> clearanceBetween)
-      => FindUnfit(placements, sheetWidth, sheetHeight, sheetEdgeMargin, clearanceBetween).All.Count;
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
+      Func<IPartPlacement, IPartPlacement, double> sliverBetween = null)
+      => FindUnfit(placements, sheetWidth, sheetHeight, sheetEdgeMargin, clearanceBetween, sliverBetween).All.Count;
 
     /// <summary>
     /// The same sweep, handing back WHICH parts and WHY rather than a number: the two faults need
@@ -2732,14 +2986,18 @@ namespace DeepNestSharp.Ui.UserControls
     /// is the one who has to tell them apart. <see cref="Unfit.All"/> is the union, since a part can be
     /// both on top of a neighbour and in the edge margin.
     /// </summary>
+    /// <param name="sliverBetween">How deep a pair may bite into each other before it means anything - the
+    /// width of the cut about to run between them. Left out, an ordinary laser kerf is assumed.</param>
     internal static Unfit FindUnfit(
       IReadOnlyList<IPartPlacement> placements,
       double sheetWidth,
       double sheetHeight,
       double sheetEdgeMargin,
-      Func<IPartPlacement, IPartPlacement, double> clearanceBetween)
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
+      Func<IPartPlacement, IPartPlacement, double> sliverBetween = null)
     {
       var unfit = new Unfit();
+      sliverBetween = sliverBetween ?? ((a, b) => RasterNest.PlacementCollision.DefaultSliver(false));
       for (int i = 0; i < placements.Count; i++)
       {
         var a = placements[i];
@@ -2758,7 +3016,7 @@ namespace DeepNestSharp.Ui.UserControls
         for (int j = i + 1; j < placements.Count; j++)
         {
           var b = placements[j];
-          if (b?.PlacedPart != null && RasterNest.PlacementCollision.TooClose(placedA, b.PlacedPart, clearanceBetween(a, b)))
+          if (b?.PlacedPart != null && RasterNest.PlacementCollision.TooClose(placedA, b.PlacedPart, clearanceBetween(a, b), sliverBetween(a, b)))
           {
             unfit.Overlapping.Add(a);
             unfit.Overlapping.Add(b);
@@ -2824,7 +3082,8 @@ namespace DeepNestSharp.Ui.UserControls
         sheet.Sheet.WidthCalculated,
         sheet.Sheet.HeightCalculated,
         this.SheetEdgeMargin,
-        this.ClearanceBetween);
+        this.ClearanceBetween,
+        this.SliverBetween);
     }
 
     /// <summary>

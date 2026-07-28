@@ -66,6 +66,39 @@
       </StackPanel>
     </Border>
 
+    <!-- The selected part, and the only place its numbers can be typed rather than dragged to. Dragging is
+         imprecise and hard over a distance, so anything reachable only by dragging needs a way in from the
+         keyboard. X and Y are the part's BOTTOM-LEFT CORNER on the sheet, which is what can be measured on
+         the real plate; the placement's own offset is an internal datum and means nothing to an operator.
+         Bottom-left is the one free corner: the edit bar is top-left, the hints bottom-right, the layout
+         nav bottom-centre. -->
+    <Border x:Name="partInfo" Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,3"
+            HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="8" Visibility="Collapsed">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock x:Name="partInfoName" Foreground="#101010" FontSize="11" FontWeight="SemiBold"
+                   VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis" />
+        <TextBlock Text="X" Foreground="#101010" FontSize="11" VerticalAlignment="Center" Margin="10,0,3,0" />
+        <TextBox x:Name="partX" Width="62" FontSize="11" VerticalAlignment="Center"
+                 KeyDown="OnPartFieldKey" LostKeyboardFocus="OnPartFieldCommit"
+                 GotKeyboardFocus="OnPartFieldFocus" PreviewMouseLeftButtonDown="OnPartFieldClick"
+                 ToolTip="Left edge of the part, in sheet coordinates. Type a value and press Enter." />
+        <TextBlock Text="Y" Foreground="#101010" FontSize="11" VerticalAlignment="Center" Margin="8,0,3,0" />
+        <TextBox x:Name="partY" Width="62" FontSize="11" VerticalAlignment="Center"
+                 KeyDown="OnPartFieldKey" LostKeyboardFocus="OnPartFieldCommit"
+                 GotKeyboardFocus="OnPartFieldFocus" PreviewMouseLeftButtonDown="OnPartFieldClick"
+                 ToolTip="Bottom edge of the part, in sheet coordinates. Type a value and press Enter." />
+        <TextBlock Text="&#8735;" Foreground="#101010" FontSize="13" VerticalAlignment="Center" Margin="8,0,3,0" />
+        <TextBox x:Name="partAngle" Width="46" FontSize="11" VerticalAlignment="Center"
+                 KeyDown="OnPartFieldKey" LostKeyboardFocus="OnPartFieldCommit"
+                 GotKeyboardFocus="OnPartFieldFocus" PreviewMouseLeftButtonDown="OnPartFieldClick"
+                 ToolTip="Angle in degrees. Type a value and press Enter." />
+        <!-- Measured when the part comes to rest, not on every mouse move: the exact distance between two
+             outlines is a search, and a drag asks hundreds of questions per second already. -->
+        <TextBlock x:Name="partGap" Foreground="#101010" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"
+                   ToolTip="Distance from this part to its nearest neighbour, measured when it comes to rest." />
+      </StackPanel>
+    </Border>
+
     <!-- Layout navigation, industrial style: one entry per DISTINCT layout,
          its repeat count in parentheses next to the name — "Nest 1/2 (30)" = layout 1 of 2, cut it
          30 times. Totals (utilization / sheets / placed) live in the status bar, not over the plot. -->

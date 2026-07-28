@@ -16,16 +16,24 @@ namespace DeepNestSharp.RasterNest
     internal const double Scale = 1e6;
 
     /// <summary>
-    /// How deep two outlines may bite into each other before it counts as material interference, in
-    /// DRAWING units. Anything shallower is arithmetic, not a cut: 0.001in is a sixth of a kerf and the
-    /// same order as the 0.001in backoff the compaction already keeps; 0.001mm is a thousand Clipper
-    /// units, far above any numeric residue. Either way it is ten times the 1e-4 rounding placements are
-    /// saved at, so a reopened project cannot judge a nest differently from the live one.
+    /// How deep two outlines may bite into each other before it counts, when nothing better is known: the
+    /// caller supplies the job's own figure, which is the cut width (see <see cref="TooClose"/>).
+    /// <para>0.005in is just under an ordinary laser kerf; 0.13mm is the same distance, rounded for a
+    /// metric drawing rather than being the imperial number reused. Both are a hundred times the rounding
+    /// placements are saved at, so a reopened project cannot judge a nest differently from the live one.
+    /// </para>
     /// </summary>
-    private const double MaxSliver = 0.001;
+    internal static double DefaultSliver(bool unitsMm) => unitsMm ? 0.13 : 0.005;
 
-    /// <summary>True when the two placed outlines are closer than <paramref name="clearance"/>.</summary>
-    internal static bool TooClose(INfp placedA, INfp placedB, double clearance)
+    /// <summary>
+    /// True when the two placed outlines are closer than <paramref name="clearance"/>.
+    /// </summary>
+    /// <param name="sliver">How deep an overlap the CUT itself will remove, normally the kerf. A common-line
+    /// pair shares one cut, and that cut takes out a kerf of material, so parts overlapping by less than it
+    /// come off the machine exactly as drawn. Where a clearance was asked for, what overlaps is the grown
+    /// shells rather than the parts, so the same figure reads as clearance the pair is short of, which a
+    /// cut's width of is nothing either.</param>
+    internal static bool TooClose(INfp placedA, INfp placedB, double clearance, double sliver)
     {
       if (BoxesApart(placedA, placedB, clearance))
       {
@@ -38,7 +46,7 @@ namespace DeepNestSharp.RasterNest
         pathsA = InflateOuter(pathsA, clearance);
       }
 
-      return Overlaps(pathsA, ToPaths(placedB));
+      return Overlaps(pathsA, ToPaths(placedB), sliver);
     }
 
     /// <summary>Cheap reject: the two bounding boxes are already further apart than the clearance.</summary>
@@ -128,7 +136,8 @@ namespace DeepNestSharp.RasterNest
     /// common-line pair, welded until its edges are coincident, was called overlapping for landing a hair
     /// on the wrong side of zero. Depth asks the question the shop floor asks: how far into my part.</para>
     /// </summary>
-    internal static bool Overlaps(List<List<IntPoint>> a, List<List<IntPoint>> b)
+    /// <param name="sliver">Depth the cut itself removes; anything shallower is not there once it is cut.</param>
+    internal static bool Overlaps(List<List<IntPoint>> a, List<List<IntPoint>> b, double sliver)
     {
       var clipper = new Clipper();
       clipper.AddPaths(a, PolyType.ptSubject, true);
@@ -136,7 +145,7 @@ namespace DeepNestSharp.RasterNest
       var solution = new List<List<IntPoint>>();
       clipper.Execute(ClipType.ctIntersection, solution, PolyFillType.pftEvenOdd, PolyFillType.pftEvenOdd);
 
-      double limit = MaxSliver * Scale;
+      double limit = Math.Max(0, sliver) * Scale;
       foreach (var path in solution)
       {
         // Deepest piece wins rather than the total: a long sliver alongside a real bite must not average
@@ -211,8 +220,8 @@ namespace DeepNestSharp.RasterNest
     /// <param name="candidatePart">The dragged part's own geometry (NOT placed — the placement offset is
     /// supplied per query).</param>
     /// <param name="others">Each neighbour as already placed, with the clearance required against the
-    /// dragged part.</param>
-    internal DragCollisionCache(INfp candidatePart, IReadOnlyList<(INfp Placed, double Clearance)> others)
+    /// dragged part and the depth its cut will remove (see <see cref="PlacementCollision.TooClose"/>).</param>
+    internal DragCollisionCache(INfp candidatePart, IReadOnlyList<(INfp Placed, double Clearance, double Sliver)> others)
     {
       var raw = PlacementCollision.ToPaths(candidatePart);
       this.minX = candidatePart.MinX;
@@ -221,7 +230,7 @@ namespace DeepNestSharp.RasterNest
       this.maxY = candidatePart.MaxY;
       this.shells[0] = raw;
 
-      foreach (var (placed, clearance) in others)
+      foreach (var (placed, clearance, sliver) in others)
       {
         long key = ClearanceKey(clearance);
         if (!this.shells.ContainsKey(key))
@@ -230,7 +239,7 @@ namespace DeepNestSharp.RasterNest
         }
 
         this.neighbours.Add(new Neighbour(
-          PlacementCollision.ToPaths(placed), placed.MinX, placed.MinY, placed.MaxX, placed.MaxY, clearance));
+          PlacementCollision.ToPaths(placed), placed.MinX, placed.MinY, placed.MaxX, placed.MaxY, clearance, sliver));
       }
     }
 
@@ -261,7 +270,7 @@ namespace DeepNestSharp.RasterNest
           moved[key] = candidate = PlacementCollision.Translate(this.shells[key], dx, dy);
         }
 
-        if (PlacementCollision.Overlaps(candidate, n.Paths))
+        if (PlacementCollision.Overlaps(candidate, n.Paths, n.Sliver))
         {
           return true;
         }
@@ -275,7 +284,7 @@ namespace DeepNestSharp.RasterNest
 
     private readonly struct Neighbour
     {
-      internal Neighbour(List<List<IntPoint>> paths, double minX, double minY, double maxX, double maxY, double clearance)
+      internal Neighbour(List<List<IntPoint>> paths, double minX, double minY, double maxX, double maxY, double clearance, double sliver)
       {
         this.Paths = paths;
         this.MinX = minX;
@@ -283,6 +292,7 @@ namespace DeepNestSharp.RasterNest
         this.MaxX = maxX;
         this.MaxY = maxY;
         this.Clearance = clearance;
+        this.Sliver = sliver;
       }
 
       internal List<List<IntPoint>> Paths { get; }
@@ -296,6 +306,8 @@ namespace DeepNestSharp.RasterNest
       internal double MaxY { get; }
 
       internal double Clearance { get; }
+
+      internal double Sliver { get; }
     }
   }
 }
