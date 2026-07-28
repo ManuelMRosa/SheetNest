@@ -229,9 +229,17 @@ namespace DeepNestSharp.RasterNest
     /// <summary>
     /// The 0-2 straight cut lines (sheet coordinates) that free the offcut(s): the separating edge
     /// of each remnant rectangle. Null when no strip qualifies (the export's "no offcut" signal).
+    /// <para>Export asks on every run, so the feature being OFF has to be one of the answers: null
+    /// options means exactly that (see <see cref="OffcutOptions"/>) and it arrives here whenever
+    /// "Prefer rectangular offcut" is unticked, which is the default.</para>
     /// </summary>
     public static IReadOnlyList<OffcutLine> BuildLines(ISheetPlacement sheetPlacement, OffcutOptions options)
     {
+      if (options == null || sheetPlacement?.Sheet == null)
+      {
+        return null;
+      }
+
       var (cutX, cutY) = CutPositions(sheetPlacement, options);
       double w = sheetPlacement.Sheet.WidthCalculated;
       double h = sheetPlacement.Sheet.HeightCalculated;
