@@ -184,7 +184,9 @@
     {
       get
       {
-        string spacing = detailLoadInfo.CommonLine ? "common line"
+        // What will REALLY happen, not what was asked for: common line needs a cutter that knows the
+        // shared edge is one cut, so saying it over a job that will not cut that way is a lie on the card.
+        string spacing = DeepNestLib.NestProject.CommonLineRule.Applies(detailLoadInfo) ? "common line"
           : detailLoadInfo.Spacing < 0 ? "spacing: default"
           : $"spacing {detailLoadInfo.Spacing:0.###}";
         string rot = detailLoadInfo.Rotations switch

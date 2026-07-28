@@ -562,6 +562,41 @@ namespace DeepNestSharp.Ui.Views
     /// A project became active (opened or created): restore the nest result saved inside it, or
     /// clear the previous project's result — the on-screen nest always belongs to the active project.
     /// </summary>
+    /// <summary>
+    /// Turns off a common-line request on a part that is not a SheetCam round trip, and says so once.
+    /// <para>The flag persists in the .dnest and the importer sets it on its own, so a project saved when
+    /// the box was offered to everybody comes back still asking for a shared cut that nothing downstream
+    /// will honour. Correcting it silently would change what the nest does with no explanation; leaving it
+    /// and warning on every nest would nag about something the operator can no longer untick, since the box
+    /// is not shown on such a part. So: fix it at the one moment it changes, and say why.</para>
+    /// </summary>
+    private void ClearCommonLineNothingWillCut(NestProjectViewModel doc)
+    {
+      var stranded = doc?.ProjectInfo?.DetailLoadInfos?
+        .Where(o => o.CommonLine && !DeepNestLib.NestProject.CommonLineRule.CameFromSheetCamNest(o))
+        .ToList();
+      if (stranded == null || stranded.Count == 0)
+      {
+        return;
+      }
+
+      foreach (var part in stranded)
+      {
+        part.CommonLine = false;
+      }
+
+      this.partsListView?.Items.Refresh(); // the card's caption is a plain read, same as after Edit Part
+
+      ViewModel.MessageService.DisplayMessageBox(
+        $"{stranded.Count} part(s) in this project asked for common line cutting, and it has been turned off.\n\n" +
+        "Common line cuts the shared edge ONCE, which only works when the nest goes back to the job it came "
+        + "from. These parts came from plain DXF files, so nothing downstream knows the edge is shared and it "
+        + "would be cut twice.\n\n"
+        + "Bring the job in with File > Import SheetCam Nest... to use common line.",
+        "Common line",
+        DeepNestLib.MessageBoxIcon.Information);
+    }
+
     private void MainWindow_ActiveDocumentChanged(object sender, System.EventArgs e)
     {
       if (!(ViewModel.ActiveDocument is NestProjectViewModel doc))
@@ -578,6 +613,8 @@ namespace DeepNestSharp.Ui.Views
 
       doc.PropertyChanged -= this.Document_PropertyChangedForMru;
       doc.PropertyChanged += this.Document_PropertyChangedForMru;
+
+      this.ClearCommonLineNothingWillCut(doc);
 
       var monitor = ViewModel.NestMonitorViewModel;
       string json = doc.ProjectInfo.LastNestResultJson;
@@ -611,7 +648,7 @@ namespace DeepNestSharp.Ui.Views
             .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
               g => g.Key,
-              g => g.Min(o => o.CommonLine ? 0.0 : (o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing))),
+              g => g.Min(o => DeepNestLib.NestProject.CommonLineRule.Applies(o) ? 0.0 : (o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing))),
               System.StringComparer.OrdinalIgnoreCase);
         }
 
@@ -1379,6 +1416,12 @@ namespace DeepNestSharp.Ui.Views
         .SelectMany(o =>
         {
           tooling.TryGetValue(o.Path, out var tool);
+
+          // What the part will really be nested as. A common-line request is only honoured on a SheetCam
+          // round trip, because that is the only way the shared edge gets cut once; the flag survives in a
+          // saved project and is set by the importer, so this is where it has to be settled - this is the
+          // value that decides what the machine does.
+          bool commonLine = DeepNestLib.NestProject.CommonLineRule.Applies(o);
           var populations = new List<RasterPartInfo>
           {
             new RasterPartInfo
@@ -1387,8 +1430,8 @@ namespace DeepNestSharp.Ui.Views
               Quantity = o.Quantity + o.Extra,               // required + spares
               Rotations = o.Rotations,                       // -1 = engine default
               Priority = o.Priority,                         // higher nests first
-              Spacing = o.CommonLine ? 0.0 : o.Spacing,      // common-line = touch; -1 = job default
-              CommonLine = o.CommonLine,
+              Spacing = commonLine ? 0.0 : o.Spacing,        // common-line = touch; -1 = job default
+              CommonLine = commonLine,
               ToolPaths = tool.Paths,
               Kerf = tool.Kerf,
             },
@@ -1403,8 +1446,8 @@ namespace DeepNestSharp.Ui.Views
               Quantity = o.MirrorQuantity,
               Rotations = o.Rotations,
               Priority = o.Priority,
-              Spacing = o.CommonLine ? 0.0 : o.Spacing,
-              CommonLine = o.CommonLine,
+              Spacing = commonLine ? 0.0 : o.Spacing,
+              CommonLine = commonLine,
               Mirrored = true,
               ToolPaths = tool.Paths,
               Kerf = tool.Kerf,

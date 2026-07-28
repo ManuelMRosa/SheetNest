@@ -87,7 +87,9 @@
             <TextBlock Text="in the drawing's units" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource Brush.TextMuted}" />
           </StackPanel>
 
-          <CheckBox x:Name="commonLineCheck" Content="Common line cutting" Margin="0,10,0,0"
+          <!-- Only shown for a part that came in from a SheetCam nest: that is the only way back out to
+             something that knows a shared edge is cut once. Revealed in the constructor, like unfold3DGroup. -->
+        <CheckBox x:Name="commonLineCheck" Content="Common line cutting" Margin="0,10,0,0" Visibility="Collapsed"
                     Checked="OnCommonLineChanged" Unchecked="OnCommonLineChanged"
                     ToolTip="Nest copies of this part TOUCHING each other (spacing 0), so shared edges are cut once. The laser program must support common-line cuts." />
 
