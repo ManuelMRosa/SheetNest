@@ -75,6 +75,16 @@ namespace DeepNestSharp.Ui.UserControls
     // the placements currently overlapping something (drawn red).
     private readonly List<(System.Windows.Shapes.Path Path, IPartPlacement Pp)> partPaths = new List<(System.Windows.Shapes.Path, IPartPlacement)>();
     private readonly HashSet<IPartPlacement> invalid = new HashSet<IPartPlacement>();
+
+    // The cut band and lead-ins belonging to each placement, kept per part so a part being dragged takes
+    // its cut with it. They used to go straight onto the canvas and nowhere else, and manual editing
+    // repaints only what is in partPaths, so dragging a toolpathed part left its real cut drawn where the
+    // part no longer was.
+    private readonly Dictionary<IPartPlacement, List<UIElement>> partOverlays = new Dictionary<IPartPlacement, List<UIElement>>();
+
+    // The offcut cut line and its size label. Same reason: the strip's edge follows the pack, so it has to
+    // be redrawn as parts move rather than only when the whole view is rebuilt.
+    private readonly List<UIElement> offcutShapes = new List<UIElement>();
     private IPartPlacement selectedPp;
     private bool isDraggingPart;
     private bool dragInvalid;
@@ -526,7 +536,14 @@ namespace DeepNestSharp.Ui.UserControls
       return comp;
     }
 
-    private static List<IPartPlacement> SelectPlacements(ISheetPlacement master, Dictionary<int, int> take)
+    /// <summary>
+    /// Some of a full sheet's parts, to stand as the plan's remainder sheet.
+    /// <para>COPIES, never the originals. The two sheets are different layouts that the operator edits one
+    /// at a time, and a drag writes X and Y in place: handing over the same objects meant moving a part on
+    /// the remainder also moved it on the full sheet, silently, because only the sheet on screen is
+    /// repainted. The polygon itself is shared, which is safe - it is never written to.</para>
+    /// </summary>
+    internal static List<IPartPlacement> SelectPlacements(ISheetPlacement master, Dictionary<int, int> take)
     {
       var need = new Dictionary<int, int>(take);
       var list = new List<IPartPlacement>();
@@ -534,7 +551,7 @@ namespace DeepNestSharp.Ui.UserControls
       {
         if (need.TryGetValue(pp.Source, out int n) && n > 0)
         {
-          list.Add(pp);
+          list.Add(PlacementSnapshot.Of(pp).ToPlacement());
           need[pp.Source] = n - 1;
         }
       }
@@ -607,6 +624,8 @@ namespace DeepNestSharp.Ui.UserControls
       this.dragCache = null; // placements may have been replaced wholesale — never answer from stale geometry
       this.canvas.Children.Clear();
       this.partPaths.Clear();
+      this.partOverlays.Clear();
+      this.offcutShapes.Clear();
       this.ClearMeasure(); // canvas was cleared; drop dangling measure-shape references
 
       var result = this.Result;
@@ -726,32 +745,133 @@ namespace DeepNestSharp.Ui.UserControls
         return;
       }
 
-      // stroke is StrokeScreenPx (1) device pixel in drawing units; scale it up to the band width. Constant
-      // on screen at any zoom.
-      double band = stroke * KerfBandPx;
-
       foreach (var pp in sheetPlacement.PartPlacements)
       {
-        // kerf just flags "this part came in toolpathed"; the band width is the fixed on-screen one.
-        if (pp.Part?.Name == null || !this.KerfByPart.TryGetValue(pp.Part.Name, out double kerf) || kerf <= 0)
-        {
-          continue;
-        }
+        this.DrawKerfFor(pp, h, stroke);
+      }
+    }
 
-        var geometry = BuildPlacedGeometry(pp, h);
-        if (geometry == null)
-        {
-          continue;
-        }
+    /// <summary>One part's cut band, recorded against the part so it can move with it.</summary>
+    private void DrawKerfFor(IPartPlacement pp, double h, double stroke)
+    {
+      // kerf just flags "this part came in toolpathed"; the band width is the fixed on-screen one.
+      if (this.KerfByPart == null || pp.Part?.Name == null
+        || !this.KerfByPart.TryGetValue(pp.Part.Name, out double kerf) || kerf <= 0)
+      {
+        return;
+      }
 
-        this.canvas.Children.Add(new System.Windows.Shapes.Path
+      var geometry = BuildPlacedGeometry(pp, h);
+      if (geometry == null)
+      {
+        return;
+      }
+
+      // stroke is StrokeScreenPx (1) device pixel in drawing units; scale it up to the band width. The
+      // multiplier rides along in Tag so a zoom keeps the band a band (see UpdateStrokeWidths).
+      this.AddPartOverlay(pp, new System.Windows.Shapes.Path
+      {
+        Data = geometry,
+        Fill = null,
+        Stroke = KerfBand,
+        StrokeThickness = stroke * KerfBandPx,
+        StrokeLineJoin = PenLineJoin.Round,
+        Tag = KerfBandPx,
+      });
+    }
+
+    /// <summary>
+    /// Whether a sheet-coordinate point is on this part, hole or no hole.
+    /// <para>Clicking used to ask the drawn geometry, which is EvenOdd so a hole is a gap in it: pointing at
+    /// a part right in the middle of a big cutout selected whatever was behind, or nothing. A hole is still
+    /// part of the part as far as picking it up goes, so this asks the OUTER contour only. Even-odd ray
+    /// crossing, which also handles a concave outline.</para>
+    /// </summary>
+    internal static bool OutlineContains(IPartPlacement pp, double x, double y)
+    {
+      var points = pp?.PlacedPart?.Points;
+      if (points == null || points.Length < 3)
+      {
+        return false;
+      }
+
+      bool inside = false;
+      for (int i = 0, j = points.Length - 1; i < points.Length; j = i++)
+      {
+        double xi = points[i].X, yi = points[i].Y;
+        double xj = points[j].X, yj = points[j].Y;
+        if (((yi > y) != (yj > y)) && (x < (((xj - xi) * (y - yi) / (yj - yi)) + xi)))
         {
-          Data = geometry,
-          Fill = null,
-          Stroke = KerfBand,
-          StrokeThickness = band,
-          StrokeLineJoin = PenLineJoin.Round,
-        });
+          inside = !inside;
+        }
+      }
+
+      return inside;
+    }
+
+    /// <summary>Puts an overlay shape on the canvas and remembers whose it is.</summary>
+    private void AddPartOverlay(IPartPlacement pp, UIElement shape)
+    {
+      this.canvas.Children.Add(shape);
+      if (!this.partOverlays.TryGetValue(pp, out var list))
+      {
+        list = new List<UIElement>();
+        this.partOverlays[pp] = list;
+      }
+
+      list.Add(shape);
+    }
+
+    /// <summary>Takes one part's overlay shapes off the canvas, e.g. before redrawing them where the part
+    /// now is, or because the placement itself is being replaced by a rotation.</summary>
+    private void DropPartOverlays(IPartPlacement pp)
+    {
+      if (pp == null || !this.partOverlays.TryGetValue(pp, out var list))
+      {
+        return;
+      }
+
+      foreach (var shape in list)
+      {
+        this.canvas.Children.Remove(shape);
+      }
+
+      this.partOverlays.Remove(pp);
+    }
+
+    /// <summary>Redraws one part's cut band and lead-ins where the part is now.</summary>
+    private void RefreshPartOverlays(IPartPlacement pp)
+    {
+      if (pp == null)
+      {
+        return;
+      }
+
+      this.DropPartOverlays(pp);
+      double stroke = this.CurrentStroke;
+      this.DrawKerfFor(pp, this.currentSheetH, stroke);
+      this.DrawLeadsFor(pp, this.currentSheetH, stroke);
+    }
+
+    /// <summary>Redraws the offcut cut line, which moves when the pack it measures moves.</summary>
+    private void RefreshOffcutOverlay()
+    {
+      if (this.offcutShapes.Count == 0 && this.OffcutOptions == null)
+      {
+        return;
+      }
+
+      foreach (var shape in this.offcutShapes)
+      {
+        this.canvas.Children.Remove(shape);
+      }
+
+      this.offcutShapes.Clear();
+
+      var group = this.CurrentGroup();
+      if (group?.Representative?.Sheet != null)
+      {
+        this.DrawOffcutOverlay(group.Representative, 0, this.currentSheetW, this.currentSheetH, this.CurrentStroke);
       }
     }
 
@@ -770,63 +890,70 @@ namespace DeepNestSharp.Ui.UserControls
 
       foreach (var pp in sheetPlacement.PartPlacements)
       {
-        if (pp.Part?.Name == null || !this.LeadPaths.TryGetValue(pp.Part.Name, out var paths))
+        this.DrawLeadsFor(pp, h, stroke);
+      }
+    }
+
+    /// <summary>One part's leads, recorded against the part so they move with it.</summary>
+    private void DrawLeadsFor(IPartPlacement pp, double h, double stroke)
+    {
+      if (this.LeadPaths == null || pp.Part?.Name == null || !this.LeadPaths.TryGetValue(pp.Part.Name, out var paths))
+      {
+        return;
+      }
+
+      // Draw the lead as the same bold cut band as the outline when this part came in toolpathed;
+      // otherwise a thin line.
+      double kerf = 0;
+      this.KerfByPart?.TryGetValue(pp.Part.Name, out kerf);
+      bool asBand = kerf > 0;
+      var leadBrush = asBand ? KerfBand : LeadStroke;
+      double leadWidths = asBand ? KerfBandPx : 1.5;
+
+      double radians = pp.Rotation * Math.PI / 180d;
+      double cos = Math.Cos(radians);
+      double sin = Math.Sin(radians);
+
+      foreach (var path in paths)
+      {
+        if (path == null || path.Count < 2)
         {
           continue;
         }
 
-        // Draw the lead as the same bold cut band as the outline when this part came in toolpathed;
-        // otherwise a thin line.
-        double kerf = 0;
-        this.KerfByPart?.TryGetValue(pp.Part.Name, out kerf);
-        bool asBand = kerf > 0;
-        var leadBrush = asBand ? KerfBand : LeadStroke;
-        double leadThickness = asBand ? stroke * KerfBandPx : stroke * 1.5;
-
-        double radians = pp.Rotation * Math.PI / 180d;
-        double cos = Math.Cos(radians);
-        double sin = Math.Sin(radians);
-
-        foreach (var path in paths)
+        var figure = new PathFigure { IsClosed = false, IsFilled = false };
+        for (int i = 0; i < path.Count; i++)
         {
-          if (path == null || path.Count < 2)
+          // Same transform the placement applies: mirror, rotate about the part origin, then translate.
+          // The canvas is Y-down, so the sheet's Y is flipped last.
+          double lx = pp.IsMirrored ? -path[i].X : path[i].X;
+          double ly = path[i].Y;
+          double x = pp.X + ((lx * cos) - (ly * sin));
+          double y = pp.Y + ((lx * sin) + (ly * cos));
+          var point = new Point(x, h - y);
+
+          if (i == 0)
           {
-            continue;
+            figure.StartPoint = point;
           }
-
-          var figure = new PathFigure { IsClosed = false, IsFilled = false };
-          for (int i = 0; i < path.Count; i++)
+          else
           {
-            // Same transform the placement applies: mirror, rotate about the part origin, then translate.
-            // The canvas is Y-down, so the sheet's Y is flipped last.
-            double lx = pp.IsMirrored ? -path[i].X : path[i].X;
-            double ly = path[i].Y;
-            double x = pp.X + ((lx * cos) - (ly * sin));
-            double y = pp.Y + ((lx * sin) + (ly * cos));
-            var point = new Point(x, h - y);
-
-            if (i == 0)
-            {
-              figure.StartPoint = point;
-            }
-            else
-            {
-              figure.Segments.Add(new LineSegment(point, true));
-            }
+            figure.Segments.Add(new LineSegment(point, true));
           }
-
-          var geometry = new PathGeometry();
-          geometry.Figures.Add(figure);
-          this.canvas.Children.Add(new System.Windows.Shapes.Path
-          {
-            Data = geometry,
-            Stroke = leadBrush,
-            StrokeThickness = leadThickness,
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round,
-            StrokeLineJoin = PenLineJoin.Round,
-          });
         }
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+        this.AddPartOverlay(pp, new System.Windows.Shapes.Path
+        {
+          Data = geometry,
+          Stroke = leadBrush,
+          StrokeThickness = stroke * leadWidths,
+          StrokeStartLineCap = PenLineCap.Round,
+          StrokeEndLineCap = PenLineCap.Round,
+          StrokeLineJoin = PenLineJoin.Round,
+          Tag = leadWidths,
+        });
       }
     }
 
@@ -875,13 +1002,16 @@ namespace DeepNestSharp.Ui.UserControls
       }
 
       var (a, b) = CutToCanvas(cut, h);
-      this.canvas.Children.Add(new System.Windows.Shapes.Path
+      var line = new System.Windows.Shapes.Path
       {
         Data = new LineGeometry(a, b),
         Stroke = OffcutStroke,
         StrokeThickness = stroke * OffcutCutPx, // fixed width on screen, like the kerf band
         IsHitTestVisible = false,
-      });
+        Tag = OffcutCutPx, // the cut line is told apart by THICKNESS, so a zoom must not flatten it
+      };
+      this.canvas.Children.Add(line);
+      this.offcutShapes.Add(line);
 
       string unit = this.UnitsMm ? "mm" : "in";
       var label = new TextBlock
@@ -904,6 +1034,7 @@ namespace DeepNestSharp.Ui.UserControls
       Canvas.SetLeft(label, rect.X + ((rect.Width - label.DesiredSize.Width) / 2));
       Canvas.SetTop(label, rect.Y + ((rect.Height - label.DesiredSize.Height) / 2));
       this.canvas.Children.Add(label);
+      this.offcutShapes.Add(label);
     }
 
     private Brush FillFor(IPartPlacement pp)
@@ -1023,15 +1154,25 @@ namespace DeepNestSharp.Ui.UserControls
       this.UpdateStrokeWidths();
     }
 
-    /// <summary>Keeps every drawn line at ~StrokeScreenPx device pixels regardless of zoom.</summary>
+    /// <summary>One device pixel expressed in drawing units at the current zoom. Stroke widths are in
+    /// canvas units, which the RenderTransform scales, so a line stays a constant width on screen only if
+    /// it is divided by the scale.</summary>
+    private double CurrentStroke => StrokeScreenPx / Math.Max(0.0001, this.scale.ScaleX);
+
+    /// <summary>
+    /// Keeps every drawn line the same width on screen regardless of zoom. Lines that are drawn DELIBERATELY
+    /// thick carry their multiplier in Tag: the cut band and the offcut's cut line are told apart by
+    /// thickness rather than by colour, and this used to stamp one width onto every path, so a single wheel
+    /// tick flattened both of them to a hairline.
+    /// </summary>
     private void UpdateStrokeWidths()
     {
-      double t = StrokeScreenPx / Math.Max(0.0001, this.scale.ScaleX);
+      double t = this.CurrentStroke;
       foreach (var child in this.canvas.Children)
       {
         if (child is System.Windows.Shapes.Path path)
         {
-          path.StrokeThickness = t;
+          path.StrokeThickness = t * (path.Tag is double multiplier ? multiplier : 1);
         }
       }
     }
@@ -1365,9 +1506,11 @@ namespace DeepNestSharp.Ui.UserControls
       {
         // Topmost part under the cursor gets selected and dragged; empty space just deselects.
         Point pt = e.GetPosition(this.canvas);
+        double sheetX = pt.X;
+        double sheetY = this.currentSheetH - pt.Y; // the canvas is Y-down, the placements are Y-up
         for (int i = this.partPaths.Count - 1; i >= 0; i--)
         {
-          if (this.partPaths[i].Path.Data != null && this.partPaths[i].Path.Data.FillContains(pt))
+          if (OutlineContains(this.partPaths[i].Pp, sheetX, sheetY))
           {
             this.SelectPart(this.partPaths[i].Pp);
             this.isDraggingPart = true;
@@ -1462,6 +1605,11 @@ namespace DeepNestSharp.Ui.UserControls
       this.RefreshSelectedPath();
     }
 
+    /// <summary>
+    /// Repaints just the part that moved. Manual editing deliberately does not re-render, so everything
+    /// that belongs to that part has to be brought along by hand: its outline, its cut band and lead-ins,
+    /// and the offcut line, whose position is measured off the pack.
+    /// </summary>
     private void RefreshSelectedPath()
     {
       this.snapPointsStale = true; // the part's outline moved, so the measure tool's snap points did too
@@ -1470,9 +1618,12 @@ namespace DeepNestSharp.Ui.UserControls
         if (this.partPaths[i].Pp == this.selectedPp)
         {
           this.partPaths[i].Path.Data = BuildPlacedGeometry(this.selectedPp, this.currentSheetH);
-          return;
+          break;
         }
       }
+
+      this.RefreshPartOverlays(this.selectedPp);
+      this.RefreshOffcutOverlay();
     }
 
     private void OnPanEnd(object sender, MouseButtonEventArgs e)
@@ -1516,7 +1667,13 @@ namespace DeepNestSharp.Ui.UserControls
         return;
       }
 
-      this.isPanning = false;
+      // Panning belongs to the MIDDLE button, so releasing the left one has no business ending it. It used
+      // to, which meant a stray left click in the middle of a pan dropped the view where it stood.
+      if (this.isPanning)
+      {
+        return;
+      }
+
       this.host.ReleaseMouseCapture();
       this.host.Cursor = Cursors.Arrow;
     }
@@ -1616,6 +1773,7 @@ namespace DeepNestSharp.Ui.UserControls
       this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
       list[index] = replacement;
       this.invalid.Remove(pp);
+      this.DropPartOverlays(pp); // the placement itself is being replaced, so its old cut band goes with it
       for (int i = 0; i < this.partPaths.Count; i++)
       {
         if (this.partPaths[i].Pp == pp)
@@ -1681,6 +1839,7 @@ namespace DeepNestSharp.Ui.UserControls
       this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
       list[index] = replacement;
       this.invalid.Remove(pp);
+      this.DropPartOverlays(pp); // the placement itself is being replaced, so its old cut band goes with it
       for (int i = 0; i < this.partPaths.Count; i++)
       {
         if (this.partPaths[i].Pp == pp)
