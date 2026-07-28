@@ -261,10 +261,10 @@ namespace DeepNestSharp.Ui.UserControls
     {
       var v = (DxfViewer)d;
       v.selectedPp = null;
-      v.invalid.Clear();
       v.undoStack.Clear();
       v.redoStack.Clear();
       v.BuildGroups();
+      v.SeedInvalid();
       if (v.SheetIndex != 0)
       {
         v.SheetIndex = 0; // back to the first layout on a new result (also renders)
@@ -2376,7 +2376,7 @@ namespace DeepNestSharp.Ui.UserControls
       var placement = snapshot.ToPlacement();
       list[record.Index] = placement;
       this.selectedPp = placement;
-      this.invalid.Clear();
+      this.SeedInvalid(); // the undone step may have left another part red; re-judge the lot, not just this one
 
       // Mirror onto the layout's copies, then show the sheet the edit belongs to.
       if (group.Members != null)
@@ -2506,8 +2506,10 @@ namespace DeepNestSharp.Ui.UserControls
       this.UpdateOverlapCount();
     }
 
-    /// <summary>Says in words how many parts are still on top of something, because on a full sheet the
-    /// offending one is often off screen and its red is easy to miss.</summary>
+    /// <summary>Says in words how many parts are still wrong, because on a full sheet the offending one is
+    /// often off screen and its red is easy to miss. It does not name the fault: a part can be red for
+    /// overlapping or for standing in the sheet's edge margin, and this counter does not keep which. The
+    /// refusal dialog does the full sweep and says which; claiming one here would be a guess.</summary>
     private void UpdateOverlapCount()
     {
       if (this.overlapCount == null)
@@ -2522,7 +2524,7 @@ namespace DeepNestSharp.Ui.UserControls
         ? 0
         : this.invalid.Count(p => group.Representative.PartPlacements.Contains(p));
 
-      this.overlapCount.Text = n == 1 ? "1 part overlapping" : $"{n} parts overlapping";
+      this.overlapCount.Text = n == 1 ? "1 part not fit to cut" : $"{n} parts not fit to cut";
       this.overlapCount.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -2563,8 +2565,22 @@ namespace DeepNestSharp.Ui.UserControls
       double sheetHeight,
       double sheetEdgeMargin,
       Func<IPartPlacement, IPartPlacement, double> clearanceBetween)
+      => FindUnfit(placements, sheetWidth, sheetHeight, sheetEdgeMargin, clearanceBetween).All.Count;
+
+    /// <summary>
+    /// The same sweep, handing back WHICH parts and WHY rather than a number: the two faults need
+    /// different things done about them (move a part, or re-nest with a smaller margin), and the operator
+    /// is the one who has to tell them apart. <see cref="Unfit.All"/> is the union, since a part can be
+    /// both on top of a neighbour and in the edge margin.
+    /// </summary>
+    internal static Unfit FindUnfit(
+      IReadOnlyList<IPartPlacement> placements,
+      double sheetWidth,
+      double sheetHeight,
+      double sheetEdgeMargin,
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween)
     {
-      var unfit = new HashSet<IPartPlacement>();
+      var unfit = new Unfit();
       for (int i = 0; i < placements.Count; i++)
       {
         var a = placements[i];
@@ -2576,7 +2592,8 @@ namespace DeepNestSharp.Ui.UserControls
 
         if (IsOutsideUsableArea(a, sheetWidth, sheetHeight, sheetEdgeMargin))
         {
-          unfit.Add(a);
+          unfit.OutsideMargin.Add(a);
+          unfit.All.Add(a);
         }
 
         for (int j = i + 1; j < placements.Count; j++)
@@ -2584,13 +2601,29 @@ namespace DeepNestSharp.Ui.UserControls
           var b = placements[j];
           if (b?.PlacedPart != null && RasterNest.PlacementCollision.TooClose(placedA, b.PlacedPart, clearanceBetween(a, b)))
           {
-            unfit.Add(a);
-            unfit.Add(b);
+            unfit.Overlapping.Add(a);
+            unfit.Overlapping.Add(b);
+            unfit.All.Add(a);
+            unfit.All.Add(b);
           }
         }
       }
 
-      return unfit.Count;
+      return unfit;
+    }
+
+    /// <summary>What is wrong on one sheet, split by fault.</summary>
+    internal sealed class Unfit
+    {
+      /// <summary>Sitting closer to a neighbour than the pair's clearance allows. Both sides count, the
+      /// same way both go red on screen.</summary>
+      public HashSet<IPartPlacement> Overlapping { get; } = new HashSet<IPartPlacement>();
+
+      /// <summary>Off the sheet, or inside the edge margin the job asked to keep clear.</summary>
+      public HashSet<IPartPlacement> OutsideMargin { get; } = new HashSet<IPartPlacement>();
+
+      /// <summary>Every part with something wrong with it, counted once.</summary>
+      public HashSet<IPartPlacement> All { get; } = new HashSet<IPartPlacement>();
     }
 
     /// <summary>
@@ -2598,30 +2631,66 @@ namespace DeepNestSharp.Ui.UserControls
     /// to export. Checks EVERY layout, not the one on screen: a part left overlapping on sheet two is just
     /// as much scrap, and the operator cannot see it from here.
     /// </summary>
-    public IReadOnlyList<(string Layout, int Parts)> FindUnfitLayouts()
+    public IReadOnlyList<(string Layout, int Parts, int Overlapping, int InMargin)> FindUnfitLayouts()
     {
-      var unfit = new List<(string Layout, int Parts)>();
+      var unfit = new List<(string Layout, int Parts, int Overlapping, int InMargin)>();
       for (int i = 0; i < this.groups.Count; i++)
       {
-        var sheet = this.groups[i].Representative;
-        if (sheet?.PartPlacements == null || sheet.Sheet == null)
+        var found = this.UnfitOn(this.groups[i]);
+        if (found != null && found.All.Count > 0)
         {
-          continue;
-        }
-
-        int count = CountUnfit(
-          sheet.PartPlacements.ToList(),
-          sheet.Sheet.WidthCalculated,
-          sheet.Sheet.HeightCalculated,
-          this.SheetEdgeMargin,
-          this.ClearanceBetween);
-        if (count > 0)
-        {
-          unfit.Add((string.IsNullOrWhiteSpace(this.groups[i].Name) ? $"Layout {i + 1}" : this.groups[i].Name, count));
+          unfit.Add((
+            string.IsNullOrWhiteSpace(this.groups[i].Name) ? $"Layout {i + 1}" : this.groups[i].Name,
+            found.All.Count,
+            found.Overlapping.Count,
+            found.OutsideMargin.Count));
         }
       }
 
       return unfit;
+    }
+
+    /// <summary>What is wrong on one layout's representative sheet, judged by that sheet's OWN size and the
+    /// current job's clearances. Null when the group has nothing to judge.</summary>
+    private Unfit UnfitOn(SheetGroup group)
+    {
+      var sheet = group?.Representative;
+      if (sheet?.PartPlacements == null || sheet.Sheet == null)
+      {
+        return null;
+      }
+
+      return FindUnfit(
+        sheet.PartPlacements.ToList(),
+        sheet.Sheet.WidthCalculated,
+        sheet.Sheet.HeightCalculated,
+        this.SheetEdgeMargin,
+        this.ClearanceBetween);
+    }
+
+    /// <summary>
+    /// Flag everything that is not fit to cut, across every layout, so the red on screen says the same
+    /// thing the export gate does.
+    /// <para>Without this a nest arrives with <c>invalid</c> empty and only ever grows by what the operator
+    /// touches: nothing is drawn red, the bar reads zero parts overlapping, and Export still refuses and
+    /// tells them to go and clear the red parts. Which is what happened, on a nest nobody had edited.</para>
+    /// </summary>
+    private void SeedInvalid()
+    {
+      this.invalid.Clear();
+      foreach (var group in this.groups)
+      {
+        var found = this.UnfitOn(group);
+        if (found == null)
+        {
+          continue;
+        }
+
+        foreach (var pp in found.All)
+        {
+          this.invalid.Add(pp);
+        }
+      }
     }
   }
 }

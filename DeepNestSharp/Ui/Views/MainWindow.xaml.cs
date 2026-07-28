@@ -1689,14 +1689,26 @@ namespace DeepNestSharp.Ui.Views
         return false;
       }
 
+      // Say WHICH fault, per layout. The two are not the same job: an overlap is moved apart by hand, while
+      // a part inside the edge margin usually means the margin wants lowering and the nest re-running.
       int parts = unfit.Sum(u => u.Parts);
-      var where = string.Join("\n", unfit.Select(u => $"    {u.Layout}: {u.Parts} part(s)"));
+      var where = string.Join("\n", unfit.Select(u => $"    {u.Layout}: {u.Parts} part(s){Why(u)}"));
       ViewModel.MessageService.DisplayMessageBox(
-        $"{parts} part(s) are still overlapping a neighbour or hanging off the sheet, so this nest is not ready to cut:\n\n{where}\n\n" +
+        $"{parts} part(s) are not ready to cut:\n\n{where}\n\n" +
         "They are drawn in red. Move them clear in Edit nest and try again.",
         title,
         DeepNestLib.MessageBoxIcon.Stop);
       return true;
+
+      static string Why((string Layout, int Parts, int Overlapping, int InMargin) u)
+      {
+        if (u.Overlapping > 0 && u.InMargin > 0)
+        {
+          return $", {u.Overlapping} overlapping a neighbour and {u.InMargin} inside the sheet edge margin";
+        }
+
+        return u.InMargin > 0 ? ", inside the sheet edge margin" : ", overlapping a neighbour";
+      }
     }
 
     private void OnNestReportPdf(object sender, RoutedEventArgs e)

@@ -108,6 +108,33 @@ namespace DeepNestSharp.CiTests
         .Should().BeFalse("the very same bounds are fine with no margin");
     }
 
+    /// <summary>The two faults are not the same job — an overlap gets moved by hand, a part in the margin
+    /// usually means the margin wants lowering and the nest re-running — so the refusal has to tell them
+    /// apart instead of putting both in one sentence.</summary>
+    [Fact]
+    public void TheTwoFaultsAreToldApart()
+    {
+      var overlapping = DxfViewer.FindUnfit(new List<IPartPlacement> { Square(0, 0), Square(5, 0) }, SheetW, SheetH, NoMargin, Clear);
+      overlapping.Overlapping.Count.Should().Be(2);
+      overlapping.OutsideMargin.Should().BeEmpty();
+
+      var inMargin = DxfViewer.FindUnfit(new List<IPartPlacement> { Square(1, 1) }, SheetW, SheetH, 2, Clear);
+      inMargin.OutsideMargin.Count.Should().Be(1);
+      inMargin.Overlapping.Should().BeEmpty();
+    }
+
+    /// <summary>A part can be both at once, and the total is people, not faults: it turns red once and it
+    /// is one part to go and fix.</summary>
+    [Fact]
+    public void APartWithBothFaultsIsStillOnePart()
+    {
+      var found = DxfViewer.FindUnfit(new List<IPartPlacement> { Square(1, 1), Square(6, 1) }, SheetW, SheetH, 2, Clear);
+
+      found.Overlapping.Count.Should().Be(2);
+      found.OutsideMargin.Count.Should().Be(2);
+      found.All.Count.Should().Be(2, "the same two parts, not four");
+    }
+
     [Fact]
     public void AnEmptySheetIsFit()
     {

@@ -15,7 +15,14 @@ namespace DeepNestSharp.RasterNest
   {
     internal const double Scale = 1e6;
 
-    private const double EpsArea = 1e-6 * Scale * Scale; // ignore sub-1e-6 contact slivers as "touching"
+    /// <summary>
+    /// How deep two outlines may bite into each other before it counts as material interference, in
+    /// DRAWING units. Anything shallower is arithmetic, not a cut: 0.001in is a sixth of a kerf and the
+    /// same order as the 0.001in backoff the compaction already keeps; 0.001mm is a thousand Clipper
+    /// units, far above any numeric residue. Either way it is ten times the 1e-4 rounding placements are
+    /// saved at, so a reopened project cannot judge a nest differently from the live one.
+    /// </summary>
+    private const double MaxSliver = 0.001;
 
     /// <summary>True when the two placed outlines are closer than <paramref name="clearance"/>.</summary>
     internal static bool TooClose(INfp placedA, INfp placedB, double clearance)
@@ -113,7 +120,14 @@ namespace DeepNestSharp.RasterNest
       return result.Count > 0 ? result : paths;
     }
 
-    /// <summary>True when the two path sets share real area (holes respected via even-odd).</summary>
+    /// <summary>
+    /// True when the two path sets bite into each other by a real amount (holes respected via even-odd).
+    /// <para>Judged by how DEEP the overlap goes, not by how much area it adds up to. Those are the same
+    /// question only on a compact shape: along a shared edge they are nothing alike, and a fixed area
+    /// threshold there means an absurd depth. At 1e-6 sq in over a 36in edge it meant 2.8e-8in, so a
+    /// common-line pair, welded until its edges are coincident, was called overlapping for landing a hair
+    /// on the wrong side of zero. Depth asks the question the shop floor asks: how far into my part.</para>
+    /// </summary>
     internal static bool Overlaps(List<List<IntPoint>> a, List<List<IntPoint>> b)
     {
       var clipper = new Clipper();
@@ -121,13 +135,43 @@ namespace DeepNestSharp.RasterNest
       clipper.AddPaths(b, PolyType.ptClip, true);
       var solution = new List<List<IntPoint>>();
       clipper.Execute(ClipType.ctIntersection, solution, PolyFillType.pftEvenOdd, PolyFillType.pftEvenOdd);
-      double area = 0;
+
+      double limit = MaxSliver * Scale;
       foreach (var path in solution)
       {
-        area += Math.Abs(Clipper.Area(path));
+        // Deepest piece wins rather than the total: a long sliver alongside a real bite must not average
+        // the bite away.
+        if (DepthOf(path) > limit)
+        {
+          return true;
+        }
       }
 
-      return area > EpsArea;
+      return false;
+    }
+
+    /// <summary>How deep one piece of overlap bites, in Clipper units: 2 x area / perimeter. For a sliver
+    /// of length L and depth d that is L*d over 2L, i.e. d exactly; for a square bite of side s it is s/2,
+    /// which is still a bite. Compact shapes and slivers therefore get judged by the same number.</summary>
+    private static double DepthOf(List<IntPoint> path)
+    {
+      double area = Math.Abs(Clipper.Area(path));
+      if (area <= 0 || path.Count < 3)
+      {
+        return 0;
+      }
+
+      double perimeter = 0;
+      for (int i = 0; i < path.Count; i++)
+      {
+        var p = path[i];
+        var q = path[(i + 1) % path.Count];
+        double dx = q.X - p.X;
+        double dy = q.Y - p.Y;
+        perimeter += Math.Sqrt((dx * dx) + (dy * dy));
+      }
+
+      return perimeter <= 0 ? 0 : 2 * area / perimeter;
     }
 
     internal static List<List<IntPoint>> Translate(List<List<IntPoint>> paths, long dx, long dy)
