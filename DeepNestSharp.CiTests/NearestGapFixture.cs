@@ -9,24 +9,29 @@ namespace DeepNestSharp.CiTests
   using Xunit;
 
   /// <summary>
-  /// The number the editor puts on screen for "how far is this part from its neighbour". It is found by
-  /// asking the collision rule "are these closer than d" and bisecting, so the number and the red can never
-  /// tell different stories: the same rule decides both.
+  /// The number the editor puts on screen for "how far is this part from its neighbour", found by asking
+  /// "are these closer than d" and bisecting.
+  /// <para>It asks with NO allowance for the cut, because a distance is a measurement and not a verdict.
+  /// The verdict does allow for the cut, since an overlap the kerf removes is not one. Wiring the measure
+  /// to the verdict looked like the way to keep the number and the red from telling different stories, and
+  /// it made the number wrong instead: bisection converges where the answer flips, so every reading came
+  /// back a whole kerf too generous and parts in contact reported the kerf instead of nothing.</para>
+  /// <para>This fixture used to hand NearestGap a stand-in predicate with no cut allowance in it, so it
+  /// went on passing while the shipped combination was out by a kerf. It uses the real one now, and the
+  /// pair of tests at the bottom is what would have caught it.</para>
   /// </summary>
   public class NearestGapFixture
   {
     private const double Cap = 1.0;
+    private const double Kerf = 0.006;
 
-    /// <summary>Stands in for PlacementCollision.TooClose over plain rectangles: true when the gap between
-    /// the two boxes is under d.</summary>
+    /// <summary>The measuring question: pure distance, no allowance for what the cut takes out.</summary>
     private static readonly Func<IPartPlacement, IPartPlacement, double, bool> TooClose = (a, b, d) =>
-    {
-      var pa = a.PlacedPart;
-      var pb = b.PlacedPart;
-      double gapX = Math.Max(pa.MinX - pb.MaxX, pb.MinX - pa.MaxX);
-      double gapY = Math.Max(pa.MinY - pb.MaxY, pb.MinY - pa.MaxY);
-      return Math.Max(gapX, gapY) < d;
-    };
+      DeepNestSharp.RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, d, 0);
+
+    /// <summary>The judging question, for contrast: the same test with a kerf's worth of forgiveness.</summary>
+    private static readonly Func<IPartPlacement, IPartPlacement, double, bool> TooCloseAllowingTheCut = (a, b, d) =>
+      DeepNestSharp.RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, d, Kerf);
 
     [Fact]
     public void ItFindsTheDistanceToTheNeighbour()
@@ -92,6 +97,37 @@ namespace DeepNestSharp.CiTests
         a.Should().NotBeSameAs(b, "measuring a part against itself would always answer zero");
         return TooClose(a, b, d);
       }).Should().BeApproximately(0.4, 0.001);
+    }
+
+    /// <summary>
+    /// The bug this fixture missed. Asked with the cut allowed for, bisection settles where the verdict
+    /// flips, which is a kerf short of contact, so two parts touching report a kerf of gap and every other
+    /// reading is a kerf too generous. On a common-line pair, which is welded edge to edge on purpose, the
+    /// operator reads six thou of daylight that is not there.
+    /// </summary>
+    [Fact]
+    public void MeasuringMustNotAllowForTheCut()
+    {
+      var parts = Parts(Bar(0, 0), Bar(10, 0));
+
+      DxfViewer.NearestGap(parts[0], parts, Cap, TooCloseAllowingTheCut)
+        .Should().BeApproximately(Kerf, 0.0005, "this is what the wrong question answers");
+
+      DxfViewer.NearestGap(parts[0], parts, Cap, TooClose)
+        .Should().Be(0, "and this is the right one");
+    }
+
+    /// <summary>The same a kerf out at any distance, not only in contact: it is an offset, not a floor.</summary>
+    [Fact]
+    public void TheOffsetIsThereAtEveryDistance()
+    {
+      var parts = Parts(Bar(0, 0), Bar(10.4, 0));
+
+      DxfViewer.NearestGap(parts[0], parts, Cap, TooCloseAllowingTheCut)
+        .Should().BeApproximately(0.4 + Kerf, 0.0005);
+
+      DxfViewer.NearestGap(parts[0], parts, Cap, TooClose)
+        .Should().BeApproximately(0.4, 0.001);
     }
 
     private static double Gap(List<IPartPlacement> parts) => DxfViewer.NearestGap(parts[0], parts, Cap, TooClose);

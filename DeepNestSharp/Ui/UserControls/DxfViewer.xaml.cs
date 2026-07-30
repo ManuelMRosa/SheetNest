@@ -804,8 +804,71 @@ namespace DeepNestSharp.Ui.UserControls
     /// crossing, which also handles a concave outline.</para>
     /// </summary>
     internal static bool OutlineContains(IPartPlacement pp, double x, double y)
+      => ContourContains(pp?.PlacedPart, x, y);
+
+    /// <summary>Whether the point is on the MATERIAL of this part: inside its outline and not down one of
+    /// its holes.</summary>
+    internal static bool MaterialContains(IPartPlacement pp, double x, double y)
     {
-      var points = pp?.PlacedPart?.Points;
+      var placed = pp?.PlacedPart;
+      if (!ContourContains(placed, x, y))
+      {
+        return false;
+      }
+
+      if (placed.Children != null)
+      {
+        foreach (var hole in placed.Children)
+        {
+          if (ContourContains(hole, x, y))
+          {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>
+    /// The part the operator meant by clicking there, given the placements in draw order (topmost last).
+    /// <para>Material first, topmost down, so a part parked in another part's cutout is the one that gets
+    /// picked. Only if the click is on no part's material does the outline decide, which is what makes
+    /// clicking the middle of a big cutout grab the part the cutout belongs to instead of falling through
+    /// to whatever is behind. Asking the outline alone made the enclosing part answer first whenever it
+    /// happened to sit later in the list, and the part inside its window could never be picked up again.
+    /// </para>
+    /// </summary>
+    internal static IPartPlacement PickAt(IReadOnlyList<IPartPlacement> placements, double x, double y)
+    {
+      if (placements == null)
+      {
+        return null;
+      }
+
+      for (int i = placements.Count - 1; i >= 0; i--)
+      {
+        if (MaterialContains(placements[i], x, y))
+        {
+          return placements[i];
+        }
+      }
+
+      for (int i = placements.Count - 1; i >= 0; i--)
+      {
+        if (OutlineContains(placements[i], x, y))
+        {
+          return placements[i];
+        }
+      }
+
+      return null;
+    }
+
+    /// <summary>Even-odd ray crossing over one closed contour, which also handles a concave outline.</summary>
+    private static bool ContourContains(INfp contour, double x, double y)
+    {
+      var points = contour?.Points;
       if (points == null || points.Length < 3)
       {
         return false;
@@ -1488,7 +1551,9 @@ namespace DeepNestSharp.Ui.UserControls
     /// </summary>
     /// <param name="measureGap">Whether to work out the distance to the nearest neighbour, which is a
     /// search and so is only done when the part is at rest, not on every mouse move.</param>
-    private void UpdatePartInfo(bool measureGap)
+    /// <param name="force">Rewrite the field being typed in as well. Normally it is left alone so the
+    /// operator is not fought for it, but cancelling means putting back what they were editing.</param>
+    private void UpdatePartInfo(bool measureGap, bool force = false)
     {
       if (this.partInfo == null)
       {
@@ -1508,20 +1573,20 @@ namespace DeepNestSharp.Ui.UserControls
         ? "part"
         : System.IO.Path.GetFileName(pp.Part.Name);
 
-      // Don't fight the operator for a field they are typing in.
-      if (!this.partX.IsKeyboardFocusWithin)
+      // Don't fight the operator for a field they are typing in, unless they just cancelled.
+      if (force || !this.partX.IsKeyboardFocusWithin)
       {
-        this.partX.Text = placed.MinX.ToString("0.###", CultureInfo.CurrentCulture);
+        this.partX.Text = Shown(placed.MinX, PositionFormat);
       }
 
-      if (!this.partY.IsKeyboardFocusWithin)
+      if (force || !this.partY.IsKeyboardFocusWithin)
       {
-        this.partY.Text = placed.MinY.ToString("0.###", CultureInfo.CurrentCulture);
+        this.partY.Text = Shown(placed.MinY, PositionFormat);
       }
 
-      if (!this.partAngle.IsKeyboardFocusWithin)
+      if (force || !this.partAngle.IsKeyboardFocusWithin)
       {
-        this.partAngle.Text = pp.Rotation.ToString("0.##", CultureInfo.CurrentCulture);
+        this.partAngle.Text = Shown(pp.Rotation, AngleFormat);
       }
 
       if (measureGap)
@@ -1540,12 +1605,15 @@ namespace DeepNestSharp.Ui.UserControls
         return string.Empty;
       }
 
+      // Asked with NO allowance for the cut. The bisection settles where the answer flips, so allowing for
+      // it here would put every reading a whole kerf out and make two parts in contact report a kerf of
+      // daylight. A distance is a measurement; whether an overlap matters is a separate question.
       double cap = this.UnitsMm ? 25.0 : 1.0;
       double gap = NearestGap(
         pp,
         group.Representative.PartPlacements,
         cap,
-        (a, b, d) => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, d, this.SliverBetween(a, b)));
+        (a, b, d) => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, d, 0));
 
       string unit = this.UnitsMm ? "mm" : "in";
       return gap >= cap
@@ -1641,7 +1709,9 @@ namespace DeepNestSharp.Ui.UserControls
       }
       else if (e.Key == Key.Escape)
       {
-        this.UpdatePartInfo(measureGap: false);
+        // Put the typed text back BEFORE letting the focus go. Leaving it standing meant the blur that
+        // follows read it and applied the very edit that was being cancelled.
+        this.UpdatePartInfo(measureGap: false, force: true);
         this.host.Focus();
         e.Handled = true;
       }
@@ -1649,10 +1719,37 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void OnPartFieldCommit(object sender, RoutedEventArgs e) => this.CommitPartFields();
 
+    internal const string PositionFormat = "0.###";
+
+    internal const string AngleFormat = "0.##";
+
+    /// <summary>What the panel would show for this value.</summary>
+    internal static string Shown(double value, string format) => value.ToString(format, CultureInfo.CurrentCulture);
+
+    /// <summary>
+    /// Whether the operator actually typed something other than what the field was showing.
+    /// <para>The panel shows rounded text and the placement holds the exact number, so comparing the two
+    /// directly made every field look edited: landing in a box and leaving it moved the part by whatever
+    /// the display had rounded away, pushed an undo step and marked the project dirty. A part at 4.7503218
+    /// shown as 4.75 drifted a third of a thou each time it was looked at.</para>
+    /// </summary>
+    internal static bool WasEdited(string text, double current, string format)
+      => !string.Equals(text?.Trim(), Shown(current, format), StringComparison.Ordinal);
+
+    /// <summary>
+    /// Reads a typed number, accepting the decimal separator of the operator's Windows and the point every
+    /// CAD tool writes. Only the local one was accepted before, so on a comma-decimal machine "12.5" was
+    /// dropped without a word and the field quietly went back to the old value.
+    /// </summary>
+    internal static bool TryParseTyped(string text, out double value)
+      => double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)
+        || double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+
     /// <summary>
     /// Puts the selected part exactly where the numbers say. Typed coordinates are the part's bottom-left
     /// corner, so they become a translation; the angle goes through the same rotate the buttons use, which
-    /// turns about the part's centre and records one undo step.
+    /// turns about the part's centre and records one undo step. A field nobody touched is left alone, and
+    /// a number that cannot be read is said out loud rather than reverted in silence.
     /// </summary>
     private void CommitPartFields()
     {
@@ -1663,21 +1760,51 @@ namespace DeepNestSharp.Ui.UserControls
         return;
       }
 
-      if (double.TryParse(this.partAngle.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double angle))
+      bool unreadable = false;
+
+      if (WasEdited(this.partAngle.Text, pp.Rotation, AngleFormat))
       {
-        double delta = angle - pp.Rotation;
-        if (Math.Abs(delta) > 1e-9)
+        if (TryParseTyped(this.partAngle.Text, out double angle))
         {
-          this.RotateSelected(delta);
-          pp = this.selectedPp; // rotating REPLACES the placement
-          placed = pp.PlacedPart;
+          double delta = angle - pp.Rotation;
+          if (Math.Abs(delta) > 1e-9)
+          {
+            this.RotateSelected(delta);
+            pp = this.selectedPp; // rotating REPLACES the placement
+            placed = pp.PlacedPart;
+          }
+        }
+        else
+        {
+          unreadable = true;
         }
       }
 
-      bool haveX = double.TryParse(this.partX.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double x);
-      bool haveY = double.TryParse(this.partY.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double y);
-      double dx = haveX ? x - placed.MinX : 0;
-      double dy = haveY ? y - placed.MinY : 0;
+      double dx = 0, dy = 0;
+      if (WasEdited(this.partX.Text, placed.MinX, PositionFormat))
+      {
+        if (TryParseTyped(this.partX.Text, out double x))
+        {
+          dx = x - placed.MinX;
+        }
+        else
+        {
+          unreadable = true;
+        }
+      }
+
+      if (WasEdited(this.partY.Text, placed.MinY, PositionFormat))
+      {
+        if (TryParseTyped(this.partY.Text, out double y))
+        {
+          dy = y - placed.MinY;
+        }
+        else
+        {
+          unreadable = true;
+        }
+      }
+
       if (Math.Abs(dx) > 1e-9 || Math.Abs(dy) > 1e-9)
       {
         var before = PlacementSnapshot.Of(pp);
@@ -1689,7 +1816,12 @@ namespace DeepNestSharp.Ui.UserControls
         this.CommitManualEdit();
       }
 
-      this.UpdatePartInfo(measureGap: true);
+      this.UpdatePartInfo(measureGap: true, force: true);
+
+      if (unreadable && this.hintText != null)
+      {
+        this.hintText.Text = "that is not a number I can read  ·  the part has been left where it was";
+      }
     }
 
     private void UpdateEditButtons()
@@ -1753,21 +1885,19 @@ namespace DeepNestSharp.Ui.UserControls
         Point pt = e.GetPosition(this.canvas);
         double sheetX = pt.X;
         double sheetY = this.currentSheetH - pt.Y; // the canvas is Y-down, the placements are Y-up
-        for (int i = this.partPaths.Count - 1; i >= 0; i--)
+        var hit = PickAt(this.partPaths.Select(p => p.Pp).ToList(), sheetX, sheetY);
+        if (hit != null)
         {
-          if (OutlineContains(this.partPaths[i].Pp, sheetX, sheetY))
-          {
-            this.SelectPart(this.partPaths[i].Pp);
-            this.isDraggingPart = true;
-            this.dragInvalid = false;
-            this.dragStartCanvas = pt;
-            this.dragStartX = this.selectedPp.X;
-            this.dragStartY = this.selectedPp.Y;
-            this.dragCache = this.BuildDragCache(this.selectedPp);
-            this.host.CaptureMouse();
-            this.host.Cursor = Cursors.Hand;
-            return;
-          }
+          this.SelectPart(hit);
+          this.isDraggingPart = true;
+          this.dragInvalid = false;
+          this.dragStartCanvas = pt;
+          this.dragStartX = this.selectedPp.X;
+          this.dragStartY = this.selectedPp.Y;
+          this.dragCache = this.BuildDragCache(this.selectedPp);
+          this.host.CaptureMouse();
+          this.host.Cursor = Cursors.Hand;
+          return;
         }
 
         this.SelectPart(null);
@@ -2813,9 +2943,11 @@ namespace DeepNestSharp.Ui.UserControls
 
       var snapshot = useBefore ? record.Before : record.After;
       var placement = snapshot.ToPlacement();
+      var replaced = list[record.Index]; // the object leaves the sheet; it must leave the red set with it
       list[record.Index] = placement;
       this.selectedPp = placement;
-      this.SeedInvalid(); // the undone step may have left another part red; re-judge the lot, not just this one
+      this.invalid.Remove(replaced);
+      this.SeedInvalidOn(group); // the undone step may have cleared or created red elsewhere on THIS layout
 
       // Mirror onto the layout's copies, then show the sheet the edit belongs to.
       if (group.Members != null)
@@ -2912,7 +3044,10 @@ namespace DeepNestSharp.Ui.UserControls
       {
         if (!placements.Contains(c))
         {
-          this.invalid.Remove(c);
+          // Belongs to another layout, which this sweep has no way to judge: leaving it flagged is the
+          // only honest answer. Clearing it instead meant one arrow key on layout 1 wiped the red off
+          // layout 2, and since only a new result or an undo re-seeds, the export went on refusing over
+          // parts that were no longer drawn red anywhere.
           continue;
         }
 
@@ -3130,16 +3265,39 @@ namespace DeepNestSharp.Ui.UserControls
       this.invalid.Clear();
       foreach (var group in this.groups)
       {
-        var found = this.UnfitOn(group);
-        if (found == null)
-        {
-          continue;
-        }
+        this.SeedInvalidOn(group);
+      }
+    }
 
-        foreach (var pp in found.All)
-        {
-          this.invalid.Add(pp);
-        }
+    /// <summary>
+    /// The same judgement over ONE layout, leaving the other layouts' flags alone.
+    /// <para>What undo and redo need: a step belongs to a single layout, and re-judging every one of them
+    /// per keystroke put a pairwise sweep of the whole job on the dispatcher thread, so holding Ctrl+Z on
+    /// a dense multi-layout nest crawled. Nothing here can decide anything about another layout, which is
+    /// also why <c>RefreshInvalid</c> now leaves those flags standing rather than clearing them.</para>
+    /// </summary>
+    private void SeedInvalidOn(SheetGroup group)
+    {
+      var sheet = group?.Representative;
+      if (sheet?.PartPlacements == null)
+      {
+        return;
+      }
+
+      foreach (var pp in sheet.PartPlacements)
+      {
+        this.invalid.Remove(pp);
+      }
+
+      var found = this.UnfitOn(group);
+      if (found == null)
+      {
+        return;
+      }
+
+      foreach (var pp in found.All)
+      {
+        this.invalid.Add(pp);
       }
     }
   }
