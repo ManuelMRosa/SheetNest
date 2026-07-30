@@ -16,14 +16,30 @@ namespace DeepNestSharp.RasterNest
     internal const double Scale = 1e6;
 
     /// <summary>
-    /// How deep two outlines may bite into each other before it counts, when nothing better is known: the
-    /// caller supplies the job's own figure, which is the cut width (see <see cref="TooClose"/>).
-    /// <para>0.005in is just under an ordinary laser kerf; 0.13mm is the same distance, rounded for a
-    /// metric drawing rather than being the imperial number reused. Both are a hundred times the rounding
-    /// placements are saved at, so a reopened project cannot judge a nest differently from the live one.
+    /// The finest overlap that means anything at all: below this two placements are not distinguishable.
+    /// <para>Placements are written to the project rounded to four decimals
+    /// (<c>DoublePrecisionConverter</c>), so a difference under that cannot survive a save and reload, and
+    /// welding two edges coincident always lands a hair to one side of zero. Unlike a kerf this is a
+    /// property of how the number is stored rather than of how big the part is, so it is the same figure on
+    /// an inch drawing and on a metric one, and there is nothing here to convert wrongly.</para>
+    /// </summary>
+    internal const double PlacementNoise = 1e-4;
+
+    /// <summary>
+    /// How deep this pair may bite into each other before it counts: the width of the cut that is going to
+    /// run between them, when anybody knows it.
+    /// <para>A kerf is known for a job that came in toolpathed from SheetCam, and that is also the job whose
+    /// shared edge really is cut once. On a plain DXF nobody has said how wide the cut is, and standing a
+    /// kerf in for one meant handing every pair five thou of forgiveness whether or not a cut was ever
+    /// going to run there: two parts nested to touch could bite four thou into each other, pass in silence,
+    /// and be exported with both outlines written in full. Without a figure, only the noise is forgiven.
     /// </para>
     /// </summary>
-    internal static double DefaultSliver(bool unitsMm) => unitsMm ? 0.13 : 0.005;
+    internal static double SliverFor(double kerfA, double kerfB)
+    {
+      double kerf = Math.Max(kerfA, kerfB);
+      return kerf > 0 ? kerf : PlacementNoise;
+    }
 
     /// <summary>
     /// True when the two placed outlines are closer than <paramref name="clearance"/>.
@@ -150,7 +166,7 @@ namespace DeepNestSharp.RasterNest
       {
         // Deepest piece wins rather than the total: a long sliver alongside a real bite must not average
         // the bite away.
-        if (DepthOf(path) > limit)
+        if (BitesDeeperThan(path, limit))
         {
           return true;
         }
@@ -159,15 +175,22 @@ namespace DeepNestSharp.RasterNest
       return false;
     }
 
-    /// <summary>How deep one piece of overlap bites, in Clipper units: 2 x area / perimeter. For a sliver
-    /// of length L and depth d that is L*d over 2L, i.e. d exactly; for a square bite of side s it is s/2,
-    /// which is still a bite. Compact shapes and slivers therefore get judged by the same number.</summary>
-    private static double DepthOf(List<IntPoint> path)
+    /// <summary>
+    /// Whether one piece of overlap bites deeper than <paramref name="limit"/>, in Clipper units.
+    /// <para>Depth is the widest the piece gets, which is the diameter of the largest circle that fits
+    /// inside it: a sliver of length L and depth d measures d, and a square bite of side s measures s.
+    /// 2 x area / perimeter, which is what this used to ask, gives d for the sliver but only s/2 for the
+    /// square, so a job with a six thou cut waved through a ten thou corner. That ratio is still the way in
+    /// though, because for one piece it brackets the answer: the inscribed diameter is never below it and
+    /// never above twice it. Almost every call is settled by one of those two bounds, and only the band
+    /// between them pays for measuring properly.</para>
+    /// </summary>
+    private static bool BitesDeeperThan(List<IntPoint> path, double limit)
     {
       double area = Math.Abs(Clipper.Area(path));
       if (area <= 0 || path.Count < 3)
       {
-        return 0;
+        return false;
       }
 
       double perimeter = 0;
@@ -180,7 +203,51 @@ namespace DeepNestSharp.RasterNest
         perimeter += Math.Sqrt((dx * dx) + (dy * dy));
       }
 
-      return perimeter <= 0 ? 0 : 2 * area / perimeter;
+      if (perimeter <= 0)
+      {
+        return false;
+      }
+
+      double ratio = 2 * area / perimeter;
+      if (ratio > limit)
+      {
+        return true; // deep enough on the lower bound alone
+      }
+
+      if (2 * ratio <= limit)
+      {
+        return false; // cannot reach the limit even at the upper bound
+      }
+
+      return InscribedDiameter(path, limit) > limit;
+    }
+
+    /// <summary>
+    /// The diameter of the largest circle that fits inside the piece, found by shrinking it until nothing
+    /// is left. Only ever called on the narrow band where the cheap bounds disagree, and it stops as soon
+    /// as the answer is past <paramref name="limit"/>, so the count of offsets is small and fixed.
+    /// </summary>
+    private static double InscribedDiameter(List<IntPoint> path, double limit)
+    {
+      double lo = 0, hi = limit; // hi is a radius: a diameter past 2*hi was already settled above
+      for (int i = 0; i < 8; i++)
+      {
+        double mid = (lo + hi) / 2;
+        var offset = new ClipperOffset(2.0, Math.Max(1, mid * 0.0005));
+        offset.AddPath(path, JoinType.jtMiter, EndType.etClosedPolygon);
+        var shrunk = new List<List<IntPoint>>();
+        offset.Execute(ref shrunk, -mid);
+        if (shrunk.Count > 0)
+        {
+          lo = mid; // a circle of this radius still fits
+        }
+        else
+        {
+          hi = mid;
+        }
+      }
+
+      return 2 * lo;
     }
 
     internal static List<List<IntPoint>> Translate(List<List<IntPoint>> paths, long dx, long dy)

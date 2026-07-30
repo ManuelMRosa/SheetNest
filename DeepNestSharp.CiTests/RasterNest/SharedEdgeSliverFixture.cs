@@ -145,28 +145,70 @@
     }
 
     /// <summary>
-    /// On a plain DXF nobody has said how wide the cut is, so a figure stands in for one. The metric one is
-    /// the imperial one converted and rounded for a metric drawing, NOT the same number reused: that is the
-    /// mistake this project has already made, with a nudge step that moved a metric part a quarter of a
-    /// millimetre. The second assertion is the guard that would have caught it.
+    /// A compact bite is measured by how deep it goes, not by half of it. Judging by 2 x area / perimeter
+    /// reads a square of side s as s/2, so a job whose cut is six thou waved through a ten thou bite: twice
+    /// the kerf, and the parts really do come off notched. The long-edge cases above are what that formula
+    /// gets right, and they must keep working, which is why the two live in one fixture.
     /// </summary>
     [Fact]
-    public void TheFallbackIsTheSameDistanceInBothSystems()
+    public void ACompactBiteIsNotHalfAsDeepAsItLooks()
     {
-      double inches = PlacementCollision.DefaultSliver(unitsMm: false);
-      double mm = PlacementCollision.DefaultSliver(unitsMm: true);
+      var a = Bar(0, 0);
+      var b = Bar(Width - 0.01, Length - 0.01); // a 0.01 x 0.01 corner, ten thou into a six thou job
 
-      (inches * 25.4).Should().BeApproximately(mm, 0.02);
-      mm.Should().BeGreaterThan(10 * inches, "a metric job must not inherit the imperial number");
+      PlacementCollision.TooClose(a, b, 0, Kerf).Should().BeTrue("ten thou of material with six thou of cut to take it out");
     }
 
-    /// <summary>And it stands just under an ordinary kerf: forgiving enough to absorb placing by hand, far
-    /// too small to wave through material the cut will not take away.</summary>
+    /// <summary>
+    /// Where the cut is known, that is what it forgives. Where it is not, only the noise in the numbers is:
+    /// placements are stored rounded to four decimals, so anything finer than that cannot even survive a
+    /// save, while a thousandth of an inch of real overlap has to be reported.
+    /// <para>This is the part that used to be wrong. A plain DXF got a stand-in kerf of five thou and the
+    /// forgiveness was handed to every pair, whether or not one cut was ever going to run between them. Two
+    /// parts nested to touch on a plain drawing could bite four thou into each other and pass, and the
+    /// export wrote both outlines in full.</para>
+    /// </summary>
     [Fact]
-    public void TheFallbackSitsJustUnderAKerf()
+    public void OnlyAKnownCutForgivesAnything()
     {
-      PlacementCollision.DefaultSliver(unitsMm: false).Should().BeLessThan(Kerf);
-      PlacementCollision.DefaultSliver(unitsMm: false).Should().BeGreaterThan(0.001, "a thousandth is where hand placement lands");
+      PlacementCollision.SliverFor(Kerf, 0).Should().Be(Kerf, "the job said how wide its cut is");
+      PlacementCollision.SliverFor(0.002, Kerf).Should().Be(Kerf, "the wider of the pair is the one that runs");
+      PlacementCollision.SliverFor(0, 0).Should().Be(PlacementCollision.PlacementNoise);
+
+      PlacementCollision.PlacementNoise.Should().BeLessThan(
+        0.001, "a thousandth of an inch of overlap is real material, not a rounding artefact");
+    }
+
+    /// <summary>The same tolerance in a metric drawing, because it is a property of how the file stores a
+    /// number and not of how big the part is. The old stand-in kerf had to be converted between systems and
+    /// that is exactly where this project has slipped before.</summary>
+    [Fact]
+    public void TheNoiseFloorDoesNotDependOnTheUnits()
+    {
+      PlacementCollision.PlacementNoise.Should().BeGreaterThan(
+        0, "coincident edges land a hair either side of zero and must not be called an overlap");
+    }
+
+    /// <summary>What that buys on a plain drawing: four thou into a neighbour used to sit inside the
+    /// stand-in kerf and pass in silence. Nothing is going to cut it away, so it is an overlap.</summary>
+    [Fact]
+    public void OnAPlainDrawingFourThouIsAnOverlap()
+    {
+      var a = Bar(0, 0);
+      var b = Bar(Width - 0.004, 0);
+
+      PlacementCollision.TooClose(a, b, 0, PlacementCollision.SliverFor(0, 0)).Should().BeTrue();
+    }
+
+    /// <summary>And the other side of it, which is what the noise floor is for: edges welded coincident by
+    /// common line are not an overlap on a plain drawing either.</summary>
+    [Fact]
+    public void WeldedEdgesStillPassWithoutAKnownCut()
+    {
+      var a = Bar(0, 0);
+      var b = Bar(Width - 0.000001, 0);
+
+      PlacementCollision.TooClose(a, b, 0, PlacementCollision.SliverFor(0, 0)).Should().BeFalse();
     }
 
     private static INfp Bar(double x, double y)

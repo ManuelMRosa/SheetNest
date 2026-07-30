@@ -2171,14 +2171,12 @@ namespace DeepNestSharp.Ui.UserControls
     /// clearance the pair is short of, and a cut's width of that is nothing either. Reported as parts
     /// turning red when two radii met: they were a THOUSANDTH of an inch into each other, on a job whose
     /// kerf is six.</para>
-    /// <para>The kerf is known for a job that came in toolpathed from SheetCam. For a plain DXF nobody has
-    /// said how wide the cut is, so fall back to just under an ordinary laser kerf.</para>
+    /// <para>The kerf is known for a job that came in toolpathed from SheetCam, which is also the job whose
+    /// shared edge really does get cut once. For a plain DXF nobody has said how wide the cut is, so
+    /// nothing is forgiven beyond the noise in the numbers themselves.</para>
     /// </summary>
     private double SliverBetween(IPartPlacement a, IPartPlacement b)
-    {
-      double kerf = Math.Max(this.KerfOf(a), this.KerfOf(b));
-      return kerf > 0 ? kerf : RasterNest.PlacementCollision.DefaultSliver(this.UnitsMm);
-    }
+      => RasterNest.PlacementCollision.SliverFor(this.KerfOf(a), this.KerfOf(b));
 
     private double KerfOf(IPartPlacement pp)
     {
@@ -3020,7 +3018,8 @@ namespace DeepNestSharp.Ui.UserControls
     /// both on top of a neighbour and in the edge margin.
     /// </summary>
     /// <param name="sliverBetween">How deep a pair may bite into each other before it means anything - the
-    /// width of the cut about to run between them. Left out, an ordinary laser kerf is assumed.</param>
+    /// width of the cut about to run between them. Left out, nothing beyond the noise in the numbers is
+    /// forgiven; it used to assume an inch-drawing kerf, which a metric caller had no way to correct.</param>
     internal static Unfit FindUnfit(
       IReadOnlyList<IPartPlacement> placements,
       double sheetWidth,
@@ -3030,7 +3029,7 @@ namespace DeepNestSharp.Ui.UserControls
       Func<IPartPlacement, IPartPlacement, double> sliverBetween = null)
     {
       var unfit = new Unfit();
-      sliverBetween = sliverBetween ?? ((a, b) => RasterNest.PlacementCollision.DefaultSliver(false));
+      sliverBetween = sliverBetween ?? ((a, b) => RasterNest.PlacementCollision.PlacementNoise);
       for (int i = 0; i < placements.Count; i++)
       {
         var a = placements[i];
