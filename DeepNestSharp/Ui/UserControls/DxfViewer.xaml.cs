@@ -618,6 +618,17 @@ namespace DeepNestSharp.Ui.UserControls
       /// <summary>The physical sheets sharing this layout (null for synthetic plan groups) — manual
       /// edits to the representative are mirrored onto every member so all copies stay identical.</summary>
       public List<ISheetPlacement> Members { get; set; }
+
+      /// <summary>
+      /// Whether an edit made here reaches the nest that gets exported and saved.
+      /// <para>A condensed production plan proposes an arrangement ("cut 24 of A, 1 of B") that the
+      /// engine's own sheets do not match one for one: its remainder is assembled from copies, and its
+      /// full sheet stands for N physical sheets while being only one of them. Nothing carries an edit
+      /// from there back to <c>Result.UsedSheets</c>, which is what the SheetCam writeback reads and what
+      /// the project saves. The edit would sit on screen, go into the per-layout DXF, and be missing from
+      /// the cut file and from the reopened project. Better to not offer it than to lose it quietly.</para>
+      /// </summary>
+      public bool IsEditable => this.Members != null;
     }
 
     private void Render()
@@ -640,6 +651,7 @@ namespace DeepNestSharp.Ui.UserControls
 
       this.editBar.Visibility = Visibility.Visible;
       this.UpdateOverlapCount();
+      this.UpdateHint(); // editability is per sheet, so the line has to follow the navigation
 
       int idx = Math.Max(0, Math.Min(this.SheetIndex, this.groups.Count - 1));
       var group = this.groups[idx];
@@ -1209,12 +1221,22 @@ namespace DeepNestSharp.Ui.UserControls
       }
 
       this.SelectPart(null);
-      if (this.hintText != null)
+      this.UpdateHint();
+    }
+
+    /// <summary>The line under the canvas: what the mouse and keys do here, or why they do nothing.</summary>
+    private void UpdateHint()
+    {
+      if (this.hintText == null || this.MeasureMode)
       {
-        this.hintText.Text = this.EditMode
-          ? "click = select part  ·  drag = move  ·  arrows = nudge  ·  type a coordinate to place it exactly  ·  overlaps show red"
-          : "scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit";
+        return; // measuring writes its own running commentary
       }
+
+      this.hintText.Text = !this.EditMode
+        ? "scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit"
+        : this.CurrentSheetIsEditable()
+          ? "click = select part  ·  drag = move  ·  arrows = nudge  ·  type a coordinate to place it exactly  ·  overlaps show red"
+          : "this layout is a production-plan proposal, not one of the nested sheets, so it cannot be edited  ·  the sheets it stands for are the ones that get cut";
     }
 
     private bool MeasureMode => this.measureToggle != null && this.measureToggle.IsChecked == true;
@@ -1232,11 +1254,16 @@ namespace DeepNestSharp.Ui.UserControls
         this.EnsureMeasureShapes(); // so the snap ring can show while aiming the first click
       }
 
-      if (this.hintText != null)
+      if (this.MeasureMode)
       {
-        this.hintText.Text = this.MeasureMode
-          ? "measure: click two points (snaps to corners)"
-          : "scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit";
+        if (this.hintText != null)
+        {
+          this.hintText.Text = "measure: click two points (snaps to corners)";
+        }
+      }
+      else
+      {
+        this.UpdateHint();
       }
     }
 
@@ -1442,7 +1469,9 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void SelectPart(IPartPlacement pp)
     {
-      this.selectedPp = pp;
+      // Nothing is selectable on a sheet whose edits would be dropped, and with no selection every
+      // move, rotate, mirror and typed coordinate downstream falls out on its own null check.
+      this.selectedPp = this.CurrentSheetIsEditable() ? pp : null;
       foreach (var (path, p) in this.partPaths)
       {
         path.Fill = this.FillFor(p);
@@ -1718,7 +1747,7 @@ namespace DeepNestSharp.Ui.UserControls
         return;
       }
 
-      if (this.EditMode)
+      if (this.EditMode && this.CurrentSheetIsEditable())
       {
         // Topmost part under the cursor gets selected and dragged; empty space just deselects.
         Point pt = e.GetPosition(this.canvas);
@@ -2823,6 +2852,10 @@ namespace DeepNestSharp.Ui.UserControls
       int idx = Math.Max(0, Math.Min(this.SheetIndex, this.groups.Count - 1));
       return this.groups.Count == 0 ? null : this.groups[idx];
     }
+
+    /// <summary>Whether the sheet on screen is one an edit can actually be made to
+    /// (see <see cref="SheetGroup.IsEditable"/>).</summary>
+    private bool CurrentSheetIsEditable() => this.CurrentGroup()?.IsEditable == true;
 
     /// <summary>
     /// After a manual move/rotate: mirror the representative's placements onto every physical copy of

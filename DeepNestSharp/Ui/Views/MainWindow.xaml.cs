@@ -2056,6 +2056,11 @@ namespace DeepNestSharp.Ui.Views
     /// </summary>
     private void OnExportNestClicked(object sender, RoutedEventArgs e)
     {
+      if (this.RefuseWhileAnythingOverlaps("Export SheetCam Nest"))
+      {
+        return;
+      }
+
       if (!this.TryBuildReturnNest(out var nest, out string source, out int unplaced))
       {
         return;
@@ -2103,6 +2108,11 @@ namespace DeepNestSharp.Ui.Views
     private void OnSendToSheetCamClicked(object sender, RoutedEventArgs e)
     {
       if (string.IsNullOrEmpty(this.sheetCamReturnPath))
+      {
+        return;
+      }
+
+      if (this.RefuseWhileAnythingOverlaps("Send to SheetCam"))
       {
         return;
       }
