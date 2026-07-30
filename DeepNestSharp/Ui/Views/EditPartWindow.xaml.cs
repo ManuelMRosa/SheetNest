@@ -30,16 +30,8 @@ namespace DeepNestSharp.Ui.Views
       // Spacing is per-part; a part that has never been edited starts from the job default.
       this.spacingUpDown.Value = part.Spacing >= 0 ? part.Spacing : defaultSpacing;
 
-      // Common line is only offered where it can be honoured: the shared edge is cut ONCE, and only a
-      // SheetCam round trip carries that back to something that knows it. On a plain DXF the exporter has
-      // no notion of a shared cut, so both parts would be cut in full and the line between them run twice.
-      // Hidden rather than greyed, the same way the 3D group is hidden on a part that is not 3D.
-      if (DeepNestLib.NestProject.CommonLineRule.CameFromSheetCamNest(part))
-      {
-        this.commonLineCheck.Visibility = Visibility.Visible;
-        this.commonLineCheck.IsChecked = part.CommonLine;
-        this.spacingUpDown.IsEnabled = !part.CommonLine;
-      }
+      this.commonLineCheck.IsChecked = part.CommonLine;
+      this.spacingUpDown.IsEnabled = !part.CommonLine;
 
       var poly = LoadPolygon(part.Path);
 
@@ -233,12 +225,7 @@ namespace DeepNestSharp.Ui.Views
       this.part.MirrorQuantity = this.mirroredUpDown.Value ?? this.part.MirrorQuantity;
       this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
 
-      // Only where the box was offered, so a part that is not a SheetCam round trip cannot come back from
-      // this dialog claiming a shared cut nothing will honour.
-      if (DeepNestLib.NestProject.CommonLineRule.CameFromSheetCamNest(this.part))
-      {
-        this.part.CommonLine = this.commonLineCheck.IsChecked == true;
-      }
+      this.part.CommonLine = this.commonLineCheck.IsChecked == true;
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;
