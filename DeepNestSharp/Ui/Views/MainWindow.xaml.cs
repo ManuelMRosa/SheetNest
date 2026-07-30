@@ -613,6 +613,18 @@ namespace DeepNestSharp.Ui.Views
               g => g.Key,
               g => g.Min(o => o.CommonLine ? 0.0 : (o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing))),
               System.StringComparer.OrdinalIgnoreCase);
+
+          // And this project's own tooling, the same way a fresh nest hands it over. Without it the
+          // restored nest kept whatever the last job left behind: its lead-ins drawn over these parts, and
+          // worse, its kerf deciding how deep an overlap is forgiven here. A nest that was clean when it
+          // was saved could reopen red, or a job with no tooling at all could be judged with a kerf.
+          var restoredTooling = this.LoadNestTooling(doc.ProjectInfo);
+          this.dxfViewer.LeadPaths = restoredTooling.Count == 0
+            ? null
+            : restoredTooling.ToDictionary(kv => kv.Key, kv => kv.Value.Paths, System.StringComparer.OrdinalIgnoreCase);
+          this.dxfViewer.KerfByPart = restoredTooling.Count == 0
+            ? null
+            : restoredTooling.ToDictionary(kv => kv.Key, kv => kv.Value.Kerf, System.StringComparer.OrdinalIgnoreCase);
         }
 
         this.ApplyPartColours(doc.ProjectInfo.DetailLoadInfos);

@@ -108,8 +108,8 @@ namespace DeepNestSharp.CiTests
         .Should().BeFalse("the very same bounds are fine with no margin");
     }
 
-    /// <summary>The two faults are not the same job — an overlap gets moved by hand, a part in the margin
-    /// usually means the margin wants lowering and the nest re-running — so the refusal has to tell them
+    /// <summary>The two faults are not the same job. An overlap gets moved by hand; a part in the margin
+    /// usually means the margin wants lowering and the nest re-running. So the refusal has to tell them
     /// apart instead of putting both in one sentence.</summary>
     [Fact]
     public void TheTwoFaultsAreToldApart()

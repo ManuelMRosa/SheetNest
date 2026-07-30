@@ -2,7 +2,7 @@
   build-beta-zip.ps1
 
   Builds a portable SheetNest BETA: the self-contained publish plus the offline FreeCAD payload,
-  zipped. The tester unzips it and runs it — nothing is installed, so whatever stable they already
+  zipped. The tester unzips it and runs it. Nothing is installed, so whatever stable they already
   have stays exactly where it is and they never have to uninstall anything to try a beta.
 
   Betas are deliberately NOT shipped as MSIs. See installer\RELEASING.md for the reason.
@@ -12,7 +12,7 @@
 #>
 param(
   # The full beta version, suffix included: it names the folder inside the zip and the zip itself.
-  # The pattern also refuses a plain X.Y.Z — a stable ships as an MSI, through build-msi-<ver>.ps1.
+  # The pattern also refuses a plain X.Y.Z, because a stable ships as an MSI via build-msi-<ver>.ps1.
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^\d+\.\d+\.\d+-(alpha|beta|rc)\d+$')]
   [string]$Version

@@ -176,7 +176,7 @@
           // Add Part is 2D-only by design. 3D imports go through File > Import 3D, which probes the
           // sheet thickness and asks for the K-factor — never unfold silently with defaults here.
           this.MainViewModel.MessageService.DisplayMessageBox(
-            "To import a 3D part use File > Import 3D (STEP / IGES)... — it detects the sheet thickness and lets you set the K-factor.",
+            "To import a 3D part use File > Import 3D (STEP / IGES)... It detects the sheet thickness and lets you set the K-factor.",
             "Add Part",
             DeepNestLib.MessageBoxIcon.Information);
           continue;

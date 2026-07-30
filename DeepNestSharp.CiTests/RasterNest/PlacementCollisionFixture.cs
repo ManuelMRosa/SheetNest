@@ -1,4 +1,4 @@
-﻿namespace DeepNestSharp.CiTests.RasterNest
+namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -114,7 +114,7 @@
       long cachedMs = sw.ElapsedMilliseconds;
 
       // The same queries the way the viewer used to run them, faithfully: TooClose(a.PlacedPart,
-      // b.PlacedPart, ...) per neighbour â€” and PlacedPart is `Part.Shift(this)`, i.e. a FULL copy of the
+      // b.PlacedPart, ...) per neighbour, and PlacedPart is `Part.Shift(this)`, i.e. a FULL copy of the
       // polygon and its holes, allocated twice per pair.
       var dragPp = new PartPlacement(dragged);
       var neighbourPps = BuildSheetPlacements();
@@ -141,7 +141,7 @@
         2000, "manual mode must stay responsive while dragging (it used to rebuild every polygon per query)");
     }
 
-    /// <summary>Same drag benchmark at an arbitrary unit scale â€” a metric job runs the same shapes with
+    /// <summary>Same drag benchmark at an arbitrary unit scale: a metric job runs the same shapes with
     /// coordinates ~25x larger, which is where the drag cost used to explode.</summary>
     private string MeasureDrag(double u, int queries)
     {
@@ -180,7 +180,7 @@
       return $"{queries} drag queries: cached {cachedMs} ms, uncached {sw.ElapsedMilliseconds} ms";
     }
 
-    /// <summary>26 placed parts in two rows â€” the reference sheet from the user's job.</summary>
+    /// <summary>26 placed parts in two rows, the reference sheet from the user's job.</summary>
     private static List<INfp> BuildSheet()
       => BuildSheetPlacements().Select(pp => pp.PlacedPart).ToList();
 
