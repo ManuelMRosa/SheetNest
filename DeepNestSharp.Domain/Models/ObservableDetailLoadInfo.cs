@@ -190,9 +190,16 @@
     {
       get
       {
-        string spacing = detailLoadInfo.CommonLine ? "common line"
-          : detailLoadInfo.Spacing < 0 ? "spacing: default"
-          : $"spacing {detailLoadInfo.Spacing:0.###}";
+        // Both matter now: the mode says who this part may share a cut with, the spacing says what it
+        // keeps to everyone else. Showing only one of them hides half the setting.
+        string cc = detailLoadInfo.CommonCutting switch
+        {
+          CommonCuttingMode.Unrestricted => "common line · ",
+          CommonCuttingMode.SamePart => "common line (same part) · ",
+          _ => string.Empty,
+        };
+        string spacing = cc + (detailLoadInfo.Spacing < 0 ? "spacing: default"
+          : $"spacing {detailLoadInfo.Spacing:0.###}");
         string rot = detailLoadInfo.Rotations switch
         {
           1 => "as drawn",

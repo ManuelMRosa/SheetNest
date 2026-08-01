@@ -30,8 +30,12 @@ namespace DeepNestSharp.Ui.Views
       // Spacing is per-part; a part that has never been edited starts from the job default.
       this.spacingUpDown.Value = part.Spacing >= 0 ? part.Spacing : defaultSpacing;
 
-      this.commonLineCheck.IsChecked = part.CommonLine;
-      this.spacingUpDown.IsEnabled = !part.CommonLine;
+      // Common cutting is a MODE, not a switch, and spacing stays live in all three: it is what the
+      // part keeps to everything it may not share a cut with.
+      this.commonCuttingCombo.Items.Add("None");
+      this.commonCuttingCombo.Items.Add("Unrestricted (any part)");
+      this.commonCuttingCombo.Items.Add("Same part");
+      this.commonCuttingCombo.SelectedIndex = (int)part.CommonCutting;
 
       var poly = LoadPolygon(part.Path);
 
@@ -201,16 +205,6 @@ namespace DeepNestSharp.Ui.Views
       return "Lowest";
     }
 
-    private void OnCommonLineChanged(object sender, RoutedEventArgs e)
-    {
-      if (this.spacingUpDown != null)
-      {
-        // Common-line = spacing 0 by definition; the field stays visible (greyed) so the previous
-        // value is still there when the box is unticked.
-        this.spacingUpDown.IsEnabled = this.commonLineCheck.IsChecked != true;
-      }
-    }
-
     private void OnOk(object sender, RoutedEventArgs e)
     {
       // Xceed up/downs only commit TYPED text on focus loss — pressing Enter (OK is IsDefault) would
@@ -225,7 +219,7 @@ namespace DeepNestSharp.Ui.Views
       this.part.MirrorQuantity = this.mirroredUpDown.Value ?? this.part.MirrorQuantity;
       this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
 
-      this.part.CommonLine = this.commonLineCheck.IsChecked == true;
+      this.part.CommonCutting = (CommonCuttingMode)System.Math.Max(0, System.Math.Min(2, this.commonCuttingCombo.SelectedIndex));
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;
