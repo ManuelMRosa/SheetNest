@@ -5,6 +5,7 @@
   using System.Linq;
   using ClipperLib;
   using DeepNestLib;
+  using DeepNestLib.NestProject;
 
   /// <summary>A placed part being compacted: its rotated polygon and the placement offset (inches).</summary>
   internal sealed class CompactItem
@@ -12,7 +13,9 @@
     public INfp Poly;       // rotated part geometry (absolute points = Poly points + (X, Y))
     public double X;
     public double Y;
-    public double Spacing;  // this part's spacing (in); 0 = common-line part (slides to true contact)
+    public double Spacing;  // this part's NOMINAL spacing (in) — what it keeps to anything it cannot share a cut with
+    public CommonCuttingMode Cc;  // who it may share a cut edge with; None = nobody
+    public int ShareKey;    // identity for SamePart: same drawing AND same hand. Only compared, never ordered
   }
 
   /// <summary>
@@ -46,6 +49,32 @@
     /// spacing. (Kept at the historic 0.003/2 hazard threshold.)
     /// </summary>
     internal const double MixedPairFloor = 0.0015;
+
+    /// <summary>
+    /// True when these two placements are allowed to share a cut edge, so the pair closes to CONTACT
+    /// instead of to a clearance. The stricter of the two modes wins: a Same-part item shares only with
+    /// its own kind no matter who is looking at it, which is what "Same part" means everywhere else.
+    /// </summary>
+    /// <remarks>
+    /// This replaced a `Spacing &lt;= 0` test on both sides. That test conflated two different things —
+    /// "shares a cut" and "asks for no clearance" — and the price was that a common-line part offered
+    /// NOTHING to a spaced neighbour, so the pair closed to sB/2 instead of (sA + sB)/2. Measured on
+    /// three 20" squares: a neighbour that asked for 0.5" got 0.2536".
+    /// </remarks>
+    internal static bool MayShare(CompactItem a, CompactItem b)
+    {
+      if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
+      {
+        return false;
+      }
+
+      if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
+      {
+        return a.ShareKey == b.ShareKey;
+      }
+
+      return true;
+    }
 
     /// <summary>
     /// Compact one sheet's placements in place (mutates item X/Y). Every part slides toward the pack
@@ -95,13 +124,20 @@
       }
 
       // Clearance is PER PAIR: spacing pairs need (sA+sB)/2 â€” expressed by half-inflated shells â€” and
-      // CC-CC pairs close to EXACT contact (CommonLineGap = 0: the shared edge exports as one cut).
-      // The CC shell must NOT leak into CC-vs-spaced pairs (the raster already placed those at exactly
-      // s/2, and inflating would make every one look violated), hence TWO shells per item.
+      // pairs that may SHARE a cut close to EXACT contact (CommonLineGap = 0: the shared edge exports as
+      // one cut). The CC shell must NOT leak into shared-vs-spaced pairs (the raster already placed those
+      // at exactly s/2, and inflating would make every one look violated), hence TWO shells per item.
+      // Which shell a pair is judged by is MayShare's call, not the spacing's: a common-cut part still
+      // carries its full spacing for everyone it cannot share with.
       var pathsRaw = items.Select(ToPaths).ToArray();
       var pathsHalf = items.Select(it => it.Spacing > 0 ? Inflate(ToPaths(it), it.Spacing / 2.0) : ToPaths(it)).ToArray();
-      var pathsCC = items.Select(it => it.Spacing <= 0 ? Inflate(ToPaths(it), CommonLineGap / 2.0) : null).ToArray();
-      var bounds = items.Select((it, i) => BoundsOf(pathsCC[i] ?? pathsHalf[i])).ToArray();
+      var pathsCC = items.Select(it => it.Cc != CommonCuttingMode.None ? Inflate(ToPaths(it), CommonLineGap / 2.0) : null).ToArray();
+      // Box pre-filter for every pair test below, so it has to be the OUTER of an item's two shells or a
+      // pair gets skipped before it is ever measured. pathsHalf always contains pathsCC (raw, inflated by
+      // nothing). This used to read `pathsCC[i] ?? pathsHalf[i]` and was harmless only because a
+      // common-line item had spacing 0, making both shells the same outline. Now that such an item keeps
+      // its real spacing, taking the CC box let a spaced neighbour slide to half its clearance unchecked.
+      var bounds = items.Select((it, i) => BoundsOf(pathsHalf[i])).ToArray();
 
       // HARD INVARIANT: no move may ever create a REAL overlap. The engine hands us an overlap-free
       // layout; every push/slide below is additionally checked against the raw outlines of ALL parts.
@@ -133,7 +169,7 @@
         return true;
       }
 
-      bool BothCC(int i, int j) => items[i].Spacing <= 0 && items[j].Spacing <= 0;
+      bool BothCC(int i, int j) => MayShare(items[i], items[j]);
 
       bool ValidOffset(int i, double ox, double oy)
       {
@@ -185,7 +221,7 @@
             pathsCC[mm] = Translate(pathsCC[mm], tx, ty);
           }
 
-          bounds[mm] = BoundsOf(pathsCC[mm] ?? pathsHalf[mm]);
+          bounds[mm] = BoundsOf(pathsHalf[mm]); // the OUTER shell, same reason as where bounds is built
         }
       }
 
@@ -486,7 +522,7 @@
         foreach (int i in order)
         {
           cancel.ThrowIfCancellationRequested();
-          if (items[i].Spacing > 0 || processed[i])
+          if (items[i].Cc == CommonCuttingMode.None || processed[i])
           {
             continue;
           }
@@ -616,7 +652,7 @@
           continue;
         }
 
-        var theirs = items[j].Spacing <= 0 ? pathsRaw[j] : pathsHalf[j];
+        var theirs = MayShare(items[i], items[j]) ? pathsRaw[j] : pathsHalf[j];
 
         // BBox pre-filter (essential: without it an 800-part common-line job timed out — this scan
         // is O(vertsA x vertsB) per pair). The constraint can only bite if it overlaps my V-range
@@ -741,9 +777,9 @@
         var padded = new IntRect(bi.left - pad, bi.top - pad, bi.right + pad, bi.bottom + pad);
         for (int j = i + 1; j < items.Count; j++)
         {
-          if (items[i].Spacing <= 0 && items[j].Spacing <= 0)
+          if (MayShare(items[i], items[j]))
           {
-            continue; // common-line pair — exact contact is intended
+            continue; // shared-cut pair — exact contact is intended
           }
 
           if (!BoxesTouch(padded, rawBounds[j]))
@@ -782,7 +818,7 @@
       var grownByFloor = new Dictionary<double, List<List<IntPoint>>>();
       foreach (var it in items)
       {
-        double req = cand.Spacing <= 0 && it.Spacing <= 0
+        double req = MayShare(cand, it)
           ? CommonLineGap
           : (Math.Max(0, cand.Spacing) + Math.Max(0, it.Spacing)) / 2.0;
         double floor = Math.Max(0, req - Eps);

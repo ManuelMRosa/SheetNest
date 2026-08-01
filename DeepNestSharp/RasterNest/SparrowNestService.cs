@@ -11,6 +11,7 @@
   using System.Threading.Tasks;
   using ClipperLib;
   using DeepNestLib;
+  using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
 
   /// <summary>
@@ -44,11 +45,20 @@
     {
       public int Source;
       public INfp Nfp;        // original (rendered) geometry
-      public INfp Dilated;    // tooling footprint grown by spacing/2 â€” what sparrow packs
+      public INfp Dilated;    // tooling footprint grown by FitSpacing/2 â€” what sparrow packs
       public INfp Tooling;    // tooling footprint WITHOUT the spacing shell â€” what compaction must respect
       public int[] Angles;    // allowed orientations (discrete fallback + used by hole-filling)
       public bool Continuous; // "Free" rotation â†’ send NO orientation list so sparrow rotates continuously
-      public double EffSpacing;
+      public double EffSpacing;   // NOMINAL spacing: what this part keeps to anything it cannot share a cut with
+      public CommonCuttingMode Cc; // who it may share a cut edge with; None = nobody
+      public int ShareKey;    // identity for SamePart: same drawing AND same hand
+
+      // What to grow by where only ONE polygon per part can be handed over: the engine's input and the
+      // hole filler. Zero when this part may share with EVERY other part in the job (then a tight pack is
+      // exactly right and nothing is lost), otherwise the full nominal spacing, because those two callers
+      // cannot express a clearance that depends on which neighbour it is. Compaction can, and uses
+      // EffSpacing with MayShare instead.
+      public double FitSpacing;
       public double Kerf;     // cut width (drawing units) â€” the exact gap common-line neighbours snap to
       public int Qty;
       public bool Mirrored;   // this population is X-flipped â€” placements carry IsMirrored for the exporter
@@ -275,6 +285,15 @@
       var helper = new NestExecutionHelper();
       var loaded = new List<Loaded>();
       int source = 0;
+
+      // The engine takes ONE polygon per part and has no notion of a clearance that depends on which
+      // neighbour it is, so the shell we grow it by has to answer for every neighbour at once. Grow by
+      // nothing only when every part in the job may share a cut with every other, which is when a tight
+      // pack is exactly right; otherwise carry the full spacing and let compaction reclaim the contact
+      // between the pairs that really do share. When they all share this is byte-for-byte what the old
+      // job-wide common-line flag did.
+      bool everyPartShares = parts.Count > 0 && parts.All(p => p != null && p.Cc != CommonCuttingMode.None);
+
       foreach (var part in parts)
       {
         if (part == null || string.IsNullOrWhiteSpace(part.Path) || part.Quantity <= 0)
@@ -318,6 +337,7 @@
           }
 
           double effSpacing = part.Spacing >= 0 ? part.Spacing : Math.Max(0, spacing);
+          double fitSpacing = everyPartShares ? 0 : effSpacing;
 
           // Mirroring is baked into the geometry above, so the tooling has to follow it.
           var toolPaths = part.ToolPaths;
@@ -330,7 +350,7 @@
           {
             Source = source,
             Nfp = nfp,
-            Dilated = ToolingFootprint(nfp, toolPaths, part.Kerf, effSpacing),
+            Dilated = ToolingFootprint(nfp, toolPaths, part.Kerf, fitSpacing),
 
             // Same shape without the spacing shell: compaction adds the spacing itself, so handing it
             // the dilated one would double-count. With no tooling this IS the outline, which keeps plain
@@ -339,6 +359,8 @@
             Angles = RotationCodes.PermittedSet(code),
             Continuous = code == 36, // only "Free" (sentinel 36) is continuous; 1001/1002/1003 are discrete sets
             EffSpacing = effSpacing,
+            FitSpacing = fitSpacing,
+            Cc = part.Cc,
             Kerf = Math.Max(0, part.Kerf),
             Qty = part.Quantity,
             Mirrored = part.Mirrored,
@@ -563,6 +585,7 @@
       var spacingById = batch.ToDictionary(l => l.Source, l => l.EffSpacing);
       var kerfById = batch.ToDictionary(l => l.Source, l => l.Kerf);
       var toolingById = batch.ToDictionary(l => l.Source, l => l.Tooling);
+      var ccById = batch.ToDictionary(l => l.Source, l => (l.Cc, l.ShareKey));
 
       var all = new List<IPartPlacement>();
       foreach (var pi in placed.EnumerateArray())
@@ -609,6 +632,8 @@
         X = pp.X,
         Y = pp.Y,
         Spacing = spacingById.TryGetValue(pp.Source, out double sp) ? sp : 0,
+        Cc = ccById.TryGetValue(pp.Source, out var cc) ? cc.Cc : CommonCuttingMode.None,
+        ShareKey = ccById.TryGetValue(pp.Source, out var sk) ? sk.ShareKey : 0,
       }).ToList();
       RasterCompact.Compact(compactItems, sheetWin, sheetHin, margin, cancel: cancel);
       for (int k = 0; k < all.Count; k++)
@@ -1008,7 +1033,7 @@
               var epath = DeepNestClipper.ScaleUpPath(existing.PlacedPart.Points, scale);
               if (ContainedIn(epath, hole, seedEps))
               {
-                double eff = loadedById.TryGetValue(existing.Source, out var el) ? el.EffSpacing : 0;
+                double eff = loadedById.TryGetValue(existing.Source, out var el) ? el.FitSpacing : 0;
                 var grown = OffsetOutward(existing.PlacedPart, eff / 2.0);
                 occupants.Add(DeepNestClipper.ScaleUpPath(grown.Points, scale));
               }
@@ -1029,7 +1054,11 @@
                   // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline â€” a part dropped
                   // into a hole has to keep its cut clear of the surrounding part just like any other.
                   var forFit = loaded.Tooling ?? loaded.Nfp;
-                  var dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), loaded.EffSpacing / 2.0);
+                  // FitSpacing, not EffSpacing: like the engine, this grows ONE polygon and then measures it
+                  // against whatever is already in the hole, so it cannot ask for a clearance that depends
+                  // on the neighbour. Using the nominal spacing here would fit fewer parts into the holes of
+                  // an all-common-cut job than before, which is a silent loss of material.
+                  var dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), loaded.FitSpacing / 2.0);
                   if ((dil.MaxX - dil.MinX) > (hb.MaxX - hb.MinX) / scale || (dil.MaxY - dil.MinY) > (hb.MaxY - hb.MinY) / scale)
                   {
                     continue;

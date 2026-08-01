@@ -6,6 +6,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   using System.Linq;
   using ClipperLib;
   using DeepNestLib;
+  using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
   using DeepNestSharp.RasterNest;
   using FluentAssertions;
@@ -78,8 +79,8 @@ namespace DeepNestSharp.CiTests.RasterNest
       // slide them right together.
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = tooling, X = 1, Y = 1, Spacing = 0 },
-        new CompactItem { Poly = tooling, X = 60, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = tooling, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
+        new CompactItem { Poly = tooling, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
       };
 
       RasterCompact.Compact(items, 200, 200, 0.5);
@@ -114,8 +115,8 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = withLead, X = 1, Y = 1, Spacing = 0 },   // lead points right, toward B
-        new CompactItem { Poly = plain, X = 60, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = withLead, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },   // lead points right, toward B
+        new CompactItem { Poly = plain, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
       };
 
       RasterCompact.Compact(items, 400, 200, 0.5);
@@ -143,8 +144,8 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = outline, X = 1, Y = 1, Spacing = 0 },
-        new CompactItem { Poly = outline, X = 60, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = outline, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
+        new CompactItem { Poly = outline, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
       };
 
       RasterCompact.Compact(items, 200, 200, 0.5);

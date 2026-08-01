@@ -1392,7 +1392,7 @@ namespace DeepNestSharp.Ui.Views
         {
           tooling.TryGetValue(o.Path, out var tool);
 
-          bool commonLine = o.CommonLine;
+          var cc = o.CommonCutting;
           var populations = new List<RasterPartInfo>
           {
             new RasterPartInfo
@@ -1401,8 +1401,8 @@ namespace DeepNestSharp.Ui.Views
               Quantity = o.Quantity + o.Extra,               // required + spares
               Rotations = o.Rotations,                       // -1 = engine default
               Priority = o.Priority,                         // higher nests first
-              Spacing = commonLine ? 0.0 : o.Spacing,        // common-line = touch; -1 = job default
-              CommonLine = commonLine,
+              Spacing = o.Spacing,                           // kept to whoever it cannot share a cut with; -1 = job default
+              Cc = cc,
               ToolPaths = tool.Paths,
               Kerf = tool.Kerf,
             },
@@ -1417,8 +1417,8 @@ namespace DeepNestSharp.Ui.Views
               Quantity = o.MirrorQuantity,
               Rotations = o.Rotations,
               Priority = o.Priority,
-              Spacing = commonLine ? 0.0 : o.Spacing,
-              CommonLine = commonLine,
+              Spacing = o.Spacing,
+              Cc = cc,
               Mirrored = true,
               ToolPaths = tool.Paths,
               Kerf = tool.Kerf,
@@ -1496,7 +1496,7 @@ namespace DeepNestSharp.Ui.Views
 
         // Common-line jobs need aligned grid layout (identical parts one kerf apart, edges coinciding) so
         // the post processor sees the shared cut and cuts it once — sparrow's irregular packing never does.
-        bool commonLineJob = parts.Count > 0 && parts.All(p => p.CommonLine);
+        bool commonLineJob = parts.Count > 0 && parts.All(p => p.Cc != DeepNestLib.NestProject.CommonCuttingMode.None);
 
         var token = nestCts.Token;
         var (result, error) = await Task.Run(() =>
