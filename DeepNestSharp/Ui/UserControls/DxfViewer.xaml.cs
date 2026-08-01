@@ -129,6 +129,11 @@ namespace DeepNestSharp.Ui.UserControls
     /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
     public double DefaultPartSpacing { get; set; }
 
+    /// <summary>Common cutting mode per part file (keyed by <c>Part.Name</c>, i.e. its path), set by the
+    /// window alongside <see cref="PartSpacings"/>. Absent = None. Without it, hand editing would demand
+    /// full clearance between two parts the nester deliberately placed touching, and mark them red.</summary>
+    internal IReadOnlyDictionary<string, DeepNestLib.NestProject.CommonCuttingMode> PartCommonCutting { get; set; }
+
     /// <summary>How far every part must stay from the sheet edge (drawing units) — the same margin the
     /// nester was given, so editing by hand cannot break what the job asked for. Set by the window.</summary>
     public double SheetEdgeMargin { get; set; }
@@ -2284,12 +2289,56 @@ namespace DeepNestSharp.Ui.UserControls
     private bool TooClose(IPartPlacement a, IPartPlacement b)
       => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, this.ClearanceBetween(a, b), this.SliverBetween(a, b));
 
-    /// <summary>The clearance this pair must keep: (spacingA + spacingB) / 2, or the CAM-safe common-line
-    /// gap when either side is a common-line part (spacing 0 — they may touch, only real overlap fails).</summary>
+    /// <summary>The clearance this pair must keep: (spacingA + spacingB) / 2, or the common-line gap when
+    /// the two are allowed to share a cut (they may touch, only real overlap fails). Which of the two it is
+    /// depends on WHO the pair is, exactly as it does in the nester: a Same-part item touches its own kind
+    /// and keeps its distance from everything else.</summary>
     private double ClearanceBetween(IPartPlacement a, IPartPlacement b)
+      => ClearanceFor(this.SpacingOf(a), this.SpacingOf(b), this.MayShare(a, b));
+
+    /// <summary>The clearance rule itself, over plain numbers so it can be tested without a control.</summary>
+    internal static double ClearanceFor(double spacingA, double spacingB, bool mayShare)
     {
-      double clearance = (this.SpacingOf(a) + this.SpacingOf(b)) / 2.0;
+      if (mayShare)
+      {
+        return RasterNest.RasterCompact.CommonLineGap;
+      }
+
+      double clearance = (spacingA + spacingB) / 2.0;
       return clearance <= 0 ? RasterNest.RasterCompact.CommonLineGap : clearance;
+    }
+
+    /// <summary>
+    /// Same rule the nester applies, on the same identity: the same drawing AND the same hand. Static over
+    /// its inputs for the same reason IsOutsideUsableArea is — one notion of "may these two touch", callable
+    /// from a test without standing up a WPF control.
+    /// </summary>
+    internal static bool MayShare(
+      DeepNestLib.NestProject.CommonCuttingMode ccA, string pathA, bool mirroredA,
+      DeepNestLib.NestProject.CommonCuttingMode ccB, string pathB, bool mirroredB)
+    {
+      if (ccA == DeepNestLib.NestProject.CommonCuttingMode.None || ccB == DeepNestLib.NestProject.CommonCuttingMode.None)
+      {
+        return false;
+      }
+
+      if (ccA == DeepNestLib.NestProject.CommonCuttingMode.SamePart || ccB == DeepNestLib.NestProject.CommonCuttingMode.SamePart)
+      {
+        return string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase) && mirroredA == mirroredB;
+      }
+
+      return true;
+    }
+
+    private bool MayShare(IPartPlacement a, IPartPlacement b)
+      => MayShare(this.CcOf(a), a?.Part?.Name, a?.IsMirrored ?? false, this.CcOf(b), b?.Part?.Name, b?.IsMirrored ?? false);
+
+    private DeepNestLib.NestProject.CommonCuttingMode CcOf(IPartPlacement pp)
+    {
+      string key = pp?.Part?.Name;
+      return key != null && this.PartCommonCutting != null && this.PartCommonCutting.TryGetValue(key, out var cc)
+        ? cc
+        : DeepNestLib.NestProject.CommonCuttingMode.None;
     }
 
     /// <summary>

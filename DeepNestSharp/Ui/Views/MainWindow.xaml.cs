@@ -611,8 +611,12 @@ namespace DeepNestSharp.Ui.Views
             .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
               g => g.Key,
-              g => g.Min(o => o.CommonLine ? 0.0 : (o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing))),
+              g => g.Min(o => o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing)),
               System.StringComparer.OrdinalIgnoreCase);
+          this.dxfViewer.PartCommonCutting = doc.ProjectInfo.DetailLoadInfos
+            .Where(o => !string.IsNullOrWhiteSpace(o.Path))
+            .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(o => o.CommonCutting)), System.StringComparer.OrdinalIgnoreCase);
 
           // And this project's own tooling, the same way a fresh nest hands it over. Without it the
           // restored nest kept whatever the last job left behind: its lead-ins drawn over these parts, and
@@ -1539,6 +1543,13 @@ namespace DeepNestSharp.Ui.Views
               g => g.Min(p => p.Spacing >= 0 ? p.Spacing : System.Math.Max(0, spacing)),
               System.StringComparer.OrdinalIgnoreCase);
 
+          // And the mode, or hand editing would demand full clearance between parts the nester put
+          // touching on purpose and paint the whole layout red. Same tie-break as the spacing above: when
+          // one file is listed twice, take the most permissive so editing never blocks what the nest allowed.
+          this.dxfViewer.PartCommonCutting = parts
+            .GroupBy(p => p.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(p => p.Cc)), System.StringComparer.OrdinalIgnoreCase);
+
           // Draw the lead-ins/outs the engine just reserved room for, so the gaps it left make sense, and
           // the cut itself as a band of the real kerf width. Null clears any tooling from a previous nest.
           this.dxfViewer.LeadPaths = tooling.Count == 0
@@ -1976,6 +1987,31 @@ namespace DeepNestSharp.Ui.Views
     /// Adopts the job's clearances. Nesting tighter than SheetCam asked for produces parts that touch,
     /// which is unusable as a cut file — so the file's spacings win over whatever the app had.
     /// </summary>
+    /// <summary>
+    /// The loosest of several common cutting modes, for when one DXF is listed more than once. Not the
+    /// enum's own order: Unrestricted shares with everyone, Same part only with its own kind, None with
+    /// nobody. The viewer needs the loosest so hand editing never refuses a contact the nest allowed.
+    /// </summary>
+    private static DeepNestLib.NestProject.CommonCuttingMode MostPermissiveCc(
+      System.Collections.Generic.IEnumerable<DeepNestLib.NestProject.CommonCuttingMode> modes)
+    {
+      var best = DeepNestLib.NestProject.CommonCuttingMode.None;
+      foreach (var m in modes)
+      {
+        if (m == DeepNestLib.NestProject.CommonCuttingMode.Unrestricted)
+        {
+          return m;
+        }
+
+        if (m == DeepNestLib.NestProject.CommonCuttingMode.SamePart)
+        {
+          best = m;
+        }
+      }
+
+      return best;
+    }
+
     /// <summary>True when the job is common-line: SheetCam signals it with PartSpacing="0" — the parts
     /// share the cut and end up a single kerf apart, not a part gap.</summary>
     private static bool IsCommonLineJob(DeepNestLib.IO.SheetCamNestFile nest)
