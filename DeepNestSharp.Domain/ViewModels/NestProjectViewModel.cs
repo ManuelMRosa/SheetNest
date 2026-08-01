@@ -257,7 +257,7 @@
     /// <summary>Metadata for one part imported from a SheetCam .nest — lets the arrangement be written
     /// back into that file and the temp DXF rebuilt if it is gone.</summary>
     public readonly record struct NestPartInfo(
-      string DxfPath, string NestSourcePath, string NestPartName, bool NestUnitInch, int Quantity, bool CommonLine);
+      string DxfPath, string NestSourcePath, string NestPartName, bool NestUnitInch, int Quantity, CommonCuttingMode CommonCutting);
 
     /// <summary>Adds the parts of a SheetCam .nest, each carrying its source file and the quantity the job wants.</summary>
     public void AddNestParts(System.Collections.Generic.IEnumerable<NestPartInfo> parts)
@@ -276,7 +276,7 @@
           NestSourcePath = p.NestSourcePath,
           NestPartName = p.NestPartName,
           NestUnitInch = p.NestUnitInch,
-          CommonLine = p.CommonLine,
+          CommonCutting = p.CommonCutting,
         });
       }
 

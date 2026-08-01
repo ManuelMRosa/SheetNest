@@ -1895,9 +1895,9 @@ namespace DeepNestSharp.Ui.Views
         }
 
         // PartSpacing="0" means common-line: nest the copies touching so they share the cut.
-        bool commonLine = IsCommonLineJob(nest);
+        var commonCutting = CommonCuttingOf(nest);
         doc.AddNestParts(written.Select(w => new NestProjectViewModel.NestPartInfo(
-          w.DxfPath, nestPath, w.Part.Name, !this.unitsMm, w.Part.Quantity, commonLine)));
+          w.DxfPath, nestPath, w.Part.Name, !this.unitsMm, w.Part.Quantity, commonCutting)));
 
         this.ApplyNestSpacings(nest);
 
@@ -2016,6 +2016,14 @@ namespace DeepNestSharp.Ui.Views
     /// share the cut and end up a single kerf apart, not a part gap.</summary>
     private static bool IsCommonLineJob(DeepNestLib.IO.SheetCamNestFile nest)
       => nest.PartSpacing * nest.SettingsToDrawingUnits(false) <= 0;
+
+    /// <summary>
+    /// The mode to import a SheetCam job as. Unrestricted, never Same part: the file says the JOB shares
+    /// cuts and says nothing about which parts may share with which, so restricting it here would invent a
+    /// rule the operator never asked for and quietly pack the sheet looser than SheetCam expected.
+    /// </summary>
+    internal static CommonCuttingMode CommonCuttingOf(DeepNestLib.IO.SheetCamNestFile nest)
+      => IsCommonLineJob(nest) ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
 
     private void ApplyNestSpacings(DeepNestLib.IO.SheetCamNestFile nest)
     {
