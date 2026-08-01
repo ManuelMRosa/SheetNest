@@ -95,8 +95,7 @@
       string sparrowExePath,
       out string error,
       CancellationToken cancel = default,
-      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
-      bool commonLine = false)
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -137,7 +136,7 @@
       // near-parallel edges it left, and the post decides which shared edges to cut once. The snap needs
       // straight H/V edges, so common-line uses axis-aligned rotation (4-way) rather than free/fine angles.
       var diagLoad = System.Diagnostics.Stopwatch.StartNew();
-      var loaded = LoadAll(parts, rotations, spacing, commonLine, out error);
+      var loaded = LoadAll(parts, rotations, spacing, out error);
       DiagLoadMs = diagLoad.ElapsedMilliseconds;
       if (loaded == null || loaded.Count == 0)
       {
@@ -145,7 +144,7 @@
         return null;
       }
 
-      return RunNestBody(loaded, slots, margin, perSheetBudgetSec, sparrowExePath, commonLine, cancel, progress, out error);
+      return RunNestBody(loaded, slots, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, out error);
     }
 
     /// <summary>The per-sheet nest loop: fills sheets from the stock (best-of-K sparrow packs, corner
@@ -156,7 +155,6 @@
       double margin,
       int perSheetBudgetSec,
       string sparrowExePath,
-      bool commonLine,
       CancellationToken cancel,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
       out string error)
@@ -206,7 +204,7 @@
         // gets a longer leash, but far above any healthy run â€” it exists to catch a hung process.
         int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
 
-        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, commonLine, out string perr);
+        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, out string perr);
         if (cancel.IsCancellationRequested)
         {
           error = "Cancelled.";
@@ -279,7 +277,7 @@
 
     /// <summary>Loads each part's contour once (arcs tessellated by the app pipeline) and pre-computes its
     /// spacing-dilated shell + allowed orientations. Holes (INfp.Children) are not yet forwarded.</summary>
-    private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, bool commonLine, out string error)
+    private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, out string error)
     {
       error = null;
       var helper = new NestExecutionHelper();
@@ -331,7 +329,9 @@
           // to 4-way. Decide by the ANGLES, not the code number: the special codes 1001/1002/1003 are
           // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept â€” an
           // earlier `code >= 8` test wrongly turned 0/90 into 4-way, adding 180/270.
-          if (commonLine && RotationCodes.PermittedSet(code).Any(a => a % 90 != 0))
+          // PER PART, not per job: clipping every part because ONE of them is common-cut would quietly
+          // take free rotation away from parts that never asked for it, and cost density for nothing.
+          if (part.Cc != CommonCuttingMode.None && RotationCodes.PermittedSet(code).Any(a => a % 90 != 0))
           {
             code = 4;
           }
@@ -439,7 +439,7 @@
     /// Packs ONLY in the user's chosen sheet orientation â€” the sheet is never auto-rotated (a 120Ã—60 preset must
     /// render 120Ã—60); to use the other orientation the operator picks that preset.</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, bool commonLine, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
@@ -512,7 +512,7 @@
             }
 
             var diagMap = System.Diagnostics.Stopwatch.StartNew();
-            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, commonLine, cancel);
+            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, cancel);
             System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
@@ -578,7 +578,7 @@
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
     /// and splits off anything past the sheet edge (not placed).</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource) MapAndCompact(
-      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, bool commonLine, CancellationToken cancel)
+      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CancellationToken cancel)
     {
       using var doc = JsonDocument.Parse(outputJson);
       var placed = doc.RootElement.GetProperty("solution").GetProperty("layout").GetProperty("placed_items");
@@ -645,7 +645,7 @@
       // Common-line: nudge near-parallel neighbour edges onto exactly one kerf apart and aligned, so the
       // post processor recognises the shared cut and cuts it once. Best-effort per part (all-or-nothing):
       // a part only moves if the shift keeps every part's tooling clear of every other.
-      if (commonLine)
+      if (batch.Any(l => l.Cc != CommonCuttingMode.None))
       {
         SnapCommonLineEdges(all, kerfById, toolingById);
       }

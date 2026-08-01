@@ -1494,10 +1494,6 @@ namespace DeepNestSharp.Ui.Views
           throw new System.InvalidOperationException("Synthetic crash for testing the problem-report dialog.");
         }
 
-        // Common-line jobs need aligned grid layout (identical parts one kerf apart, edges coinciding) so
-        // the post processor sees the shared cut and cuts it once — sparrow's irregular packing never does.
-        bool commonLineJob = parts.Count > 0 && parts.All(p => p.Cc != DeepNestLib.NestProject.CommonCuttingMode.None);
-
         var token = nestCts.Token;
         var (result, error) = await Task.Run(() =>
         {
@@ -1506,9 +1502,8 @@ namespace DeepNestSharp.Ui.Views
           // perSheetBudgetSec caps the per-try sparrow time. 5 is plenty: density does NOT converge past
           // ~4-6s (its run-to-run spread is inherent), so best-of-K — not a longer single run — is what
           // buys quality. Keeping this low keeps nesting fast.
-          // commonLineJob: sparrow restricts rotation to 0/180 and snaps shared edges to one exact kerf so
-          // the post can cut each shared edge once (still dense/irregular, unlike a grid).
-          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, commonLineJob);
+          // Common cutting rides along on each part's own mode; there is no job-wide flag to keep in step.
+          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress);
           return (r, err);
         });
 

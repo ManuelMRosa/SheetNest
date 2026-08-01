@@ -375,6 +375,75 @@ namespace DeepNestSharp.CiTests.RasterNest
       TotalOverlapArea(polys).Should().BeLessThan(side * side * 0.001, "continuous-rotation layout must be overlap-free");
     }
 
+    /// <summary>
+    /// Common cutting clips a part to 90-degree steps, because the shared-edge snap only understands
+    /// horizontal and vertical edges. That clip is the COMMON-CUT part's business and nobody else's.
+    /// <para>
+    /// This is the trap in the obvious way to make mixed jobs work. The old code decided common line
+    /// once for the whole job (All parts), so a mixed job simply turned the feature off for everyone;
+    /// changing that All to an Any would have switched it on for everyone instead, and silently taken
+    /// free rotation away from every part that never asked for it. Verified by putting the job-wide
+    /// test back: this test fails, and the free part comes out on 15-degree steps.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OneCommonCutPartDoesNotStripFreeRotationFromTheRest()
+    {
+      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("MIXROT: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+
+      var helper = new NestExecutionHelper();
+      double maxExtent = 0;
+      var parts = new List<RasterPartInfo>();
+      for (int i = 1; i <= 2; i++)
+      {
+        string path = Path.Combine(dxfDir, $"_{i}.dxf");
+        if (File.Exists(path) && helper.LoadRawDetail(new FileInfo(path)) is { } det
+            && det.TryConvertToNfp(0, out INfp nfp) && nfp.Points.Length > 2)
+        {
+          maxExtent = Math.Max(maxExtent, Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY));
+
+          // Part 0 is common-cut (it accepts the 4-way clip); part 1 is not and must stay free.
+          parts.Add(new RasterPartInfo
+          {
+            Path = path,
+            Quantity = 3,
+            Cc = i == 1 ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None,
+          });
+        }
+      }
+
+      parts.Should().HaveCount(2);
+      int side = (int)Math.Ceiling(maxExtent * 4);
+
+      var result = SparrowNestService.Nest(parts, new List<(int, int, int)> { (side, side, 1) }, 36, 1.0, 0.5, 8, exe, out string err);
+
+      result.Should().NotBeNull($"nest must return a result (err={err})");
+
+      var freeRots = result.UsedSheets.SelectMany(s => s.PartPlacements)
+        .Where(p => p.Source == 1)                                   // the part that is NOT common-cut
+        .Select(p => ((p.Rotation % 360) + 360) % 360)
+        .ToList();
+
+      freeRots.Should().NotBeEmpty("the free part has to be placed for this to prove anything");
+      this.output.WriteLine("MIXROT free-part angles: " + string.Join(", ", freeRots.Select(r => r.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))));
+
+      // Same continuity probe as FreeRotationIsContinuous: a clipped part could only land on 90s, and
+      // even a discrete "free" set could only land on 15s.
+      freeRots.Any(r =>
+      {
+        double m = ((r % 15) + 15) % 15;
+        return Math.Min(m, 15 - m) > 1.0;
+      }).Should().BeTrue("a common-cut neighbour must not clip THIS part's rotations");
+    }
+
     [Fact]
     public void ZeroAnd90ModeRotatesOnlyByZeroOr90()
     {
