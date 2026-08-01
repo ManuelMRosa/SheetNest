@@ -48,8 +48,15 @@
     double Spacing { get; set; }
 
     /// <summary>
-    /// Gets or sets common-line cutting: copies of this part nest TOUCHING each other (spacing 0),
-    /// so shared edges are cut once.
+    /// Gets or sets who this part may share a cut edge with. Sharing nests the two touching so the
+    /// shared edge is cut once. <see cref="Spacing"/> still applies to everyone it may NOT share with.
+    /// </summary>
+    CommonCuttingMode CommonCutting { get; set; }
+
+    /// <summary>
+    /// Gets or sets common cutting as a plain on/off. True for any mode but
+    /// <see cref="CommonCuttingMode.None"/>; setting it true means
+    /// <see cref="CommonCuttingMode.Unrestricted"/>.
     /// </summary>
     bool CommonLine { get; set; }
 

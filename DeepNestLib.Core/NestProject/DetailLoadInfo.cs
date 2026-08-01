@@ -24,7 +24,39 @@
 
     public double Spacing { get; set; } = -1; // per-part gap to neighbours (drawing units); -1 = job default
 
-    public bool CommonLine { get; set; } = false; // nest copies TOUCHING (shared edges cut once)
+    public CommonCuttingMode CommonCutting { get; set; } = CommonCuttingMode.None; // who this part may share a cut edge with
+
+    /// <summary>
+    /// Gets or sets common cutting as the plain on/off it used to be, so every existing caller still
+    /// compiles and reads the same answer. <see cref="CommonCutting"/> is the real setting: turning this
+    /// on means Unrestricted, and it reads true for SamePart too.
+    /// </summary>
+    [JsonIgnore]
+    public bool CommonLine
+    {
+      get => this.CommonCutting != CommonCuttingMode.None;
+      set => this.CommonCutting = value ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
+    }
+
+    /// <summary>
+    /// Gets or sets the boolean "CommonLine" that projects saved before common cutting had modes carry.
+    /// READ ONLY in practice: the getter is always false and WhenWritingDefault drops it, so we never
+    /// write it back. That is what makes the two properties order-independent in a file — a project can
+    /// only ever carry one of them, so whichever comes first cannot overwrite the other.
+    /// </summary>
+    [JsonPropertyName("CommonLine")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyCommonLine
+    {
+      get => false;
+      set
+      {
+        if (value && this.CommonCutting == CommonCuttingMode.None)
+        {
+          this.CommonCutting = CommonCuttingMode.Unrestricted;
+        }
+      }
+    }
 
     // Colour this part is drawn in (0xRRGGBB); -1 = none chosen, so it takes the palette colour for its
     // POSITION in the part list (part 1 the first colour, part 2 the second...). Persists to the .dnest;

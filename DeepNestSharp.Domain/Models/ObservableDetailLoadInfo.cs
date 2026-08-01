@@ -148,6 +148,12 @@
       set => SetProperty(nameof(Spacing), () => detailLoadInfo.Spacing, v => detailLoadInfo.Spacing = v, value);
     }
 
+    public CommonCuttingMode CommonCutting
+    {
+      get => detailLoadInfo.CommonCutting;
+      set => SetProperty(nameof(CommonCutting), () => detailLoadInfo.CommonCutting, v => detailLoadInfo.CommonCutting = v, value);
+    }
+
     public bool CommonLine
     {
       get => detailLoadInfo.CommonLine;
