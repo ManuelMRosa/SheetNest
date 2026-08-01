@@ -184,7 +184,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       var kerfById = new Dictionary<int, double> { { 0, kerf } };
       var toolingById = new Dictionary<int, INfp> { { 0, tooling } };
 
-      SparrowNestService.SnapCommonLineEdges(all, kerfById, toolingById);
+      SparrowNestService.SnapCommonLineEdges(all, kerfById, toolingById, Share(0, CommonCuttingMode.Unrestricted, 0));
 
       // B's left edge now sits exactly one kerf off A's right edge, and their edges line up in Y.
       (b.PlacedPart.MinX - a.PlacedPart.MaxX).Should().BeApproximately(kerf, 1e-6, "the shared cut is exactly one kerf");
@@ -210,11 +210,97 @@ namespace DeepNestSharp.CiTests.RasterNest
       SparrowNestService.SnapCommonLineEdges(
         all,
         new Dictionary<int, double> { { 0, kerf } },
-        new Dictionary<int, INfp> { { 0, tooling } });
+        new Dictionary<int, INfp> { { 0, tooling } },
+        Share(0, CommonCuttingMode.Unrestricted, 0));
 
       b.X.Should().Be(20, "nothing to snap to means no move");
       b.Y.Should().Be(1);
     }
+
+    /// <summary>
+    /// "Same part" has to mean something at the seam, not just in the packing. Two DIFFERENT drawings that
+    /// happen to land a hair over one kerf apart must be left alone: welding them into a shared cut would
+    /// hand the machine one pass across two parts the operator asked to keep separate.
+    /// <para>
+    /// The control below is the half that makes this worth anything: the SAME geometry, same distance, same
+    /// everything except the identity, does snap. Before this commit the snap paired purely on geometry and
+    /// both cases moved.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(1, false)]  // B is a different drawing -> no snap
+    [InlineData(0, true)]   // B is the same drawing    -> snap
+    public void SnapOnlyWeldsASamePartOntoItsOwnDrawing(int bShareKey, bool expectSnap)
+    {
+      const double kerf = 0.3;
+      var barPts = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(2, 0), new SvgPoint(2, 10), new SvgPoint(0, 10),
+      };
+      INfp Bar() => new NoFitPolygon(barPts);
+      var tooling = SparrowNestService.ToolingFootprint(new NoFitPolygon(barPts), null, kerf, 0);
+
+      // Same geometry as SnapAlignsNearNeighboursToExactlyOneKerf: a hair over one kerf apart, shifted up.
+      var a = new PartPlacement(Bar()) { X = 1, Y = 1, Rotation = 0, Source = 0 };
+      var b = new PartPlacement(Bar()) { X = 3.35, Y = 1.2, Rotation = 0, Source = 1 };
+
+      var cc = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+      {
+        { 0, (CommonCuttingMode.SamePart, 0) },
+        { 1, (CommonCuttingMode.SamePart, bShareKey) },
+      };
+
+      SparrowNestService.SnapCommonLineEdges(
+        new List<IPartPlacement> { a, b },
+        new Dictionary<int, double> { { 0, kerf }, { 1, kerf } },
+        new Dictionary<int, INfp> { { 0, tooling }, { 1, tooling } },
+        cc);
+
+      if (expectSnap)
+      {
+        (b.PlacedPart.MinX - a.PlacedPart.MaxX).Should().BeApproximately(kerf, 1e-6, "its own kind welds to one kerf");
+        b.PlacedPart.MinY.Should().BeApproximately(a.PlacedPart.MinY, 1e-6);
+      }
+      else
+      {
+        b.X.Should().Be(3.35, "a different drawing must be left exactly where the engine put it");
+        b.Y.Should().Be(1.2);
+      }
+    }
+
+    /// <summary>A mirrored copy is the other hand, so its edges are not this part's edges. Same drawing,
+    /// different ShareKey, and the seam must not be welded.</summary>
+    [Fact]
+    public void SnapTreatsAMirroredCopyAsADifferentPart()
+    {
+      const double kerf = 0.3;
+      var barPts = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(2, 0), new SvgPoint(2, 10), new SvgPoint(0, 10),
+      };
+      INfp Bar() => new NoFitPolygon(barPts);
+      var tooling = SparrowNestService.ToolingFootprint(new NoFitPolygon(barPts), null, kerf, 0);
+
+      var a = new PartPlacement(Bar()) { X = 1, Y = 1, Rotation = 0, Source = 0 };
+      var b = new PartPlacement(Bar()) { X = 3.35, Y = 1.2, Rotation = 0, Source = 1, IsMirrored = true };
+
+      SparrowNestService.SnapCommonLineEdges(
+        new List<IPartPlacement> { a, b },
+        new Dictionary<int, double> { { 0, kerf }, { 1, kerf } },
+        new Dictionary<int, INfp> { { 0, tooling }, { 1, tooling } },
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        {
+          { 0, (CommonCuttingMode.SamePart, 0) },
+          { 1, (CommonCuttingMode.SamePart, 1) }, // LoadAll keys the mirrored population separately
+        });
+
+      b.X.Should().Be(3.35);
+      b.Y.Should().Be(1.2);
+    }
+
+    /// <summary>One entry per source, all sharing the same key.</summary>
+    private static Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> Share(int source, CommonCuttingMode cc, int shareKey)
+      => new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> { { source, (cc, shareKey) } };
 
     /// <summary>Plain DXF parts carry no tooling, and must keep nesting exactly as they did before.</summary>
     [Fact]

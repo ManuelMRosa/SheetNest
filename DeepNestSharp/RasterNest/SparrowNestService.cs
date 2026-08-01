@@ -275,6 +275,25 @@
       return new NestResult(placedTotal + unplaced.Count, collection, unplaced, PlacementTypeEnum.BoundingBox, 0, 0);
     }
 
+    /// <summary>
+    /// True when these two parts are allowed to share a cut edge. The stricter mode wins, so a Same-part
+    /// part shares only with its own drawing and its own hand however permissive the other side is.
+    /// </summary>
+    private static bool PartsMayShare(RasterPartInfo a, RasterPartInfo b)
+    {
+      if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
+      {
+        return false;
+      }
+
+      if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
+      {
+        return string.Equals(a.Path, b.Path, StringComparison.OrdinalIgnoreCase) && a.Mirrored == b.Mirrored;
+      }
+
+      return true;
+    }
+
     /// <summary>Loads each part's contour once (arcs tessellated by the app pipeline) and pre-computes its
     /// spacing-dilated shell + allowed orientations. Holes (INfp.Children) are not yet forwarded.</summary>
     private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, out string error)
@@ -290,7 +309,12 @@
       // pack is exactly right; otherwise carry the full spacing and let compaction reclaim the contact
       // between the pairs that really do share. When they all share this is byte-for-byte what the old
       // job-wide common-line flag did.
-      bool everyPartShares = parts.Count > 0 && parts.All(p => p != null && p.Cc != CommonCuttingMode.None);
+      bool everyPartShares = parts.Count > 0 && parts.All(a => a != null && parts.All(b => b == null || PartsMayShare(a, b)));
+
+      // "The same part" means the same DRAWING, not the same row: the list may legitimately hold one file
+      // twice (once common-cut, once spaced), and two rows of the same file are still the same part on the
+      // sheet. A MIRRORED population is a different part, though — its shared edges are the other hand's.
+      var shareKeys = new Dictionary<(string Path, bool Mirrored), int>();
 
       foreach (var part in parts)
       {
@@ -339,6 +363,12 @@
           double effSpacing = part.Spacing >= 0 ? part.Spacing : Math.Max(0, spacing);
           double fitSpacing = everyPartShares ? 0 : effSpacing;
 
+          var shareOf = (Path: part.Path ?? string.Empty, part.Mirrored);
+          if (!shareKeys.TryGetValue(shareOf, out int shareKey))
+          {
+            shareKeys[shareOf] = shareKey = shareKeys.Count;
+          }
+
           // Mirroring is baked into the geometry above, so the tooling has to follow it.
           var toolPaths = part.ToolPaths;
           if (part.Mirrored && toolPaths != null)
@@ -361,6 +391,7 @@
             EffSpacing = effSpacing,
             FitSpacing = fitSpacing,
             Cc = part.Cc,
+            ShareKey = shareKey,
             Kerf = Math.Max(0, part.Kerf),
             Qty = part.Quantity,
             Mirrored = part.Mirrored,
@@ -647,7 +678,7 @@
       // a part only moves if the shift keeps every part's tooling clear of every other.
       if (batch.Any(l => l.Cc != CommonCuttingMode.None))
       {
-        SnapCommonLineEdges(all, kerfById, toolingById);
+        SnapCommonLineEdges(all, kerfById, toolingById, ccById);
       }
 
       const double tol = 1e-3;
@@ -697,11 +728,16 @@
     /// <summary>
     /// Common-line snap: nudges parts so a near-parallel neighbour edge pair lands exactly one kerf apart
     /// and aligned, giving the post processor coincident toolpath endpoints to recognise. Only axis-aligned
-    /// edges (parts are restricted to 0/180 for common-line, so shared edges are horizontal or vertical).
-    /// All-or-nothing per connected group: a group of parts only moves if, after moving, every part's
-    /// tooling footprint still clears every other part (no cut eating into a neighbour).
+    /// edges (a common-cut part is clipped to 90-degree steps, so shared edges are horizontal or vertical).
+    /// Only pairs that are ALLOWED to share are snapped: a Same-part item is never pulled onto a different
+    /// drawing. All-or-nothing per connected group: a group of parts only moves if, after moving, every
+    /// part's tooling footprint still clears every other part (no cut eating into a neighbour).
     /// </summary>
-    internal static void SnapCommonLineEdges(List<IPartPlacement> all, Dictionary<int, double> kerfById, Dictionary<int, INfp> toolingById)
+    internal static void SnapCommonLineEdges(
+      List<IPartPlacement> all,
+      Dictionary<int, double> kerfById,
+      Dictionary<int, INfp> toolingById,
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById)
     {
       int n = all.Count;
       if (n < 2)
@@ -709,19 +745,41 @@
         return;
       }
 
-      double kerf = kerfById.Values.Where(k => k > 0).DefaultIfEmpty(0).Max();
-      if (kerf <= 0)
+      double KerfOf(int i) => kerfById.TryGetValue(all[i].Source, out double k) ? Math.Max(0, k) : 0;
+
+      if (Enumerable.Range(0, n).All(i => KerfOf(i) <= 0))
       {
-        return;
+        return; // no tooling anywhere: there is no kerf to snap onto (compaction already closed these)
       }
 
-      // Absolute geometry + axis-aligned edges per part.
+      bool MayShare(int ia, int ib)
+      {
+        if (!ccById.TryGetValue(all[ia].Source, out var a) || !ccById.TryGetValue(all[ib].Source, out var b))
+        {
+          return false;
+        }
+
+        if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
+        {
+          return false;
+        }
+
+        if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
+        {
+          return a.ShareKey == b.ShareKey;
+        }
+
+        return true;
+      }
+
+      // Absolute geometry + axis-aligned edges per part. Edge length is filtered by the part's OWN kerf:
+      // the batch maximum would throw away usable edges on a finer-cutting part in a mixed job.
       var absPts = new List<System.Windows.Point>[n];
       var edges = new List<AaEdge>();
       const double angTol = 1e-3;                 // how "axis-aligned" an edge must be
-      double minLen = kerf * 2;                    // ignore tiny edges (chamfers etc.)
       for (int i = 0; i < n; i++)
       {
+        double minLen = KerfOf(i) * 2;             // ignore tiny edges (chamfers etc.)
         var pts = all[i].PlacedPart.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
         absPts[i] = pts;
         double cx = pts.Average(p => p.X);
@@ -756,8 +814,17 @@
       var shifts = new Dictionary<(int A, int B), (double Dx, double Dy)>();
       foreach (var ea in edges.Where(e => e.MaterialBelow))
       {
-        foreach (var eb in edges.Where(e => !e.MaterialBelow && e.Vertical == ea.Vertical && e.Part != ea.Part))
+        foreach (var eb in edges.Where(e => !e.MaterialBelow && e.Vertical == ea.Vertical && e.Part != ea.Part
+                                            && MayShare(ea.Part, e.Part)))
         {
+          // PER PAIR, not the batch maximum: one part cutting at 0.006 must not drag a 0.002 neighbour
+          // onto a 0.006 seam, and it is the wider of the two cuts that has to fit between them.
+          double kerf = Math.Max(KerfOf(ea.Part), KerfOf(eb.Part));
+          if (kerf <= 0)
+          {
+            continue;
+          }
+
           double gap = eb.Pos - ea.Pos; // B sits above A on the Pos axis
           if (gap < 0.4 * kerf || gap > 1.6 * kerf)
           {
@@ -765,7 +832,7 @@
           }
 
           double overlap = Math.Min(ea.Hi, eb.Hi) - Math.Max(ea.Lo, eb.Lo);
-          if (overlap < minLen)
+          if (overlap < kerf * 2)
           {
             continue; // must actually run alongside each other
           }
