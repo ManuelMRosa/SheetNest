@@ -699,6 +699,21 @@
       return (placements, placedBySource);
     }
 
+    /// <summary>Twice-signed area of a ring: positive when the ring is wound counter-clockwise.</summary>
+    private static double SignedArea(List<System.Windows.Point> pts)
+    {
+      double sum = 0;
+      int n = pts.Count;
+      for (int i = 0; i < n; i++)
+      {
+        var p = pts[i];
+        var q = pts[(i + 1) % n];
+        sum += (p.X * q.Y) - (q.X * p.Y);
+      }
+
+      return sum;
+    }
+
     /// <summary>An axis-aligned straight edge of a placed part, in absolute sheet coordinates.</summary>
     private readonly struct AaEdge
     {
@@ -787,7 +802,14 @@
         double minLen = Math.Max(KerfOf(i) * tol.MinEdgeLengthKerfs, tol.MinEdgeLengthAbsolute);
         var pts = all[i].PlacedPart.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
         absPts[i] = pts;
-        double cx = pts.Average(p => p.X);
+
+        // Which side the material is on comes from the WINDING, not from where the middle of the part
+        // happens to be. The old test compared the edge against the arithmetic mean of the vertices,
+        // which is inside the part only while the part is convex: every concave face got the answer
+        // backwards and so could never pair with anything, silently. For a counter-clockwise ring the
+        // outward normal of a->b is (dy, -dx); clockwise flips it.
+        double sign = SignedArea(pts) >= 0 ? 1.0 : -1.0;
+
         int m = pts.Count;
         for (int k = 0; k < m; k++)
         {
@@ -803,13 +825,16 @@
           if (Math.Abs(dx) < angTol * len) // vertical
           {
             double lo = Math.Min(a.Y, b.Y), hi = Math.Max(a.Y, b.Y);
-            edges.Add(new AaEdge(i, true, a.X, lo, hi, cx < a.X)); // material left of the edge â†’ "right" edge
+
+            // Outward normal points +X  =>  material is on the lower-X side  =>  a "right" edge.
+            edges.Add(new AaEdge(i, true, a.X, lo, hi, sign * dy > 0));
           }
           else if (Math.Abs(dy) < angTol * len) // horizontal
           {
             double lo = Math.Min(a.X, b.X), hi = Math.Max(a.X, b.X);
-            double cy = pts.Average(p => p.Y);
-            edges.Add(new AaEdge(i, false, a.Y, lo, hi, cy < a.Y)); // material below the edge â†’ "top" edge
+
+            // Outward normal points +Y  =>  material is on the lower-Y side  =>  a "top" edge.
+            edges.Add(new AaEdge(i, false, a.Y, lo, hi, sign * -dx > 0));
           }
         }
       }
