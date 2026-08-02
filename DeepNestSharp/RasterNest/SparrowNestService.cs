@@ -714,30 +714,58 @@
       return sum;
     }
 
-    /// <summary>An axis-aligned straight edge of a placed part, in absolute sheet coordinates.</summary>
-    private readonly struct AaEdge
+    /// <summary>
+    /// One straight face of a placed part, at any angle, in absolute sheet coordinates.
+    /// </summary>
+    private readonly struct PartEdge
     {
-      public AaEdge(int part, bool vertical, double pos, double lo, double hi, bool materialBelow)
+      public PartEdge(int part, System.Windows.Point a, System.Windows.Point b, double nx, double ny)
       {
         this.Part = part;
-        this.Vertical = vertical;   // true = runs along Y at X=Pos; false = runs along X at Y=Pos
-        this.Pos = pos;             // the constant coordinate (X for vertical, Y for horizontal)
-        this.Lo = lo;
-        this.Hi = hi;               // the edge spans [Lo, Hi] on the other axis
-        this.MaterialBelow = materialBelow; // material is on the lower-Pos side (a "right"/"top" edge)
+        this.Nx = nx;                       // outward unit normal: which way is AWAY from the material
+        this.Ny = ny;
+
+        // The direction ALONG the face, canonicalised into the half plane x > 0 (and +Y when vertical).
+        // Canonical rather than simply "the normal turned ninety degrees" so that the two faces of a
+        // pair measure their ends on the same axis in the same direction. For a vertical face this is
+        // +Y and for a horizontal one +X, which is exactly what the axis-only code used to assume, so
+        // axis-aligned pairs come out at the identical numbers they always did.
+        double ux = -ny, uy = nx;
+        if (ux < -1e-12 || (Math.Abs(ux) <= 1e-12 && uy < 0))
+        {
+          ux = -ux;
+          uy = -uy;
+        }
+
+        this.Ux = ux;
+        this.Uy = uy;
+
+        double pa = (a.X * ux) + (a.Y * uy);
+        double pb = (b.X * ux) + (b.Y * uy);
+        this.Lo = Math.Min(pa, pb);
+        this.Hi = Math.Max(pa, pb);
+        this.Mx = (a.X + b.X) / 2.0;
+        this.My = (a.Y + b.Y) / 2.0;
       }
 
       public int Part { get; }
 
-      public bool Vertical { get; }
+      public double Nx { get; }
 
-      public double Pos { get; }
+      public double Ny { get; }
 
+      public double Ux { get; }
+
+      public double Uy { get; }
+
+      /// <summary>Where the ends of the face fall when projected onto <see cref="Ux"/>.</summary>
       public double Lo { get; }
 
       public double Hi { get; }
 
-      public bool MaterialBelow { get; }
+      public double Mx { get; }
+
+      public double My { get; }
     }
 
     /// <summary>
@@ -792,9 +820,8 @@
       // Absolute geometry + axis-aligned edges per part. Edge length is filtered by the part's OWN kerf:
       // the batch maximum would throw away usable edges on a finer-cutting part in a mixed job.
       var absPts = new List<System.Windows.Point>[n];
-      var edges = new List<AaEdge>();
-      // Sine, not degrees: the test below compares a component against the length, which IS the sine.
-      double angTol = tol.AngleToleranceSin;
+      var edges = new List<PartEdge>();
+      double angTolRad = tol.AngleToleranceDeg * Math.PI / 180.0;
       for (int i = 0; i < n; i++)
       {
         // Ignore tiny edges (chamfers etc.). The absolute floor matters where the kerf is fine: a very
@@ -835,70 +862,160 @@
             continue;
           }
 
-          if (Math.Abs(dx) < angTol * len) // vertical
-          {
-            double lo = Math.Min(a.Y, b.Y), hi = Math.Max(a.Y, b.Y);
+          // Outward unit normal straight from the winding, at whatever angle the face runs. This is
+          // what lifts the whole thing off the two axes: an edge no longer has to be horizontal or
+          // vertical to be a face, it just has to have a direction.
+          edges.Add(new PartEdge(i, a, b, sign * dy / len, sign * -dx / len));
+        }
+      }
 
-            // Outward normal points +X  =>  material is on the lower-X side  =>  a "right" edge.
-            edges.Add(new AaEdge(i, true, a.X, lo, hi, sign * dy > 0));
+      // Two faces make a seam when they LOOK AT EACH OTHER: their outward normals point opposite ways,
+      // within tolerance. That one test replaces both "are they parallel" and "is the material on
+      // facing sides", and it works at any angle.
+      //
+      // Bucketed by normal direction first, because the search is every face against every face. On the
+      // axes that was a few faces per part; at any angle it is every straight segment, and a full sheet
+      // would be millions of pair tests inside a LINQ Where. Each face only looks in the bucket its
+      // opposite would fall in, plus the two either side.
+      double bucketSize = Math.Max(2 * angTolRad, 1e-9);
+
+      // Indices wrap, because the angles do. A face pointing left comes out of Atan2 as +PI or as -PI
+      // depending on nothing more than the sign of a zero, and those two have to land in the same
+      // bucket or a plain vertical seam is never even looked at.
+      int bucketCount = Math.Max(1, (int)Math.Ceiling((2 * Math.PI) / bucketSize));
+      int Wrap(int b) => ((b % bucketCount) + bucketCount) % bucketCount;
+      int BucketOf(double angle) => Wrap((int)Math.Floor((angle + Math.PI) / bucketSize));
+
+      var byBucket = new Dictionary<int, List<int>>();
+      var edgeAngle = new double[edges.Count];
+      for (int e = 0; e < edges.Count; e++)
+      {
+        edgeAngle[e] = Math.Atan2(edges[e].Ny, edges[e].Nx);
+        int bucket = BucketOf(edgeAngle[e]);
+        (byBucket.TryGetValue(bucket, out var list) ? list : byBucket[bucket] = new List<int>()).Add(e);
+      }
+
+      double cosTol = Math.Cos(angTolRad);
+      var candidates = new List<(int A, int B, double Dx, double Dy, double Quality)>();
+
+      for (int ia = 0; ia < edges.Count; ia++)
+      {
+        var ea = edges[ia];
+
+        // Where the face that would look back at this one lives.
+        double opposite = edgeAngle[ia] + Math.PI;
+        if (opposite > Math.PI)
+        {
+          opposite -= 2 * Math.PI;
+        }
+
+        int centre = BucketOf(opposite);
+        for (int step = -1; step <= 1; step++)
+        {
+          if (!byBucket.TryGetValue(Wrap(centre + step), out var bucket))
+          {
+            continue;
           }
-          else if (Math.Abs(dy) < angTol * len) // horizontal
-          {
-            double lo = Math.Min(a.X, b.X), hi = Math.Max(a.X, b.X);
 
-            // Outward normal points +Y  =>  material is on the lower-Y side  =>  a "top" edge.
-            edges.Add(new AaEdge(i, false, a.Y, lo, hi, sign * -dx > 0));
+          foreach (int ib in bucket)
+          {
+            var eb = edges[ib];
+            if (eb.Part == ea.Part || !MayShare(ea.Part, eb.Part))
+            {
+              continue;
+            }
+
+            // Facing each other, within the angular tolerance.
+            if ((ea.Nx * eb.Nx) + (ea.Ny * eb.Ny) > -cosTol)
+            {
+              continue;
+            }
+
+            // PER PAIR, not the batch maximum: one part cutting at 0.006 must not drag a 0.002 neighbour
+            // onto a 0.006 seam, and it is the wider of the two cuts that has to fit between them.
+            double kerf = Math.Max(KerfOf(ea.Part), KerfOf(eb.Part));
+            if (kerf <= 0)
+            {
+              continue;
+            }
+
+            // How far B stands off A, measured along A's normal from midpoint to midpoint. Midpoints
+            // rather than an end, because two faces that share a cut need not start together.
+            double gap = ((eb.Mx - ea.Mx) * ea.Nx) + ((eb.My - ea.My) * ea.Ny);
+            if (gap < tol.GapMinKerfs * kerf || gap > tol.GapMaxKerfs * kerf)
+            {
+              continue;
+            }
+
+            // How far they run alongside each other, projected onto A's own direction. This is what
+            // rejects a corner touch: two faces meeting at a vertex overlap by nothing.
+            double bLo = Math.Min(
+              ((eb.Mx * ea.Ux) + (eb.My * ea.Uy)) - ((eb.Hi - eb.Lo) / 2.0),
+              ((eb.Mx * ea.Ux) + (eb.My * ea.Uy)) + ((eb.Hi - eb.Lo) / 2.0));
+            double bHi = bLo + (eb.Hi - eb.Lo);
+            double overlap = Math.Min(ea.Hi, bHi) - Math.Max(ea.Lo, bLo);
+            if (overlap < tol.MinOverlapKerfs * kerf)
+            {
+              continue;
+            }
+
+            // Move B onto the seam: out along A's normal to sit exactly one kerf off it, and along the
+            // face to line the ends up.
+            double perp = kerf - gap;
+            double along = ea.Lo - bLo;
+            double dx = (perp * ea.Nx) + (along * ea.Ux);
+            double dy = (perp * ea.Ny) + (along * ea.Uy);
+
+            // Nothing else bounds the travel: lining the ends up can ask for a long slide when two faces
+            // barely overlap, and the only thing that used to stop it was the tooling check at the very
+            // end, which throws the whole pass away when it fires.
+            if (Math.Sqrt((dx * dx) + (dy * dy)) > tol.MaxSnapTravelKerfs * kerf)
+            {
+              continue;
+            }
+
+            // Longer seams first, and among those the ones already closest to a kerf.
+            candidates.Add((ea.Part, eb.Part, dx, dy, overlap - Math.Abs(gap - kerf)));
           }
         }
       }
 
-      // Find neighbour edge pairs one kerf apart and aligned, and the shift that makes it exact. A "right"
-      // edge of A (material below Pos) facing a "left" edge of B (material above Pos), one kerf apart.
-      var shifts = new Dictionary<(int A, int B), (double Dx, double Dy)>();
-      foreach (var ea in edges.Where(e => e.MaterialBelow))
+      if (candidates.Count == 0)
       {
-        foreach (var eb in edges.Where(e => !e.MaterialBelow && e.Vertical == ea.Vertical && e.Part != ea.Part
-                                            && MayShare(ea.Part, e.Part)))
+        return;
+      }
+
+      // A SPANNING FOREST, not "the first pair between these two parts wins". Every seam is a constraint
+      // on where two parts sit relative to each other; take them best-first and keep one only when it
+      // joins two parts that are not already tied together, so the constraints can never contradict.
+      //
+      // What that buys, beyond tidiness: a part with TWO candidate faces against the same neighbour (a
+      // bar sitting in a bracket's notch, near both its side and its floor) used to close a cycle, read
+      // as inconsistent, and lose BOTH seams. Now it keeps the better one.
+      //
+      // The cost, and it is real: in a ring of parts one seam is left as the engine placed it. A 2x2
+      // block of squares gets three exact seams, not four.
+      candidates.Sort((p, q) => q.Quality.CompareTo(p.Quality));
+
+      var parent = new int[n];
+      for (int i = 0; i < n; i++)
+      {
+        parent[i] = i;
+      }
+
+      int Find(int x) => parent[x] == x ? x : parent[x] = Find(parent[x]);
+
+      var shifts = new Dictionary<(int A, int B), (double Dx, double Dy)>();
+      foreach (var c in candidates)
+      {
+        int ra = Find(c.A), rb = Find(c.B);
+        if (ra == rb)
         {
-          // PER PAIR, not the batch maximum: one part cutting at 0.006 must not drag a 0.002 neighbour
-          // onto a 0.006 seam, and it is the wider of the two cuts that has to fit between them.
-          double kerf = Math.Max(KerfOf(ea.Part), KerfOf(eb.Part));
-          if (kerf <= 0)
-          {
-            continue;
-          }
-
-          double gap = eb.Pos - ea.Pos; // B sits above A on the Pos axis
-          if (gap < tol.GapMinKerfs * kerf || gap > tol.GapMaxKerfs * kerf)
-          {
-            continue;
-          }
-
-          double overlap = Math.Min(ea.Hi, eb.Hi) - Math.Max(ea.Lo, eb.Lo);
-          if (overlap < tol.MinOverlapKerfs * kerf)
-          {
-            continue; // must actually run alongside each other; a corner touch overlaps by nothing
-          }
-
-          // Shift B: perpendicular to land exactly one kerf off A, and along the edge to align the ends.
-          double perp = (ea.Pos + kerf) - eb.Pos;   // move B's Pos to A.Pos + kerf
-          double along = ea.Lo - eb.Lo;              // align the low ends
-
-          // How far the part is asked to travel for this seam. Nothing else bounds it: aligning the low
-          // ends can ask for a long slide when two edges barely overlap, and the only thing that used to
-          // stop it was the tooling check at the very end, which reverts EVERYTHING when it fires.
-          if (Math.Sqrt((perp * perp) + (along * along)) > tol.MaxSnapTravelKerfs * kerf)
-          {
-            continue;
-          }
-
-          var s = ea.Vertical ? (perp, along) : (along, perp);
-          var key = (ea.Part, eb.Part);
-          if (!shifts.ContainsKey(key))
-          {
-            shifts[key] = s;
-          }
+          continue; // already tied together, directly or through others
         }
+
+        parent[ra] = rb;
+        shifts[(c.A, c.B)] = (c.Dx, c.Dy);
       }
 
       if (shifts.Count == 0)
