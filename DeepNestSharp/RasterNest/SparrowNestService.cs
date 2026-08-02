@@ -960,16 +960,13 @@
         }
       }
 
-      // Apply tentatively, then verify no tooling footprint invades another part. Revert failing groups.
+      // Apply tentatively, then verify no tooling footprint invades another part.
       var origX = all.Select(p => p.X).ToArray();
       var origY = all.Select(p => p.Y).ToArray();
-      foreach (var group in groups)
-      {
-        if (group.Any(g => badGroup.Contains(g)))
-        {
-          continue;
-        }
+      var good = groups.Where(g => !g.Any(x => badGroup.Contains(x))).ToList();
 
+      void ApplyGroup(List<int> group)
+      {
         foreach (int i in group)
         {
           all[i].X = origX[i] + offset[i].Value.X;
@@ -977,20 +974,52 @@
         }
       }
 
-      if (!ToolingClearsEveryone(all, toolingById))
+      void RevertGroup(List<int> group)
       {
-        // Something invaded â€” snap made it worse. Roll the whole pass back (safe: sparrow's layout stands).
-        for (int i = 0; i < n; i++)
+        foreach (int i in group)
         {
           all[i].X = origX[i];
           all[i].Y = origY[i];
         }
       }
+
+      foreach (var group in good)
+      {
+        ApplyGroup(group);
+      }
+
+      if (!ToolingClearsEveryone(all, toolingById, null))
+      {
+        // Something invaded. This used to roll back the WHOLE pass, so one bad pair anywhere on the
+        // sheet cost every other group its shared cut, and nothing said so. Now the groups are put back
+        // one at a time and only the one that actually invades loses its seam.
+        //
+        // The all-at-once check above stays as the fast path: it is the normal case and it costs one
+        // sweep. Only when something really does invade do we pay for the group-by-group pass, and each
+        // of those checks looks solely at pairs involving the group that just moved.
+        foreach (var group in good)
+        {
+          RevertGroup(group);
+        }
+
+        foreach (var group in good)
+        {
+          ApplyGroup(group);
+          if (!ToolingClearsEveryone(all, toolingById, new HashSet<int>(group)))
+          {
+            RevertGroup(group);
+          }
+        }
+      }
     }
 
     /// <summary>True when no part's tooling footprint overlaps another part's outline by more than a sliver
-    /// (kerf bands may touch/overlap each other, but a cut must never eat into a neighbouring part).</summary>
-    private static bool ToolingClearsEveryone(List<IPartPlacement> all, Dictionary<int, INfp> toolingById)
+    /// (kerf bands may touch/overlap each other, but a cut must never eat into a neighbouring part).
+    /// <para>When <paramref name="movedOnly"/> is given, only pairs involving one of those parts are
+    /// tested. Everything else was already clear and has not moved since, so re-testing it turns the
+    /// group-by-group retry from O(groups x n^2) clipping into something affordable.</para>
+    /// </summary>
+    private static bool ToolingClearsEveryone(List<IPartPlacement> all, Dictionary<int, INfp> toolingById, HashSet<int> movedOnly)
     {
       double scale = SvgNest.Config.ClipperScale;
       int n = all.Count;
@@ -1015,7 +1044,7 @@
       {
         for (int j = 0; j < n; j++)
         {
-          if (i == j)
+          if (i == j || (movedOnly != null && !movedOnly.Contains(i) && !movedOnly.Contains(j)))
           {
             continue;
           }
