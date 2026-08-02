@@ -115,14 +115,46 @@ namespace DeepNestSharp.CiTests.RasterNest
       }
     }
 
-    private static CompactItem Square(double x, CommonCuttingMode cc, double spacing)
+    /// <summary>
+    /// Reported from the app: a freshly nested Same part job came up with some pieces red. The weld pass
+    /// closes a common-cut part the last fraction onto its neighbour, and it measured the gap from the
+    /// MOVING part's raw outline while only inflating the neighbour, so a pair that may NOT share was
+    /// closed to sB/2 instead of (sA+sB)/2. The same halving that was fixed in the slide, still alive here.
+    /// <para>
+    /// Only bites at small spacings, which is why it survived: the weld is capped at 0.05 drawing units
+    /// and the over-computed gap is sA/2, so the pair has to be asking for 0.1 or less. In inches that is
+    /// most shop work.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void TheWeldDoesNotEatANonSharingNeighboursClearance()
+    {
+      const double Spacing = 0.08;   // half of it (0.04) sits under the weld's 0.05 cap
+
+      // B is a different drawing set to None, so nothing may share a cut with it. A1 and A2 are the same
+      // drawing in Same part mode: they weld onto each other, and A1 has B on its left to weld towards.
+      var items = new List<CompactItem>
+      {
+        Square(1, CommonCuttingMode.None, Spacing, shareKey: 9),
+        Square(60, CommonCuttingMode.SamePart, Spacing, shareKey: 0),
+        Square(120, CommonCuttingMode.SamePart, Spacing, shareKey: 0),
+      };
+
+      RasterCompact.Compact(items, 400, 60, 0.5);
+
+      Gap(items[1], items[2]).Should().BeLessThan(1e-3, "the same drawing still welds to a shared cut");
+      Gap(items[0], items[1]).Should().BeGreaterThan(Spacing - 1e-3,
+        "the weld must not close onto a neighbour it cannot share a cut with");
+    }
+
+    private static CompactItem Square(double x, CommonCuttingMode cc, double spacing, int shareKey = 0)
     {
       var outline = new NoFitPolygon(new[]
       {
         new SvgPoint(0, 0), new SvgPoint(20, 0), new SvgPoint(20, 20), new SvgPoint(0, 20),
       });
 
-      return new CompactItem { Poly = outline, X = x, Y = 1, Spacing = spacing, Cc = cc };
+      return new CompactItem { Poly = outline, X = x, Y = 1, Spacing = spacing, Cc = cc, ShareKey = shareKey };
     }
 
     /// <summary>Shortest distance between two 20-wide square outlines at their compacted positions.</summary>

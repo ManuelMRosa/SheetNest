@@ -182,7 +182,11 @@
           int mm = set != null ? set[s] : i;
           var movedHalf = tx == 0 && ty == 0 ? pathsHalf[mm] : Translate(pathsHalf[mm], tx, ty);
           var movedCC = pathsCC[mm] == null ? null : tx == 0 && ty == 0 ? pathsCC[mm] : Translate(pathsCC[mm], tx, ty);
-          var mb = BoundsOf(movedCC ?? movedHalf);
+          // The OUTER shell, like the bounds array it is matched against. Taking the CC box here skipped
+          // the pair before it was ever measured whenever the MOVER was common-cut and the neighbour was
+          // not, and a common-cut part then slid to half its neighbour's clearance. That combination only
+          // became reachable with Same part, where one part shares with its own kind and with nobody else.
+          var mb = BoundsOf(movedHalf);
           for (int j = 0; j < items.Count; j++)
           {
             if (j == mm || (set != null && memberSets[j] == set) || !BoxesTouch(mb, bounds[j]))
@@ -545,7 +549,12 @@
               double g = gap / Scale;
               double ox = alongX ? -g : 0;
               double oy = alongX ? 0 : -g;
-              if (RawClearAll(i, ox, oy))
+              // ValidOffset as well as RawClearAll. RawClearAll only forbids REAL overlap, which was the
+              // whole rule back when the weld ran solely on jobs where every part could touch every
+              // other. It cannot see a clearance, so on its own it lets the weld close onto a neighbour
+              // this part may not share a cut with. ValidOffset is the pair rule; keep both, since the
+              // cheap one still guards the hard invariant.
+              if (RawClearAll(i, ox, oy) && ValidOffset(i, ox, oy))
               {
                 ApplyMove(i, ox, oy);
                 welded = true;
@@ -584,38 +593,56 @@
 
       // A rigid module measures from ALL its members' outlines and ignores its own mates.
       var iSet = memberSets?[i];
-      List<List<IntPoint>> mine;
-      if (iSet == null)
+      List<List<IntPoint>> Mine(List<List<IntPoint>>[] source)
       {
-        mine = pathsRaw[i];
-      }
-      else
-      {
-        mine = new List<List<IntPoint>>();
+        if (iSet == null)
+        {
+          return source[i];
+        }
+
+        var all = new List<List<IntPoint>>();
         foreach (int mm in iSet)
         {
-          mine.AddRange(pathsRaw[mm]);
+          all.AddRange(source[mm]);
         }
+
+        return all;
       }
+
+      // TWO shells for the MOVER, the same way every pair test upstream keeps two: raw where the pair may
+      // share a cut, half-inflated where it may not. Measuring the mover raw against a spaced neighbour's
+      // shell asks for sB/2 instead of (sA+sB)/2, and the weld then closes onto it — the very halving
+      // this file already fixed for the slide, which survived here because the weld only ever ran on jobs
+      // where EVERY part could touch every other. Reported as parts turning red on a Same part nest.
+      var mineRaw = Mine(pathsRaw);
+      var mineHalf = Mine(pathsHalf);
+
+      (long MinU, long MaxU, long MinV, long MaxV) FrameBounds(List<List<IntPoint>> paths)
+      {
+        long minU = long.MaxValue, maxU = long.MinValue, minV = long.MaxValue, maxV = long.MinValue;
+        foreach (var path in paths)
+        {
+          foreach (var p in path)
+          {
+            long u = U(p);
+            long v = V(p);
+            if (u < minU) { minU = u; }
+            if (u > maxU) { maxU = u; }
+            if (v < minV) { minV = v; }
+            if (v > maxV) { maxV = v; }
+          }
+        }
+
+        return (minU, maxU, minV, maxV);
+      }
+
+      var rawBox = FrameBounds(mineRaw);
+      var halfBox = FrameBounds(mineHalf);
 
       long best = long.MaxValue;
 
-      // My bounds in the rotated frame (also gives the margin gap along the slide axis).
-      long myMinU = long.MaxValue, myMaxU = long.MinValue, myMinV = long.MaxValue, myMaxV = long.MinValue;
-      foreach (var path in mine)
-      {
-        foreach (var p in path)
-        {
-          long u = U(p);
-          long v = V(p);
-          if (u < myMinU) { myMinU = u; }
-          if (u > myMaxU) { myMaxU = u; }
-          if (v < myMinV) { myMinV = v; }
-          if (v > myMaxV) { myMaxV = v; }
-        }
-      }
-
-      best = Math.Min(best, myMinU - marginInt);
+      // The sheet margin applies to the PART, not to its clearance shell, so it is measured raw.
+      best = Math.Min(best, rawBox.MinU - marginInt);
 
       // Ray from vertex v toward -U against edge (a,b): hits where the edge spans v's V coordinate.
       long RayGap(IntPoint v, IntPoint a, IntPoint b)
@@ -652,7 +679,12 @@
           continue;
         }
 
-        var theirs = MayShare(items[i], items[j]) ? pathsRaw[j] : pathsHalf[j];
+        // Both sides of the pair, or neither: shell against shell for a pair that must keep a clearance,
+        // outline against outline for one that may share the cut.
+        bool share = MayShare(items[i], items[j]);
+        var theirs = share ? pathsRaw[j] : pathsHalf[j];
+        var mine = share ? mineRaw : mineHalf;
+        var (myMinU, myMaxU, myMinV, myMaxV) = share ? rawBox : halfBox;
 
         // BBox pre-filter (essential: without it an 800-part common-line job timed out — this scan
         // is O(vertsA x vertsB) per pair). The constraint can only bite if it overlaps my V-range

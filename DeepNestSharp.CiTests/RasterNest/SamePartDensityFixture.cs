@@ -6,6 +6,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   using System.Linq;
   using DeepNestLib;
   using DeepNestLib.NestProject;
+  using DeepNestLib.Placement;
   using DeepNestSharp.RasterNest;
   using FluentAssertions;
   using Xunit;
@@ -74,6 +75,111 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       samePart.Should().BeGreaterOrEqualTo(none, "sharing between copies of the same drawing cannot pack worse than sharing with nobody");
       samePart.Should().BeLessOrEqualTo(unrestricted, "and it cannot beat sharing with everybody");
+    }
+
+    /// <summary>
+    /// THE TEST THAT WAS MISSING, and the reason a Same part nest reached the operator with red parts on
+    /// it while 214 tests were green: there were tests for what the engine packs and tests for what the
+    /// editor accepts, and none that said THE TWO AGREE ABOUT THE SAME NEST. The bug lived in that seam.
+    /// <para>
+    /// So this nests for real and then judges the result with the VIEWER's own predicate, the one that
+    /// decides whether a part is painted red and whether Export DXF is refused.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(10)]
+    [InlineData(50)]
+    public void ASamePartNestDoesNotDisagreeWithTheEditorMoreThanAPlainOne(int spacingDivisor)
+    {
+      string exe = Sparrow();
+      if (exe == null)
+      {
+        this.output.WriteLine("SEAM: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      int none = UnfitByTheEditorsRule(exe, CommonCuttingMode.None, spacingDivisor);
+      int samePart = UnfitByTheEditorsRule(exe, CommonCuttingMode.SamePart, spacingDivisor);
+
+      this.output.WriteLine($"SEAM spacing 1/{spacingDivisor}: none={none} samePart={samePart}");
+
+      // Measured against the build before the weld/bounds fix, same job: samePart was 9 at 1/10 and 8 at
+      // 1/50, against a none of 5 and 3. Now it is 1 and 1.
+      samePart.Should().BeLessOrEqualTo(none,
+        "common cutting must not make the engine and the editor disagree more than a plain spaced job does");
+    }
+
+    /// <summary>
+    /// Nests for real, then judges the result with the VIEWER's own predicate — the one that decides
+    /// whether a part is painted red and whether Export DXF is refused.
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ The absolute count is NOT zero even for a plain spaced job (3 to 5 pairs on this fixture), so
+    /// this cannot assert zero. That residue is a PRE-EXISTING disagreement between what the engine packs
+    /// and what the editor accepts, measured on `None` where common cutting plays no part at all. It is a
+    /// separate defect and it is not this feature's to fix; what this guards is that common cutting does
+    /// not ADD to it.
+    /// </remarks>
+    private int UnfitByTheEditorsRule(string exe, CommonCuttingMode mode, int spacingDivisor)
+    {
+      var (result, spacing) = NestTwoDrawings(exe, mode, spacingDivisor);
+
+      int unfit = 0;
+      foreach (var sheet in result.UsedSheets)
+      {
+        var pls = sheet.PartPlacements.ToList();
+        for (int i = 0; i < pls.Count; i++)
+        {
+          for (int j = i + 1; j < pls.Count; j++)
+          {
+            bool mayShare = DeepNestSharp.Ui.UserControls.DxfViewer.MayShare(
+              mode, pls[i].Part.Name, pls[i].IsMirrored,
+              mode, pls[j].Part.Name, pls[j].IsMirrored);
+
+            double clearance = DeepNestSharp.Ui.UserControls.DxfViewer.ClearanceFor(spacing, spacing, mayShare);
+
+            // No tooling on a plain DXF, so the viewer forgives only its own numeric noise.
+            if (PlacementCollision.TooClose(pls[i].PlacedPart, pls[j].PlacedPart, clearance, PlacementCollision.SliverFor(0, 0)))
+            {
+              unfit++;
+            }
+          }
+        }
+      }
+
+      return unfit;
+    }
+
+    private static (INestResult Result, double Spacing) NestTwoDrawings(string exe, CommonCuttingMode cc, int spacingDivisor = 10)
+    {
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+
+      var helper = new NestExecutionHelper();
+      double maxExtent = 0;
+      var parts = new List<RasterPartInfo>();
+      for (int i = 1; i <= 2; i++)
+      {
+        string path = Path.Combine(dxfDir, $"_{i}.dxf");
+        if (File.Exists(path) && helper.LoadRawDetail(new FileInfo(path)) is { } det
+            && det.TryConvertToNfp(0, out INfp nfp) && nfp.Points.Length > 2)
+        {
+          maxExtent = Math.Max(maxExtent, Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY));
+          parts.Add(new RasterPartInfo { Path = path, Quantity = 40, Rotations = 4, Cc = cc });
+        }
+      }
+
+      parts.Should().HaveCount(2);
+      double spacing = maxExtent / spacingDivisor;
+      foreach (var p in parts)
+      {
+        p.Spacing = spacing;
+      }
+
+      int side = (int)Math.Ceiling(maxExtent * 5);
+      var result = SparrowNestService.Nest(parts, new List<(int, int, int)> { (side, side, 1) }, 4, spacing, spacing, 8, exe, out string err);
+      result.Should().NotBeNull($"nest must return a result (err={err})");
+      return (result, spacing);
     }
 
     private static string Sparrow()
