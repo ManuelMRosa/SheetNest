@@ -184,7 +184,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
     private static string Sparrow()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       return !string.IsNullOrWhiteSpace(exe) && File.Exists(exe) ? exe : null;
     }
 

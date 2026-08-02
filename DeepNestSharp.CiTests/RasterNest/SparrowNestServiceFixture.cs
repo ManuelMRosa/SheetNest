@@ -320,7 +320,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void ProducesRenderableOverlapFreeResult()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("SVC: SPARROW_EXE not set — skipping.");
@@ -414,7 +414,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void FreeRotationIsContinuous()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("CONT: SPARROW_EXE not set — skipping.");
@@ -475,7 +475,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void OneCommonCutPartDoesNotStripFreeRotationFromTheRest()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("MIXROT: SPARROW_EXE not set — skipping.");
@@ -533,7 +533,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void ZeroAnd90ModeRotatesOnlyByZeroOr90()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("0/90: SPARROW_EXE not set — skipping.");
@@ -582,7 +582,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void MultiSheetFillsSeveralSheets()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("MS: SPARROW_EXE not set — skipping.");
@@ -634,7 +634,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void NestsPartsIntoHoles()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("HOLE: SPARROW_EXE not set — skipping.");
@@ -694,7 +694,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void HighPriorityPartsAreNestedBeforeLowPriorityWhenMaterialRunsShort()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("PRIO: SPARROW_EXE not set — skipping.");
@@ -755,7 +755,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void MirroredPartsCarryTheMirrorFlagForExport()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("MIR: SPARROW_EXE not set — skipping.");
@@ -866,7 +866,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void Test2StripPacks26InTheChosenOrientationConsistently()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("T2: SPARROW_EXE not set — skipping.");

@@ -1,4 +1,4 @@
-﻿namespace DeepNestSharp.CiTests.RasterNest
+namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -15,10 +15,10 @@
   /// <summary>
   /// "I ran the exact same nest three times and each run produced a different offcut size" (issue #2).
   /// sparrow only stops on WALL CLOCK (-t; there is no iteration limit in its CLI), so a fixed RNG seed
-  /// does NOT make a single try repeatable â€” how far the search gets depends on machine load. What we
+  /// does NOT make a single try repeatable — how far the search gets depends on machine load. What we
   /// control is the best-of-K choice on top, so these measurements ask two questions:
   ///   1. how wide is the run-to-run spread of the OUTCOME the operator sees (the pack extent)?
-  ///   2. is sparrow's own density â€” what PickBest ranks by â€” the same winner the extent would pick?
+  ///   2. is sparrow's own density — what PickBest ranks by — the same winner the extent would pick?
   /// Opt-in: SHEETNEST_PERF=1, SPARROW_EXE, and SHEETNEST_PERF_DXF pointing at a part file.
   /// </summary>
   public class NestConsistencyFixture
@@ -33,7 +33,7 @@
     [Fact]
     public void MeasureRunToRunSpread()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       string dxf = Environment.GetEnvironmentVariable("SHEETNEST_PERF_DXF");
       if (Environment.GetEnvironmentVariable("SHEETNEST_PERF") != "1"
           || string.IsNullOrWhiteSpace(exe) || !System.IO.File.Exists(exe)
@@ -43,7 +43,7 @@
       }
 
       // A second part type is what the report is actually about ("8 of the first and 7 of the second fit,
-      // but 8 and 8 sometimes spills two parts onto sheet two") â€” a single repeated part is a much easier
+      // but 8 and 8 sometimes spills two parts onto sheet two") — a single repeated part is a much easier
       // packing problem and hides the variance.
       string dxf2 = Environment.GetEnvironmentVariable("SHEETNEST_PERF_DXF2");
       int qty = ReadInt("SHEETNEST_PERF_QTY", 25);
@@ -75,7 +75,7 @@
 
         var result = SparrowNestService.Nest(parts, stock, 36, spacing, 0.5, 8, exe, out _);
 
-        // The offcut the operator measures is on the LAST sheet â€” the partial one. Per-sheet counts go in
+        // The offcut the operator measures is on the LAST sheet — the partial one. Per-sheet counts go in
         // too, because "two parts on a second sheet when only one was needed" is a per-sheet symptom.
         var used = result?.UsedSheets.ToList();
         int placed = used?.Sum(s => s.PartPlacements.Count) ?? -1;
@@ -105,7 +105,7 @@
     }
 
     /// <summary>A canonical fingerprint of a whole nest: every placement's source, position, rotation and
-    /// mirror, sheet by sheet, sorted so that only the geometry can change it â€” not the order the engine
+    /// mirror, sheet by sheet, sorted so that only the geometry can change it — not the order the engine
     /// happened to emit it in.</summary>
     private static string PlacementHash(INestResult result)
     {
