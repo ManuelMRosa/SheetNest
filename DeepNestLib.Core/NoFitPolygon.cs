@@ -224,6 +224,18 @@
       set => this.curvedSegments = value;
     }
 
+    /// <summary>
+    /// The curve provenance of this ring, or null when nobody recorded it. See
+    /// <see cref="CurvedSegments"/>.
+    /// </summary>
+    /// <remarks>
+    /// A METHOD rather than a public property, and that is the whole point: the suite deep-compares
+    /// polygons with BeEquivalentTo, which walks public properties and fields but not methods. As a
+    /// public property this made a clone stop being equivalent to its source over parser metadata
+    /// neither of them cuts. A method keeps it reachable from the nester without that.
+    /// </remarks>
+    public bool[] GetCurvedSegments() => this.curvedSegments;
+
     /// <inheritdoc />
     [JsonIgnore]
     public double Area

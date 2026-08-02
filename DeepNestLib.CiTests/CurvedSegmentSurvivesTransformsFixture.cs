@@ -41,7 +41,7 @@ namespace DeepNestLib.CiTests
       Flags(Octagon().CloneExact()).Should().Equal(Marks);
     }
 
-    private static bool[] Flags(INfp poly) => ((NoFitPolygon)poly).CurvedSegments;
+    private static bool[] Flags(INfp poly) => ((NoFitPolygon)poly).GetCurvedSegments();
 
     /// <summary>
     /// A ring rebuilt to a different length can no longer be described by the old flags, and guessing

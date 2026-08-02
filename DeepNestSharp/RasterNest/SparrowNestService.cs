@@ -800,8 +800,16 @@
         // Ignore tiny edges (chamfers etc.). The absolute floor matters where the kerf is fine: a very
         // short segment out of the parser carries more direction noise than signal.
         double minLen = Math.Max(KerfOf(i) * tol.MinEdgeLengthKerfs, tol.MinEdgeLengthAbsolute);
-        var pts = all[i].PlacedPart.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
+        var placed = all[i].PlacedPart;
+        var pts = placed.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
         absPts[i] = pts;
+
+        // Which of this ring's segments are chords the parser cut a curve into. A chord lies INSIDE its
+        // arc, so welding a neighbour one kerf off a chord parks it closer than a kerf from the real
+        // curve and the cut takes the difference. Nothing downstream catches that either: every later
+        // check measures this same polygon, which contains the same chord. Null = never recorded, which
+        // is every part that did not come from the DXF parser, and reads as "none of them are".
+        var curved = (placed as NoFitPolygon)?.GetCurvedSegments();
 
         // Which side the material is on comes from the WINDING, not from where the middle of the part
         // happens to be. The old test compared the edge against the arithmetic mean of the vertices,
@@ -813,6 +821,11 @@
         int m = pts.Count;
         for (int k = 0; k < m; k++)
         {
+          if (curved != null && k < curved.Length && curved[k])
+          {
+            continue; // a chord, not a face
+          }
+
           var a = pts[k];
           var b = pts[(k + 1) % m];
           double dx = b.X - a.X, dy = b.Y - a.Y;
