@@ -37,6 +37,9 @@ namespace DeepNestSharp.Ui.Views
       this.commonCuttingCombo.Items.Add("Same part");
       this.commonCuttingCombo.SelectedIndex = (int)part.CommonCutting;
 
+      // Blank rather than 0 when unset, so the box says "the job decides" instead of "no kerf".
+      this.kerfUpDown.Value = part.KerfMm > 0 ? part.KerfMm : (double?)null;
+
       var poly = LoadPolygon(part.Path);
 
       // Rotation is per-part only (no global rotation UI). A part that has never been edited gets a
@@ -220,6 +223,9 @@ namespace DeepNestSharp.Ui.Views
       this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
 
       this.part.CommonCutting = (CommonCuttingMode)System.Math.Max(0, System.Math.Min(2, this.commonCuttingCombo.SelectedIndex));
+
+      this.kerfUpDown.CommitInput();
+      this.part.KerfMm = (this.kerfUpDown.Value ?? 0) > 0 ? this.kerfUpDown.Value.Value : -1;
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;

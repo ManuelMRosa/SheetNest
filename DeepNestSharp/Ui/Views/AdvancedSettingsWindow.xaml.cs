@@ -1,5 +1,6 @@
 namespace DeepNestSharp.Ui.Views
 {
+  using System.Linq;
   using System.Windows;
   using System.Windows.Controls;
   using DeepNestLib;
@@ -12,11 +13,22 @@ namespace DeepNestSharp.Ui.Views
   public partial class AdvancedSettingsWindow : Window
   {
     private readonly ISvgNestConfig config;
+    private readonly System.Collections.Generic.List<KerfPreset> kerfPresets;
 
-    public AdvancedSettingsWindow(ISvgNestConfig config, bool autosaveEnabled, int autosaveMinutes, bool unitsMm = false)
+    public AdvancedSettingsWindow(
+      ISvgNestConfig config,
+      bool autosaveEnabled,
+      int autosaveMinutes,
+      bool unitsMm = false,
+      double jobKerfMm = -1,
+      System.Collections.Generic.List<KerfPreset> kerfPresets = null)
     {
       this.config = config;
+      this.kerfPresets = kerfPresets ?? new System.Collections.Generic.List<KerfPreset>();
       InitializeComponent();
+
+      this.kerfUpDown.Value = jobKerfMm > 0 ? jobKerfMm : 0;
+      this.RefreshKerfPresets();
 
       this.unitsCombo.SelectedIndex = unitsMm ? 1 : 0;
       string u = unitsMm ? "mm" : "in";
@@ -43,6 +55,12 @@ namespace DeepNestSharp.Ui.Views
 
     public int AutosaveMinutes => this.minutesUpDown.Value ?? 5;
 
+    /// <summary>The job's cut width in millimetres; -1 when the box is empty or zero, meaning unset.</summary>
+    public double JobKerfMm => (this.kerfUpDown.Value ?? 0) > 0 ? this.kerfUpDown.Value.Value : -1;
+
+    /// <summary>The saved kerfs after any adds or deletes; persisted by the caller (SessionState).</summary>
+    public System.Collections.Generic.List<KerfPreset> KerfPresets => this.kerfPresets;
+
     /// <summary>The chosen global rotation code (1/2/4/8/36) — persisted by the caller.</summary>
     public int Rotations => this.rotationsCombo.SelectedItem is ComboBoxItem item
       ? int.Parse((string)item.Tag, System.Globalization.CultureInfo.InvariantCulture)
@@ -60,6 +78,60 @@ namespace DeepNestSharp.Ui.Views
       }
 
       this.rotationsCombo.SelectedIndex = 2; // 90° steps — the engine default
+    }
+
+    private void RefreshKerfPresets()
+    {
+      string keep = this.kerfPresetCombo.Text;
+      this.kerfPresetCombo.ItemsSource = null;
+      this.kerfPresetCombo.ItemsSource = this.kerfPresets
+        .Select(p => p.Name)
+        .ToList();
+      this.kerfPresetCombo.Text = keep;
+    }
+
+    private void OnKerfPresetPicked(object sender, SelectionChangedEventArgs e)
+    {
+      if (this.kerfPresetCombo.SelectedItem is string name)
+      {
+        var hit = this.kerfPresets.FirstOrDefault(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase));
+        if (hit != null)
+        {
+          this.kerfUpDown.Value = hit.KerfMm;
+        }
+      }
+    }
+
+    /// <summary>Remembers whatever is in the kerf box under the name typed into the combo.</summary>
+    private void OnSaveKerfPreset(object sender, RoutedEventArgs e)
+    {
+      this.kerfUpDown.CommitInput();
+      string name = (this.kerfPresetCombo.Text ?? string.Empty).Trim();
+      double value = this.kerfUpDown.Value ?? 0;
+      if (name.Length == 0 || value <= 0)
+      {
+        return; // nothing to name, or nothing worth naming
+      }
+
+      var hit = this.kerfPresets.FirstOrDefault(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase));
+      if (hit != null)
+      {
+        hit.KerfMm = value;
+      }
+      else
+      {
+        this.kerfPresets.Add(new KerfPreset { Name = name, KerfMm = value });
+      }
+
+      this.RefreshKerfPresets();
+    }
+
+    private void OnDeleteKerfPreset(object sender, RoutedEventArgs e)
+    {
+      string name = (this.kerfPresetCombo.Text ?? string.Empty).Trim();
+      this.kerfPresets.RemoveAll(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase));
+      this.kerfPresetCombo.Text = string.Empty;
+      this.RefreshKerfPresets();
     }
 
     private void OnAutosaveToggled(object sender, RoutedEventArgs e)
@@ -96,6 +168,7 @@ namespace DeepNestSharp.Ui.Views
       this.spacingUpDown.CommitInput();
       this.marginUpDown.CommitInput();
       this.minutesUpDown.CommitInput();
+      this.kerfUpDown.CommitInput();
 
       // Settings-backed properties persist in their setters; Rotations and the autosave options are
       // persisted by the caller (SessionState).

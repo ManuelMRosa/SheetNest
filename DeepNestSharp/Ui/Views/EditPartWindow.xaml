@@ -87,6 +87,11 @@
             <TextBlock Text="in the drawing's units" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource Brush.TextMuted}" />
           </StackPanel>
 
+          <TextBlock Text="Cut width (mm), blank for the job's:" Margin="0,14,0,4" />
+          <xctk:DoubleUpDown x:Name="kerfUpDown" Width="90" HorizontalAlignment="Left"
+                             Minimum="0" Maximum="5" Increment="0.05" FormatString="0.###"
+                             ToolTip="This part's kerf, in millimetres whatever the drawing units are. 0 means use the job's. Only worth setting when this part is cut with a different nozzle or process from the rest." />
+
           <TextBlock Text="Common cutting:" Margin="0,14,0,4" />
           <ComboBox x:Name="commonCuttingCombo" Width="200" HorizontalAlignment="Left"
                     ToolTip="Who this part may share a cut edge with. Sharing nests the two TOUCHING so the shared edge is cut once instead of twice. Part spacing still applies to everything it may not share with. The laser program must support common-line cuts." />

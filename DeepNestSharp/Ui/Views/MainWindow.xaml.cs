@@ -462,10 +462,20 @@ namespace DeepNestSharp.Ui.Views
     private void OnAdvancedSettings(object sender, RoutedEventArgs e)
     {
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
-      var dialog = new AdvancedSettingsWindow(cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm) { Owner = this };
+      var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
+      var savedPresets = (SessionState.Load() ?? new SessionState()).KerfPresets;
+      var dialog = new AdvancedSettingsWindow(cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, project?.KerfMm ?? -1, savedPresets)
+      {
+        Owner = this,
+      };
       if (dialog.ShowDialog() != true)
       {
         return;
+      }
+
+      if (project != null)
+      {
+        project.KerfMm = dialog.JobKerfMm;
       }
 
       this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
@@ -480,6 +490,7 @@ namespace DeepNestSharp.Ui.Views
       session.DefaultRotations = cfg.Rotations;
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
+      session.KerfPresets = dialog.KerfPresets;
       session.Save();
     }
 
