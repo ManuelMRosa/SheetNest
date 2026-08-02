@@ -172,6 +172,7 @@
               }
 
               var localContour = new List<PointF>();
+              var curvedSegs = new List<bool>();   // one per segment, aligned with the START point
               var verts = poly.Vertices.ToList();
               for (int vi = 0; vi < verts.Count; vi++)
               {
@@ -183,11 +184,21 @@
                 if (hasNext && Math.Abs(vert.Bulge) > 1e-9)
                 {
                   var next = verts[(vi + 1) % verts.Count];
-                  localContour.AddRange(BulgePoints(vert.X, vert.Y, next.X, next.Y, vert.Bulge));
+                  var bulge = BulgePoints(vert.X, vert.Y, next.X, next.Y, vert.Bulge).ToList();
+                  curvedSegs.Add(true);   // this vertex into the first sample of the arc
+                  foreach (var bp in bulge)
+                  {
+                    localContour.Add(bp);
+                    curvedSegs.Add(true); // and every sample onward, up to the next vertex
+                  }
+                }
+                else
+                {
+                  curvedSegs.Add(false);  // a straight run to the next vertex
                 }
               }
 
-              elems.AddRange(ConnectTheDots(localContour).ToList());
+              elems.AddRange(ConnectTheDots(localContour, curvedSegs).ToList());
             }
 
             break;
@@ -214,7 +225,7 @@
               {
                 var p1 = pp[j - 1];
                 var p2 = pp[j];
-                elems.Add(new LineElement() { Start = new PointF((float)p1.X, (float)p1.Y), End = new PointF((float)p2.X, (float)p2.Y) });
+                elems.Add(new LineElement() { Start = new PointF((float)p1.X, (float)p1.Y), End = new PointF((float)p2.X, (float)p2.Y), Curved = true });
               }
             }
 
@@ -236,7 +247,7 @@
               // Ensure the ring closes back on the first point.
               cc.Add(cc[0]);
 
-              elems.AddRange(ConnectTheDots(cc));
+              elems.AddRange(ConnectTheDots(cc, Enumerable.Repeat(true, cc.Count).ToList()));
             }
 
             break;
@@ -256,6 +267,7 @@
               }
 
               var localContour = new List<PointF>();
+              var pcurved = new List<bool>();
               var pverts = poly.Vertices.ToList();
               for (int vi = 0; vi < pverts.Count; vi++)
               {
@@ -266,11 +278,21 @@
                 if (hasNext && Math.Abs(vert.Bulge) > 1e-9)
                 {
                   var next = pverts[(vi + 1) % pverts.Count];
-                  localContour.AddRange(BulgePoints(vert.Location.X, vert.Location.Y, next.Location.X, next.Location.Y, vert.Bulge));
+                  var bulge = BulgePoints(vert.Location.X, vert.Location.Y, next.Location.X, next.Location.Y, vert.Bulge).ToList();
+                  pcurved.Add(true);
+                  foreach (var bp in bulge)
+                  {
+                    localContour.Add(bp);
+                    pcurved.Add(true);
+                  }
+                }
+                else
+                {
+                  pcurved.Add(false);
                 }
               }
 
-              elems.AddRange(ConnectTheDots(localContour));
+              elems.AddRange(ConnectTheDots(localContour, pcurved));
 
               break;
             }
@@ -309,7 +331,7 @@
                   (float)(ellipse.Center.Y + (ay * c) + (ax * ratio * s))));
               }
 
-              elems.AddRange(Chain(ee));
+              elems.AddRange(Chain(ee, curved: true));
             }
 
             break;
@@ -321,7 +343,7 @@
                 continue;
               }
 
-              elems.AddRange(Chain(sp));
+              elems.AddRange(Chain(sp, curved: true));
             }
 
             break;
@@ -386,11 +408,11 @@
 
     /// <summary>Segments joining the points in the order given. Unlike <see cref="ConnectTheDots"/> this
     /// does not wrap the last point back to the first, so a partial sweep stays open.</summary>
-    private static IEnumerable<LineElement> Chain(IList<PointF> points)
+    private static IEnumerable<LineElement> Chain(IList<PointF> points, bool curved = false)
     {
       for (var i = 1; i < points.Count; i++)
       {
-        yield return new LineElement() { Start = points[i - 1], End = points[i] };
+        yield return new LineElement() { Start = points[i - 1], End = points[i], Curved = curved };
       }
     }
 
@@ -510,13 +532,15 @@
     /// </summary>
     /// <param name="points">List of <see cref="PointF"/> to join.</param>
     /// <returns>List of <see cref="LineElement"/> connecting the dots.</returns>
-    private static IEnumerable<LineElement> ConnectTheDots(IList<PointF> points)
+    /// <param name="curved">Per-segment "this is a chord of a curve" flags, aligned with the START
+    /// index. Null means none of them are.</param>
+    private static IEnumerable<LineElement> ConnectTheDots(IList<PointF> points, IList<bool> curved = null)
     {
       for (var i = 0; i < points.Count; i++)
       {
         var p0 = points[i];
         var p1 = points[(i + 1) % points.Count];
-        yield return new LineElement() { Start = p0, End = p1 };
+        yield return new LineElement() { Start = p0, End = p1, Curved = curved != null && i < curved.Count && curved[i] };
       }
     }
 
@@ -527,7 +551,24 @@
       PointF prior = default;
       List<PointF> newContourPoints = new List<PointF>();
       var newContourEntities = new HashSet<DxfEntity>();
+
+      // Built in lockstep with the points: entry i is the segment from point i to point i + 1, so it is
+      // appended at the same moment as point i + 1. The last entry is the segment that wraps back to the
+      // start, which no entity produced - this chainer invents it, joining across a gap of up to
+      // ClosingThreshold - so it is marked as a curve and can never become a shared cut.
+      var newContourCurved = new List<bool>();
+
       var result = new List<LocalContour<DxfEntity>>();
+
+      void CloseContour()
+      {
+        newContourCurved.Add(true); // the invented closing segment
+        result.Add(new LocalContour<DxfEntity>(newContourPoints.ToList(), newContourEntities, newContourCurved.ToList()));
+        newContourPoints = new List<PointF>();
+        newContourEntities = new HashSet<DxfEntity>();
+        newContourCurved = new List<bool>();
+      }
+
       while (allLineElements.Any())
       {
         if (newContourPoints.Count == 0)
@@ -536,6 +577,7 @@
           newContourPoints.Add(toStart.Start);
           prior = toStart.End;
           newContourPoints.Add(prior);
+          newContourCurved.Add(toStart.Curved);
           newContourEntities.Add(allLineElements.First().Entity);
           allLineElements.RemoveAt(0);
         }
@@ -543,9 +585,7 @@
         {
           if (!TryGetAnotherPoint(prior, allLineElements, out (DxfEntity Entity, LineElement LineElement) next))
           {
-            result.Add(new LocalContour<DxfEntity>(newContourPoints.ToList(), newContourEntities));
-            newContourPoints = new List<PointF>();
-            newContourEntities = new HashSet<DxfEntity>();
+            CloseContour();
           }
           else
           {
@@ -553,13 +593,14 @@
             newContourEntities.Add(next.Entity);
             prior = EndIsClosest(prior, next) ? next.LineElement.End : next.LineElement.Start;
             newContourPoints.Add(prior);
+            newContourCurved.Add(next.LineElement.Curved);
           }
         }
       }
 
       if (newContourPoints.Any())
       {
-        result.Add(new LocalContour<DxfEntity>(newContourPoints.ToList(), newContourEntities));
+        CloseContour();
       }
 
       result.OrderByDescending(o => Math.Abs(Geometry.GeometryUtil.PolygonArea(o.Points))).First().IsChild = false;
