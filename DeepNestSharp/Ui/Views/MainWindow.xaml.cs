@@ -1658,7 +1658,17 @@ namespace DeepNestSharp.Ui.Views
         // otherwise (error) clear the status text.
         if (nestSucceeded)
         {
-          this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}");
+          // Say what common cutting actually managed. Giving a group up used to be completely silent,
+          // so a job could come out with no shared cuts on it and look exactly like a job that never
+          // had any to make.
+          string seams = SparrowNestService.DiagSeamsSnapped > 0 || SparrowNestService.DiagSeamsGivenUp > 0
+            ? FormattableString.Invariant($"  ·  {SparrowNestService.DiagSeamsSnapped} shared cuts")
+              + (SparrowNestService.DiagSeamsGivenUp > 0
+                ? FormattableString.Invariant($", {SparrowNestService.DiagSeamsGivenUp} given up (a cut would have reached a neighbour)")
+                : string.Empty)
+            : string.Empty;
+
+          this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}{seams}");
         }
         else if (this.nestPhaseText.Text != "Nest cancelled")
         {

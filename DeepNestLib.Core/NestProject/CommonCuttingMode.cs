@@ -22,21 +22,30 @@ namespace DeepNestLib.NestProject
   /// `groups` parameter and rigid-module support) and no production path calls it.
   /// </para>
   /// <para>
-  /// 3. Only horizontal and vertical edges are ever snapped together (SnapCommonLineEdges takes just
-  /// axis-aligned edges), which is why a part in any mode but None has its rotations clipped to 90 degree
-  /// steps. A common-cut part never rotates freely, so a scalene triangle - where common cutting would pay
-  /// most - does not share an edge by this route.
+  /// 3. A seam can run at ANY angle, but only between STRAIGHT edges. Chords of a tessellated curve are
+  /// excluded on purpose: a chord lies inside its arc, so welding to one gives the bulge away. A
+  /// common-cut part is still clipped to 45 degree steps rather than rotating freely, because at
+  /// arbitrary angles two copies almost never present each other parallel faces. So two identical
+  /// scalene triangles nested head to tail still will not share their long edge unless the engine
+  /// happened to leave them facing.
   /// </para>
   /// <para>
-  /// 4. The snap is all-or-nothing for the whole pass: if any pair's tooling ends up invading a
-  /// neighbour, every snap on the sheet is rolled back. The nest is still correct, just without common
-  /// cutting, and nothing says so out loud.
+  /// 4. A seam is given up per GROUP, not per sheet: if one group's cut would reach into a neighbour
+  /// only that group loses its seam, and the count of what was welded and what was abandoned is
+  /// reported when the nest finishes. It used to roll the whole sheet back in silence.
   /// </para>
   /// <para>
-  /// 5. "Shared edge" means two different things depending on where the part came from. A plain DXF has
-  /// no kerf to know about, so compaction leaves the lines COINCIDENT and the DXF export merges them into
-  /// one cut. A part carrying SheetCam tooling ends up one kerf apart instead, not coincident, and it is
-  /// the post processor - not SheetNest - that decides to cut it once.
+  /// 5. "Shared edge" means two different things depending on the kerf, and the kerf is the whole
+  /// mechanism: it is the gap parts are placed at and the width of the single cut that severs both. With
+  /// no kerf known there is nothing to place to, and the feature does nothing at all. A part carrying
+  /// SheetCam tooling brings its own measured one; anything else has to be told, on the job or on the
+  /// part. Given one, the seam is a kerf wide and exports as two lines and the post decides to cut it
+  /// once; given none, compaction leaves the lines coincident and the DXF export merges them into one.
+  /// Two different files for the same nest, so it is worth knowing which was asked for.
+  /// </para>
+  /// <para>
+  /// 6. None of the tolerances here are anybody else's published values. They are starting points for
+  /// the trade and they need calibrating against a kerf MEASURED on the machine.
   /// </para>
   /// </remarks>
   [JsonConverter(typeof(JsonStringEnumConverter))]

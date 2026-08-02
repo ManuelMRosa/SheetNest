@@ -39,6 +39,13 @@ namespace DeepNestSharp.RasterNest
     // the winner sparrow's own density picks is also the one that leaves the largest remnant. Caller resets.
     internal static readonly List<string> DiagCandidates = new List<string>();
 
+    /// <summary>Seams welded on the last nest, and groups of them given up because a cut would have
+    /// invaded a neighbour. The second number is the one worth showing: it is the difference between
+    /// "there was nothing to share" and "there was, and it had to be abandoned".</summary>
+    internal static int DiagSeamsSnapped;
+
+    internal static int DiagSeamsGivenUp;
+
     private static int diagPackSeq;
 
     private sealed class Loaded
@@ -136,6 +143,8 @@ namespace DeepNestSharp.RasterNest
       // Common-line packs as densely as sparrow can (mixing orientations); the snap then aligns whatever
       // near-parallel edges it left, and the post decides which shared edges to cut once. The snap needs
       // straight H/V edges, so common-line uses axis-aligned rotation (4-way) rather than free/fine angles.
+      DiagSeamsSnapped = 0;
+      DiagSeamsGivenUp = 0;
       var diagLoad = System.Diagnostics.Stopwatch.StartNew();
       var loaded = LoadAll(parts, rotations, spacing, out error);
       DiagLoadMs = diagLoad.ElapsedMilliseconds;
@@ -1146,9 +1155,17 @@ namespace DeepNestSharp.RasterNest
           if (!ToolingClearsEveryone(all, toolingById, new HashSet<int>(group)))
           {
             RevertGroup(group);
+            System.Threading.Interlocked.Increment(ref DiagSeamsGivenUp);
+            continue;
           }
+
+          System.Threading.Interlocked.Add(ref DiagSeamsSnapped, group.Count - 1);
         }
+
+        return;
       }
+
+      System.Threading.Interlocked.Add(ref DiagSeamsSnapped, good.Sum(g => g.Count - 1));
     }
 
     /// <summary>True when no part's tooling footprint overlaps another part's outline by more than a sliver
