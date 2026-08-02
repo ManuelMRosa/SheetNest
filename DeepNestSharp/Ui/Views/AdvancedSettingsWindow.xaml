@@ -66,6 +66,48 @@
       </StackPanel>
     </GroupBox>
 
+    <GroupBox Header="Common cutting tolerances" Padding="8" Margin="0,10,0,0">
+      <StackPanel>
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" Opacity="0.8"
+                   Text="What counts as a shared edge. These are starting values typical of the trade, not measurements, and they need calibrating against the kerf you measured on the machine. They are NOT taken from any other nesting program." />
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="Out of parallel by up to (deg):" VerticalAlignment="Center" Margin="0,0,10,6" />
+          <xctk:DoubleUpDown Grid.Row="0" Grid.Column="1" x:Name="ccAngleUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
+                             Minimum="0.001" Maximum="45" Increment="0.05" FormatString="0.####"
+                             ToolTip="How far from facing each other two edges may be and still be cut as one." />
+
+          <TextBlock Grid.Row="1" Grid.Column="0" Text="Shortest edge worth sharing (kerfs):" VerticalAlignment="Center" Margin="0,0,10,6" />
+          <xctk:DoubleUpDown Grid.Row="1" Grid.Column="1" x:Name="ccMinEdgeUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
+                             Minimum="0" Increment="0.5" FormatString="0.###"
+                             ToolTip="Below this an edge is a chamfer, not a seam." />
+
+          <TextBlock Grid.Row="2" Grid.Column="0" Text="Gap window (kerfs, min / max):" VerticalAlignment="Center" Margin="0,0,10,6" />
+          <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
+            <xctk:DoubleUpDown x:Name="ccGapMinUpDown" Width="70" Minimum="0" Increment="0.05" FormatString="0.###"
+                               ToolTip="Closer than this and the pair is not read as a seam." />
+            <xctk:DoubleUpDown x:Name="ccGapMaxUpDown" Width="70" Margin="6,0,0,0" Minimum="0" Increment="0.05" FormatString="0.###"
+                               ToolTip="Further than this and the parts are left where the nester put them." />
+          </StackPanel>
+
+          <TextBlock Grid.Row="3" Grid.Column="0" Text="Must run alongside for (kerfs):" VerticalAlignment="Center" Margin="0,0,10,0" />
+          <xctk:DoubleUpDown Grid.Row="3" Grid.Column="1" x:Name="ccOverlapUpDown" Width="80" HorizontalAlignment="Left"
+                             Minimum="0" Increment="0.5" FormatString="0.###"
+                             ToolTip="How far two edges must share a run. This is what stops a corner touch being treated as a seam." />
+        </Grid>
+      </StackPanel>
+    </GroupBox>
+
     <GroupBox Header="DXF export" Padding="8" Margin="0,10,0,0">
       <StackPanel>
         <CheckBox x:Name="mergeLinesCheck" Content="Merge coincident cut lines (common-line)"

@@ -33,6 +33,10 @@ namespace DeepNestSharp.Ui.Views
     private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
+
+    // What counts as a shared edge on THIS machine. Null = the shipped starting values. Per user and
+    // not per project: it is a calibration, and opening someone else's job must not overwrite it.
+    private DeepNestLib.NestProject.CommonCuttingTolerances commonCuttingTolerances;
     private bool preferRectOffcut; // pack the last sheet toward one end for a rectangular offcut (SessionState)
     private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
     private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
@@ -184,6 +188,8 @@ namespace DeepNestSharp.Ui.Views
         this.ApplyAutosaveSettings(
           session.AutosaveEnabled ?? true,
           session.AutosaveMinutes >= 1 && session.AutosaveMinutes <= 60 ? session.AutosaveMinutes : 5);
+
+        this.commonCuttingTolerances = session.CommonCutting;
 
         // Global default rotations (plain in-memory config property — resets to 4 without this).
         if (session.DefaultRotations > 0)
@@ -464,7 +470,8 @@ namespace DeepNestSharp.Ui.Views
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
       var savedPresets = (SessionState.Load() ?? new SessionState()).KerfPresets;
-      var dialog = new AdvancedSettingsWindow(cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, project?.KerfMm ?? -1, savedPresets)
+      var dialog = new AdvancedSettingsWindow(
+        cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, project?.KerfMm ?? -1, savedPresets, this.commonCuttingTolerances)
       {
         Owner = this,
       };
@@ -491,6 +498,8 @@ namespace DeepNestSharp.Ui.Views
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
       session.KerfPresets = dialog.KerfPresets;
+      this.commonCuttingTolerances = dialog.CommonCutting;
+      session.CommonCutting = this.commonCuttingTolerances;
       session.Save();
     }
 
@@ -1519,7 +1528,7 @@ namespace DeepNestSharp.Ui.Views
           // ~4-6s (its run-to-run spread is inherent), so best-of-K — not a longer single run — is what
           // buys quality. Keeping this low keeps nesting fast.
           // Common cutting rides along on each part's own mode; there is no job-wide flag to keep in step.
-          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress);
+          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, this.commonCuttingTolerances);
           return (r, err);
         });
 

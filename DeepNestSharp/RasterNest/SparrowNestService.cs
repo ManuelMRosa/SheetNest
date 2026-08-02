@@ -1,4 +1,4 @@
-﻿namespace DeepNestSharp.RasterNest
+namespace DeepNestSharp.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -25,7 +25,7 @@
   internal static class SparrowNestService
   {
     // Stage timers, read by MetricUnitsPerfFixture.MeasureRealJobStageBreakdown. The wall time of a nest
-    // is (waves x per-sheet budget) and everything else is noise â€” but only a breakdown proves that, so
+    // is (waves x per-sheet budget) and everything else is noise — but only a breakdown proves that, so
     // keep these: they are what a "nesting is slow" report gets measured with. Caller resets them.
     internal static long DiagLoadMs;
     internal static long DiagSparrowMs;
@@ -45,10 +45,10 @@
     {
       public int Source;
       public INfp Nfp;        // original (rendered) geometry
-      public INfp Dilated;    // tooling footprint grown by FitSpacing/2 â€” what sparrow packs
-      public INfp Tooling;    // tooling footprint WITHOUT the spacing shell â€” what compaction must respect
+      public INfp Dilated;    // tooling footprint grown by FitSpacing/2 — what sparrow packs
+      public INfp Tooling;    // tooling footprint WITHOUT the spacing shell — what compaction must respect
       public int[] Angles;    // allowed orientations (discrete fallback + used by hole-filling)
-      public bool Continuous; // "Free" rotation â†’ send NO orientation list so sparrow rotates continuously
+      public bool Continuous; // "Free" rotation → send NO orientation list so sparrow rotates continuously
       public double EffSpacing;   // NOMINAL spacing: what this part keeps to anything it cannot share a cut with
       public CommonCuttingMode Cc; // who it may share a cut edge with; None = nobody
       public int ShareKey;    // identity for SamePart: same drawing AND same hand
@@ -59,9 +59,9 @@
       // cannot express a clearance that depends on which neighbour it is. Compaction can, and uses
       // EffSpacing with MayShare instead.
       public double FitSpacing;
-      public double Kerf;     // cut width (drawing units) â€” the exact gap common-line neighbours snap to
+      public double Kerf;     // cut width (drawing units) — the exact gap common-line neighbours snap to
       public int Qty;
-      public bool Mirrored;   // this population is X-flipped â€” placements carry IsMirrored for the exporter
+      public bool Mirrored;   // this population is X-flipped — placements carry IsMirrored for the exporter
       public int Priority;    // 1-10, LOWER nests first (1 = highest); decides which parts fill earlier sheets
     }
 
@@ -81,7 +81,7 @@
 
     /// <summary>Multi-sheet nest: fills sheets from <paramref name="stock"/> until the pool is empty or
     /// the stock is exhausted; whatever cannot fit is returned as unplaced.
-    /// <para><paramref name="perSheetBudgetSec"/> no longer bounds the search â€” how hard a sheet is
+    /// <para><paramref name="perSheetBudgetSec"/> no longer bounds the search — how hard a sheet is
     /// searched is a fixed iteration count (see <see cref="IterationBudget"/>), because a budget in
     /// seconds means a busy or slower machine returns a different nest. It survives as the scale for the
     /// watchdog that kills a hung engine process.</para></summary>
@@ -95,7 +95,8 @@
       string sparrowExePath,
       out string error,
       CancellationToken cancel = default,
-      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null)
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
+      CommonCuttingTolerances tolerances = null)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -144,7 +145,7 @@
         return null;
       }
 
-      return RunNestBody(loaded, slots, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, out error);
+      return RunNestBody(loaded, slots, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, tolerances, out error);
     }
 
     /// <summary>The per-sheet nest loop: fills sheets from the stock (best-of-K sparrow packs, corner
@@ -157,6 +158,7 @@
       string sparrowExePath,
       CancellationToken cancel,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
+      CommonCuttingTolerances tolerances,
       out string error)
     {
       error = null;
@@ -178,7 +180,7 @@
         var (w, h) = slots[slot];
         var batchQty = SelectBatch(pool, loadedById, w, h);
 
-        // Search budget, in ITERATIONS rather than seconds â€” see RunSparrowOnce. A sheet with few parts
+        // Search budget, in ITERATIONS rather than seconds — see RunSparrowOnce. A sheet with few parts
         // converges sooner, so the budget scales with the batch (this matters for the sparse tail sheet
         // and for many small sheets); early termination (-x) still trims a sheet that gets stuck. The
         // wall clock a sheet takes is now a consequence of the machine, not an input to the answer.
@@ -186,25 +188,25 @@
         int budget = IterationBudget(batchParts);
 
         // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
-        // A batch that governs many clones is worth many best-of-K tries â€” the cost is amortized over all
-        // the clones â€” which makes the template sheet converge to a consistent, dense layout (more time
+        // A batch that governs many clones is worth many best-of-K tries — the cost is amortized over all
+        // the clones — which makes the template sheet converge to a consistent, dense layout (more time
         // does NOT reduce sparrow's run-to-run variance, but more tries do).
         int replicas = batchQty.Count == 0 ? 1 : batchQty.Min(kv => pool[kv.Key] / Math.Max(1, kv.Value));
 
         // The final/tail sheet takes the whole remaining pool (a leftover count that won't fill a sheet).
-        // It is a single one-off â€” replicas=1 â†’ base tries â†’ it varies run-to-run. Since it's just ONE
+        // It is a single one-off — replicas=1 → base tries → it varies run-to-run. Since it's just ONE
         // sheet, invest more best-of-K in it so it lands consistently, like the replicated body already does.
         bool isFinalSheet = batchParts == pool.Values.Sum();
         int tries = TriesFor(replicas, isFinalSheet);
 
-        // packW/packH = the sheet dims PackOneSheet packed in (always the stock slot's own orientation â€” the
+        // packW/packH = the sheet dims PackOneSheet packed in (always the stock slot's own orientation — the
         // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
         // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
         // of seconds. Scaled off the caller's time preference so a user who asks for longer nests also
-        // gets a longer leash, but far above any healthy run â€” it exists to catch a hung process.
+        // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
         int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
 
-        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, out string perr);
+        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
         if (cancel.IsCancellationRequested)
         {
           error = "Cancelled.";
@@ -213,7 +215,7 @@
 
         if (placements == null || placements.Count == 0)
         {
-          // Nothing fit this sheet size (a part is bigger than it) â€” try the next slot/size.
+          // Nothing fit this sheet size (a part is bigger than it) — try the next slot/size.
           slot++;
           continue;
         }
@@ -224,7 +226,7 @@
         slot++;
 
         // Pattern replication: while the pool still holds the SAME composition and the next slots are
-        // the same size, clone this layout instead of re-nesting (uniform jobs â†’ 1 run + replicate).
+        // the same size, clone this layout instead of re-nesting (uniform jobs → 1 run + replicate).
         while (slot < slots.Count && slots[slot].W == w && slots[slot].H == h && PoolContains(pool, placedBySrc))
         {
           sheetLayouts.Add(ClonePlacements(placements));
@@ -313,7 +315,7 @@
 
       // "The same part" means the same DRAWING, not the same row: the list may legitimately hold one file
       // twice (once common-cut, once spaced), and two rows of the same file are still the same part on the
-      // sheet. A MIRRORED population is a different part, though — its shared edges are the other hand's.
+      // sheet. A MIRRORED population is a different part, though � its shared edges are the other hand's.
       var shareKeys = new Dictionary<(string Path, bool Mirrored), int>();
 
       foreach (var part in parts)
@@ -341,17 +343,17 @@
           if (part.Mirrored)
           {
             // Bake the mirror into the RENDERED geometry; the placement also carries IsMirrored so the
-            // DXF exporter (which reloads the ORIGINAL file) mirrors it once too â€” same order the
-            // exporter uses (MirrorX about origin â†’ rotate â†’ translate), so both paths agree.
+            // DXF exporter (which reloads the ORIGINAL file) mirrors it once too — same order the
+            // exporter uses (MirrorX about origin → rotate → translate), so both paths agree.
             nfp = nfp.MirrorX();
           }
 
           int code = part.Rotations > 0 ? part.Rotations : rotations;
 
           // Common-line needs straight H/V edges for the snap to line up neighbours. Fine/continuous
-          // rotation (45Â° steps, free 15Â°) would leave edges at odd angles the snap can't use, so drop it
+          // rotation (45° steps, free 15°) would leave edges at odd angles the snap can't use, so drop it
           // to 4-way. Decide by the ANGLES, not the code number: the special codes 1001/1002/1003 are
-          // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept â€” an
+          // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept — an
           // earlier `code >= 8` test wrongly turned 0/90 into 4-way, adding 180/270.
           // PER PART, not per job: clipping every part because ONE of them is common-cut would quietly
           // take free rotation away from parts that never asked for it, and cost density for nothing.
@@ -404,7 +406,7 @@
       return loaded;
     }
 
-    /// <summary>Picks a batch from the pool up to ~1.3Ã— the sheet area (extra choice for sparrow), keeping
+    /// <summary>Picks a batch from the pool up to ~1.3× the sheet area (extra choice for sparrow), keeping
     /// source variety for mixed jobs. Always returns at least one part so an oversize part gets a try.</summary>
     private static Dictionary<int, int> SelectBatch(Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, int w, int h)
     {
@@ -415,7 +417,7 @@
       int prevPriority = int.MinValue;
 
       // Highest priority first (1 = highest, lower number wins) so preferred parts fill earlier
-      // sheets and the leftover tail â€” what ends up unplaced when material runs out â€” is lowest priority.
+      // sheets and the leftover tail — what ends up unplaced when material runs out — is lowest priority.
       foreach (var kv in pool.OrderBy(kv => loadedById[kv.Key].Priority).ThenBy(kv => kv.Key))
       {
         if (kv.Value <= 0)
@@ -454,7 +456,7 @@
 
       if (batch.Count == 0)
       {
-        // Nothing fit the area cap â€” force the single highest-priority remaining part onto the sheet.
+        // Nothing fit the area cap — force the single highest-priority remaining part onto the sheet.
         var first = pool.Where(k => k.Value > 0)
           .OrderBy(k => loadedById[k.Key].Priority).ThenBy(k => k.Key).First();
         batch[first.Key] = 1;
@@ -465,12 +467,12 @@
 
     /// <summary>Packs one batch onto one sheet, best-of-K with EARLY-STOP: races sparrow searches (fixed seeds)
     /// in waves and keeps the candidate that PLACES THE MOST parts (tie: denser, then lower seed). Stops
-    /// launching more tries as soon as a whole wave fails to improve the best part-count â€” easy/uniform sheets
+    /// launching more tries as soon as a whole wave fails to improve the best part-count — easy/uniform sheets
     /// converge in a wave or two, so they don't burn all `tries`; hard/variable sheets keep going up to `tries`.
-    /// Packs ONLY in the user's chosen sheet orientation â€” the sheet is never auto-rotated (a 120Ã—60 preset must
-    /// render 120Ã—60); to use the other orientation the operator picks that preset.</summary>
+    /// Packs ONLY in the user's chosen sheet orientation — the sheet is never auto-rotated (a 120×60 preset must
+    /// render 120×60); to use the other orientation the operator picks that preset.</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
@@ -504,7 +506,7 @@
         string inputPath = Path.Combine(workDir, "job.json");
         File.WriteAllText(inputPath, BuildJaguaJson("job", stripHeight, batch, batchQty));
 
-        // WHICH seeds are raced against each other, and how many, decides the result â€” so the wave is a
+        // WHICH seeds are raced against each other, and how many, decides the result — so the wave is a
         // FIXED size on every machine. How many of those run at the same instant is just scheduling, and
         // that is what the core count is allowed to decide: a machine with fewer cores takes longer to
         // finish the same wave, but computes the same nest. Tying the wave itself to ProcessorCount (it
@@ -543,7 +545,7 @@
             }
 
             var diagMap = System.Diagnostics.Stopwatch.StartNew();
-            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, cancel);
+            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, tolerances, cancel);
             System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
@@ -567,7 +569,7 @@
             }
           }
 
-          // Plateau: stop once a full wave fails to beat the best part-count so far (â‰¥1 wave already ran).
+          // Plateau: stop once a full wave fails to beat the best part-count so far (≥1 wave already ran).
           // Part-count is a hard metric that plateaus fast on easy sheets and correlates with density.
           int waveBest = winners.Count == 0 ? -1 : winners.Max(w => w.Count);
           if (bestCount >= 0 && waveBest <= bestCount)
@@ -609,7 +611,7 @@
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
     /// and splits off anything past the sheet edge (not placed).</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource) MapAndCompact(
-      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CancellationToken cancel)
+      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CommonCuttingTolerances tolerances, CancellationToken cancel)
     {
       using var doc = JsonDocument.Parse(outputJson);
       var placed = doc.RootElement.GetProperty("solution").GetProperty("layout").GetProperty("placed_items");
@@ -641,7 +643,7 @@
         return (new List<IPartPlacement>(), new Dictionary<int, int>());
       }
 
-      // Pre-anchor min â†’ margin so compaction starts on-sheet, then gravity-compact to the corner.
+      // Pre-anchor min → margin so compaction starts on-sheet, then gravity-compact to the corner.
       double minX = all.Min(p => p.PlacedPart.MinX);
       double minY = all.Min(p => p.PlacedPart.MinY);
       foreach (var pp in all)
@@ -651,7 +653,7 @@
       }
 
       // Compact against the TOOLING footprint, not the bare outline. Compaction slides parts together
-      // until their polygons are `spacing` apart â€” with common-line that is exact contact, which on a
+      // until their polygons are `spacing` apart — with common-line that is exact contact, which on a
       // toolpathed part would drive the kerf and the lead-ins into the neighbour, undoing the clearance
       // sparrow just respected. Feeding it the footprint makes "exact contact" mean the outlines sit one
       // kerf apart: the shared cut edge, with neither part losing material.
@@ -678,7 +680,7 @@
       // a part only moves if the shift keeps every part's tooling clear of every other.
       if (batch.Any(l => l.Cc != CommonCuttingMode.None))
       {
-        SnapCommonLineEdges(all, kerfById, toolingById, ccById);
+        SnapCommonLineEdges(all, kerfById, toolingById, ccById, tolerances);
       }
 
       const double tol = 1e-3;
@@ -689,7 +691,7 @@
         var ppp = pp.PlacedPart;
         if (ppp.MinX < -tol || ppp.MinY < -tol || ppp.MaxX > sheetWin + tol || ppp.MaxY > sheetHin + tol)
         {
-          continue; // past the sheet edge â†’ not placed on this sheet (stays in the pool)
+          continue; // past the sheet edge → not placed on this sheet (stays in the pool)
         }
 
         placements.Add(pp);
@@ -1060,7 +1062,7 @@
           group.Add(u);
           foreach (var (v, dx, dy, forward) in adj[u])
           {
-            // Constraint: B_offset = A_offset + shift. Forward edge is Aâ†’B (u is A), else u is B.
+            // Constraint: B_offset = A_offset + shift. Forward edge is A→B (u is A), else u is B.
             var want = forward
               ? (offset[u].Value.X + dx, offset[u].Value.Y + dy)
               : (offset[u].Value.X - dx, offset[u].Value.Y - dy);
@@ -1169,7 +1171,7 @@
         }
       }
 
-      double invadeLimit = 0.02 * scale * scale; // area unitsÂ²; ignore rounding slivers
+      double invadeLimit = 0.02 * scale * scale; // area units²; ignore rounding slivers
       for (int i = 0; i < n; i++)
       {
         for (int j = 0; j < n; j++)
@@ -1238,7 +1240,7 @@
 
     /// <summary>
     /// Post-pass: drop leftover parts INTO the holes of already-placed parts. jagua ignores item holes
-    /// (so sparrow never nests inside them); this recovers that density with exact Clipper geometry â€”
+    /// (so sparrow never nests inside them); this recovers that density with exact Clipper geometry —
     /// the spacing-dilated candidate must fit fully inside the hole and clear anything already in it.
     /// </summary>
     private static void FillHoles(List<List<IPartPlacement>> sheetLayouts, Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, CancellationToken cancel)
@@ -1255,7 +1257,7 @@
       {
         for (int si = 0; si < sheetLayouts.Count && pool.Values.Sum() > 0; si++)
         {
-          // Every hole on this sheet (sheet coords, biggest first â€” big parts into big holes).
+          // Every hole on this sheet (sheet coords, biggest first — big parts into big holes).
           var holes = new List<List<IntPoint>>();
           foreach (var pp in sheetLayouts[si].ToList())
           {
@@ -1316,7 +1318,7 @@
                 {
                   var rotated = Math.Abs(rot % 360) < 1e-9 ? loaded.Nfp : loaded.Nfp.Rotate(rot);
 
-                  // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline â€” a part dropped
+                  // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline — a part dropped
                   // into a hole has to keep its cut clear of the surrounding part just like any other.
                   var forFit = loaded.Tooling ?? loaded.Nfp;
                   // FitSpacing, not EffSpacing: like the engine, this grows ONE polygon and then measures it
@@ -1354,7 +1356,7 @@
       }
       catch (Exception)
       {
-        // Hole-filling is a best-effort bonus â€” never let a geometry edge case fail the whole nest.
+        // Hole-filling is a best-effort bonus — never let a geometry edge case fail the whole nest.
       }
     }
 
@@ -1410,7 +1412,7 @@
     }
 
     /// <summary>Robust area overlap via DIFFERENCE (handles coincident/contained polygons, where a plain
-    /// Clipper intersection can return 0): overlap = area(a) âˆ’ area(a âˆ’ b).</summary>
+    /// Clipper intersection can return 0): overlap = area(a) − area(a − b).</summary>
     private static bool Overlaps(List<IntPoint> a, List<IntPoint> b, double eps)
     {
       var clipper = new Clipper();
@@ -1459,16 +1461,16 @@
     }
 
     /// <summary>Grows a polygon outward by <paramref name="offset"/> (drawing units) via a miter Clipper
-    /// offset â€” the part-spacing halo. Orientation is normalised to CCW so a +delta always GROWS (a CW
-    /// ring would shrink). offset â‰¤ 0 returns the polygon unchanged.</summary>
+    /// offset — the part-spacing halo. Orientation is normalised to CCW so a +delta always GROWS (a CW
+    /// ring would shrink). offset ≤ 0 returns the polygon unchanged.</summary>
     /// <summary>
     /// The shape the engine must keep clear for one part. For a plain DXF part that is just its outline
     /// grown by half the spacing, exactly as before. A part from a SheetCam .nest is already toolpathed:
-    /// the cut runs half a kerf outside the outline, and its lead-ins/outs reach further still â€” on a real
+    /// the cut runs half a kerf outside the outline, and its lead-ins/outs reach further still — on a real
     /// job the outer lead pierced 2.9 mm beyond the contour, so packing to the outline drove leads straight
     /// through the neighbouring part. Growing the outline AND the lead paths in one offset pass unions them
     /// into a single footprint (the leads meet the contour, so the result stays connected).
-    /// <para>Only the packing shape changes â€” the rendered, reported and exported geometry stays the part.</para>
+    /// <para>Only the packing shape changes — the rendered, reported and exported geometry stays the part.</para>
     /// </summary>
     internal static INfp ToolingFootprint(INfp poly, IReadOnlyList<IReadOnlyList<SvgPoint>> toolPaths, double kerf, double spacing)
     {
@@ -1548,7 +1550,7 @@
         int n = pts.Length;
         if (n > 1 && Math.Abs(pts[0].X - pts[n - 1].X) < 1e-9 && Math.Abs(pts[0].Y - pts[n - 1].Y) < 1e-9)
         {
-          n--; // jagua implies closure â€” drop a repeated closing vertex
+          n--; // jagua implies closure — drop a repeated closing vertex
         }
 
         var data = new List<double[]>(n);
@@ -1557,7 +1559,7 @@
           data.Add(new[] { pts[i].X, pts[i].Y });
         }
 
-        // Omit allowed_orientations entirely for "Free" parts â†’ jagua treats it as RotationRange::Continuous
+        // Omit allowed_orientations entirely for "Free" parts → jagua treats it as RotationRange::Continuous
         // and sparrow rotates to any angle (denser). Restricted parts keep their discrete angle set.
         var item = new Dictionary<string, object>
         {
@@ -1581,7 +1583,7 @@
     private const int WaveSize = 8;
 
     /// <summary>Search iterations per part in the batch. An "iteration" here is one pass of sparrow's outer
-    /// loop, which is coarse â€” the reference two-sheet job (40 parts on its first sheet) reaches its best
+    /// loop, which is coarse — the reference two-sheet job (40 parts on its first sheet) reaches its best
     /// result by about 20 and does not improve at 40, 70, 100, 200 or 400, while the wall clock triples.
     /// Calibrated to land on that knee, which also puts a nest back at the time the clock budget took.</summary>
     private const double IterationsPerPart = 0.5;
@@ -1590,7 +1592,7 @@
     private const int MinIterations = 15;
 
     /// <summary>How many searches run at the same instant. This is the ONLY place the machine is allowed
-    /// to influence a nest, and it influences only how long it takes â€” a slower machine finishes the same
+    /// to influence a nest, and it influences only how long it takes — a slower machine finishes the same
     /// wave later, it does not compute a different one. SHEETNEST_MAX_CONC overrides it, which is how the
     /// "any machine, same nest" claim is actually tested rather than asserted.</summary>
     private static int Concurrency()
@@ -1620,8 +1622,8 @@
 
     /// <summary>How many independent sparrow searches to race per sheet (best-of-N). A constant: it used
     /// to be <c>ProcessorCount >= 12 ? 3 : 2</c>, which handed a smaller machine fewer attempts and so a
-    /// different â€” and on average worse â€” nest for the very same job. Overridable via
-    /// SHEETNEST_NEST_TRIES for experiments. Always â‰¥2 so a single unlucky run can't stand.</summary>
+    /// different — and on average worse — nest for the very same job. Overridable via
+    /// SHEETNEST_NEST_TRIES for experiments. Always ≥2 so a single unlucky run can't stand.</summary>
     private static int NestTries()
     {
       var env = Environment.GetEnvironmentVariable("SHEETNEST_NEST_TRIES");
@@ -1636,7 +1638,7 @@
     /// <summary>Best-of-K count for a batch that will pattern-replicate onto `replicas` identical sheets.
     /// A one-off sheet uses the base <see cref="NestTries"/>; a template governing many clones gets more
     /// tries (up to 16) because that cost is amortized over all the clones and drives the layout to a
-    /// denser result â€” a search is one draw from a wide spread (measured: 30 to 40 parts on the same
+    /// denser result — a search is one draw from a wide spread (measured: 30 to 40 parts on the same
     /// sheet across seeds), so racing more of them is what raises the floor.</summary>
     internal static int TriesForReplicas(int replicas) => Math.Clamp(replicas, NestTries(), 16);
 
@@ -1650,7 +1652,7 @@
     }
 
     /// <summary>The bounding box the placed parts actually occupy. This is what decides the offcut the
-    /// operator gets, and it is measured AFTER the gravity compaction â€” sparrow's own density is measured
+    /// operator gets, and it is measured AFTER the gravity compaction — sparrow's own density is measured
     /// before it, on its own strip.</summary>
     internal static (double W, double H) Extent(IReadOnlyList<IPartPlacement> placements)
     {
@@ -1690,7 +1692,7 @@
     /// long axis, then higher strip density, then lower seed (stable, repeatable).
     /// <para>
     /// Extent beats density because they are measured at different moments: density is sparrow's, taken on
-    /// its own strip BEFORE the gravity compaction, while the extent is what is left after it â€” and the
+    /// its own strip BEFORE the gravity compaction, while the extent is what is left after it — and the
     /// extent is what the operator sees as the leftover. Ranking by density discarded real material: on a
     /// measured sheet where all eight candidates placed the same ten parts, the density winner (0.94448)
     /// left an extent of 118.72 while a candidate 0.00002 less dense left 115.79. Worse, two candidates
@@ -1698,7 +1700,7 @@
     /// different leftover every time (reported in issue #2).
     /// </para>
     /// Density stays as the next tie-break: it still discriminates when the extents match, which is the
-    /// normal case on a sheet packed full. Pure â€” unit-testable. Returns the winner's index in
+    /// normal case on a sheet packed full. Pure — unit-testable. Returns the winner's index in
     /// <paramref name="cands"/>, or -1 if empty.
     /// </summary>
     internal static int PickBest(IReadOnlyList<(int Count, double Extent, double Density, int Seed)> cands)
@@ -1749,7 +1751,7 @@
     /// <summary>Runs one sparrow search. The search is bounded by a fixed number of iterations, NEVER by
     /// the clock: a wall-clock deadline makes the same job land differently depending on how busy the
     /// machine is, which is what made a repeated nest come back with a different offcut every time.
-    /// <paramref name="hardTimeoutSec"/> is only a watchdog for a hung process â€” if it ever fires the
+    /// <paramref name="hardTimeoutSec"/> is only a watchdog for a hung process — if it ever fires the
     /// result is discarded rather than used, because a truncated search is not reproducible.</summary>
     private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
     {
@@ -1768,7 +1770,7 @@
       psi.ArgumentList.Add("--max-iterations"); // deterministic budget; also forces the failure-based
       psi.ArgumentList.Add(iterations.ToString(CultureInfo.InvariantCulture)); // compression decay
       psi.ArgumentList.Add("-x"); // stop a search that is stuck (counts failures, not seconds)
-      psi.ArgumentList.Add("-s"); // fixed RNG seed â†’ repeatable per-seed run for best-of-N
+      psi.ArgumentList.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
       psi.ArgumentList.Add(seed.ToString(CultureInfo.InvariantCulture));
 
       Process proc;
