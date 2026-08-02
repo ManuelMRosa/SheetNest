@@ -737,8 +737,10 @@
       List<IPartPlacement> all,
       Dictionary<int, double> kerfById,
       Dictionary<int, INfp> toolingById,
-      Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById)
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById,
+      CommonCuttingTolerances tol = null)
     {
+      tol ??= CommonCuttingTolerances.Default;
       int n = all.Count;
       if (n < 2)
       {
@@ -776,10 +778,13 @@
       // the batch maximum would throw away usable edges on a finer-cutting part in a mixed job.
       var absPts = new List<System.Windows.Point>[n];
       var edges = new List<AaEdge>();
-      const double angTol = 1e-3;                 // how "axis-aligned" an edge must be
+      // Sine, not degrees: the test below compares a component against the length, which IS the sine.
+      double angTol = tol.AngleToleranceSin;
       for (int i = 0; i < n; i++)
       {
-        double minLen = KerfOf(i) * 2;             // ignore tiny edges (chamfers etc.)
+        // Ignore tiny edges (chamfers etc.). The absolute floor matters where the kerf is fine: a very
+        // short segment out of the parser carries more direction noise than signal.
+        double minLen = Math.Max(KerfOf(i) * tol.MinEdgeLengthKerfs, tol.MinEdgeLengthAbsolute);
         var pts = all[i].PlacedPart.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
         absPts[i] = pts;
         double cx = pts.Average(p => p.X);
@@ -826,20 +831,29 @@
           }
 
           double gap = eb.Pos - ea.Pos; // B sits above A on the Pos axis
-          if (gap < 0.4 * kerf || gap > 1.6 * kerf)
+          if (gap < tol.GapMinKerfs * kerf || gap > tol.GapMaxKerfs * kerf)
           {
             continue;
           }
 
           double overlap = Math.Min(ea.Hi, eb.Hi) - Math.Max(ea.Lo, eb.Lo);
-          if (overlap < kerf * 2)
+          if (overlap < tol.MinOverlapKerfs * kerf)
           {
-            continue; // must actually run alongside each other
+            continue; // must actually run alongside each other; a corner touch overlaps by nothing
           }
 
           // Shift B: perpendicular to land exactly one kerf off A, and along the edge to align the ends.
           double perp = (ea.Pos + kerf) - eb.Pos;   // move B's Pos to A.Pos + kerf
           double along = ea.Lo - eb.Lo;              // align the low ends
+
+          // How far the part is asked to travel for this seam. Nothing else bounds it: aligning the low
+          // ends can ask for a long slide when two edges barely overlap, and the only thing that used to
+          // stop it was the tooling check at the very end, which reverts EVERYTHING when it fires.
+          if (Math.Sqrt((perp * perp) + (along * along)) > tol.MaxSnapTravelKerfs * kerf)
+          {
+            continue;
+          }
+
           var s = ea.Vertical ? (perp, along) : (along, perp);
           var key = (ea.Part, eb.Part);
           if (!shifts.ContainsKey(key))
