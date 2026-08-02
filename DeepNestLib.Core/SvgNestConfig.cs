@@ -1,5 +1,9 @@
 ﻿[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("DeepNestLib.CiTests")]
 
+// The nester reads NoFitPolygon.CurvedSegments, which is internal so the suite's deep polygon
+// comparisons do not treat parser provenance as part of a polygon's identity.
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("DeepNestSharp")]
+
 namespace DeepNestLib
 {
 #if NCRUNCH

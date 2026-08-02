@@ -21,6 +21,11 @@
     public const string FileDialogFilter = "AutoCad Drawing Exchange Format (*.dxf)|*.dxf|DeepNest Polygon (*.dnpoly)|*.dnpoly|All files (*.*)|*.*";
     private double rotation;
 
+    // Per segment, whether it is a chord the parser cut a curve into rather than an edge the drawing
+    // has. Entry i is the segment from point i to point i + 1, the last wrapping to the start. Null
+    // means nobody recorded it, which is every polygon that did not come from the DXF parser.
+    private bool[] curvedSegments;
+
     public NoFitPolygon(IList<INfp> children)
         : this()
     {
@@ -200,6 +205,25 @@
       }
     }
 
+    /// <summary>
+    /// Per segment, whether it is a chord of a tessellated curve rather than an edge the drawing
+    /// contains. Entry <c>i</c> is the segment from <c>Points[i]</c> to <c>Points[i + 1]</c>, the last
+    /// wrapping to the start. Null means nobody recorded it, which is treated as "none are".
+    /// </summary>
+    /// <remarks>
+    /// INTERNAL and off <see cref="INfp"/> on purpose, and not just for tidiness. It is parser
+    /// provenance, not part of what makes a polygon that polygon, and the test suite deep-compares
+    /// polygons all over the place with BeEquivalentTo, which walks PUBLIC members: as a public
+    /// property it made a clone stop being equivalent to its source over metadata neither of them
+    /// cuts. Also not serialised, since the only thing that reads it runs during a fresh nest.
+    /// </remarks>
+    internal bool[] CurvedSegments
+    {
+      get => this.curvedSegments;
+
+      set => this.curvedSegments = value;
+    }
+
     /// <inheritdoc />
     [JsonIgnore]
     public double Area
@@ -308,6 +332,22 @@
       int i = this.points.Length;
       Array.Resize(ref this.points, i + 1);
       this.points[i] = point;
+      this.ForgetCurvedSegments();
+    }
+
+    /// <summary>
+    /// Whatever provenance this ring had no longer lines up with its points, so every segment is called
+    /// a curve. Fail CLOSED: a polygon that cannot say which of its edges are real gives up the right to
+    /// offer any of them as a shared cut, rather than offering a chord by accident.
+    /// </summary>
+    /// <remarks>Null stays null. That means "nobody ever recorded this", which is the case for every
+    /// polygon that did not come from the DXF parser, and it keeps their behaviour exactly as it was.</remarks>
+    private void ForgetCurvedSegments()
+    {
+      if (this.curvedSegments != null)
+      {
+        this.curvedSegments = Enumerable.Repeat(true, this.points.Length).ToArray();
+      }
     }
 
     /// <inheritdoc/>
@@ -364,18 +404,34 @@
     void IHiddenNfp.Push(SvgPoint svgPoint)
     {
       this.points = this.points.Append(svgPoint).ToArray();
+      this.ForgetCurvedSegments();
     }
 
     /// <inheritdoc />
     public void ReplacePoints(IEnumerable<SvgPoint> points)
     {
+      int was = this.points.Length;
       this.points = points.ToArray();
+
+      // Same count means the ring was transformed, not rebuilt: rotate, mirror and the like keep every
+      // segment where it was, so the provenance still describes it. A different count means it was
+      // rebuilt and the alignment is gone.
+      if (this.points.Length != was)
+      {
+        this.ForgetCurvedSegments();
+      }
     }
 
     /// <inheritdoc />
     public void ReplacePoints(INfp replacementNfp)
     {
+      int wasLength = this.points.Length;
       this.points = replacementNfp.Points.ToArray();
+      if (this.points.Length != wasLength)
+      {
+        this.ForgetCurvedSegments();
+      }
+
       for (int i = 0; i < this.Children.Count; i++)
       {
         this.Children[i].ReplacePoints(replacementNfp.Children[i]);
@@ -443,6 +499,7 @@
       CopyInstructionProperties(clone);
 
       clone.ReplacePoints(this.Points.Select(z => new SvgPoint(z.X, z.Y) { Exact = z.Exact }));
+      clone.curvedSegments = this.curvedSegments;
       if (this.Children != null)
       {
         foreach (var citem in this.Children)
@@ -652,6 +709,11 @@
         shifted.AddPoint(new SvgPoint(this[i].X + x, this[i].Y + y) { Exact = this[i].Exact });
       }
 
+      // AddPoint forgets the provenance as it goes, which is right when a ring is being built and wrong
+      // here: a translation moves every segment and reorders nothing, so the same flags still describe
+      // it. Restored after the loop rather than before it, which is the order that actually works.
+      shifted.curvedSegments = this.curvedSegments;
+
       if (this.Children != null /*&& p.Children.Count*/)
       {
         for (int i = 0; i < this.Children.Count(); i++)
@@ -777,6 +839,8 @@
         result.AddPoint(new SvgPoint(this[i].X, this[i].Y));
       }
 
+      result.curvedSegments = this.curvedSegments; // same ring, so the same segments; after the loop
+
       if (this.Children != null && this.Children.Count > 0)
       {
         foreach (var child in this.Children)
@@ -788,6 +852,9 @@
       return result;
     }
 
+    // NOTE: curve provenance is deliberately NOT copied here. It is aligned with the POINTS, and every
+    // caller of this copies state first and builds the ring afterwards, at which point AddPoint would
+    // wipe it again. It travels with the points instead, right after the ring is built.
     private void CopyStateProperties(NoFitPolygon other)
     {
       other.Id = this.Id;
