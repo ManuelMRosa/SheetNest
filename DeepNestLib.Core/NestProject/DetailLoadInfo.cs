@@ -26,6 +26,11 @@
 
     public CommonCuttingMode CommonCutting { get; set; } = CommonCuttingMode.None; // who this part may share a cut edge with
 
+    // This part's cut width in MILLIMETRES, whatever the drawing units are; -1 = not set, use the job's.
+    // Millimetres because that is how a kerf is quoted and measured, and because it is already the unit
+    // the value derived from a SheetCam nest arrives in.
+    public double KerfMm { get; set; } = -1;
+
     /// <summary>
     /// Gets or sets common cutting as the plain on/off it used to be, so every existing caller still
     /// compiles and reads the same answer. <see cref="CommonCutting"/> is the real setting: turning this

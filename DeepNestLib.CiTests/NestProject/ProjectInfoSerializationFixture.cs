@@ -42,6 +42,32 @@
       actual.DetailLoadInfos[2].CommonCutting.Should().Be(CommonCuttingMode.None);
     }
 
+    /// <summary>
+    /// The kerf has to survive a save, and a project written before it existed has to come back saying
+    /// "not set" rather than "a kerf of zero", which would be a different thing.
+    /// </summary>
+    [Fact]
+    public void ShouldRoundTripTheKerfAndDefaultItToUnset()
+    {
+      var config = SvgNest.Config;
+      var sut = new ProjectInfo(config);
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 1));
+      sut.KerfMm = 0.55;
+      sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "a.dxf", KerfMm = 0.9 });
+      sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "b.dxf" });
+
+      ProjectInfo actual = ProjectInfo.FromJson(config, sut.ToJson());
+
+      actual.KerfMm.Should().Be(0.55);
+      actual.DetailLoadInfos[0].KerfMm.Should().Be(0.9);
+      actual.DetailLoadInfos[1].KerfMm.Should().Be(-1, "a part that never had one says so, it does not claim zero");
+
+      var tree = JsonNode.Parse(sut.ToJson());
+      tree.AsObject().Remove("KerfMm");
+      ProjectInfo older = ProjectInfo.FromJson(config, tree.ToJsonString());
+      older.KerfMm.Should().Be(-1, "a project saved before the setting existed leaves it unset");
+    }
+
     /// <summary>A project saved by 1.1.7 has to come back with its common line still on.</summary>
     [Fact]
     public void ShouldReadAPreModeProjectAsUnrestricted()

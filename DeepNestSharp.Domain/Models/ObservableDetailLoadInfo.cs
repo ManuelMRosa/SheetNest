@@ -154,6 +154,12 @@
       set => SetProperty(nameof(CommonCutting), () => detailLoadInfo.CommonCutting, v => detailLoadInfo.CommonCutting = v, value);
     }
 
+    public double KerfMm
+    {
+      get => detailLoadInfo.KerfMm;
+      set => SetProperty(nameof(KerfMm), () => detailLoadInfo.KerfMm, v => detailLoadInfo.KerfMm = v, value);
+    }
+
     public bool CommonLine
     {
       get => detailLoadInfo.CommonLine;

@@ -54,6 +54,12 @@
     CommonCuttingMode CommonCutting { get; set; }
 
     /// <summary>
+    /// Gets or sets this part's cut width in MILLIMETRES, whatever the drawing units are;
+    /// -1 = not set, so the job's kerf applies.
+    /// </summary>
+    double KerfMm { get; set; }
+
+    /// <summary>
     /// Gets or sets common cutting as a plain on/off. True for any mode but
     /// <see cref="CommonCuttingMode.None"/>; setting it true means
     /// <see cref="CommonCuttingMode.Unrestricted"/>.
