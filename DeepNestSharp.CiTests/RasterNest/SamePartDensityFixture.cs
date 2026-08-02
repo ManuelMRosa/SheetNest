@@ -182,6 +182,33 @@ namespace DeepNestSharp.CiTests.RasterNest
       return (result, spacing);
     }
 
+    /// <summary>
+    /// MEASUREMENT. A common-cut part has its rotations clipped, because the seam finder needs faces it
+    /// can pair and free rotation gives it arbitrary angles. Now that seams work at any angle the clip
+    /// could be loosened, and this is what says whether that is worth anything.
+    /// </summary>
+    /// <remarks>
+    /// Loosening it can just as easily LOSE material: two copies at 37.1 and 142.9 degrees hardly ever
+    /// present parallel faces to each other, so the seams stop happening AND the bias toward tidy
+    /// aligned layouts goes with them. Hence a measurement and not a change.
+    /// </remarks>
+    [Fact]
+    public void MeasureWhatRotationCostsACommonCutJob()
+    {
+      string exe = Sparrow();
+      if (exe == null)
+      {
+        this.output.WriteLine("ROT: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      foreach (int rotations in new[] { 2, 4, 8, 36 })
+      {
+        int placed = PlacedOnOneSheet(exe, 1, CommonCuttingMode.Unrestricted, rotations);
+        this.output.WriteLine($"ROT common-cut, rotations asked for {rotations}: placed {placed}");
+      }
+    }
+
     private static string Sparrow()
     {
       string exe = SparrowExe.Resolve();
@@ -189,7 +216,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     /// <summary>Fills ONE sheet from a demand nobody can satisfy, so the count IS the density.</summary>
-    private static int PlacedOnOneSheet(string exe, int drawings, CommonCuttingMode cc)
+    private static int PlacedOnOneSheet(string exe, int drawings, CommonCuttingMode cc, int rotations = 4)
     {
       string dxfDir = FindDxfDir();
       dxfDir.Should().NotBeNull();
@@ -204,7 +231,7 @@ namespace DeepNestSharp.CiTests.RasterNest
             && det.TryConvertToNfp(0, out INfp nfp) && nfp.Points.Length > 2)
         {
           maxExtent = Math.Max(maxExtent, Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY));
-          parts.Add(new RasterPartInfo { Path = path, Quantity = 40, Rotations = 4, Cc = cc });
+          parts.Add(new RasterPartInfo { Path = path, Quantity = 40, Rotations = rotations, Cc = cc });
         }
       }
 
@@ -220,7 +247,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       int side = (int)Math.Ceiling(maxExtent * 5);
 
-      var result = SparrowNestService.Nest(parts, new List<(int, int, int)> { (side, side, 1) }, 4, spacing, spacing, 8, exe, out string err);
+      var result = SparrowNestService.Nest(parts, new List<(int, int, int)> { (side, side, 1) }, rotations, spacing, spacing, 8, exe, out string err);
       result.Should().NotBeNull($"nest must return a result (err={err})");
 
       return result.UsedSheets.Sum(s => s.PartPlacements.Count);

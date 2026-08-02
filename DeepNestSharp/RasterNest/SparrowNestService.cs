@@ -315,7 +315,7 @@ namespace DeepNestSharp.RasterNest
 
       // "The same part" means the same DRAWING, not the same row: the list may legitimately hold one file
       // twice (once common-cut, once spaced), and two rows of the same file are still the same part on the
-      // sheet. A MIRRORED population is a different part, though — its shared edges are the other hand's.
+      // sheet. A MIRRORED population is a different part, though ï¿½ its shared edges are the other hand's.
       var shareKeys = new Dictionary<(string Path, bool Mirrored), int>();
 
       foreach (var part in parts)
@@ -357,9 +357,15 @@ namespace DeepNestSharp.RasterNest
           // earlier `code >= 8` test wrongly turned 0/90 into 4-way, adding 180/270.
           // PER PART, not per job: clipping every part because ONE of them is common-cut would quietly
           // take free rotation away from parts that never asked for it, and cost density for nothing.
-          if (part.Cc != CommonCuttingMode.None && RotationCodes.PermittedSet(code).Any(a => a % 90 != 0))
+          //
+          // 45 degree steps rather than 90 now that a seam can run at any angle: two copies at 45 present
+          // each other real parallel faces, so the seam finder can use them. Continuous rotation is still
+          // clipped, and deliberately: at 37.1 and 142.9 two copies almost never face each other, so the
+          // seams stop happening AND the bias toward tidy aligned layouts goes with them. Measured on a
+          // single-drawing job: 16 placed whether the part is allowed 2, 4, 8 or free rotations.
+          if (part.Cc != CommonCuttingMode.None && RotationCodes.PermittedSet(code).Any(a => a % 45 != 0))
           {
-            code = 4;
+            code = 8;
           }
 
           double effSpacing = part.Spacing >= 0 ? part.Spacing : Math.Max(0, spacing);
