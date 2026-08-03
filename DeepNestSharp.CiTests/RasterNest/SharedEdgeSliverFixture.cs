@@ -211,6 +211,46 @@
       PlacementCollision.TooClose(a, b, 0, PlacementCollision.SliverFor(0, 0)).Should().BeFalse();
     }
 
+    /// <summary>
+    /// A cut can only ever forgive MORE than the noise in the numbers, never less. Reported from the
+    /// shop: a per-part kerf of 1.38777878078145E-17 mm, which is 2^-56 and pure floating point residue
+    /// off the spinner, was taken as a real cut width. Being above zero it replaced the noise floor
+    /// instead of raising it, and the editor's tolerance collapsed by fifteen orders of magnitude.
+    /// </summary>
+    [Fact]
+    public void SliverForNeverGoesBelowTheNoiseFloor()
+    {
+      const double SpinnerResidueMm = 1.38777878078145E-17;
+      double residueInches = SpinnerResidueMm / 25.4;
+
+      PlacementCollision.SliverFor(residueInches, 0).Should().Be(
+        PlacementCollision.PlacementNoise,
+        "a cut finer than the precision positions are stored at cannot make the check stricter");
+
+      PlacementCollision.SliverFor(Kerf, 0).Should().Be(Kerf, "a real cut still forgives its own width");
+    }
+
+    /// <summary>
+    /// THE PHOTO. Four Same-part copies came up red on a nest nobody had touched, and this is why: the
+    /// engine places them TOUCHING on purpose so they can share a cut, so they are the only parts that
+    /// depend on the noise floor, and that residue kerf had taken it away.
+    /// </summary>
+    [Fact]
+    public void TouchingSamePartCopiesAreNotAnOverlapBecauseOfSpinnerResidue()
+    {
+      const double SpinnerResidueMm = 1.38777878078145E-17;
+      double residueInches = SpinnerResidueMm / 25.4;
+
+      // Welded to a shared cut, which lands a hair to one side of exact contact rather than on it: a
+      // hundred-thousandth, far under the ten-thousandth the positions are even stored to. With the
+      // noise floor in place that is nothing; with the residue standing in for it, it is an overlap.
+      var a = Bar(0, 0);
+      var b = Bar(Width - 0.00001, 0);
+
+      PlacementCollision.TooClose(a, b, 0, PlacementCollision.SliverFor(residueInches, residueInches))
+        .Should().BeFalse("nothing moved and nothing real overlaps; only the tolerance changed");
+    }
+
     private static INfp Bar(double x, double y)
     {
       return new NoFitPolygon(new List<SvgPoint>

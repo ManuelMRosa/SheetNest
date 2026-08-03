@@ -225,7 +225,12 @@ namespace DeepNestSharp.Ui.Views
       this.part.CommonCutting = (CommonCuttingMode)System.Math.Max(0, System.Math.Min(2, this.commonCuttingCombo.SelectedIndex));
 
       this.kerfUpDown.CommitInput();
-      this.part.KerfMm = (this.kerfUpDown.Value ?? 0) > 0 ? this.kerfUpDown.Value.Value : -1;
+
+      // Rounded before it is judged: stepping the spinner up and back down does not land on exactly
+      // zero, and one job reached the shop carrying 1.39e-17 as a per-part kerf because of it. The
+      // resolver ignores anything that small anyway, but a project file should not have it written in.
+      double typedKerf = System.Math.Round(this.kerfUpDown.Value ?? 0, 4);
+      this.part.KerfMm = typedKerf >= DeepNestLib.NestProject.KerfResolver.MinimumMeaningfulKerfMm ? typedKerf : -1;
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;

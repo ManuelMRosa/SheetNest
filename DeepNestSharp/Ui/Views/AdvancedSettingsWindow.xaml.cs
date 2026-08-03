@@ -63,8 +63,15 @@ namespace DeepNestSharp.Ui.Views
 
     public int AutosaveMinutes => this.minutesUpDown.Value ?? 5;
 
-    /// <summary>The job's cut width in millimetres; -1 when the box is empty or zero, meaning unset.</summary>
-    public double JobKerfMm => (this.kerfUpDown.Value ?? 0) > 0 ? this.kerfUpDown.Value.Value : -1;
+    /// <summary>The job's cut width in millimetres; -1 when the box is empty, zero, or spinner residue.</summary>
+    public double JobKerfMm
+    {
+      get
+      {
+        double typed = System.Math.Round(this.kerfUpDown.Value ?? 0, 4);
+        return typed >= DeepNestLib.NestProject.KerfResolver.MinimumMeaningfulKerfMm ? typed : -1;
+      }
+    }
 
     /// <summary>The saved kerfs after any adds or deletes; persisted by the caller (SessionState).</summary>
     public System.Collections.Generic.List<KerfPreset> KerfPresets => this.kerfPresets;

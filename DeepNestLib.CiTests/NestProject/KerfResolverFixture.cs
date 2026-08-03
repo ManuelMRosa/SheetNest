@@ -25,6 +25,39 @@ namespace DeepNestLib.CiTests.NestProject
       KerfResolver.ResolveMm(part, job, derived).Should().Be(expected);
     }
 
+    /// <summary>
+    /// A number far too small to be a cut width is not a cut width. Reported from the shop: a per-part
+    /// kerf of 1.38777878078145E-17, which is 2^-56 and pure floating point residue from stepping a
+    /// spinner up and back down. Taken as real it did not merely mean nothing, it went on to REPLACE the
+    /// editor's noise floor and turned four correctly placed parts red.
+    /// </summary>
+    [Fact]
+    public void SpinnerResidueIsNotAKerf()
+    {
+      const double Residue = 1.38777878078145E-17;
+
+      KerfResolver.ResolveMm(Residue, -1, 0).Should().Be(0, "that is noise, not a cut");
+      KerfResolver.ResolveMm(-1, Residue, 0).Should().Be(0);
+
+      // And it must not shadow a real one that IS available.
+      KerfResolver.ResolveMm(Residue, 0.4, 0).Should().Be(0.4);
+      KerfResolver.ResolveMm(Residue, -1, 0.34).Should().Be(0.34, "the measured one still comes through");
+    }
+
+    /// <summary>
+    /// The other side of the threshold, so it never grows into something that swallows a real setting.
+    /// A fine laser kerf is a few hundredths of a millimetre; the cut-off is a thousandth.
+    /// </summary>
+    [Fact]
+    public void ASmallButRealKerfStillCounts()
+    {
+      KerfResolver.ResolveMm(0.05, -1, 0).Should().Be(0.05);
+      KerfResolver.ResolveMm(KerfResolver.MinimumMeaningfulKerfMm, -1, 0)
+        .Should().Be(KerfResolver.MinimumMeaningfulKerfMm, "the threshold itself is allowed");
+      KerfResolver.MinimumMeaningfulKerfMm.Should().BeLessThan(
+        0.05, "no cutting process has a kerf near a micron, so this can never reject a real figure");
+    }
+
     /// <summary>Zero is "not set", not "a kerf of zero": nothing can cut a slot of no width.</summary>
     [Fact]
     public void ZeroCountsAsUnset()

@@ -35,10 +35,19 @@ namespace DeepNestSharp.RasterNest
     /// and be exported with both outlines written in full. Without a figure, only the noise is forgiven.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// Never below <see cref="PlacementNoise"/>. A cut can only ever forgive MORE than the precision the
+    /// positions are stored at; it cannot make the check stricter than that, because below it two
+    /// placements are not distinguishable in the first place. Reported from the shop: a per-part kerf of
+    /// 1.39e-17 mm, floating point residue off a spinner, went in as a real cut width, and being above
+    /// zero it REPLACED the floor instead of raising it. Tolerance fell by fifteen orders of magnitude
+    /// and four parts the engine had deliberately placed touching came up red on a nest nobody had
+    /// edited.
+    /// </remarks>
     internal static double SliverFor(double kerfA, double kerfB)
     {
       double kerf = Math.Max(kerfA, kerfB);
-      return kerf > 0 ? kerf : PlacementNoise;
+      return Math.Max(kerf, PlacementNoise);
     }
 
     /// <summary>

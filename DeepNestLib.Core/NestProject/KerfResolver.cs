@@ -12,6 +12,19 @@ namespace DeepNestLib.NestProject
   public static class KerfResolver
   {
     /// <summary>
+    /// Below this a number is not a cut width, it is noise, and counts as "not set".
+    /// </summary>
+    /// <remarks>
+    /// One micron. No cutting process has a kerf anywhere near it, so the threshold cannot reject a
+    /// figure anybody meant; what it catches is floating point residue. Stepping a spinner up and back
+    /// down in hundredths does not land on exactly zero, and a job arrived carrying 1.39e-17 mm as a
+    /// per-part kerf because of it.
+    /// </remarks>
+    public const double MinimumMeaningfulKerfMm = 0.001;
+
+    private static bool IsSet(double kerfMm) => kerfMm >= MinimumMeaningfulKerfMm;
+
+    /// <summary>
     /// The kerf to use, in millimetres, most specific source first: this part, then the job, then
     /// whatever was measured off a SheetCam nest file. Zero when nobody has said.
     /// </summary>
@@ -25,8 +38,8 @@ namespace DeepNestLib.NestProject
     /// different tool. A number the operator wrote is a statement about the machine running today.
     /// </remarks>
     public static double ResolveMm(double partKerfMm, double jobKerfMm, double derivedKerfMm)
-      => partKerfMm > 0 ? partKerfMm
-        : jobKerfMm > 0 ? jobKerfMm
+      => IsSet(partKerfMm) ? partKerfMm
+        : IsSet(jobKerfMm) ? jobKerfMm
         : derivedKerfMm > 0 ? derivedKerfMm
         : 0;
 
@@ -39,8 +52,8 @@ namespace DeepNestLib.NestProject
     /// </param>
     /// <param name="mmToDrawingUnits">1 when the drawing is in millimetres, 1/25.4 when it is in inches.</param>
     public static double ResolveDrawingUnits(double partKerfMm, double jobKerfMm, double derivedDrawingUnits, double mmToDrawingUnits)
-      => partKerfMm > 0 ? partKerfMm * mmToDrawingUnits
-        : jobKerfMm > 0 ? jobKerfMm * mmToDrawingUnits
+      => IsSet(partKerfMm) ? partKerfMm * mmToDrawingUnits
+        : IsSet(jobKerfMm) ? jobKerfMm * mmToDrawingUnits
         : derivedDrawingUnits > 0 ? derivedDrawingUnits
         : 0;
   }
