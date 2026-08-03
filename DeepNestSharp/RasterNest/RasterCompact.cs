@@ -519,11 +519,27 @@
       double weldMax = 0.05;
       long weldMaxInt = (long)Math.Round(weldMax * Scale);
       long marginInt = (long)Math.Round(margin * Scale);
-      for (int sweep = 0; sweep < 2; sweep++)
+
+      // The weld closes toward -X and -Y, so a part has to settle AFTER whatever it comes to rest
+      // against. `order` above is deliberately built from the INPUT positions (see the comment there:
+      // ordering the SLIDE along X split interlocked module mates and left whole columns hanging), but
+      // by the time the weld runs every part has moved, and inheriting that order welds parts before
+      // their own anchors. Measured on the six-bar row: bar 5 closed onto bar 1, then bar 1 moved
+      // 0.002217 further left and reopened the seam from behind. Re-sorting on the SETTLED positions
+      // is local to the weld, so the slide's ordering - and the fix it carries - is untouched.
+      var weldOrder = (growX
+          ? order.OrderBy(i => items[i].X + items[i].Poly.MinX).ThenBy(i => items[i].Y + items[i].Poly.MinY)
+          : order.OrderBy(i => items[i].Y + items[i].Poly.MinY).ThenBy(i => items[i].X + items[i].Poly.MinX))
+        .ToArray();
+
+      // Sweeps run until nothing moves. Two was not enough once a cascade could still shift a part
+      // that a later part had already closed onto; the loop breaks the moment a sweep welds nothing,
+      // so a converged layout still costs exactly one extra measuring sweep.
+      for (int sweep = 0; sweep < 8; sweep++)
       {
         bool welded = false;
         Array.Clear(processed, 0, processed.Length);
-        foreach (int i in order)
+        foreach (int i in weldOrder)
         {
           cancel.ThrowIfCancellationRequested();
           if (items[i].Cc == CommonCuttingMode.None || processed[i])
@@ -703,7 +719,25 @@
           }
         }
 
-        if (thMinV > myMaxV || thMaxV < myMinV || thMinU > myMaxU || thMaxU < myMinU - capInt)
+        // Three of these four bounds are CLOSED (>=, <=), and that is load-bearing rather than
+        // cosmetic: a neighbour that only touches cannot block, but measured as if it could it
+        // returns a gap of exactly 0, and the `best == 0` short-circuit below then freezes this part
+        // along this axis for the rest of the pass. Both halves of that were measured on a six-bar
+        // common-line row, and between them they accounted for EVERY seam this pass failed to close.
+        //
+        //   thMinU >= myMaxU  - they sit entirely at or beyond my leading edge, so sliding -U only
+        //                       opens the pair. Touching one used to read 0 and pin the part: in the
+        //                       row, bar 5 welded first, landed flush against bar 1's trailing edge,
+        //                       and bar 1 could then never close its own seam (left open 0.003353).
+        //   V ranges touching at a single coordinate - contact along one line has NO AREA, and the
+        //                       predicate that vets the move (Intersects, area-based with EpsArea)
+        //                       agrees it is not a collision. Measuring it as one contradicted the
+        //                       vetting rule: four of six bars were held 0.001 off the sheet margin
+        //                       by a side-by-side neighbour whose corner grazed the ray's origin.
+        //
+        // Both rules are conservative by construction - they only ever DROP a pair that cannot
+        // produce an area overlap - so the hard no-interference invariant is untouched.
+        if (thMinV >= myMaxV || thMaxV <= myMinV || thMinU >= myMaxU || thMaxU < myMinU - capInt)
         {
           continue;
         }
