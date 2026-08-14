@@ -73,15 +73,6 @@ namespace DeepNestSharp
     public double OffcutEdgeOverlap { get; set; } = -1;
 
     /// <summary>
-    /// Cut widths this shop has measured, kept by the machine rather than by the job. Deliberately a
-    /// short labelled list and NOT a material/thickness table: the kerf depends on the nozzle, the
-    /// power, the speed and how worn the consumable is as much as on the material, so a table would
-    /// promise a precision it cannot have. A label the operator wrote after cutting a coupon is honest
-    /// about what the number is.
-    /// </summary>
-    public List<KerfPreset> KerfPresets { get; set; } = new List<KerfPreset>();
-
-    /// <summary>
     /// How close to parallel, how long and how far apart two faces have to be to be cut as one.
     /// Null = the shipped defaults.
     /// </summary>
@@ -154,15 +145,6 @@ namespace DeepNestSharp
         // Best effort — losing the session beats crashing on close.
       }
     }
-  }
-
-  /// <summary>One measured cut width, under whatever name means something in the shop.</summary>
-  public class KerfPreset
-  {
-    public string Name { get; set; } = string.Empty;
-
-    /// <summary>Cut width in millimetres, whatever units the drawings are in.</summary>
-    public double KerfMm { get; set; }
   }
 
   public class SessionSheet

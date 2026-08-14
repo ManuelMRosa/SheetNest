@@ -46,15 +46,6 @@ namespace DeepNestLib.NestProject
     [JsonInclude]
     public string LastNestResultJson { get; set; }
 
-    /// <summary>
-    /// Gets or sets this job's cut width in MILLIMETRES; -1 = not set. Parts that came in toolpathed
-    /// from SheetCam carry their own measured kerf and do not need this; a plain DXF has no way of
-    /// knowing one, and without it common cutting has no gap to work with and does nothing.
-    /// Optional: absent in older project files, and unknown to older apps (both ignore it safely).
-    /// </summary>
-    [JsonInclude]
-    public double KerfMm { get; set; } = -1;
-
     [JsonInclude]
     public ISvgNestConfig Config
     {
@@ -107,7 +98,6 @@ namespace DeepNestLib.NestProject
     public void Load(ProjectInfo source)
     {
       this.LastNestResultJson = source.LastNestResultJson;
-      this.KerfMm = source.KerfMm;
       this.DetailLoadInfos.Clear();
       foreach (var p in source.DetailLoadInfos)
       {

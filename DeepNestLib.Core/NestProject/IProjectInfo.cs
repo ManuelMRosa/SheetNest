@@ -14,9 +14,6 @@
     /// </summary>
     string LastNestResultJson { get; set; }
 
-    /// <summary>Gets or sets this job's cut width in MILLIMETRES; -1 = not set.</summary>
-    double KerfMm { get; set; }
-
     void Load(ISvgNestConfig config, string filePath);
 
     void Load(ProjectInfo source);

@@ -78,12 +78,6 @@
       set => wrappedProjectInfo.LastNestResultJson = value;
     }
 
-    public double KerfMm
-    {
-      get => wrappedProjectInfo.KerfMm;
-      set => wrappedProjectInfo.KerfMm = value;
-    }
-
     private void DetailLoadInfos_IsDirtyChanged(object? sender, EventArgs e)
     {
       IsDirtyChanged?.Invoke(this, e);

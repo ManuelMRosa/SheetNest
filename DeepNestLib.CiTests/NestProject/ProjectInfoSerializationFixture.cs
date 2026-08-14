@@ -43,29 +43,36 @@
     }
 
     /// <summary>
-    /// The kerf has to survive a save, and a project written before it existed has to come back saying
-    /// "not set" rather than "a kerf of zero", which would be a different thing.
+    /// A setting that gets withdrawn leaves projects behind that still carry it, and those have to open
+    /// as if it had never been there. Nobody asserts this anywhere else, and it is the sort of thing that
+    /// only breaks once a serializer option gets tightened years later.
     /// </summary>
     [Fact]
-    public void ShouldRoundTripTheKerfAndDefaultItToUnset()
+    public void ShouldStillOpenAProjectCarryingSettingsThisBuildNoLongerHas()
     {
       var config = SvgNest.Config;
       var sut = new ProjectInfo(config);
-      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 1));
-      sut.KerfMm = 0.55;
-      sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "a.dxf", KerfMm = 0.9 });
-      sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "b.dxf" });
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 3));
+      sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "a.dxf", Quantity = 7 });
 
-      ProjectInfo actual = ProjectInfo.FromJson(config, sut.ToJson());
-
-      actual.KerfMm.Should().Be(0.55);
-      actual.DetailLoadInfos[0].KerfMm.Should().Be(0.9);
-      actual.DetailLoadInfos[1].KerfMm.Should().Be(-1, "a part that never had one says so, it does not claim zero");
-
+      // Put the withdrawn kerf back into the saved file, the way a build from that fortnight wrote it.
+      // The JSON TREE, not the text: ToJson writes indented, so a string replace matches nothing and the
+      // test would pass while proving nothing.
       var tree = JsonNode.Parse(sut.ToJson());
-      tree.AsObject().Remove("KerfMm");
-      ProjectInfo older = ProjectInfo.FromJson(config, tree.ToJsonString());
-      older.KerfMm.Should().Be(-1, "a project saved before the setting existed leaves it unset");
+      tree["KerfMm"] = 0.55;
+      tree["DetailLoadInfos"].AsArray()[0].AsObject()["KerfMm"] = 0.9;
+      string json = tree.ToJsonString();
+      json.Should().Contain("KerfMm");
+
+      ProjectInfo actual = ProjectInfo.FromJson(config, json);
+
+      // The CONTENT, not just non-null: FromJson swallows a failure and hands back an empty project, so
+      // anything weaker than this would pass with the deserialization blown up underneath it.
+      actual.DetailLoadInfos.Should().HaveCount(1);
+      actual.DetailLoadInfos[0].Path.Should().Be("a.dxf");
+      actual.DetailLoadInfos[0].Quantity.Should().Be(7);
+      actual.SheetLoadInfos.Should().HaveCount(1);
+      actual.SheetLoadInfos[0].Quantity.Should().Be(3);
     }
 
     /// <summary>A project saved by 1.1.7 has to come back with its common line still on.</summary>

@@ -157,12 +157,6 @@
     /// <summary>The mode with this part's origin taken into account; None for anything not from a nest file.</summary>
     public CommonCuttingMode EffectiveCommonCutting => detailLoadInfo.EffectiveCommonCutting;
 
-    public double KerfMm
-    {
-      get => detailLoadInfo.KerfMm;
-      set => SetProperty(nameof(KerfMm), () => detailLoadInfo.KerfMm, v => detailLoadInfo.KerfMm = v, value);
-    }
-
     public bool CommonLine
     {
       get => detailLoadInfo.CommonLine;
