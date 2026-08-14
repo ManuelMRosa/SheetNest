@@ -92,9 +92,13 @@
                              Minimum="0" Maximum="5" Increment="0.05" FormatString="0.###"
                              ToolTip="This part's kerf, in millimetres whatever the drawing units are. 0 means use the job's. Only worth setting when this part is cut with a different nozzle or process from the rest." />
 
-          <TextBlock Text="Common cutting:" Margin="0,14,0,4" />
-          <ComboBox x:Name="commonCuttingCombo" Width="200" HorizontalAlignment="Left"
-                    ToolTip="Who this part may share a cut edge with. Sharing nests the two TOUCHING so the shared edge is cut once instead of twice. Part spacing still applies to everything it may not share with. The laser program must support common-line cuts." />
+          <!-- Common cutting (only for parts imported from a SheetCam .nest, which is where the kerf it
+               needs is measured from). Collapsed by default, shown by the constructor. -->
+          <StackPanel x:Name="commonCuttingGroup" Visibility="Collapsed">
+            <TextBlock Text="Common cutting:" Margin="0,14,0,4" />
+            <ComboBox x:Name="commonCuttingCombo" Width="200" HorizontalAlignment="Left"
+                      ToolTip="Who this part may share a cut edge with. Sharing nests the two TOUCHING so the shared edge is cut once instead of twice. Part spacing still applies to everything it may not share with. The laser program must support common-line cuts." />
+          </StackPanel>
 
           <TextBlock Text="Priority:" Margin="0,14,0,4" />
           <ComboBox x:Name="priorityCombo" Width="150" HorizontalAlignment="Left"
