@@ -269,20 +269,29 @@
           continue;
         }
 
-        observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo()
-        {
-          Path = p.DxfPath,
-          Quantity = p.Quantity,
-          NestSourcePath = p.NestSourcePath,
-          NestPartName = p.NestPartName,
-          NestUnitInch = p.NestUnitInch,
-          CommonCutting = p.CommonCutting,
-        });
+        observableProjectInfo?.DetailLoadInfos.Add(PartFrom(p));
       }
 
       Contextualise();
       this.IsDirty = true;
     }
+
+    /// <summary>Builds the project's part from what the nest file said about it.</summary>
+    /// <remarks>
+    /// Its own method because <see cref="DetailLoadInfo.NestSourcePath"/> is the ONLY thing that says a
+    /// part came from SheetCam, this is the only place that ever sets it, and common cutting now hangs off
+    /// it: leave it out and the shared cuts stop happening with nothing on screen to say why.
+    /// </remarks>
+    public static DetailLoadInfo PartFrom(NestPartInfo p)
+      => new DetailLoadInfo()
+      {
+        Path = p.DxfPath,
+        Quantity = p.Quantity,
+        NestSourcePath = p.NestSourcePath,
+        NestPartName = p.NestPartName,
+        NestUnitInch = p.NestUnitInch,
+        CommonCutting = p.CommonCutting,
+      };
 
     /// <summary>Replaces the project's sheet stock with the given sizes — used when a SheetCam .nest is
     /// imported, so the job nests on the sheet SheetCam set it up for.</summary>

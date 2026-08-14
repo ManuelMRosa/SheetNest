@@ -154,6 +154,9 @@
       set => SetProperty(nameof(CommonCutting), () => detailLoadInfo.CommonCutting, v => detailLoadInfo.CommonCutting = v, value);
     }
 
+    /// <summary>The mode with this part's origin taken into account; None for anything not from a nest file.</summary>
+    public CommonCuttingMode EffectiveCommonCutting => detailLoadInfo.EffectiveCommonCutting;
+
     public double KerfMm
     {
       get => detailLoadInfo.KerfMm;
@@ -197,8 +200,10 @@
       get
       {
         // Both matter now: the mode says who this part may share a cut with, the spacing says what it
-        // keeps to everyone else. Showing only one of them hides half the setting.
-        string cc = detailLoadInfo.CommonCutting switch
+        // keeps to everyone else. Showing only one of them hides half the setting. The EFFECTIVE mode,
+        // or a plain DXF carrying the setting from an older project would announce a shared cut that
+        // nothing is going to make.
+        string cc = detailLoadInfo.EffectiveCommonCutting switch
         {
           CommonCuttingMode.Unrestricted => "common line · ",
           CommonCuttingMode.SamePart => "common line (same part) · ",

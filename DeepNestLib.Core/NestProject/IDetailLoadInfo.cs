@@ -54,6 +54,13 @@
     CommonCuttingMode CommonCutting { get; set; }
 
     /// <summary>
+    /// Gets who this part may share a cut edge with once the part's origin is taken into account:
+    /// <see cref="CommonCuttingMode.None"/> for anything that did not come from a SheetCam nest file,
+    /// whatever <see cref="CommonCutting"/> says.
+    /// </summary>
+    CommonCuttingMode EffectiveCommonCutting { get; }
+
+    /// <summary>
     /// Gets or sets this part's cut width in MILLIMETRES, whatever the drawing units are;
     /// -1 = not set, so the job's kerf applies.
     /// </summary>

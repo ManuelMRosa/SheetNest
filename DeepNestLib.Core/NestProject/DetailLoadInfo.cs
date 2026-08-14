@@ -26,6 +26,25 @@
 
     public CommonCuttingMode CommonCutting { get; set; } = CommonCuttingMode.None; // who this part may share a cut edge with
 
+    /// <summary>
+    /// Gets who this part may share a cut edge with, once where it came from is taken into account.
+    /// </summary>
+    /// <remarks>
+    /// <para>Common cutting is built on the kerf: it is both the gap the two parts are placed at and the
+    /// width of the single cut that severs them. The kerf is MEASURED off the lead geometry of a SheetCam
+    /// .nest, so a part that did not come from one has no kerf and nothing to share, and the engine agrees
+    /// — its whole common-cut phase gives up when no part has a kerf.</para>
+    /// <para>Answering None here rather than clearing <see cref="CommonCutting"/> is deliberate. Before
+    /// common cutting was restricted to nest jobs the setting was offered for any part at all, so a project
+    /// saved back then can carry it on a plain DXF (see <see cref="LegacyCommonLine"/>), and there is no
+    /// longer a control to turn it off. Overwriting what the file says would rewrite the user's project
+    /// behind their back on nothing more than opening it; this leaves the file alone and simply declines to
+    /// act on it.</para>
+    /// </remarks>
+    [JsonIgnore]
+    public CommonCuttingMode EffectiveCommonCutting
+      => string.IsNullOrEmpty(this.NestSourcePath) ? CommonCuttingMode.None : this.CommonCutting;
+
     // This part's cut width in MILLIMETRES, whatever the drawing units are; -1 = not set, use the job's.
     // Millimetres because that is how a kerf is quoted and measured, and because it is already the unit
     // the value derived from a SheetCam nest arrives in.

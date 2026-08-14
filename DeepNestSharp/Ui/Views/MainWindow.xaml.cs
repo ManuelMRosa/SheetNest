@@ -636,7 +636,7 @@ namespace DeepNestSharp.Ui.Views
           this.dxfViewer.PartCommonCutting = doc.ProjectInfo.DetailLoadInfos
             .Where(o => !string.IsNullOrWhiteSpace(o.Path))
             .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(o => o.CommonCutting)), System.StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(o => o.EffectiveCommonCutting)), System.StringComparer.OrdinalIgnoreCase);
 
           // And this project's own tooling, the same way a fresh nest hands it over. Without it the
           // restored nest kept whatever the last job left behind: its lead-ins drawn over these parts, and
@@ -1416,7 +1416,7 @@ namespace DeepNestSharp.Ui.Views
         {
           tooling.TryGetValue(o.Path, out var tool);
 
-          var cc = o.CommonCutting;
+          var cc = o.EffectiveCommonCutting;
           double kerf = this.ResolveKerf(o, jobKerfMm, tool.Kerf);
           var populations = new List<RasterPartInfo>
           {
