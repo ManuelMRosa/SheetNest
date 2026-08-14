@@ -45,9 +45,6 @@ namespace DeepNestSharp.Ui.Views
         this.commonCuttingCombo.SelectedIndex = (int)part.CommonCutting;
       }
 
-      // Blank rather than 0 when unset, so the box says "the job decides" instead of "no kerf".
-      this.kerfUpDown.Value = part.KerfMm > 0 ? part.KerfMm : (double?)null;
-
       var poly = LoadPolygon(part.Path);
 
       // Rotation is per-part only (no global rotation UI). A part that has never been edited gets a
@@ -244,14 +241,6 @@ namespace DeepNestSharp.Ui.Views
       this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
 
       this.part.CommonCutting = ChosenMode(this.commonCuttingCombo.SelectedIndex, this.part.CommonCutting);
-
-      this.kerfUpDown.CommitInput();
-
-      // Rounded before it is judged: stepping the spinner up and back down does not land on exactly
-      // zero, and one job reached the shop carrying 1.39e-17 as a per-part kerf because of it. The
-      // resolver ignores anything that small anyway, but a project file should not have it written in.
-      double typedKerf = System.Math.Round(this.kerfUpDown.Value ?? 0, 4);
-      this.part.KerfMm = typedKerf >= DeepNestLib.NestProject.KerfResolver.MinimumMeaningfulKerfMm ? typedKerf : -1;
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;

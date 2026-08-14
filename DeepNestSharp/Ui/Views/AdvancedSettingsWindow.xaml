@@ -47,25 +47,6 @@
       </Grid>
     </GroupBox>
 
-    <GroupBox Header="Cut width (kerf)" Padding="8" Margin="0,10,0,0">
-      <StackPanel>
-        <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" Opacity="0.8"
-                   Text="Common cutting places parts one kerf apart and severs both with a single cut, so it needs this number. Parts imported from SheetCam bring their own; a plain DXF has none until you say. Measure it: cut a coupon and mic the slot." />
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-          <TextBlock Text="This job (mm):" VerticalAlignment="Center" Margin="0,0,10,0" />
-          <xctk:DoubleUpDown x:Name="kerfUpDown" Width="80" Minimum="0" Maximum="5" Increment="0.05" FormatString="0.###"
-                             ToolTip="Cut width for this job, in millimetres whatever the drawing units are. 0 = not set, so parts fall back to whatever came in with them." />
-        </StackPanel>
-        <StackPanel Orientation="Horizontal">
-          <TextBlock Text="Saved:" VerticalAlignment="Center" Margin="0,0,10,0" />
-          <ComboBox x:Name="kerfPresetCombo" Width="150" IsEditable="True" SelectionChanged="OnKerfPresetPicked"
-                    ToolTip="Pick one to fill the value above. Type a name and press Save to remember what is in the box." />
-          <Button x:Name="savePresetButton" Style="{StaticResource ModernButton}" Content="Save" Width="55" Margin="6,0,0,0" Click="OnSaveKerfPreset" />
-          <Button x:Name="deletePresetButton" Style="{StaticResource ModernButton}" Content="Delete" Width="55" Margin="6,0,0,0" Click="OnDeleteKerfPreset" />
-        </StackPanel>
-      </StackPanel>
-    </GroupBox>
-
     <GroupBox Header="Common cutting tolerances" Padding="8" Margin="0,10,0,0">
       <StackPanel>
         <TextBlock TextWrapping="Wrap" Margin="0,0,0,6" Opacity="0.8"

@@ -35,13 +35,11 @@ namespace DeepNestLib.NestProject
   /// reported when the nest finishes. It used to roll the whole sheet back in silence.
   /// </para>
   /// <para>
-  /// 5. "Shared edge" means two different things depending on the kerf, and the kerf is the whole
-  /// mechanism: it is the gap parts are placed at and the width of the single cut that severs both. With
-  /// no kerf known there is nothing to place to, and the feature does nothing at all. A part carrying
-  /// SheetCam tooling brings its own measured one; anything else has to be told, on the job or on the
-  /// part. Given one, the seam is a kerf wide and exports as two lines and the post decides to cut it
-  /// once; given none, compaction leaves the lines coincident and the DXF export merges them into one.
-  /// Two different files for the same nest, so it is worth knowing which was asked for.
+  /// 5. The kerf is the whole mechanism: it is the gap parts are placed at and the width of the single
+  /// cut that severs both. With no kerf known there is nothing to place to and the feature does nothing
+  /// at all, which is why it is offered only for parts that came in from a SheetCam nest file: those
+  /// carry tooling the kerf can be measured off, and nothing else does. The seam is then a kerf wide and
+  /// exports as two lines, for the post to decide to cut once.
   /// </para>
   /// <para>
   /// 6. None of the tolerances here are anybody else's published values. They are starting points for

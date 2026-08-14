@@ -468,21 +468,14 @@ namespace DeepNestSharp.Ui.Views
     private void OnAdvancedSettings(object sender, RoutedEventArgs e)
     {
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
-      var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
-      var savedPresets = (SessionState.Load() ?? new SessionState()).KerfPresets;
       var dialog = new AdvancedSettingsWindow(
-        cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, project?.KerfMm ?? -1, savedPresets, this.commonCuttingTolerances)
+        cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, this.commonCuttingTolerances)
       {
         Owner = this,
       };
       if (dialog.ShowDialog() != true)
       {
         return;
-      }
-
-      if (project != null)
-      {
-        project.KerfMm = dialog.JobKerfMm;
       }
 
       this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
@@ -497,7 +490,6 @@ namespace DeepNestSharp.Ui.Views
       session.DefaultRotations = cfg.Rotations;
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
-      session.KerfPresets = dialog.KerfPresets;
       this.commonCuttingTolerances = dialog.CommonCutting;
       session.CommonCutting = this.commonCuttingTolerances;
       session.Save();
@@ -646,7 +638,7 @@ namespace DeepNestSharp.Ui.Views
           this.dxfViewer.LeadPaths = restoredTooling.Count == 0
             ? null
             : restoredTooling.ToDictionary(kv => kv.Key, kv => kv.Value.Paths, System.StringComparer.OrdinalIgnoreCase);
-          var restoredKerf = this.ResolveKerfByPath(doc.ProjectInfo, restoredTooling);
+          var restoredKerf = KerfByPath(restoredTooling);
           this.dxfViewer.KerfByPart = restoredKerf.Values.Any(k => k > 0) ? restoredKerf : null;
         }
 
@@ -1408,7 +1400,6 @@ namespace DeepNestSharp.Ui.Views
       // Parts that came from a SheetCam .nest are already toolpathed: the engine has to keep room for the
       // kerf and for the lead-ins/outs, which reach outside the outline.
       var tooling = this.LoadNestTooling(project);
-      double jobKerfMm = project.KerfMm;
 
       var parts = project.DetailLoadInfos
         .Where(o => o.IsIncluded && !string.IsNullOrWhiteSpace(o.Path))
@@ -1417,7 +1408,7 @@ namespace DeepNestSharp.Ui.Views
           tooling.TryGetValue(o.Path, out var tool);
 
           var cc = o.EffectiveCommonCutting;
-          double kerf = this.ResolveKerf(o, jobKerfMm, tool.Kerf);
+          double kerf = tool.Kerf;
           var populations = new List<RasterPartInfo>
           {
             new RasterPartInfo
@@ -1576,9 +1567,9 @@ namespace DeepNestSharp.Ui.Views
           this.dxfViewer.LeadPaths = tooling.Count == 0
             ? null
             : tooling.ToDictionary(kv => kv.Key, kv => kv.Value.Paths, System.StringComparer.OrdinalIgnoreCase);
-          // Through the SAME resolver the nest just used, or the editor forgives a different amount of
-          // overlap than the engine enforced.
-          var viewerKerf = this.ResolveKerfByPath(project, tooling);
+          // Off the SAME tooling the nest just used, or the editor forgives a different amount of overlap
+          // than the engine enforced.
+          var viewerKerf = KerfByPath(tooling);
           this.dxfViewer.KerfByPart = viewerKerf.Values.Any(k => k > 0) ? viewerKerf : null;
         }
 
@@ -2015,44 +2006,18 @@ namespace DeepNestSharp.Ui.Views
       return result;
     }
 
-    /// <summary>
-    /// Adopts the job's clearances. Nesting tighter than SheetCam asked for produces parts that touch,
-    /// which is unusable as a cut file — so the file's spacings win over whatever the app had.
-    /// </summary>
-    /// <summary>
-    /// This part's cut width in DRAWING units, from the most specific source that states one: the part,
-    /// then the job, then whatever was measured off the SheetCam nest it came from.
-    /// </summary>
+    /// <summary>Cut width per part FILE, in DRAWING units, for the viewer, which keys everything by path.</summary>
     /// <remarks>
-    /// ⚠️ Everything that needs a kerf has to come through here. The nester and the manual editor judging
-    /// with different kerfs is not theoretical: a clean nest reopens red, or a real overlap is forgiven,
-    /// and the comment on the restored-tooling block above records that it has already happened once.
+    /// ⚠️ Everything that needs a kerf has to come through here, off the same tooling the nest was run
+    /// with. The nester and the manual editor judging with different kerfs is not theoretical: a clean
+    /// nest reopens red, or a real overlap is forgiven, and the comment on the restored-tooling block
+    /// above records that it has already happened once.
     /// </remarks>
-    private double ResolveKerf(DeepNestLib.NestProject.IDetailLoadInfo part, double jobKerfMm, double derivedDrawingUnits)
-      => DeepNestLib.NestProject.KerfResolver.ResolveDrawingUnits(
-        part?.KerfMm ?? -1,
-        jobKerfMm,
-        derivedDrawingUnits,
-        this.unitsMm ? 1d : 1d / 25.4d);
-
-    /// <summary>Cut width per part FILE, for the viewer, which keys everything by path.</summary>
-    /// <remarks>One DXF may be listed twice; the widest kerf wins, matching how a PAIR is judged
-    /// (PlacementCollision.SliverFor also takes the larger of the two).</remarks>
-    private System.Collections.Generic.Dictionary<string, double> ResolveKerfByPath(
-      DeepNestLib.NestProject.IProjectInfo project,
+    private static System.Collections.Generic.Dictionary<string, double> KerfByPath(
       System.Collections.Generic.IDictionary<string, (System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>> Paths, double Kerf)> tooling)
-    {
-      var result = new System.Collections.Generic.Dictionary<string, double>(System.StringComparer.OrdinalIgnoreCase);
-      double jobKerfMm = project?.KerfMm ?? -1;
-      foreach (var o in project.DetailLoadInfos.Where(o => !string.IsNullOrWhiteSpace(o.Path)))
-      {
-        double derived = tooling != null && tooling.TryGetValue(o.Path, out var t) ? t.Kerf : 0;
-        double kerf = this.ResolveKerf(o, jobKerfMm, derived);
-        result[o.Path] = result.TryGetValue(o.Path, out double prev) ? System.Math.Max(prev, kerf) : kerf;
-      }
-
-      return result;
-    }
+      => tooling == null
+        ? new System.Collections.Generic.Dictionary<string, double>(System.StringComparer.OrdinalIgnoreCase)
+        : tooling.ToDictionary(kv => kv.Key, kv => kv.Value.Kerf, System.StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// The loosest of several common cutting modes, for when one DXF is listed more than once. Not the
@@ -2092,6 +2057,10 @@ namespace DeepNestSharp.Ui.Views
     internal static CommonCuttingMode CommonCuttingOf(DeepNestLib.IO.SheetCamNestFile nest)
       => IsCommonLineJob(nest) ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
 
+    /// <summary>
+    /// Adopts the job's clearances. Nesting tighter than SheetCam asked for produces parts that touch,
+    /// which is unusable as a cut file, so the file's spacings win over whatever the app had.
+    /// </summary>
     private void ApplyNestSpacings(DeepNestLib.IO.SheetCamNestFile nest)
     {
       // Settings are in the unit the file declares, which need not be the drawing unit.
