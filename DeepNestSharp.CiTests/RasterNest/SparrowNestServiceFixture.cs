@@ -1,4 +1,4 @@
-﻿namespace DeepNestSharp.CiTests.RasterNest
+namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -1057,6 +1057,53 @@
       {
         err.Should().NotBeNullOrWhiteSpace();
       }
+    }
+
+    /// <summary>
+    /// With two sizes in stock the nest must cut the one that fills most of its own sheet, not the one
+    /// listed first. The wasteful size is listed FIRST on purpose: that is exactly what the old
+    /// walk-the-list-in-order code would have taken, so this goes red the moment the choice is removed.
+    /// </summary>
+    [Fact]
+    public void ChoosesTheSizeThatFillsMostOfItsSheet()
+    {
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("SEL: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+      string one = Path.Combine(dxfDir, "_1.dxf");
+      File.Exists(one).Should().BeTrue();
+
+      var helper = new NestExecutionHelper();
+      helper.LoadRawDetail(new FileInfo(one)).TryConvertToNfp(0, out INfp nfp).Should().BeTrue();
+      int side = (int)Math.Ceiling(Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY) * 2.3);
+      int oversized = side * 4;
+
+      // Four parts against a sheet sixteen times the area they need: whatever the packer does with them,
+      // that sheet ends up mostly empty, while the snug one is mostly full.
+      var parts = new List<RasterPartInfo> { new RasterPartInfo { Path = one, Quantity = 4 } };
+      var stock = new List<(int, int, int, bool)>
+      {
+        (oversized, oversized, 1, true),
+        (side, side, 1, true),
+      };
+
+      var result = SparrowNestService.Nest(parts, stock, 4, 1.0, 0.5, 5, exe, out string err);
+
+      result.Should().NotBeNull($"the mixed-stock nest must return a result (err={err})");
+      var used = result.UsedSheets
+        .Select(s => ((int)Math.Round(s.Sheet.WidthCalculated), (int)Math.Round(s.Sheet.HeightCalculated)))
+        .ToList();
+      this.output.WriteLine(FormattableString.Invariant(
+        $"SEL: snug={side} wasteful={oversized} used={string.Join(",", used.Select(u => $"{u.Item1}x{u.Item2}"))}"));
+
+      used.Should().NotBeEmpty();
+      used.Should().OnlyContain(u => u.Item1 == side, "the snug size wastes less of itself than one 16x its area");
     }
 
     private static string FindDxfDir()

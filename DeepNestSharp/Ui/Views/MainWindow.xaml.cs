@@ -1451,9 +1451,9 @@ namespace DeepNestSharp.Ui.Views
           return populations;
         })
         .ToList();
-      // EVERY sheet entry participates; the engine picks the size that wastes least material at each
-      // step (mixed stock — the bulk lands on the densest-packing size, the tail on the smallest
-      // sheet that takes it). List order only breaks ties.
+      // EVERY sheet entry participates. For each sheet the engine packs the pending work onto every size
+      // still in stock and cuts whichever filled most of its own sheet, so list order decides nothing; a
+      // size marked Unlimited never runs down, and its Quantity is carried along only to be ignored.
       var sheetStock = project.SheetLoadInfos
         .Where(s => s.Width > 0 && s.Height > 0 && (s.Unlimited || s.Quantity > 0))
         .Select(s => (s.Width, s.Height, s.Quantity, s.Unlimited))

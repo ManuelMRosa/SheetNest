@@ -232,13 +232,15 @@ namespace DeepNestSharp.RasterNest
         progress?.Report((placedSoFar, totalParts, sheetNum, 0));
         Action<double> onDensity = d => progress?.Report((placedSoFar, totalParts, sheetNum, d));
 
-        // Walk the sizes in the order they are listed and take the first one that can hold anything, which
-        // is what the flat slot list did before this.
+        // Pack the pending work onto EVERY size still in stock and cut the one that wastes least. With a
+        // single size in the job this is one pack, exactly as before. The losers' work is thrown away,
+        // which is the price of choosing on the real answer instead of guessing from areas.
         StockSize bestSize = null;
         List<IPartPlacement> bestPlacements = null;
         Dictionary<int, int> bestPlacedBySrc = null;
         int bestW = 0;
         int bestH = 0;
+        double bestUtilization = -1;
 
         foreach (var size in sizes)
         {
@@ -289,12 +291,20 @@ namespace DeepNestSharp.RasterNest
             continue; // nothing fits this size: it is not a candidate for this sheet
           }
 
-          bestSize = size;
-          bestPlacements = placements;
-          bestPlacedBySrc = placedBySrc;
-          bestW = packW;
-          bestH = packH;
-          break;
+          // Wastes least = fills most of its own sheet. Comparing the waste AREA instead would hand it to
+          // the smallest size every time, for being small rather than for being well used.
+          double sheetArea = Math.Max(1e-9, (double)packW * packH);
+          double placedArea = placedBySrc.Sum(kv => kv.Value * Math.Abs(loadedById[kv.Key].Nfp.Area));
+          double utilization = placedArea / sheetArea;
+          if (utilization > bestUtilization)
+          {
+            bestUtilization = utilization;
+            bestSize = size;
+            bestPlacements = placements;
+            bestPlacedBySrc = placedBySrc;
+            bestW = packW;
+            bestH = packH;
+          }
         }
 
         if (bestSize == null)

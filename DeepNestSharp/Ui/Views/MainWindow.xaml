@@ -1,4 +1,4 @@
-﻿<Window x:Class="DeepNestSharp.Ui.Views.MainWindow"
+<Window x:Class="DeepNestSharp.Ui.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -235,7 +235,7 @@
             <Button DockPanel.Dock="Bottom" Style="{DynamicResource ModernButton}" Content="+ Add Sheet" Click="OnAddSheetMenu" Margin="4" HorizontalAlignment="Stretch"
                     ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
             <TextBlock DockPanel.Dock="Top" Style="{DynamicResource CaptionText}" Margin="4,4,4,6"
-                       Text="width = long side · every listed sheet participates; the nester picks the size that wastes least" TextWrapping="Wrap" />
+                       Text="width = long side · every listed sheet participates; for each sheet the nester cuts the size that fills most of itself · tick Unlimited on a size and the job takes as many of it as it needs" TextWrapping="Wrap" />
             <!-- Industrial stock list: clean text rows ("120 × 60 · Available 31/31 · ✎ ✕"); size and
                  quantity are BOTH edited through the Edit sheet dialog (✎ or double-click). -->
             <ListView x:Name="sheetsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.SheetLoadInfos}"
