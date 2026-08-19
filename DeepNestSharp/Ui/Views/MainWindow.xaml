@@ -1,4 +1,4 @@
-<Window x:Class="DeepNestSharp.Ui.Views.MainWindow"
+﻿<Window x:Class="DeepNestSharp.Ui.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -270,13 +270,15 @@
                       </DataTemplate>
                     </GridViewColumn.CellTemplate>
                   </GridViewColumn>
-                  <GridViewColumn Header="Available" Width="80">
+                  <GridViewColumn Header="Available" Width="130">
                     <GridViewColumn.CellTemplate>
                       <DataTemplate>
                         <!-- Always visible "Quantity Available": sheets of this size
-                             still available / total (31/31 before a nest; 3/31 after one used 28). -->
+                             still available / total (31/31 before a nest; 3/31 after one used 28).
+                             An unlimited size has no availability to count down, so it says so and
+                             reports what the nest took instead. -->
                         <Border Style="{DynamicResource CountBadge}"
-                                ToolTip="Sheets of this size still available / total">
+                                ToolTip="Sheets of this size still available / total. An unlimited size never runs down, so it reports how many the nest used.">
                           <TextBlock Style="{DynamicResource CountBadgeText}" Text="{Binding NestedInfo, Mode=OneWay}" />
                         </Border>
                       </DataTemplate>

@@ -555,6 +555,11 @@ namespace DeepNestSharp.Ui.Views
           var row = doc.ProjectInfo.SheetLoadInfos.FirstOrDefault(s => s.Width == kv.Key.W && s.Height == kv.Key.H);
           if (row != null)
           {
+            if (row.Unlimited)
+            {
+              continue; // nothing was taken from it, so there is nothing to hand back
+            }
+
             row.Quantity += kv.Value;
           }
           else
@@ -894,7 +899,7 @@ namespace DeepNestSharp.Ui.Views
         var dialog = new AddSheetWindow(this.unitsMm) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
-          this.AddSheetOfSize(dialog.SheetWidth, dialog.SheetHeight, dialog.SheetQuantity);
+          this.AddSheetOfSize(dialog.SheetWidth, dialog.SheetHeight, dialog.SheetQuantity, dialog.SheetUnlimited);
           if (dialog.RememberAsPreset && !this.userSheetPresets.Contains((dialog.SheetWidth, dialog.SheetHeight)))
           {
             this.userSheetPresets.Add((dialog.SheetWidth, dialog.SheetHeight));
@@ -944,17 +949,18 @@ namespace DeepNestSharp.Ui.Views
     private void OpenEditSheet(ISheetLoadInfo row)
     {
       var dialog = new AddSheetWindow(this.unitsMm) { Owner = this };
-      dialog.PrefillForEdit(row.Width, row.Height, row.Quantity);
+      dialog.PrefillForEdit(row.Width, row.Height, row.Quantity, row.Unlimited);
       if (dialog.ShowDialog() == true)
       {
         row.Width = dialog.SheetWidth;
         row.Height = dialog.SheetHeight;
         row.Quantity = dialog.SheetQuantity;
+        row.Unlimited = dialog.SheetUnlimited;
         this.sheetsListView.Items.Refresh();
       }
     }
 
-    private void AddSheetOfSize(int width, int height, int quantity)
+    private void AddSheetOfSize(int width, int height, int quantity, bool unlimited = false)
     {
       if (ViewModel.ActiveDocument is NestProjectViewModel doc && doc.AddSheetCommand.CanExecute(null))
       {
@@ -965,6 +971,7 @@ namespace DeepNestSharp.Ui.Views
           sheet.Width = width;
           sheet.Height = height;
           sheet.Quantity = quantity;
+          sheet.Unlimited = unlimited;
         }
 
         this.sheetsListView.Items.Refresh();
@@ -1448,8 +1455,8 @@ namespace DeepNestSharp.Ui.Views
       // step (mixed stock — the bulk lands on the densest-packing size, the tail on the smallest
       // sheet that takes it). List order only breaks ties.
       var sheetStock = project.SheetLoadInfos
-        .Where(s => s.Width > 0 && s.Height > 0 && s.Quantity > 0)
-        .Select(s => (s.Width, s.Height, s.Quantity))
+        .Where(s => s.Width > 0 && s.Height > 0 && (s.Unlimited || s.Quantity > 0))
+        .Select(s => (s.Width, s.Height, s.Quantity, s.Unlimited))
         .ToList();
       if (sheetStock.Count == 0)
       {
@@ -1457,7 +1464,9 @@ namespace DeepNestSharp.Ui.Views
         return;
       }
 
-      int sheetQty = sheetStock.Sum(s => s.Quantity);   // total sheets the job may use (for the warning)
+      // Total sheets the job may use — only meaningful when every size is counted, which is why the
+      // warning that quotes it is skipped once a size is unlimited.
+      int sheetQty = sheetStock.Sum(s => s.Quantity);
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       int rotations = config.Rotations;
       double spacing = config.Spacing;          // part spacing (drawing units = inches)
@@ -1595,8 +1604,15 @@ namespace DeepNestSharp.Ui.Views
         {
           if (used.TryGetValue((row.Width, row.Height), out int n) && n > 0)
           {
-            int take = System.Math.Min(row.Quantity, n);
-            row.Quantity -= take;
+            // An unlimited size still REPORTS what the nest took (that is the "N used" badge), it just
+            // has no stock level to take it out of. Recording it is what keeps the badge honest; the
+            // give-back in Clear Result is where it must not be handed anything back.
+            int take = row.Unlimited ? n : System.Math.Min(row.Quantity, n);
+            if (!row.Unlimited)
+            {
+              row.Quantity -= take;
+            }
+
             used[(row.Width, row.Height)] = n - take;
             if (take > 0)
             {
@@ -1610,13 +1626,21 @@ namespace DeepNestSharp.Ui.Views
         this.UpdateNestedInfo(result);
 
         // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.
+        // With an unlimited size in the stock the job never ran OUT of sheets, so telling the operator to
+        // raise a quantity would send them to change a number that is already ignored: the only way a part
+        // is left over then is that no sheet size is big enough to hold it.
         int unplacedCount = result.UnplacedParts?.Count ?? 0;
         if (unplacedCount > 0)
         {
+          bool anyUnlimited = project.SheetLoadInfos.Any(s => s.Unlimited);
           ViewModel.MessageService.DisplayMessageBox(
-            $"{unplacedCount} part(s) did not fit on the {sheetQty} available sheet(s).\n\n" +
-            "Increase the sheet Qty in the Sheets tab (or add another sheet) and nest again.",
-            "Not enough sheets",
+            anyUnlimited
+              ? $"{unplacedCount} part(s) do not fit on any of the sheet sizes in the Sheets tab.\n\n" +
+                "Sheets were not the limit — one of the sizes is unlimited. The part is bigger than every " +
+                "sheet it could go on, so add a bigger sheet size (or check the part's spacing and margin)."
+              : $"{unplacedCount} part(s) did not fit on the {sheetQty} available sheet(s).\n\n" +
+                "Increase the sheet Qty in the Sheets tab, tick Unlimited on a size, or add another sheet, and nest again.",
+            anyUnlimited ? "Parts do not fit" : "Not enough sheets",
             DeepNestLib.MessageBoxIcon.Warning);
         }
       }

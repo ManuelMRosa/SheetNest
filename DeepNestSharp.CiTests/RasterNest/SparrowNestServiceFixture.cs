@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests.RasterNest
+﻿namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -971,6 +971,92 @@ namespace DeepNestSharp.CiTests.RasterNest
       }
 
       return total;
+    }
+
+    /// <summary>
+    /// An unlimited size must keep handing out sheets past whatever number is sitting in its Quantity.
+    /// The stock says ONE on purpose: if the flag is ignored the nest stops after a single sheet and
+    /// leaves most of the order unplaced, so this fails loudly rather than merely nesting differently.
+    /// </summary>
+    [Fact]
+    public void UnlimitedStockGoesPastItsQuantity()
+    {
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("UNL: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+      string one = Path.Combine(dxfDir, "_1.dxf");
+      File.Exists(one).Should().BeTrue();
+
+      var helper = new NestExecutionHelper();
+      helper.LoadRawDetail(new FileInfo(one)).TryConvertToNfp(0, out INfp nfp).Should().BeTrue();
+      int side = (int)Math.Ceiling(Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY) * 2.3);
+
+      var parts = new List<RasterPartInfo> { new RasterPartInfo { Path = one, Quantity = 12 } };
+      var stock = new List<(int, int, int, bool)> { (side, side, 1, true) };
+
+      var result = SparrowNestService.Nest(parts, stock, 4, 1.0, 0.5, 5, exe, out string err);
+
+      result.Should().NotBeNull($"the unlimited nest must return a result (err={err})");
+      int placed = result.UsedSheets.Sum(s => s.PartPlacements.Count);
+      this.output.WriteLine(FormattableString.Invariant(
+        $"UNL: sheets={result.UsedSheets.Count} placed={placed}/12 unplaced={result.UnplacedParts.Count()}"));
+
+      result.UsedSheets.Count.Should().BeGreaterThan(1, "12 parts do not fit one sheet, and the size never runs out");
+      placed.Should().Be(12, "an unlimited size cannot run out, so nothing may be left over");
+      result.UnplacedParts.Count().Should().Be(0);
+    }
+
+    /// <summary>
+    /// A part too big for every size has to END the nest, not keep asking an unlimited size for one more
+    /// sheet. Delete the `bestSize == null` break in RunNestBody and this test does not fail, it HANGS:
+    /// with no sheet placed the loop's counter never advances. That is the whole point of it.
+    /// </summary>
+    [Fact]
+    public void AnOversizePartStopsAnUnlimitedNestInsteadOfSpinning()
+    {
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("OVR: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+      string one = Path.Combine(dxfDir, "_1.dxf");
+      File.Exists(one).Should().BeTrue();
+
+      var helper = new NestExecutionHelper();
+      helper.LoadRawDetail(new FileInfo(one)).TryConvertToNfp(0, out INfp nfp).Should().BeTrue();
+
+      // Half the part's own extent: nothing can ever go on it, however many sheets are offered.
+      int tooSmall = Math.Max(2, (int)Math.Floor(Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY) / 2));
+
+      var parts = new List<RasterPartInfo> { new RasterPartInfo { Path = one, Quantity = 3 } };
+      var stock = new List<(int, int, int, bool)> { (tooSmall, tooSmall, 1, true) };
+
+      var watch = System.Diagnostics.Stopwatch.StartNew();
+      var result = SparrowNestService.Nest(parts, stock, 4, 1.0, 0.5, 5, exe, out string err);
+      watch.Stop();
+
+      this.output.WriteLine(FormattableString.Invariant(
+        $"OVR: returned in {watch.ElapsedMilliseconds}ms result={(result == null ? "null" : "some")} err={err}"));
+
+      // Either answer is honest here — no placements at all is reported as an error — but it must ARRIVE.
+      if (result != null)
+      {
+        result.UsedSheets.Sum(s => s.PartPlacements.Count).Should().Be(0);
+      }
+      else
+      {
+        err.Should().NotBeNullOrWhiteSpace();
+      }
     }
 
     private static string FindDxfDir()

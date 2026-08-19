@@ -26,6 +26,15 @@
 
     public virtual int Quantity { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the job may take as many of this size as it needs.
+    /// <para>Deliberately NOT a constructor parameter: the [JsonConstructor] above is the contract every
+    /// .dnest written so far was serialized against, and adding an argument to it would fail to bind on
+    /// files that do not carry the field. As a settable property an older file simply leaves it false,
+    /// which is exactly how the app behaved before it existed.</para>
+    /// </summary>
+    public virtual bool Unlimited { get; set; }
+
     public override string ToJson(bool writeIndented = false)
     {
       var options = new JsonSerializerOptions();

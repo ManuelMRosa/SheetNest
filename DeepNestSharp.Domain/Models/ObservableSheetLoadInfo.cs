@@ -30,6 +30,16 @@
       }
     }
 
+    public bool Unlimited
+    {
+      get => sheetLoadInfo.Unlimited;
+      set
+      {
+        SetProperty(nameof(Unlimited), () => sheetLoadInfo.Unlimited, v => sheetLoadInfo.Unlimited = v, value);
+        OnPropertyChanged(nameof(NestedInfo));
+      }
+    }
+
     public int Width
     {
       get => sheetLoadInfo.Width;
@@ -60,8 +70,10 @@
     /// Gets the always-visible "Available" indicator (Quantity Available):
     /// sheets of this size still available / total. The row's Quantity is already deducted while a
     /// result is on screen, so it IS the available count — no result: "31/31"; nest used 28: "3/31".
+    /// <para>An unlimited size has no available count to show, so it says so and reports what the nest
+    /// took instead; showing its stored Quantity there would read as a stock level it does not have.</para>
     /// </summary>
-    public string NestedInfo => $"{Quantity}/{Quantity + nestedCount}";
+    public string NestedInfo => Unlimited ? $"Unlimited · {nestedCount} used" : $"{Quantity}/{Quantity + nestedCount}";
 
     public SheetLoadInfo Item => this.sheetLoadInfo;
   }

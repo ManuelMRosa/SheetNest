@@ -104,6 +104,33 @@ namespace DeepNestSharp.RasterNest
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
       CommonCuttingTolerances tolerances = null)
+      => Nest(
+        parts,
+        stock?.Select(s => (s.Win, s.Hin, s.Qty, false)).ToList(),
+        rotations,
+        spacing,
+        margin,
+        perSheetBudgetSec,
+        sparrowExePath,
+        out error,
+        cancel,
+        progress,
+        tolerances);
+
+    /// <summary>The same nest with stock that may declare a size UNLIMITED: one the job can keep taking
+    /// sheets of until every part is placed, so its quantity is not a stock level and is ignored.</summary>
+    internal static INestResult Nest(
+      IReadOnlyList<RasterPartInfo> parts,
+      IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock,
+      int rotations,
+      double spacing,
+      double margin,
+      int perSheetBudgetSec,
+      string sparrowExePath,
+      out string error,
+      CancellationToken cancel = default,
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
+      CommonCuttingTolerances tolerances = null)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -112,32 +139,25 @@ namespace DeepNestSharp.RasterNest
         return null;
       }
 
-      // Expand the stock into a flat list of sheet slots (respecting each size's quantity).
-      var slots = new List<(int W, int H)>();
+      // The stock is kept AS SIZES with a remaining count, not expanded into a flat list of slots: an
+      // unlimited size has no count to expand, and the loop below chooses which size to cut next rather
+      // than walking a list in order, so there is no list to walk.
+      var sizes = new List<StockSize>();
       if (stock != null)
       {
         foreach (var s in stock)
         {
-          if (s.Win > 0 && s.Hin > 0 && s.Qty > 0)
+          if (s.Win > 0 && s.Hin > 0 && (s.Unlimited || s.Qty > 0))
           {
-            for (int i = 0; i < s.Qty; i++)
-            {
-              slots.Add((s.Win, s.Hin));
-            }
+            sizes.Add(new StockSize { W = s.Win, H = s.Hin, Remaining = s.Qty, Unlimited = s.Unlimited });
           }
         }
       }
 
-      if (slots.Count == 0)
+      if (sizes.Count == 0)
       {
         error = "Add a sheet size first.";
         return null;
-      }
-
-      const int MaxSheets = 1000;
-      if (slots.Count > MaxSheets)
-      {
-        slots = slots.Take(MaxSheets).ToList();
       }
 
       // Common-line packs as densely as sparrow can (mixing orientations); the snap then aligns whatever
@@ -154,14 +174,37 @@ namespace DeepNestSharp.RasterNest
         return null;
       }
 
-      return RunNestBody(loaded, slots, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, tolerances, out error);
+      return RunNestBody(loaded, sizes, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, tolerances, out error);
+    }
+
+    /// <summary>One size of stock and how much of it is left. An unlimited size never runs down, so its
+    /// <see cref="Remaining"/> is only the number the operator happened to leave in the box.</summary>
+    private sealed class StockSize
+    {
+      public int W { get; set; }
+
+      public int H { get; set; }
+
+      public int Remaining { get; set; }
+
+      public bool Unlimited { get; set; }
+
+      public bool HasStock => this.Unlimited || this.Remaining > 0;
+
+      public void TakeOne()
+      {
+        if (!this.Unlimited)
+        {
+          this.Remaining--;
+        }
+      }
     }
 
     /// <summary>The per-sheet nest loop: fills sheets from the stock (best-of-K sparrow packs, corner
     /// compaction, pattern replication) and maps to an <see cref="INestResult"/>.</summary>
     private static INestResult RunNestBody(
       List<Loaded> loaded,
-      List<(int W, int H)> slots,
+      List<StockSize> sizes,
       double margin,
       int perSheetBudgetSec,
       string sparrowExePath,
@@ -178,70 +221,103 @@ namespace DeepNestSharp.RasterNest
       var sheetLayouts = new List<List<IPartPlacement>>();
       var sheetSizes = new List<(int W, int H)>();
 
-      int slot = 0;
-      while (slot < slots.Count && pool.Values.Sum() > 0)
+      // A sheet that gets used places at least one part, so the job cannot ask for more sheets than it has
+      // parts. The old flat slot list carried a MaxSheets = 1000 truncation; the bound is now the work
+      // itself, which is why an unlimited size cannot run away.
+      while (pool.Values.Sum() > 0 && sheetLayouts.Count < totalParts)
       {
         cancel.ThrowIfCancellationRequested();
         int placedSoFar = totalParts - pool.Values.Sum();
         int sheetNum = sheetLayouts.Count + 1;
         progress?.Report((placedSoFar, totalParts, sheetNum, 0));
         Action<double> onDensity = d => progress?.Report((placedSoFar, totalParts, sheetNum, d));
-        var (w, h) = slots[slot];
-        var batchQty = SelectBatch(pool, loadedById, w, h);
 
-        // Search budget, in ITERATIONS rather than seconds — see RunSparrowOnce. A sheet with few parts
-        // converges sooner, so the budget scales with the batch (this matters for the sparse tail sheet
-        // and for many small sheets); early termination (-x) still trims a sheet that gets stuck. The
-        // wall clock a sheet takes is now a consequence of the machine, not an input to the answer.
-        int batchParts = batchQty.Values.Sum();
-        int budget = IterationBudget(batchParts);
+        // Walk the sizes in the order they are listed and take the first one that can hold anything, which
+        // is what the flat slot list did before this.
+        StockSize bestSize = null;
+        List<IPartPlacement> bestPlacements = null;
+        Dictionary<int, int> bestPlacedBySrc = null;
+        int bestW = 0;
+        int bestH = 0;
 
-        // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
-        // A batch that governs many clones is worth many best-of-K tries — the cost is amortized over all
-        // the clones — which makes the template sheet converge to a consistent, dense layout (more time
-        // does NOT reduce sparrow's run-to-run variance, but more tries do).
-        int replicas = batchQty.Count == 0 ? 1 : batchQty.Min(kv => pool[kv.Key] / Math.Max(1, kv.Value));
-
-        // The final/tail sheet takes the whole remaining pool (a leftover count that won't fill a sheet).
-        // It is a single one-off — replicas=1 → base tries → it varies run-to-run. Since it's just ONE
-        // sheet, invest more best-of-K in it so it lands consistently, like the replicated body already does.
-        bool isFinalSheet = batchParts == pool.Values.Sum();
-        int tries = TriesFor(replicas, isFinalSheet);
-
-        // packW/packH = the sheet dims PackOneSheet packed in (always the stock slot's own orientation — the
-        // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
-        // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
-        // of seconds. Scaled off the caller's time preference so a user who asks for longer nests also
-        // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
-        int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
-
-        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
-        if (cancel.IsCancellationRequested)
+        foreach (var size in sizes)
         {
-          error = "Cancelled.";
-          return null;
+          if (!size.HasStock)
+          {
+            continue;
+          }
+
+          int w = size.W;
+          int h = size.H;
+          var batchQty = SelectBatch(pool, loadedById, w, h);
+
+          // Search budget, in ITERATIONS rather than seconds — see RunSparrowOnce. A sheet with few parts
+          // converges sooner, so the budget scales with the batch (this matters for the sparse tail sheet
+          // and for many small sheets); early termination (-x) still trims a sheet that gets stuck. The
+          // wall clock a sheet takes is now a consequence of the machine, not an input to the answer.
+          int batchParts = batchQty.Values.Sum();
+          int budget = IterationBudget(batchParts);
+
+          // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
+          // A batch that governs many clones is worth many best-of-K tries — the cost is amortized over all
+          // the clones — which makes the template sheet converge to a consistent, dense layout (more time
+          // does NOT reduce sparrow's run-to-run variance, but more tries do).
+          int replicas = batchQty.Count == 0 ? 1 : batchQty.Min(kv => pool[kv.Key] / Math.Max(1, kv.Value));
+
+          // The final/tail sheet takes the whole remaining pool (a leftover count that won't fill a sheet).
+          // It is a single one-off — replicas=1 → base tries → it varies run-to-run. Since it's just ONE
+          // sheet, invest more best-of-K in it so it lands consistently, like the replicated body already does.
+          bool isFinalSheet = batchParts == pool.Values.Sum();
+          int tries = TriesFor(replicas, isFinalSheet);
+
+          // packW/packH = the sheet dims PackOneSheet packed in (always the stock size's own orientation — the
+          // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
+          // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
+          // of seconds. Scaled off the caller's time preference so a user who asks for longer nests also
+          // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
+          int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
+
+          var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
+          if (cancel.IsCancellationRequested)
+          {
+            error = "Cancelled.";
+            return null;
+          }
+
+          if (placements == null || placements.Count == 0)
+          {
+            continue; // nothing fits this size: it is not a candidate for this sheet
+          }
+
+          bestSize = size;
+          bestPlacements = placements;
+          bestPlacedBySrc = placedBySrc;
+          bestW = packW;
+          bestH = packH;
+          break;
         }
 
-        if (placements == null || placements.Count == 0)
+        if (bestSize == null)
         {
-          // Nothing fit this sheet size (a part is bigger than it) — try the next slot/size.
-          slot++;
-          continue;
+          // Every size still in stock packed NOTHING, so what is left over cannot be cut from any of them
+          // and asking again would only ask the same question. This is what stops an unlimited size: with
+          // no sheet placed the loop's own counter never advances, so without this break it would spin.
+          break;
         }
 
-        sheetLayouts.Add(placements);
-        sheetSizes.Add((packW, packH));
-        Deduct(pool, placedBySrc);
-        slot++;
+        sheetLayouts.Add(bestPlacements);
+        sheetSizes.Add((bestW, bestH));
+        Deduct(pool, bestPlacedBySrc);
+        bestSize.TakeOne();
 
-        // Pattern replication: while the pool still holds the SAME composition and the next slots are
-        // the same size, clone this layout instead of re-nesting (uniform jobs → 1 run + replicate).
-        while (slot < slots.Count && slots[slot].W == w && slots[slot].H == h && PoolContains(pool, placedBySrc))
+        // Pattern replication: while the pool still holds the SAME composition and that size still has
+        // sheets, clone this layout instead of re-nesting (uniform jobs → 1 run + replicate).
+        while (bestSize.HasStock && PoolContains(pool, bestPlacedBySrc))
         {
-          sheetLayouts.Add(ClonePlacements(placements));
-          sheetSizes.Add((packW, packH));
-          Deduct(pool, placedBySrc);
-          slot++;
+          sheetLayouts.Add(ClonePlacements(bestPlacements));
+          sheetSizes.Add((bestW, bestH));
+          Deduct(pool, bestPlacedBySrc);
+          bestSize.TakeOne();
           progress?.Report((totalParts - pool.Values.Sum(), totalParts, sheetLayouts.Count, 1.0));
         }
       }

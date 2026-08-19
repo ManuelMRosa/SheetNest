@@ -75,6 +75,59 @@
       actual.SheetLoadInfos[0].Quantity.Should().Be(3);
     }
 
+    /// <summary>
+    /// An unlimited size has to survive a save. Its Quantity is asserted alongside on purpose: the whole
+    /// point of the flag is that the number is IGNORED rather than thrown away, so a save that quietly
+    /// zeroed it would still be wrong even with the flag intact.
+    /// </summary>
+    [Fact]
+    public void ShouldRoundTripAnUnlimitedSheet()
+    {
+      var config = SvgNest.Config;
+      var sut = new ProjectInfo(config);
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 4) { Unlimited = true });
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(48, 24, 3));
+
+      ProjectInfo actual = ProjectInfo.FromJson(config, sut.ToJson());
+
+      actual.SheetLoadInfos.Should().HaveCount(2);
+      actual.SheetLoadInfos[0].Unlimited.Should().BeTrue();
+      actual.SheetLoadInfos[0].Quantity.Should().Be(4);
+      actual.SheetLoadInfos[1].Unlimited.Should().BeFalse();
+      actual.SheetLoadInfos[1].Quantity.Should().Be(3);
+    }
+
+    /// <summary>
+    /// Every .dnest written before the flag existed has to open as counted stock, which is what those
+    /// projects meant. This is the reason Unlimited is a settable property and not another argument to
+    /// SheetLoadInfo's [JsonConstructor]: a constructor parameter has nothing to bind to here.
+    /// </summary>
+    [Fact]
+    public void ShouldReadASheetSavedBeforeUnlimitedExistedAsCounted()
+    {
+      var config = SvgNest.Config;
+      var sut = new ProjectInfo(config);
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 5));
+
+      // Strip the field the way a build from before it wrote the file. The JSON TREE, not the text:
+      // ToJson writes indented, so a string replace matches nothing and the test proves nothing.
+      var tree = JsonNode.Parse(sut.ToJson());
+      var sheet = tree["SheetLoadInfos"].AsArray()[0].AsObject();
+      sheet.ContainsKey("Unlimited").Should().BeTrue("the field must be there to be worth removing");
+      sheet.Remove("Unlimited");
+      string legacyJson = tree.ToJsonString();
+      legacyJson.Should().NotContain("Unlimited");
+
+      ProjectInfo actual = ProjectInfo.FromJson(config, legacyJson);
+
+      // The CONTENT, not just non-null: FromJson swallows a failure and hands back an empty project, so
+      // asserting only "Unlimited is false" would pass with the deserialization blown up underneath it.
+      actual.SheetLoadInfos.Should().HaveCount(1);
+      actual.SheetLoadInfos[0].Width.Should().Be(120);
+      actual.SheetLoadInfos[0].Quantity.Should().Be(5);
+      actual.SheetLoadInfos[0].Unlimited.Should().BeFalse();
+    }
+
     /// <summary>A project saved by 1.1.7 has to come back with its common line still on.</summary>
     [Fact]
     public void ShouldReadAPreModeProjectAsUnrestricted()
