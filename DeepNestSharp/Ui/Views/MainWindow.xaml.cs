@@ -550,25 +550,7 @@ namespace DeepNestSharp.Ui.Views
 
       if (hadResult && lastNestConsumed != null && ViewModel.ActiveDocument is NestProjectViewModel doc)
       {
-        foreach (var kv in lastNestConsumed)
-        {
-          var row = doc.ProjectInfo.SheetLoadInfos.FirstOrDefault(s => s.Width == kv.Key.W && s.Height == kv.Key.H);
-          if (row != null)
-          {
-            if (row.Unlimited)
-            {
-              continue; // nothing was taken from it, so there is nothing to hand back
-            }
-
-            row.Quantity += kv.Value;
-          }
-          else
-          {
-            // The user removed the row after nesting — bring the size back so no stock is lost.
-            doc.ProjectInfo.SheetLoadInfos.Add(new SheetLoadInfo(kv.Key.W, kv.Key.H, kv.Value));
-          }
-        }
-
+        ReturnStock(doc.ProjectInfo.SheetLoadInfos, lastNestConsumed);
         this.sheetsListView.Items.Refresh();
       }
 
@@ -1599,29 +1581,7 @@ namespace DeepNestSharp.Ui.Views
           used[key] = used.TryGetValue(key, out int n) ? n + 1 : 1;
         }
 
-        var consumed = new Dictionary<(int W, int H), int>();
-        foreach (var row in project.SheetLoadInfos)
-        {
-          if (used.TryGetValue((row.Width, row.Height), out int n) && n > 0)
-          {
-            // An unlimited size still REPORTS what the nest took (that is the "N used" badge), it just
-            // has no stock level to take it out of. Recording it is what keeps the badge honest; the
-            // give-back in Clear Result is where it must not be handed anything back.
-            int take = row.Unlimited ? n : System.Math.Min(row.Quantity, n);
-            if (!row.Unlimited)
-            {
-              row.Quantity -= take;
-            }
-
-            used[(row.Width, row.Height)] = n - take;
-            if (take > 0)
-            {
-              consumed[(row.Width, row.Height)] = consumed.TryGetValue((row.Width, row.Height), out int c) ? c + take : take;
-            }
-          }
-        }
-
-        lastNestConsumed = consumed;
+        lastNestConsumed = ConsumeStock(project.SheetLoadInfos, used);
         this.sheetsListView.Items.Refresh();
         this.UpdateNestedInfo(result);
 
@@ -2080,6 +2040,87 @@ namespace DeepNestSharp.Ui.Views
     /// </summary>
     internal static CommonCuttingMode CommonCuttingOf(DeepNestLib.IO.SheetCamNestFile nest)
       => IsCommonLineJob(nest) ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
+
+    /// <summary>
+    /// Charge a finished nest to the stock: counted sizes lose what it used, and the record of what each
+    /// size gave up comes back for the Available badge and for <see cref="ReturnStock"/> to undo.
+    /// <para>An unlimited size is REPORTED and not charged. Those are two different jobs and conflating
+    /// them is what put "0 used" on the badge: leaving the size out of the record to stop Clear Result
+    /// crediting it also took away the only number the badge had to show.</para>
+    /// <para>Lives here, out of the click handler, so it can be tested at all. The whole reason it exists
+    /// as a method is that it failed twice in one afternoon inside <c>OnNest</c>, where the suite cannot
+    /// reach it without instantiating a WPF Window.</para>
+    /// </summary>
+    /// <param name="rows">The stock rows, whose Quantity this mutates.</param>
+    /// <param name="usedBySize">How many sheets of each size the nest consumed. Not modified.</param>
+    internal static Dictionary<(int W, int H), int> ConsumeStock(
+      IEnumerable<ISheetLoadInfo> rows,
+      IReadOnlyDictionary<(int W, int H), int> usedBySize)
+    {
+      var consumed = new Dictionary<(int W, int H), int>();
+      if (rows == null || usedBySize == null)
+      {
+        return consumed;
+      }
+
+      // A copy, because the remaining count is walked down as rows claim it — two rows of the same size
+      // must share what was used rather than both taking all of it. Doing that to the caller's dictionary
+      // would leave it emptied behind their back.
+      var remaining = usedBySize.ToDictionary(kv => kv.Key, kv => kv.Value);
+
+      foreach (var row in rows)
+      {
+        var key = (row.Width, row.Height);
+        if (!remaining.TryGetValue(key, out int n) || n <= 0)
+        {
+          continue;
+        }
+
+        int take = row.Unlimited ? n : Math.Min(row.Quantity, n);
+        if (!row.Unlimited)
+        {
+          row.Quantity -= take;
+        }
+
+        remaining[key] = n - take;
+        if (take > 0)
+        {
+          consumed[key] = consumed.TryGetValue(key, out int c) ? c + take : take;
+        }
+      }
+
+      return consumed;
+    }
+
+    /// <summary>
+    /// Undo <see cref="ConsumeStock"/>: the sheets a discarded result was holding go back on the rack.
+    /// <para>An unlimited size gets nothing, because nothing was taken from it. That guard has to live
+    /// here rather than at the deduction: reopening a saved project rebuilds the consumed record from the
+    /// result itself, so this is the only place BOTH routes into a give-back pass through.</para>
+    /// </summary>
+    internal static void ReturnStock(
+      System.Collections.Generic.IList<ISheetLoadInfo> rows,
+      IReadOnlyDictionary<(int W, int H), int> consumed)
+    {
+      if (rows == null || consumed == null)
+      {
+        return;
+      }
+
+      foreach (var kv in consumed)
+      {
+        var row = rows.FirstOrDefault(s => s.Width == kv.Key.W && s.Height == kv.Key.H);
+        if (row == null)
+        {
+          // The user removed the row after nesting — bring the size back so no stock is lost.
+          rows.Add(new SheetLoadInfo(kv.Key.W, kv.Key.H, kv.Value));
+        }
+        else if (!row.Unlimited)
+        {
+          row.Quantity += kv.Value;
+        }
+      }
+    }
 
     /// <summary>
     /// Adopts the job's clearances. Nesting tighter than SheetCam asked for produces parts that touch,
