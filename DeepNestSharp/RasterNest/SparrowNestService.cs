@@ -1,4 +1,4 @@
-﻿namespace DeepNestSharp.RasterNest
+namespace DeepNestSharp.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -11,6 +11,7 @@
   using System.Threading.Tasks;
   using ClipperLib;
   using DeepNestLib;
+  using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
 
   /// <summary>
@@ -24,7 +25,7 @@
   internal static class SparrowNestService
   {
     // Stage timers, read by MetricUnitsPerfFixture.MeasureRealJobStageBreakdown. The wall time of a nest
-    // is (waves x per-sheet budget) and everything else is noise â€” but only a breakdown proves that, so
+    // is (waves x per-sheet budget) and everything else is noise — but only a breakdown proves that, so
     // keep these: they are what a "nesting is slow" report gets measured with. Caller resets them.
     internal static long DiagLoadMs;
     internal static long DiagSparrowMs;
@@ -38,20 +39,36 @@
     // the winner sparrow's own density picks is also the one that leaves the largest remnant. Caller resets.
     internal static readonly List<string> DiagCandidates = new List<string>();
 
+    /// <summary>Seams welded on the last nest, and groups of them given up because a cut would have
+    /// invaded a neighbour. The second number is the one worth showing: it is the difference between
+    /// "there was nothing to share" and "there was, and it had to be abandoned".</summary>
+    internal static int DiagSeamsSnapped;
+
+    internal static int DiagSeamsGivenUp;
+
     private static int diagPackSeq;
 
     private sealed class Loaded
     {
       public int Source;
       public INfp Nfp;        // original (rendered) geometry
-      public INfp Dilated;    // tooling footprint grown by spacing/2 â€” what sparrow packs
-      public INfp Tooling;    // tooling footprint WITHOUT the spacing shell â€” what compaction must respect
+      public INfp Dilated;    // tooling footprint grown by FitSpacing/2 — what sparrow packs
+      public INfp Tooling;    // tooling footprint WITHOUT the spacing shell — what compaction must respect
       public int[] Angles;    // allowed orientations (discrete fallback + used by hole-filling)
-      public bool Continuous; // "Free" rotation â†’ send NO orientation list so sparrow rotates continuously
-      public double EffSpacing;
-      public double Kerf;     // cut width (drawing units) â€” the exact gap common-line neighbours snap to
+      public bool Continuous; // "Free" rotation → send NO orientation list so sparrow rotates continuously
+      public double EffSpacing;   // NOMINAL spacing: what this part keeps to anything it cannot share a cut with
+      public CommonCuttingMode Cc; // who it may share a cut edge with; None = nobody
+      public int ShareKey;    // identity for SamePart: same drawing AND same hand
+
+      // What to grow by where only ONE polygon per part can be handed over: the engine's input and the
+      // hole filler. Zero when this part may share with EVERY other part in the job (then a tight pack is
+      // exactly right and nothing is lost), otherwise the full nominal spacing, because those two callers
+      // cannot express a clearance that depends on which neighbour it is. Compaction can, and uses
+      // EffSpacing with MayShare instead.
+      public double FitSpacing;
+      public double Kerf;     // cut width (drawing units) — the exact gap common-line neighbours snap to
       public int Qty;
-      public bool Mirrored;   // this population is X-flipped â€” placements carry IsMirrored for the exporter
+      public bool Mirrored;   // this population is X-flipped — placements carry IsMirrored for the exporter
       public int Priority;    // 1-10, LOWER nests first (1 = highest); decides which parts fill earlier sheets
     }
 
@@ -71,7 +88,7 @@
 
     /// <summary>Multi-sheet nest: fills sheets from <paramref name="stock"/> until the pool is empty or
     /// the stock is exhausted; whatever cannot fit is returned as unplaced.
-    /// <para><paramref name="perSheetBudgetSec"/> no longer bounds the search â€” how hard a sheet is
+    /// <para><paramref name="perSheetBudgetSec"/> no longer bounds the search — how hard a sheet is
     /// searched is a fixed iteration count (see <see cref="IterationBudget"/>), because a budget in
     /// seconds means a busy or slower machine returns a different nest. It survives as the scale for the
     /// watchdog that kills a hung engine process.</para></summary>
@@ -86,7 +103,34 @@
       out string error,
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
-      bool commonLine = false)
+      CommonCuttingTolerances tolerances = null)
+      => Nest(
+        parts,
+        stock?.Select(s => (s.Win, s.Hin, s.Qty, false)).ToList(),
+        rotations,
+        spacing,
+        margin,
+        perSheetBudgetSec,
+        sparrowExePath,
+        out error,
+        cancel,
+        progress,
+        tolerances);
+
+    /// <summary>The same nest with stock that may declare a size UNLIMITED: one the job can keep taking
+    /// sheets of until every part is placed, so its quantity is not a stock level and is ignored.</summary>
+    internal static INestResult Nest(
+      IReadOnlyList<RasterPartInfo> parts,
+      IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock,
+      int rotations,
+      double spacing,
+      double margin,
+      int perSheetBudgetSec,
+      string sparrowExePath,
+      out string error,
+      CancellationToken cancel = default,
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
+      CommonCuttingTolerances tolerances = null)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -95,39 +139,34 @@
         return null;
       }
 
-      // Expand the stock into a flat list of sheet slots (respecting each size's quantity).
-      var slots = new List<(int W, int H)>();
+      // The stock is kept AS SIZES with a remaining count, not expanded into a flat list of slots: an
+      // unlimited size has no count to expand, and the loop below chooses which size to cut next rather
+      // than walking a list in order, so there is no list to walk.
+      var sizes = new List<StockSize>();
       if (stock != null)
       {
         foreach (var s in stock)
         {
-          if (s.Win > 0 && s.Hin > 0 && s.Qty > 0)
+          if (s.Win > 0 && s.Hin > 0 && (s.Unlimited || s.Qty > 0))
           {
-            for (int i = 0; i < s.Qty; i++)
-            {
-              slots.Add((s.Win, s.Hin));
-            }
+            sizes.Add(new StockSize { W = s.Win, H = s.Hin, Remaining = s.Qty, Unlimited = s.Unlimited });
           }
         }
       }
 
-      if (slots.Count == 0)
+      if (sizes.Count == 0)
       {
         error = "Add a sheet size first.";
         return null;
       }
 
-      const int MaxSheets = 1000;
-      if (slots.Count > MaxSheets)
-      {
-        slots = slots.Take(MaxSheets).ToList();
-      }
-
       // Common-line packs as densely as sparrow can (mixing orientations); the snap then aligns whatever
       // near-parallel edges it left, and the post decides which shared edges to cut once. The snap needs
       // straight H/V edges, so common-line uses axis-aligned rotation (4-way) rather than free/fine angles.
+      DiagSeamsSnapped = 0;
+      DiagSeamsGivenUp = 0;
       var diagLoad = System.Diagnostics.Stopwatch.StartNew();
-      var loaded = LoadAll(parts, rotations, spacing, commonLine, out error);
+      var loaded = LoadAll(parts, rotations, spacing, out error);
       DiagLoadMs = diagLoad.ElapsedMilliseconds;
       if (loaded == null || loaded.Count == 0)
       {
@@ -135,20 +174,43 @@
         return null;
       }
 
-      return RunNestBody(loaded, slots, margin, perSheetBudgetSec, sparrowExePath, commonLine, cancel, progress, out error);
+      return RunNestBody(loaded, sizes, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, tolerances, out error);
+    }
+
+    /// <summary>One size of stock and how much of it is left. An unlimited size never runs down, so its
+    /// <see cref="Remaining"/> is only the number the operator happened to leave in the box.</summary>
+    private sealed class StockSize
+    {
+      public int W { get; set; }
+
+      public int H { get; set; }
+
+      public int Remaining { get; set; }
+
+      public bool Unlimited { get; set; }
+
+      public bool HasStock => this.Unlimited || this.Remaining > 0;
+
+      public void TakeOne()
+      {
+        if (!this.Unlimited)
+        {
+          this.Remaining--;
+        }
+      }
     }
 
     /// <summary>The per-sheet nest loop: fills sheets from the stock (best-of-K sparrow packs, corner
     /// compaction, pattern replication) and maps to an <see cref="INestResult"/>.</summary>
     private static INestResult RunNestBody(
       List<Loaded> loaded,
-      List<(int W, int H)> slots,
+      List<StockSize> sizes,
       double margin,
       int perSheetBudgetSec,
       string sparrowExePath,
-      bool commonLine,
       CancellationToken cancel,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
+      CommonCuttingTolerances tolerances,
       out string error)
     {
       error = null;
@@ -159,70 +221,113 @@
       var sheetLayouts = new List<List<IPartPlacement>>();
       var sheetSizes = new List<(int W, int H)>();
 
-      int slot = 0;
-      while (slot < slots.Count && pool.Values.Sum() > 0)
+      // A sheet that gets used places at least one part, so the job cannot ask for more sheets than it has
+      // parts. The old flat slot list carried a MaxSheets = 1000 truncation; the bound is now the work
+      // itself, which is why an unlimited size cannot run away.
+      while (pool.Values.Sum() > 0 && sheetLayouts.Count < totalParts)
       {
         cancel.ThrowIfCancellationRequested();
         int placedSoFar = totalParts - pool.Values.Sum();
         int sheetNum = sheetLayouts.Count + 1;
         progress?.Report((placedSoFar, totalParts, sheetNum, 0));
         Action<double> onDensity = d => progress?.Report((placedSoFar, totalParts, sheetNum, d));
-        var (w, h) = slots[slot];
-        var batchQty = SelectBatch(pool, loadedById, w, h);
 
-        // Search budget, in ITERATIONS rather than seconds â€” see RunSparrowOnce. A sheet with few parts
-        // converges sooner, so the budget scales with the batch (this matters for the sparse tail sheet
-        // and for many small sheets); early termination (-x) still trims a sheet that gets stuck. The
-        // wall clock a sheet takes is now a consequence of the machine, not an input to the answer.
-        int batchParts = batchQty.Values.Sum();
-        int budget = IterationBudget(batchParts);
+        // Pack the pending work onto EVERY size still in stock and cut the one that wastes least. With a
+        // single size in the job this is one pack, exactly as before. The losers' work is thrown away,
+        // which is the price of choosing on the real answer instead of guessing from areas.
+        StockSize bestSize = null;
+        List<IPartPlacement> bestPlacements = null;
+        Dictionary<int, int> bestPlacedBySrc = null;
+        int bestW = 0;
+        int bestH = 0;
+        double bestUtilization = -1;
 
-        // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
-        // A batch that governs many clones is worth many best-of-K tries â€” the cost is amortized over all
-        // the clones â€” which makes the template sheet converge to a consistent, dense layout (more time
-        // does NOT reduce sparrow's run-to-run variance, but more tries do).
-        int replicas = batchQty.Count == 0 ? 1 : batchQty.Min(kv => pool[kv.Key] / Math.Max(1, kv.Value));
-
-        // The final/tail sheet takes the whole remaining pool (a leftover count that won't fill a sheet).
-        // It is a single one-off â€” replicas=1 â†’ base tries â†’ it varies run-to-run. Since it's just ONE
-        // sheet, invest more best-of-K in it so it lands consistently, like the replicated body already does.
-        bool isFinalSheet = batchParts == pool.Values.Sum();
-        int tries = TriesFor(replicas, isFinalSheet);
-
-        // packW/packH = the sheet dims PackOneSheet packed in (always the stock slot's own orientation â€” the
-        // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
-        // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
-        // of seconds. Scaled off the caller's time preference so a user who asks for longer nests also
-        // gets a longer leash, but far above any healthy run â€” it exists to catch a hung process.
-        int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
-
-        var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, commonLine, out string perr);
-        if (cancel.IsCancellationRequested)
+        foreach (var size in sizes)
         {
-          error = "Cancelled.";
-          return null;
+          if (!size.HasStock)
+          {
+            continue;
+          }
+
+          int w = size.W;
+          int h = size.H;
+          var batchQty = SelectBatch(pool, loadedById, w, h);
+
+          // Search budget, in ITERATIONS rather than seconds — see RunSparrowOnce. A sheet with few parts
+          // converges sooner, so the budget scales with the batch (this matters for the sparse tail sheet
+          // and for many small sheets); early termination (-x) still trims a sheet that gets stuck. The
+          // wall clock a sheet takes is now a consequence of the machine, not an input to the answer.
+          int batchParts = batchQty.Values.Sum();
+          int budget = IterationBudget(batchParts);
+
+          // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
+          // A batch that governs many clones is worth many best-of-K tries — the cost is amortized over all
+          // the clones — which makes the template sheet converge to a consistent, dense layout (more time
+          // does NOT reduce sparrow's run-to-run variance, but more tries do).
+          int replicas = batchQty.Count == 0 ? 1 : batchQty.Min(kv => pool[kv.Key] / Math.Max(1, kv.Value));
+
+          // The final/tail sheet takes the whole remaining pool (a leftover count that won't fill a sheet).
+          // It is a single one-off — replicas=1 → base tries → it varies run-to-run. Since it's just ONE
+          // sheet, invest more best-of-K in it so it lands consistently, like the replicated body already does.
+          bool isFinalSheet = batchParts == pool.Values.Sum();
+          int tries = TriesFor(replicas, isFinalSheet);
+
+          // packW/packH = the sheet dims PackOneSheet packed in (always the stock size's own orientation — the
+          // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
+          // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
+          // of seconds. Scaled off the caller's time preference so a user who asks for longer nests also
+          // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
+          int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
+
+          var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
+          if (cancel.IsCancellationRequested)
+          {
+            error = "Cancelled.";
+            return null;
+          }
+
+          if (placements == null || placements.Count == 0)
+          {
+            continue; // nothing fits this size: it is not a candidate for this sheet
+          }
+
+          // Wastes least = fills most of its own sheet. Comparing the waste AREA instead would hand it to
+          // the smallest size every time, for being small rather than for being well used.
+          double sheetArea = Math.Max(1e-9, (double)packW * packH);
+          double placedArea = placedBySrc.Sum(kv => kv.Value * Math.Abs(loadedById[kv.Key].Nfp.Area));
+          double utilization = placedArea / sheetArea;
+          if (utilization > bestUtilization)
+          {
+            bestUtilization = utilization;
+            bestSize = size;
+            bestPlacements = placements;
+            bestPlacedBySrc = placedBySrc;
+            bestW = packW;
+            bestH = packH;
+          }
         }
 
-        if (placements == null || placements.Count == 0)
+        if (bestSize == null)
         {
-          // Nothing fit this sheet size (a part is bigger than it) â€” try the next slot/size.
-          slot++;
-          continue;
+          // Every size still in stock packed NOTHING, so what is left over cannot be cut from any of them
+          // and asking again would only ask the same question. This is what stops an unlimited size: with
+          // no sheet placed the loop's own counter never advances, so without this break it would spin.
+          break;
         }
 
-        sheetLayouts.Add(placements);
-        sheetSizes.Add((packW, packH));
-        Deduct(pool, placedBySrc);
-        slot++;
+        sheetLayouts.Add(bestPlacements);
+        sheetSizes.Add((bestW, bestH));
+        Deduct(pool, bestPlacedBySrc);
+        bestSize.TakeOne();
 
-        // Pattern replication: while the pool still holds the SAME composition and the next slots are
-        // the same size, clone this layout instead of re-nesting (uniform jobs â†’ 1 run + replicate).
-        while (slot < slots.Count && slots[slot].W == w && slots[slot].H == h && PoolContains(pool, placedBySrc))
+        // Pattern replication: while the pool still holds the SAME composition and that size still has
+        // sheets, clone this layout instead of re-nesting (uniform jobs → 1 run + replicate).
+        while (bestSize.HasStock && PoolContains(pool, bestPlacedBySrc))
         {
-          sheetLayouts.Add(ClonePlacements(placements));
-          sheetSizes.Add((packW, packH));
-          Deduct(pool, placedBySrc);
-          slot++;
+          sheetLayouts.Add(ClonePlacements(bestPlacements));
+          sheetSizes.Add((bestW, bestH));
+          Deduct(pool, bestPlacedBySrc);
+          bestSize.TakeOne();
           progress?.Report((totalParts - pool.Values.Sum(), totalParts, sheetLayouts.Count, 1.0));
         }
       }
@@ -267,14 +372,47 @@
       return new NestResult(placedTotal + unplaced.Count, collection, unplaced, PlacementTypeEnum.BoundingBox, 0, 0);
     }
 
+    /// <summary>
+    /// True when these two parts are allowed to share a cut edge. The stricter mode wins, so a Same-part
+    /// part shares only with its own drawing and its own hand however permissive the other side is.
+    /// </summary>
+    private static bool PartsMayShare(RasterPartInfo a, RasterPartInfo b)
+    {
+      if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
+      {
+        return false;
+      }
+
+      if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
+      {
+        return string.Equals(a.Path, b.Path, StringComparison.OrdinalIgnoreCase) && a.Mirrored == b.Mirrored;
+      }
+
+      return true;
+    }
+
     /// <summary>Loads each part's contour once (arcs tessellated by the app pipeline) and pre-computes its
     /// spacing-dilated shell + allowed orientations. Holes (INfp.Children) are not yet forwarded.</summary>
-    private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, bool commonLine, out string error)
+    private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, out string error)
     {
       error = null;
       var helper = new NestExecutionHelper();
       var loaded = new List<Loaded>();
       int source = 0;
+
+      // The engine takes ONE polygon per part and has no notion of a clearance that depends on which
+      // neighbour it is, so the shell we grow it by has to answer for every neighbour at once. Grow by
+      // nothing only when every part in the job may share a cut with every other, which is when a tight
+      // pack is exactly right; otherwise carry the full spacing and let compaction reclaim the contact
+      // between the pairs that really do share. When they all share this is byte-for-byte what the old
+      // job-wide common-line flag did.
+      bool everyPartShares = parts.Count > 0 && parts.All(a => a != null && parts.All(b => b == null || PartsMayShare(a, b)));
+
+      // "The same part" means the same DRAWING, not the same row: the list may legitimately hold one file
+      // twice (once common-cut, once spaced), and two rows of the same file are still the same part on the
+      // sheet. A MIRRORED population is a different part, though � its shared edges are the other hand's.
+      var shareKeys = new Dictionary<(string Path, bool Mirrored), int>();
+
       foreach (var part in parts)
       {
         if (part == null || string.IsNullOrWhiteSpace(part.Path) || part.Quantity <= 0)
@@ -300,24 +438,39 @@
           if (part.Mirrored)
           {
             // Bake the mirror into the RENDERED geometry; the placement also carries IsMirrored so the
-            // DXF exporter (which reloads the ORIGINAL file) mirrors it once too â€” same order the
-            // exporter uses (MirrorX about origin â†’ rotate â†’ translate), so both paths agree.
+            // DXF exporter (which reloads the ORIGINAL file) mirrors it once too — same order the
+            // exporter uses (MirrorX about origin → rotate → translate), so both paths agree.
             nfp = nfp.MirrorX();
           }
 
           int code = part.Rotations > 0 ? part.Rotations : rotations;
 
           // Common-line needs straight H/V edges for the snap to line up neighbours. Fine/continuous
-          // rotation (45Â° steps, free 15Â°) would leave edges at odd angles the snap can't use, so drop it
+          // rotation (45° steps, free 15°) would leave edges at odd angles the snap can't use, so drop it
           // to 4-way. Decide by the ANGLES, not the code number: the special codes 1001/1002/1003 are
-          // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept â€” an
+          // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept — an
           // earlier `code >= 8` test wrongly turned 0/90 into 4-way, adding 180/270.
-          if (commonLine && RotationCodes.PermittedSet(code).Any(a => a % 90 != 0))
+          // PER PART, not per job: clipping every part because ONE of them is common-cut would quietly
+          // take free rotation away from parts that never asked for it, and cost density for nothing.
+          //
+          // 45 degree steps rather than 90 now that a seam can run at any angle: two copies at 45 present
+          // each other real parallel faces, so the seam finder can use them. Continuous rotation is still
+          // clipped, and deliberately: at 37.1 and 142.9 two copies almost never face each other, so the
+          // seams stop happening AND the bias toward tidy aligned layouts goes with them. Measured on a
+          // single-drawing job: 16 placed whether the part is allowed 2, 4, 8 or free rotations.
+          if (part.Cc != CommonCuttingMode.None && RotationCodes.PermittedSet(code).Any(a => a % 45 != 0))
           {
-            code = 4;
+            code = 8;
           }
 
           double effSpacing = part.Spacing >= 0 ? part.Spacing : Math.Max(0, spacing);
+          double fitSpacing = everyPartShares ? 0 : effSpacing;
+
+          var shareOf = (Path: part.Path ?? string.Empty, part.Mirrored);
+          if (!shareKeys.TryGetValue(shareOf, out int shareKey))
+          {
+            shareKeys[shareOf] = shareKey = shareKeys.Count;
+          }
 
           // Mirroring is baked into the geometry above, so the tooling has to follow it.
           var toolPaths = part.ToolPaths;
@@ -330,7 +483,7 @@
           {
             Source = source,
             Nfp = nfp,
-            Dilated = ToolingFootprint(nfp, toolPaths, part.Kerf, effSpacing),
+            Dilated = ToolingFootprint(nfp, toolPaths, part.Kerf, fitSpacing),
 
             // Same shape without the spacing shell: compaction adds the spacing itself, so handing it
             // the dilated one would double-count. With no tooling this IS the outline, which keeps plain
@@ -339,6 +492,9 @@
             Angles = RotationCodes.PermittedSet(code),
             Continuous = code == 36, // only "Free" (sentinel 36) is continuous; 1001/1002/1003 are discrete sets
             EffSpacing = effSpacing,
+            FitSpacing = fitSpacing,
+            Cc = part.Cc,
+            ShareKey = shareKey,
             Kerf = Math.Max(0, part.Kerf),
             Qty = part.Quantity,
             Mirrored = part.Mirrored,
@@ -351,7 +507,7 @@
       return loaded;
     }
 
-    /// <summary>Picks a batch from the pool up to ~1.3Ã— the sheet area (extra choice for sparrow), keeping
+    /// <summary>Picks a batch from the pool up to ~1.3× the sheet area (extra choice for sparrow), keeping
     /// source variety for mixed jobs. Always returns at least one part so an oversize part gets a try.</summary>
     private static Dictionary<int, int> SelectBatch(Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, int w, int h)
     {
@@ -362,7 +518,7 @@
       int prevPriority = int.MinValue;
 
       // Highest priority first (1 = highest, lower number wins) so preferred parts fill earlier
-      // sheets and the leftover tail â€” what ends up unplaced when material runs out â€” is lowest priority.
+      // sheets and the leftover tail — what ends up unplaced when material runs out — is lowest priority.
       foreach (var kv in pool.OrderBy(kv => loadedById[kv.Key].Priority).ThenBy(kv => kv.Key))
       {
         if (kv.Value <= 0)
@@ -401,7 +557,7 @@
 
       if (batch.Count == 0)
       {
-        // Nothing fit the area cap â€” force the single highest-priority remaining part onto the sheet.
+        // Nothing fit the area cap — force the single highest-priority remaining part onto the sheet.
         var first = pool.Where(k => k.Value > 0)
           .OrderBy(k => loadedById[k.Key].Priority).ThenBy(k => k.Key).First();
         batch[first.Key] = 1;
@@ -412,12 +568,12 @@
 
     /// <summary>Packs one batch onto one sheet, best-of-K with EARLY-STOP: races sparrow searches (fixed seeds)
     /// in waves and keeps the candidate that PLACES THE MOST parts (tie: denser, then lower seed). Stops
-    /// launching more tries as soon as a whole wave fails to improve the best part-count â€” easy/uniform sheets
+    /// launching more tries as soon as a whole wave fails to improve the best part-count — easy/uniform sheets
     /// converge in a wave or two, so they don't burn all `tries`; hard/variable sheets keep going up to `tries`.
-    /// Packs ONLY in the user's chosen sheet orientation â€” the sheet is never auto-rotated (a 120Ã—60 preset must
-    /// render 120Ã—60); to use the other orientation the operator picks that preset.</summary>
+    /// Packs ONLY in the user's chosen sheet orientation — the sheet is never auto-rotated (a 120×60 preset must
+    /// render 120×60); to use the other orientation the operator picks that preset.</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, bool commonLine, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
@@ -451,7 +607,7 @@
         string inputPath = Path.Combine(workDir, "job.json");
         File.WriteAllText(inputPath, BuildJaguaJson("job", stripHeight, batch, batchQty));
 
-        // WHICH seeds are raced against each other, and how many, decides the result â€” so the wave is a
+        // WHICH seeds are raced against each other, and how many, decides the result — so the wave is a
         // FIXED size on every machine. How many of those run at the same instant is just scheduling, and
         // that is what the core count is allowed to decide: a machine with fewer cores takes longer to
         // finish the same wave, but computes the same nest. Tying the wave itself to ProcessorCount (it
@@ -490,7 +646,7 @@
             }
 
             var diagMap = System.Diagnostics.Stopwatch.StartNew();
-            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, commonLine, cancel);
+            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, tolerances, cancel);
             System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
@@ -514,7 +670,7 @@
             }
           }
 
-          // Plateau: stop once a full wave fails to beat the best part-count so far (â‰¥1 wave already ran).
+          // Plateau: stop once a full wave fails to beat the best part-count so far (≥1 wave already ran).
           // Part-count is a hard metric that plateaus fast on easy sheets and correlates with density.
           int waveBest = winners.Count == 0 ? -1 : winners.Max(w => w.Count);
           if (bestCount >= 0 && waveBest <= bestCount)
@@ -556,13 +712,14 @@
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
     /// and splits off anything past the sheet edge (not placed).</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource) MapAndCompact(
-      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, bool commonLine, CancellationToken cancel)
+      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CommonCuttingTolerances tolerances, CancellationToken cancel)
     {
       using var doc = JsonDocument.Parse(outputJson);
       var placed = doc.RootElement.GetProperty("solution").GetProperty("layout").GetProperty("placed_items");
       var spacingById = batch.ToDictionary(l => l.Source, l => l.EffSpacing);
       var kerfById = batch.ToDictionary(l => l.Source, l => l.Kerf);
       var toolingById = batch.ToDictionary(l => l.Source, l => l.Tooling);
+      var ccById = batch.ToDictionary(l => l.Source, l => (l.Cc, l.ShareKey));
 
       var all = new List<IPartPlacement>();
       foreach (var pi in placed.EnumerateArray())
@@ -587,7 +744,7 @@
         return (new List<IPartPlacement>(), new Dictionary<int, int>());
       }
 
-      // Pre-anchor min â†’ margin so compaction starts on-sheet, then gravity-compact to the corner.
+      // Pre-anchor min → margin so compaction starts on-sheet, then gravity-compact to the corner.
       double minX = all.Min(p => p.PlacedPart.MinX);
       double minY = all.Min(p => p.PlacedPart.MinY);
       foreach (var pp in all)
@@ -597,7 +754,7 @@
       }
 
       // Compact against the TOOLING footprint, not the bare outline. Compaction slides parts together
-      // until their polygons are `spacing` apart â€” with common-line that is exact contact, which on a
+      // until their polygons are `spacing` apart — with common-line that is exact contact, which on a
       // toolpathed part would drive the kerf and the lead-ins into the neighbour, undoing the clearance
       // sparrow just respected. Feeding it the footprint makes "exact contact" mean the outlines sit one
       // kerf apart: the shared cut edge, with neither part losing material.
@@ -609,6 +766,8 @@
         X = pp.X,
         Y = pp.Y,
         Spacing = spacingById.TryGetValue(pp.Source, out double sp) ? sp : 0,
+        Cc = ccById.TryGetValue(pp.Source, out var cc) ? cc.Cc : CommonCuttingMode.None,
+        ShareKey = ccById.TryGetValue(pp.Source, out var sk) ? sk.ShareKey : 0,
       }).ToList();
       RasterCompact.Compact(compactItems, sheetWin, sheetHin, margin, cancel: cancel);
       for (int k = 0; k < all.Count; k++)
@@ -620,9 +779,9 @@
       // Common-line: nudge near-parallel neighbour edges onto exactly one kerf apart and aligned, so the
       // post processor recognises the shared cut and cuts it once. Best-effort per part (all-or-nothing):
       // a part only moves if the shift keeps every part's tooling clear of every other.
-      if (commonLine)
+      if (batch.Any(l => l.Cc != CommonCuttingMode.None))
       {
-        SnapCommonLineEdges(all, kerfById, toolingById);
+        SnapCommonLineEdges(all, kerfById, toolingById, ccById, tolerances);
       }
 
       const double tol = 1e-3;
@@ -633,7 +792,7 @@
         var ppp = pp.PlacedPart;
         if (ppp.MinX < -tol || ppp.MinY < -tol || ppp.MaxX > sheetWin + tol || ppp.MaxY > sheetHin + tol)
         {
-          continue; // past the sheet edge â†’ not placed on this sheet (stays in the pool)
+          continue; // past the sheet edge → not placed on this sheet (stays in the pool)
         }
 
         placements.Add(pp);
@@ -643,66 +802,160 @@
       return (placements, placedBySource);
     }
 
-    /// <summary>An axis-aligned straight edge of a placed part, in absolute sheet coordinates.</summary>
-    private readonly struct AaEdge
+    /// <summary>Twice-signed area of a ring: positive when the ring is wound counter-clockwise.</summary>
+    private static double SignedArea(List<System.Windows.Point> pts)
     {
-      public AaEdge(int part, bool vertical, double pos, double lo, double hi, bool materialBelow)
+      double sum = 0;
+      int n = pts.Count;
+      for (int i = 0; i < n; i++)
+      {
+        var p = pts[i];
+        var q = pts[(i + 1) % n];
+        sum += (p.X * q.Y) - (q.X * p.Y);
+      }
+
+      return sum;
+    }
+
+    /// <summary>
+    /// One straight face of a placed part, at any angle, in absolute sheet coordinates.
+    /// </summary>
+    private readonly struct PartEdge
+    {
+      public PartEdge(int part, System.Windows.Point a, System.Windows.Point b, double nx, double ny)
       {
         this.Part = part;
-        this.Vertical = vertical;   // true = runs along Y at X=Pos; false = runs along X at Y=Pos
-        this.Pos = pos;             // the constant coordinate (X for vertical, Y for horizontal)
-        this.Lo = lo;
-        this.Hi = hi;               // the edge spans [Lo, Hi] on the other axis
-        this.MaterialBelow = materialBelow; // material is on the lower-Pos side (a "right"/"top" edge)
+        this.Nx = nx;                       // outward unit normal: which way is AWAY from the material
+        this.Ny = ny;
+
+        // The direction ALONG the face, canonicalised into the half plane x > 0 (and +Y when vertical).
+        // Canonical rather than simply "the normal turned ninety degrees" so that the two faces of a
+        // pair measure their ends on the same axis in the same direction. For a vertical face this is
+        // +Y and for a horizontal one +X, which is exactly what the axis-only code used to assume, so
+        // axis-aligned pairs come out at the identical numbers they always did.
+        double ux = -ny, uy = nx;
+        if (ux < -1e-12 || (Math.Abs(ux) <= 1e-12 && uy < 0))
+        {
+          ux = -ux;
+          uy = -uy;
+        }
+
+        this.Ux = ux;
+        this.Uy = uy;
+
+        double pa = (a.X * ux) + (a.Y * uy);
+        double pb = (b.X * ux) + (b.Y * uy);
+        this.Lo = Math.Min(pa, pb);
+        this.Hi = Math.Max(pa, pb);
+        this.Mx = (a.X + b.X) / 2.0;
+        this.My = (a.Y + b.Y) / 2.0;
       }
 
       public int Part { get; }
 
-      public bool Vertical { get; }
+      public double Nx { get; }
 
-      public double Pos { get; }
+      public double Ny { get; }
 
+      public double Ux { get; }
+
+      public double Uy { get; }
+
+      /// <summary>Where the ends of the face fall when projected onto <see cref="Ux"/>.</summary>
       public double Lo { get; }
 
       public double Hi { get; }
 
-      public bool MaterialBelow { get; }
+      public double Mx { get; }
+
+      public double My { get; }
     }
 
     /// <summary>
     /// Common-line snap: nudges parts so a near-parallel neighbour edge pair lands exactly one kerf apart
     /// and aligned, giving the post processor coincident toolpath endpoints to recognise. Only axis-aligned
-    /// edges (parts are restricted to 0/180 for common-line, so shared edges are horizontal or vertical).
-    /// All-or-nothing per connected group: a group of parts only moves if, after moving, every part's
-    /// tooling footprint still clears every other part (no cut eating into a neighbour).
+    /// edges (a common-cut part is clipped to 90-degree steps, so shared edges are horizontal or vertical).
+    /// Only pairs that are ALLOWED to share are snapped: a Same-part item is never pulled onto a different
+    /// drawing. All-or-nothing per connected group: a group of parts only moves if, after moving, every
+    /// part's tooling footprint still clears every other part (no cut eating into a neighbour).
     /// </summary>
-    internal static void SnapCommonLineEdges(List<IPartPlacement> all, Dictionary<int, double> kerfById, Dictionary<int, INfp> toolingById)
+    internal static void SnapCommonLineEdges(
+      List<IPartPlacement> all,
+      Dictionary<int, double> kerfById,
+      Dictionary<int, INfp> toolingById,
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById,
+      CommonCuttingTolerances tol = null)
     {
+      tol ??= CommonCuttingTolerances.Default;
       int n = all.Count;
       if (n < 2)
       {
         return;
       }
 
-      double kerf = kerfById.Values.Where(k => k > 0).DefaultIfEmpty(0).Max();
-      if (kerf <= 0)
+      double KerfOf(int i) => kerfById.TryGetValue(all[i].Source, out double k) ? Math.Max(0, k) : 0;
+
+      if (Enumerable.Range(0, n).All(i => KerfOf(i) <= 0))
       {
-        return;
+        return; // no tooling anywhere: there is no kerf to snap onto (compaction already closed these)
       }
 
-      // Absolute geometry + axis-aligned edges per part.
+      bool MayShare(int ia, int ib)
+      {
+        if (!ccById.TryGetValue(all[ia].Source, out var a) || !ccById.TryGetValue(all[ib].Source, out var b))
+        {
+          return false;
+        }
+
+        if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
+        {
+          return false;
+        }
+
+        if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
+        {
+          return a.ShareKey == b.ShareKey;
+        }
+
+        return true;
+      }
+
+      // Absolute geometry + axis-aligned edges per part. Edge length is filtered by the part's OWN kerf:
+      // the batch maximum would throw away usable edges on a finer-cutting part in a mixed job.
       var absPts = new List<System.Windows.Point>[n];
-      var edges = new List<AaEdge>();
-      const double angTol = 1e-3;                 // how "axis-aligned" an edge must be
-      double minLen = kerf * 2;                    // ignore tiny edges (chamfers etc.)
+      var edges = new List<PartEdge>();
+      double angTolRad = tol.AngleToleranceDeg * Math.PI / 180.0;
       for (int i = 0; i < n; i++)
       {
-        var pts = all[i].PlacedPart.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
+        // Ignore tiny edges (chamfers etc.). The absolute floor matters where the kerf is fine: a very
+        // short segment out of the parser carries more direction noise than signal.
+        double minLen = Math.Max(KerfOf(i) * tol.MinEdgeLengthKerfs, tol.MinEdgeLengthAbsolute);
+        var placed = all[i].PlacedPart;
+        var pts = placed.Points.Select(p => new System.Windows.Point(p.X, p.Y)).ToList();
         absPts[i] = pts;
-        double cx = pts.Average(p => p.X);
+
+        // Which of this ring's segments are chords the parser cut a curve into. A chord lies INSIDE its
+        // arc, so welding a neighbour one kerf off a chord parks it closer than a kerf from the real
+        // curve and the cut takes the difference. Nothing downstream catches that either: every later
+        // check measures this same polygon, which contains the same chord. Null = never recorded, which
+        // is every part that did not come from the DXF parser, and reads as "none of them are".
+        var curved = (placed as NoFitPolygon)?.GetCurvedSegments();
+
+        // Which side the material is on comes from the WINDING, not from where the middle of the part
+        // happens to be. The old test compared the edge against the arithmetic mean of the vertices,
+        // which is inside the part only while the part is convex: every concave face got the answer
+        // backwards and so could never pair with anything, silently. For a counter-clockwise ring the
+        // outward normal of a->b is (dy, -dx); clockwise flips it.
+        double sign = SignedArea(pts) >= 0 ? 1.0 : -1.0;
+
         int m = pts.Count;
         for (int k = 0; k < m; k++)
         {
+          if (curved != null && k < curved.Length && curved[k])
+          {
+            continue; // a chord, not a face
+          }
+
           var a = pts[k];
           var b = pts[(k + 1) % m];
           double dx = b.X - a.X, dy = b.Y - a.Y;
@@ -712,49 +965,160 @@
             continue;
           }
 
-          if (Math.Abs(dx) < angTol * len) // vertical
-          {
-            double lo = Math.Min(a.Y, b.Y), hi = Math.Max(a.Y, b.Y);
-            edges.Add(new AaEdge(i, true, a.X, lo, hi, cx < a.X)); // material left of the edge â†’ "right" edge
-          }
-          else if (Math.Abs(dy) < angTol * len) // horizontal
-          {
-            double lo = Math.Min(a.X, b.X), hi = Math.Max(a.X, b.X);
-            double cy = pts.Average(p => p.Y);
-            edges.Add(new AaEdge(i, false, a.Y, lo, hi, cy < a.Y)); // material below the edge â†’ "top" edge
-          }
+          // Outward unit normal straight from the winding, at whatever angle the face runs. This is
+          // what lifts the whole thing off the two axes: an edge no longer has to be horizontal or
+          // vertical to be a face, it just has to have a direction.
+          edges.Add(new PartEdge(i, a, b, sign * dy / len, sign * -dx / len));
         }
       }
 
-      // Find neighbour edge pairs one kerf apart and aligned, and the shift that makes it exact. A "right"
-      // edge of A (material below Pos) facing a "left" edge of B (material above Pos), one kerf apart.
-      var shifts = new Dictionary<(int A, int B), (double Dx, double Dy)>();
-      foreach (var ea in edges.Where(e => e.MaterialBelow))
+      // Two faces make a seam when they LOOK AT EACH OTHER: their outward normals point opposite ways,
+      // within tolerance. That one test replaces both "are they parallel" and "is the material on
+      // facing sides", and it works at any angle.
+      //
+      // Bucketed by normal direction first, because the search is every face against every face. On the
+      // axes that was a few faces per part; at any angle it is every straight segment, and a full sheet
+      // would be millions of pair tests inside a LINQ Where. Each face only looks in the bucket its
+      // opposite would fall in, plus the two either side.
+      double bucketSize = Math.Max(2 * angTolRad, 1e-9);
+
+      // Indices wrap, because the angles do. A face pointing left comes out of Atan2 as +PI or as -PI
+      // depending on nothing more than the sign of a zero, and those two have to land in the same
+      // bucket or a plain vertical seam is never even looked at.
+      int bucketCount = Math.Max(1, (int)Math.Ceiling((2 * Math.PI) / bucketSize));
+      int Wrap(int b) => ((b % bucketCount) + bucketCount) % bucketCount;
+      int BucketOf(double angle) => Wrap((int)Math.Floor((angle + Math.PI) / bucketSize));
+
+      var byBucket = new Dictionary<int, List<int>>();
+      var edgeAngle = new double[edges.Count];
+      for (int e = 0; e < edges.Count; e++)
       {
-        foreach (var eb in edges.Where(e => !e.MaterialBelow && e.Vertical == ea.Vertical && e.Part != ea.Part))
+        edgeAngle[e] = Math.Atan2(edges[e].Ny, edges[e].Nx);
+        int bucket = BucketOf(edgeAngle[e]);
+        (byBucket.TryGetValue(bucket, out var list) ? list : byBucket[bucket] = new List<int>()).Add(e);
+      }
+
+      double cosTol = Math.Cos(angTolRad);
+      var candidates = new List<(int A, int B, double Dx, double Dy, double Quality)>();
+
+      for (int ia = 0; ia < edges.Count; ia++)
+      {
+        var ea = edges[ia];
+
+        // Where the face that would look back at this one lives.
+        double opposite = edgeAngle[ia] + Math.PI;
+        if (opposite > Math.PI)
         {
-          double gap = eb.Pos - ea.Pos; // B sits above A on the Pos axis
-          if (gap < 0.4 * kerf || gap > 1.6 * kerf)
+          opposite -= 2 * Math.PI;
+        }
+
+        int centre = BucketOf(opposite);
+        for (int step = -1; step <= 1; step++)
+        {
+          if (!byBucket.TryGetValue(Wrap(centre + step), out var bucket))
           {
             continue;
           }
 
-          double overlap = Math.Min(ea.Hi, eb.Hi) - Math.Max(ea.Lo, eb.Lo);
-          if (overlap < minLen)
+          foreach (int ib in bucket)
           {
-            continue; // must actually run alongside each other
-          }
+            var eb = edges[ib];
+            if (eb.Part == ea.Part || !MayShare(ea.Part, eb.Part))
+            {
+              continue;
+            }
 
-          // Shift B: perpendicular to land exactly one kerf off A, and along the edge to align the ends.
-          double perp = (ea.Pos + kerf) - eb.Pos;   // move B's Pos to A.Pos + kerf
-          double along = ea.Lo - eb.Lo;              // align the low ends
-          var s = ea.Vertical ? (perp, along) : (along, perp);
-          var key = (ea.Part, eb.Part);
-          if (!shifts.ContainsKey(key))
-          {
-            shifts[key] = s;
+            // Facing each other, within the angular tolerance.
+            if ((ea.Nx * eb.Nx) + (ea.Ny * eb.Ny) > -cosTol)
+            {
+              continue;
+            }
+
+            // PER PAIR, not the batch maximum: one part cutting at 0.006 must not drag a 0.002 neighbour
+            // onto a 0.006 seam, and it is the wider of the two cuts that has to fit between them.
+            double kerf = Math.Max(KerfOf(ea.Part), KerfOf(eb.Part));
+            if (kerf <= 0)
+            {
+              continue;
+            }
+
+            // How far B stands off A, measured along A's normal from midpoint to midpoint. Midpoints
+            // rather than an end, because two faces that share a cut need not start together.
+            double gap = ((eb.Mx - ea.Mx) * ea.Nx) + ((eb.My - ea.My) * ea.Ny);
+            if (gap < tol.GapMinKerfs * kerf || gap > tol.GapMaxKerfs * kerf)
+            {
+              continue;
+            }
+
+            // How far they run alongside each other, projected onto A's own direction. This is what
+            // rejects a corner touch: two faces meeting at a vertex overlap by nothing.
+            double bLo = Math.Min(
+              ((eb.Mx * ea.Ux) + (eb.My * ea.Uy)) - ((eb.Hi - eb.Lo) / 2.0),
+              ((eb.Mx * ea.Ux) + (eb.My * ea.Uy)) + ((eb.Hi - eb.Lo) / 2.0));
+            double bHi = bLo + (eb.Hi - eb.Lo);
+            double overlap = Math.Min(ea.Hi, bHi) - Math.Max(ea.Lo, bLo);
+            if (overlap < tol.MinOverlapKerfs * kerf)
+            {
+              continue;
+            }
+
+            // Move B onto the seam: out along A's normal to sit exactly one kerf off it, and along the
+            // face to line the ends up.
+            double perp = kerf - gap;
+            double along = ea.Lo - bLo;
+            double dx = (perp * ea.Nx) + (along * ea.Ux);
+            double dy = (perp * ea.Ny) + (along * ea.Uy);
+
+            // Nothing else bounds the travel: lining the ends up can ask for a long slide when two faces
+            // barely overlap, and the only thing that used to stop it was the tooling check at the very
+            // end, which throws the whole pass away when it fires.
+            if (Math.Sqrt((dx * dx) + (dy * dy)) > tol.MaxSnapTravelKerfs * kerf)
+            {
+              continue;
+            }
+
+            // Longer seams first, and among those the ones already closest to a kerf.
+            candidates.Add((ea.Part, eb.Part, dx, dy, overlap - Math.Abs(gap - kerf)));
           }
         }
+      }
+
+      if (candidates.Count == 0)
+      {
+        return;
+      }
+
+      // A SPANNING FOREST, not "the first pair between these two parts wins". Every seam is a constraint
+      // on where two parts sit relative to each other; take them best-first and keep one only when it
+      // joins two parts that are not already tied together, so the constraints can never contradict.
+      //
+      // What that buys, beyond tidiness: a part with TWO candidate faces against the same neighbour (a
+      // bar sitting in a bracket's notch, near both its side and its floor) used to close a cycle, read
+      // as inconsistent, and lose BOTH seams. Now it keeps the better one.
+      //
+      // The cost, and it is real: in a ring of parts one seam is left as the engine placed it. A 2x2
+      // block of squares gets three exact seams, not four.
+      candidates.Sort((p, q) => q.Quality.CompareTo(p.Quality));
+
+      var parent = new int[n];
+      for (int i = 0; i < n; i++)
+      {
+        parent[i] = i;
+      }
+
+      int Find(int x) => parent[x] == x ? x : parent[x] = Find(parent[x]);
+
+      var shifts = new Dictionary<(int A, int B), (double Dx, double Dy)>();
+      foreach (var c in candidates)
+      {
+        int ra = Find(c.A), rb = Find(c.B);
+        if (ra == rb)
+        {
+          continue; // already tied together, directly or through others
+        }
+
+        parent[ra] = rb;
+        shifts[(c.A, c.B)] = (c.Dx, c.Dy);
       }
 
       if (shifts.Count == 0)
@@ -799,7 +1163,7 @@
           group.Add(u);
           foreach (var (v, dx, dy, forward) in adj[u])
           {
-            // Constraint: B_offset = A_offset + shift. Forward edge is Aâ†’B (u is A), else u is B.
+            // Constraint: B_offset = A_offset + shift. Forward edge is A→B (u is A), else u is B.
             var want = forward
               ? (offset[u].Value.X + dx, offset[u].Value.Y + dy)
               : (offset[u].Value.X - dx, offset[u].Value.Y - dy);
@@ -829,16 +1193,13 @@
         }
       }
 
-      // Apply tentatively, then verify no tooling footprint invades another part. Revert failing groups.
+      // Apply tentatively, then verify no tooling footprint invades another part.
       var origX = all.Select(p => p.X).ToArray();
       var origY = all.Select(p => p.Y).ToArray();
-      foreach (var group in groups)
-      {
-        if (group.Any(g => badGroup.Contains(g)))
-        {
-          continue;
-        }
+      var good = groups.Where(g => !g.Any(x => badGroup.Contains(x))).ToList();
 
+      void ApplyGroup(List<int> group)
+      {
         foreach (int i in group)
         {
           all[i].X = origX[i] + offset[i].Value.X;
@@ -846,20 +1207,60 @@
         }
       }
 
-      if (!ToolingClearsEveryone(all, toolingById))
+      void RevertGroup(List<int> group)
       {
-        // Something invaded â€” snap made it worse. Roll the whole pass back (safe: sparrow's layout stands).
-        for (int i = 0; i < n; i++)
+        foreach (int i in group)
         {
           all[i].X = origX[i];
           all[i].Y = origY[i];
         }
       }
+
+      foreach (var group in good)
+      {
+        ApplyGroup(group);
+      }
+
+      if (!ToolingClearsEveryone(all, toolingById, null))
+      {
+        // Something invaded. This used to roll back the WHOLE pass, so one bad pair anywhere on the
+        // sheet cost every other group its shared cut, and nothing said so. Now the groups are put back
+        // one at a time and only the one that actually invades loses its seam.
+        //
+        // The all-at-once check above stays as the fast path: it is the normal case and it costs one
+        // sweep. Only when something really does invade do we pay for the group-by-group pass, and each
+        // of those checks looks solely at pairs involving the group that just moved.
+        foreach (var group in good)
+        {
+          RevertGroup(group);
+        }
+
+        foreach (var group in good)
+        {
+          ApplyGroup(group);
+          if (!ToolingClearsEveryone(all, toolingById, new HashSet<int>(group)))
+          {
+            RevertGroup(group);
+            System.Threading.Interlocked.Increment(ref DiagSeamsGivenUp);
+            continue;
+          }
+
+          System.Threading.Interlocked.Add(ref DiagSeamsSnapped, group.Count - 1);
+        }
+
+        return;
+      }
+
+      System.Threading.Interlocked.Add(ref DiagSeamsSnapped, good.Sum(g => g.Count - 1));
     }
 
     /// <summary>True when no part's tooling footprint overlaps another part's outline by more than a sliver
-    /// (kerf bands may touch/overlap each other, but a cut must never eat into a neighbouring part).</summary>
-    private static bool ToolingClearsEveryone(List<IPartPlacement> all, Dictionary<int, INfp> toolingById)
+    /// (kerf bands may touch/overlap each other, but a cut must never eat into a neighbouring part).
+    /// <para>When <paramref name="movedOnly"/> is given, only pairs involving one of those parts are
+    /// tested. Everything else was already clear and has not moved since, so re-testing it turns the
+    /// group-by-group retry from O(groups x n^2) clipping into something affordable.</para>
+    /// </summary>
+    private static bool ToolingClearsEveryone(List<IPartPlacement> all, Dictionary<int, INfp> toolingById, HashSet<int> movedOnly)
     {
       double scale = SvgNest.Config.ClipperScale;
       int n = all.Count;
@@ -879,12 +1280,12 @@
         }
       }
 
-      double invadeLimit = 0.02 * scale * scale; // area unitsÂ²; ignore rounding slivers
+      double invadeLimit = 0.02 * scale * scale; // area units²; ignore rounding slivers
       for (int i = 0; i < n; i++)
       {
         for (int j = 0; j < n; j++)
         {
-          if (i == j)
+          if (i == j || (movedOnly != null && !movedOnly.Contains(i) && !movedOnly.Contains(j)))
           {
             continue;
           }
@@ -948,7 +1349,7 @@
 
     /// <summary>
     /// Post-pass: drop leftover parts INTO the holes of already-placed parts. jagua ignores item holes
-    /// (so sparrow never nests inside them); this recovers that density with exact Clipper geometry â€”
+    /// (so sparrow never nests inside them); this recovers that density with exact Clipper geometry —
     /// the spacing-dilated candidate must fit fully inside the hole and clear anything already in it.
     /// </summary>
     private static void FillHoles(List<List<IPartPlacement>> sheetLayouts, Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, CancellationToken cancel)
@@ -965,7 +1366,7 @@
       {
         for (int si = 0; si < sheetLayouts.Count && pool.Values.Sum() > 0; si++)
         {
-          // Every hole on this sheet (sheet coords, biggest first â€” big parts into big holes).
+          // Every hole on this sheet (sheet coords, biggest first — big parts into big holes).
           var holes = new List<List<IntPoint>>();
           foreach (var pp in sheetLayouts[si].ToList())
           {
@@ -1008,7 +1409,7 @@
               var epath = DeepNestClipper.ScaleUpPath(existing.PlacedPart.Points, scale);
               if (ContainedIn(epath, hole, seedEps))
               {
-                double eff = loadedById.TryGetValue(existing.Source, out var el) ? el.EffSpacing : 0;
+                double eff = loadedById.TryGetValue(existing.Source, out var el) ? el.FitSpacing : 0;
                 var grown = OffsetOutward(existing.PlacedPart, eff / 2.0);
                 occupants.Add(DeepNestClipper.ScaleUpPath(grown.Points, scale));
               }
@@ -1026,10 +1427,14 @@
                 {
                   var rotated = Math.Abs(rot % 360) < 1e-9 ? loaded.Nfp : loaded.Nfp.Rotate(rot);
 
-                  // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline â€” a part dropped
+                  // Fit on the TOOLING footprint (kerf + lead-ins), not the bare outline — a part dropped
                   // into a hole has to keep its cut clear of the surrounding part just like any other.
                   var forFit = loaded.Tooling ?? loaded.Nfp;
-                  var dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), loaded.EffSpacing / 2.0);
+                  // FitSpacing, not EffSpacing: like the engine, this grows ONE polygon and then measures it
+                  // against whatever is already in the hole, so it cannot ask for a clearance that depends
+                  // on the neighbour. Using the nominal spacing here would fit fewer parts into the holes of
+                  // an all-common-cut job than before, which is a silent loss of material.
+                  var dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), loaded.FitSpacing / 2.0);
                   if ((dil.MaxX - dil.MinX) > (hb.MaxX - hb.MinX) / scale || (dil.MaxY - dil.MinY) > (hb.MaxY - hb.MinY) / scale)
                   {
                     continue;
@@ -1060,7 +1465,7 @@
       }
       catch (Exception)
       {
-        // Hole-filling is a best-effort bonus â€” never let a geometry edge case fail the whole nest.
+        // Hole-filling is a best-effort bonus — never let a geometry edge case fail the whole nest.
       }
     }
 
@@ -1116,7 +1521,7 @@
     }
 
     /// <summary>Robust area overlap via DIFFERENCE (handles coincident/contained polygons, where a plain
-    /// Clipper intersection can return 0): overlap = area(a) âˆ’ area(a âˆ’ b).</summary>
+    /// Clipper intersection can return 0): overlap = area(a) − area(a − b).</summary>
     private static bool Overlaps(List<IntPoint> a, List<IntPoint> b, double eps)
     {
       var clipper = new Clipper();
@@ -1165,16 +1570,16 @@
     }
 
     /// <summary>Grows a polygon outward by <paramref name="offset"/> (drawing units) via a miter Clipper
-    /// offset â€” the part-spacing halo. Orientation is normalised to CCW so a +delta always GROWS (a CW
-    /// ring would shrink). offset â‰¤ 0 returns the polygon unchanged.</summary>
+    /// offset — the part-spacing halo. Orientation is normalised to CCW so a +delta always GROWS (a CW
+    /// ring would shrink). offset ≤ 0 returns the polygon unchanged.</summary>
     /// <summary>
     /// The shape the engine must keep clear for one part. For a plain DXF part that is just its outline
     /// grown by half the spacing, exactly as before. A part from a SheetCam .nest is already toolpathed:
-    /// the cut runs half a kerf outside the outline, and its lead-ins/outs reach further still â€” on a real
+    /// the cut runs half a kerf outside the outline, and its lead-ins/outs reach further still — on a real
     /// job the outer lead pierced 2.9 mm beyond the contour, so packing to the outline drove leads straight
     /// through the neighbouring part. Growing the outline AND the lead paths in one offset pass unions them
     /// into a single footprint (the leads meet the contour, so the result stays connected).
-    /// <para>Only the packing shape changes â€” the rendered, reported and exported geometry stays the part.</para>
+    /// <para>Only the packing shape changes — the rendered, reported and exported geometry stays the part.</para>
     /// </summary>
     internal static INfp ToolingFootprint(INfp poly, IReadOnlyList<IReadOnlyList<SvgPoint>> toolPaths, double kerf, double spacing)
     {
@@ -1254,7 +1659,7 @@
         int n = pts.Length;
         if (n > 1 && Math.Abs(pts[0].X - pts[n - 1].X) < 1e-9 && Math.Abs(pts[0].Y - pts[n - 1].Y) < 1e-9)
         {
-          n--; // jagua implies closure â€” drop a repeated closing vertex
+          n--; // jagua implies closure — drop a repeated closing vertex
         }
 
         var data = new List<double[]>(n);
@@ -1263,7 +1668,7 @@
           data.Add(new[] { pts[i].X, pts[i].Y });
         }
 
-        // Omit allowed_orientations entirely for "Free" parts â†’ jagua treats it as RotationRange::Continuous
+        // Omit allowed_orientations entirely for "Free" parts → jagua treats it as RotationRange::Continuous
         // and sparrow rotates to any angle (denser). Restricted parts keep their discrete angle set.
         var item = new Dictionary<string, object>
         {
@@ -1287,7 +1692,7 @@
     private const int WaveSize = 8;
 
     /// <summary>Search iterations per part in the batch. An "iteration" here is one pass of sparrow's outer
-    /// loop, which is coarse â€” the reference two-sheet job (40 parts on its first sheet) reaches its best
+    /// loop, which is coarse — the reference two-sheet job (40 parts on its first sheet) reaches its best
     /// result by about 20 and does not improve at 40, 70, 100, 200 or 400, while the wall clock triples.
     /// Calibrated to land on that knee, which also puts a nest back at the time the clock budget took.</summary>
     private const double IterationsPerPart = 0.5;
@@ -1296,7 +1701,7 @@
     private const int MinIterations = 15;
 
     /// <summary>How many searches run at the same instant. This is the ONLY place the machine is allowed
-    /// to influence a nest, and it influences only how long it takes â€” a slower machine finishes the same
+    /// to influence a nest, and it influences only how long it takes — a slower machine finishes the same
     /// wave later, it does not compute a different one. SHEETNEST_MAX_CONC overrides it, which is how the
     /// "any machine, same nest" claim is actually tested rather than asserted.</summary>
     private static int Concurrency()
@@ -1326,8 +1731,8 @@
 
     /// <summary>How many independent sparrow searches to race per sheet (best-of-N). A constant: it used
     /// to be <c>ProcessorCount >= 12 ? 3 : 2</c>, which handed a smaller machine fewer attempts and so a
-    /// different â€” and on average worse â€” nest for the very same job. Overridable via
-    /// SHEETNEST_NEST_TRIES for experiments. Always â‰¥2 so a single unlucky run can't stand.</summary>
+    /// different — and on average worse — nest for the very same job. Overridable via
+    /// SHEETNEST_NEST_TRIES for experiments. Always ≥2 so a single unlucky run can't stand.</summary>
     private static int NestTries()
     {
       var env = Environment.GetEnvironmentVariable("SHEETNEST_NEST_TRIES");
@@ -1342,7 +1747,7 @@
     /// <summary>Best-of-K count for a batch that will pattern-replicate onto `replicas` identical sheets.
     /// A one-off sheet uses the base <see cref="NestTries"/>; a template governing many clones gets more
     /// tries (up to 16) because that cost is amortized over all the clones and drives the layout to a
-    /// denser result â€” a search is one draw from a wide spread (measured: 30 to 40 parts on the same
+    /// denser result — a search is one draw from a wide spread (measured: 30 to 40 parts on the same
     /// sheet across seeds), so racing more of them is what raises the floor.</summary>
     internal static int TriesForReplicas(int replicas) => Math.Clamp(replicas, NestTries(), 16);
 
@@ -1356,7 +1761,7 @@
     }
 
     /// <summary>The bounding box the placed parts actually occupy. This is what decides the offcut the
-    /// operator gets, and it is measured AFTER the gravity compaction â€” sparrow's own density is measured
+    /// operator gets, and it is measured AFTER the gravity compaction — sparrow's own density is measured
     /// before it, on its own strip.</summary>
     internal static (double W, double H) Extent(IReadOnlyList<IPartPlacement> placements)
     {
@@ -1396,7 +1801,7 @@
     /// long axis, then higher strip density, then lower seed (stable, repeatable).
     /// <para>
     /// Extent beats density because they are measured at different moments: density is sparrow's, taken on
-    /// its own strip BEFORE the gravity compaction, while the extent is what is left after it â€” and the
+    /// its own strip BEFORE the gravity compaction, while the extent is what is left after it — and the
     /// extent is what the operator sees as the leftover. Ranking by density discarded real material: on a
     /// measured sheet where all eight candidates placed the same ten parts, the density winner (0.94448)
     /// left an extent of 118.72 while a candidate 0.00002 less dense left 115.79. Worse, two candidates
@@ -1404,7 +1809,7 @@
     /// different leftover every time (reported in issue #2).
     /// </para>
     /// Density stays as the next tie-break: it still discriminates when the extents match, which is the
-    /// normal case on a sheet packed full. Pure â€” unit-testable. Returns the winner's index in
+    /// normal case on a sheet packed full. Pure — unit-testable. Returns the winner's index in
     /// <paramref name="cands"/>, or -1 if empty.
     /// </summary>
     internal static int PickBest(IReadOnlyList<(int Count, double Extent, double Density, int Seed)> cands)
@@ -1455,7 +1860,7 @@
     /// <summary>Runs one sparrow search. The search is bounded by a fixed number of iterations, NEVER by
     /// the clock: a wall-clock deadline makes the same job land differently depending on how busy the
     /// machine is, which is what made a repeated nest come back with a different offcut every time.
-    /// <paramref name="hardTimeoutSec"/> is only a watchdog for a hung process â€” if it ever fires the
+    /// <paramref name="hardTimeoutSec"/> is only a watchdog for a hung process — if it ever fires the
     /// result is discarded rather than used, because a truncated search is not reproducible.</summary>
     private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
     {
@@ -1474,7 +1879,7 @@
       psi.ArgumentList.Add("--max-iterations"); // deterministic budget; also forces the failure-based
       psi.ArgumentList.Add(iterations.ToString(CultureInfo.InvariantCulture)); // compression decay
       psi.ArgumentList.Add("-x"); // stop a search that is stuck (counts failures, not seconds)
-      psi.ArgumentList.Add("-s"); // fixed RNG seed â†’ repeatable per-seed run for best-of-N
+      psi.ArgumentList.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
       psi.ArgumentList.Add(seed.ToString(CultureInfo.InvariantCulture));
 
       Process proc;

@@ -86,6 +86,14 @@
         {
           nn.AddPoint(new SvgPoint(pitem.X, pitem.Y));
         }
+
+        // AFTER the points, because AddPoint clears provenance as a ring is built. This is the one
+        // place the parser's knowledge of what came from a curve reaches the nester; before it, the
+        // contour knew and the polygon did not.
+        if (item.CurvedSegments != null && item.CurvedSegments.Count == nn.Points.Length)
+        {
+          nn.CurvedSegments = item.CurvedSegments.ToArray();
+        }
       }
 
       if (nfps.Any())

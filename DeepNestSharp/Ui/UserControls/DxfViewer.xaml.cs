@@ -121,6 +121,14 @@ namespace DeepNestSharp.Ui.UserControls
     private readonly Stack<EditRecord> undoStack = new Stack<EditRecord>();
     private readonly Stack<EditRecord> redoStack = new Stack<EditRecord>();
 
+    // How deep the undo stack was when Edit nest was switched on: everything above this mark is "my
+    // changes", which is what the refusal to leave with red parts offers to throw away.
+    private int editEntryDepth;
+
+    // Set while a refused exit is putting a toggle back, so the event it raises is not read as the
+    // operator toggling it again.
+    private bool suppressToggleEvent;
+
     /// <summary>Effective per-part spacing (inches) keyed by the part's source DXF path — set by the
     /// window right before a nest result is shown, so manual edits enforce the same clearances the
     /// nester used: two parts must stay (spacingA + spacingB)/2 apart; common-line parts (0) may touch.</summary>
@@ -128,6 +136,11 @@ namespace DeepNestSharp.Ui.UserControls
 
     /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
     public double DefaultPartSpacing { get; set; }
+
+    /// <summary>Common cutting mode per part file (keyed by <c>Part.Name</c>, i.e. its path), set by the
+    /// window alongside <see cref="PartSpacings"/>. Absent = None. Without it, hand editing would demand
+    /// full clearance between two parts the nester deliberately placed touching, and mark them red.</summary>
+    internal IReadOnlyDictionary<string, DeepNestLib.NestProject.CommonCuttingMode> PartCommonCutting { get; set; }
 
     /// <summary>How far every part must stay from the sheet edge (drawing units) — the same margin the
     /// nester was given, so editing by hand cannot break what the job asked for. Set by the window.</summary>
@@ -274,6 +287,7 @@ namespace DeepNestSharp.Ui.UserControls
       v.selectedPp = null;
       v.undoStack.Clear();
       v.redoStack.Clear();
+      v.editEntryDepth = 0;
       v.BuildGroups();
       v.SeedInvalid();
       if (v.SheetIndex != 0)
@@ -1278,13 +1292,43 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void OnEditModeChanged(object sender, RoutedEventArgs e)
     {
-      if (this.EditMode && this.measureToggle != null && this.measureToggle.IsChecked == true)
+      if (this.suppressToggleEvent)
       {
-        this.measureToggle.IsChecked = false; // mutually exclusive with Measure
+        return; // a refused exit putting the button back, not the operator pressing it
+      }
+
+      if (this.EditMode)
+      {
+        if (this.measureToggle != null && this.measureToggle.IsChecked == true)
+        {
+          this.measureToggle.IsChecked = false; // mutually exclusive with Measure
+        }
+
+        // Everything pushed above this mark is this session's work, and is what "leave anyway" throws away.
+        this.editEntryDepth = this.undoStack.Count;
+      }
+      else if (this.RefuseLeavingWithRedParts())
+      {
+        this.SetToggle(this.editToggle, true); // still editing: keep the selection, say nothing more
+        return;
       }
 
       this.SelectPart(null);
       this.UpdateHint();
+    }
+
+    /// <summary>Flip a toggle without its handler reading the flip as an operator action.</summary>
+    private void SetToggle(System.Windows.Controls.Primitives.ToggleButton toggle, bool state)
+    {
+      this.suppressToggleEvent = true;
+      try
+      {
+        toggle.IsChecked = state;
+      }
+      finally
+      {
+        this.suppressToggleEvent = false;
+      }
     }
 
     /// <summary>The line under the canvas: what the mouse and keys do here, or why they do nothing.</summary>
@@ -1306,8 +1350,20 @@ namespace DeepNestSharp.Ui.UserControls
 
     private void OnMeasureModeChanged(object sender, RoutedEventArgs e)
     {
+      if (this.suppressToggleEvent)
+      {
+        return;
+      }
+
       if (this.MeasureMode && this.editToggle != null && this.editToggle.IsChecked == true)
       {
+        // Measuring switches Edit off, so it is a way out of the editor like any other and has to ask.
+        if (this.RefuseLeavingWithRedParts())
+        {
+          this.SetToggle(this.measureToggle, false); // nothing happens: still editing, still not measuring
+          return;
+        }
+
         this.editToggle.IsChecked = false; // mutually exclusive with Edit
       }
 
@@ -2284,12 +2340,56 @@ namespace DeepNestSharp.Ui.UserControls
     private bool TooClose(IPartPlacement a, IPartPlacement b)
       => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, this.ClearanceBetween(a, b), this.SliverBetween(a, b));
 
-    /// <summary>The clearance this pair must keep: (spacingA + spacingB) / 2, or the CAM-safe common-line
-    /// gap when either side is a common-line part (spacing 0 — they may touch, only real overlap fails).</summary>
+    /// <summary>The clearance this pair must keep: (spacingA + spacingB) / 2, or the common-line gap when
+    /// the two are allowed to share a cut (they may touch, only real overlap fails). Which of the two it is
+    /// depends on WHO the pair is, exactly as it does in the nester: a Same-part item touches its own kind
+    /// and keeps its distance from everything else.</summary>
     private double ClearanceBetween(IPartPlacement a, IPartPlacement b)
+      => ClearanceFor(this.SpacingOf(a), this.SpacingOf(b), this.MayShare(a, b));
+
+    /// <summary>The clearance rule itself, over plain numbers so it can be tested without a control.</summary>
+    internal static double ClearanceFor(double spacingA, double spacingB, bool mayShare)
     {
-      double clearance = (this.SpacingOf(a) + this.SpacingOf(b)) / 2.0;
+      if (mayShare)
+      {
+        return RasterNest.RasterCompact.CommonLineGap;
+      }
+
+      double clearance = (spacingA + spacingB) / 2.0;
       return clearance <= 0 ? RasterNest.RasterCompact.CommonLineGap : clearance;
+    }
+
+    /// <summary>
+    /// Same rule the nester applies, on the same identity: the same drawing AND the same hand. Static over
+    /// its inputs for the same reason IsOutsideUsableArea is — one notion of "may these two touch", callable
+    /// from a test without standing up a WPF control.
+    /// </summary>
+    internal static bool MayShare(
+      DeepNestLib.NestProject.CommonCuttingMode ccA, string pathA, bool mirroredA,
+      DeepNestLib.NestProject.CommonCuttingMode ccB, string pathB, bool mirroredB)
+    {
+      if (ccA == DeepNestLib.NestProject.CommonCuttingMode.None || ccB == DeepNestLib.NestProject.CommonCuttingMode.None)
+      {
+        return false;
+      }
+
+      if (ccA == DeepNestLib.NestProject.CommonCuttingMode.SamePart || ccB == DeepNestLib.NestProject.CommonCuttingMode.SamePart)
+      {
+        return string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase) && mirroredA == mirroredB;
+      }
+
+      return true;
+    }
+
+    private bool MayShare(IPartPlacement a, IPartPlacement b)
+      => MayShare(this.CcOf(a), a?.Part?.Name, a?.IsMirrored ?? false, this.CcOf(b), b?.Part?.Name, b?.IsMirrored ?? false);
+
+    private DeepNestLib.NestProject.CommonCuttingMode CcOf(IPartPlacement pp)
+    {
+      string key = pp?.Part?.Name;
+      return key != null && this.PartCommonCutting != null && this.PartCommonCutting.TryGetValue(key, out var cc)
+        ? cc
+        : DeepNestLib.NestProject.CommonCuttingMode.None;
     }
 
     /// <summary>
@@ -2389,7 +2489,10 @@ namespace DeepNestSharp.Ui.UserControls
       int groupIndex = Math.Max(0, Math.Min(this.SheetIndex, this.groups.Count - 1));
 
       // A run of arrow-key nudges on the same part is ONE undo step (else Ctrl+Z crawls pixel by pixel).
-      if (nudge && this.undoStack.Count > 0)
+      // It must not merge into a step from BEFORE the editor was switched on, though: that step is not
+      // mine to throw away, and folding a new nudge into it would leave the nudge standing after a
+      // "leave anyway" claimed to have undone everything.
+      if (nudge && this.undoStack.Count > this.editEntryDepth)
       {
         var top = this.undoStack.Peek();
         if (top.Nudge && top.GroupIndex == groupIndex && top.Index == index)
@@ -2912,6 +3015,10 @@ namespace DeepNestSharp.Ui.UserControls
 
       var record = this.undoStack.Pop();
       this.redoStack.Push(record);
+
+      // Undoing past the mark moves the mark: it stands for the deepest point reached since the editor
+      // was switched on, so "leave anyway" still undoes everything done after this.
+      this.editEntryDepth = Math.Min(this.editEntryDepth, this.undoStack.Count);
       this.ApplyRecord(record, useBefore: true);
     }
 
@@ -2986,6 +3093,79 @@ namespace DeepNestSharp.Ui.UserControls
     /// <summary>Whether the sheet on screen is one an edit can actually be made to
     /// (see <see cref="SheetGroup.IsEditable"/>).</summary>
     private bool CurrentSheetIsEditable() => this.CurrentGroup()?.IsEditable == true;
+
+    /// <summary>
+    /// True when the editor must not be left. Dropping a part on a neighbour is what makes rearranging a
+    /// full sheet possible, so it stays allowed WHILE editing; walking away from it is what this refuses,
+    /// because the operator otherwise finds out at export time, long after they have forgotten.
+    /// <para>Judges the layout ON SCREEN only. Being stopped by a red part on a sheet you cannot see would
+    /// send you hunting; <see cref="FindUnfitLayouts"/> still sweeps every layout at the export gate.</para>
+    /// <para>The way out is always open: leaving anyway undoes this editing session. Without it a nest that
+    /// ARRIVES unfit - which is what the kerf bug produced - would lock the operator in the editor with
+    /// nowhere on a full sheet to move the part to.</para>
+    /// </summary>
+    private bool RefuseLeavingWithRedParts()
+    {
+      var group = this.CurrentGroup();
+      if (group == null || !this.CurrentSheetIsEditable())
+      {
+        return false; // a production-plan proposal takes no edits, so it offers no way to fix anything
+      }
+
+      // Re-judge and repaint before speaking, so the parts the dialog counts are the parts drawn red.
+      this.SeedInvalidOn(group);
+      this.RefreshInvalid();
+
+      var unfit = this.UnfitOn(group);
+      if (unfit == null || unfit.All.Count == 0)
+      {
+        return false;
+      }
+
+      bool anythingToUndo = this.undoStack.Count > this.editEntryDepth;
+      var answer = System.Windows.MessageBox.Show(
+        Window.GetWindow(this),
+        $"{unfit.All.Count} part(s) on this layout are not fit to cut{Why()}.\n\n" +
+        "They are drawn in red. Move them clear before leaving the editor.\n\n" +
+        (anythingToUndo ? "Undo your changes and leave anyway?" : "Leave anyway?"),
+        "Edit nest",
+        MessageBoxButton.YesNo,
+        MessageBoxImage.Warning,
+        System.Windows.MessageBoxResult.No);
+
+      if (answer != System.Windows.MessageBoxResult.Yes)
+      {
+        return true;
+      }
+
+      this.DiscardEditSession();
+      return false;
+
+      // Which fault, in the words the export gate already uses: an overlap is moved apart by hand, while a
+      // part in the edge margin usually means the margin wants lowering and the nest re-running.
+      string Why()
+      {
+        if (unfit.Overlapping.Count > 0 && unfit.OutsideMargin.Count > 0)
+        {
+          return $": {unfit.Overlapping.Count} overlapping a neighbour and {unfit.OutsideMargin.Count} inside the sheet edge margin";
+        }
+
+        return unfit.OutsideMargin.Count > 0 ? ", inside the sheet edge margin" : ", overlapping a neighbour";
+      }
+    }
+
+    /// <summary>Rewind to how the sheet looked when Edit nest was switched on. Redo is dropped with it:
+    /// offering to put back the very thing just thrown away is a trap, not a courtesy.</summary>
+    private void DiscardEditSession()
+    {
+      while (this.undoStack.Count > this.editEntryDepth)
+      {
+        this.Undo();
+      }
+
+      this.redoStack.Clear();
+      this.UpdateEditButtons();
+    }
 
     /// <summary>
     /// After a manual move/rotate: mirror the representative's placements onto every physical copy of

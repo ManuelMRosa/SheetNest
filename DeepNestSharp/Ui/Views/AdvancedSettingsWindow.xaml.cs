@@ -1,5 +1,6 @@
 namespace DeepNestSharp.Ui.Views
 {
+  using System.Linq;
   using System.Windows;
   using System.Windows.Controls;
   using DeepNestLib;
@@ -13,10 +14,22 @@ namespace DeepNestSharp.Ui.Views
   {
     private readonly ISvgNestConfig config;
 
-    public AdvancedSettingsWindow(ISvgNestConfig config, bool autosaveEnabled, int autosaveMinutes, bool unitsMm = false)
+    public AdvancedSettingsWindow(
+      ISvgNestConfig config,
+      bool autosaveEnabled,
+      int autosaveMinutes,
+      bool unitsMm = false,
+      DeepNestLib.NestProject.CommonCuttingTolerances commonCutting = null)
     {
       this.config = config;
       InitializeComponent();
+
+      var cc = commonCutting ?? DeepNestLib.NestProject.CommonCuttingTolerances.Default;
+      this.ccAngleUpDown.Value = cc.AngleToleranceDeg;
+      this.ccMinEdgeUpDown.Value = cc.MinEdgeLengthKerfs;
+      this.ccGapMinUpDown.Value = cc.GapMinKerfs;
+      this.ccGapMaxUpDown.Value = cc.GapMaxKerfs;
+      this.ccOverlapUpDown.Value = cc.MinOverlapKerfs;
 
       this.unitsCombo.SelectedIndex = unitsMm ? 1 : 0;
       string u = unitsMm ? "mm" : "in";
@@ -42,6 +55,23 @@ namespace DeepNestSharp.Ui.Views
     public bool UnitsMm => this.unitsCombo.SelectedIndex == 1;
 
     public int AutosaveMinutes => this.minutesUpDown.Value ?? 5;
+
+    /// <summary>The common cutting tolerances as edited; persisted by the caller (SessionState).</summary>
+    public DeepNestLib.NestProject.CommonCuttingTolerances CommonCutting
+    {
+      get
+      {
+        var defaults = DeepNestLib.NestProject.CommonCuttingTolerances.Default;
+        return new DeepNestLib.NestProject.CommonCuttingTolerances
+        {
+          AngleToleranceDeg = this.ccAngleUpDown.Value ?? defaults.AngleToleranceDeg,
+          MinEdgeLengthKerfs = this.ccMinEdgeUpDown.Value ?? defaults.MinEdgeLengthKerfs,
+          GapMinKerfs = this.ccGapMinUpDown.Value ?? defaults.GapMinKerfs,
+          GapMaxKerfs = this.ccGapMaxUpDown.Value ?? defaults.GapMaxKerfs,
+          MinOverlapKerfs = this.ccOverlapUpDown.Value ?? defaults.MinOverlapKerfs,
+        };
+      }
+    }
 
     /// <summary>The chosen global rotation code (1/2/4/8/36) — persisted by the caller.</summary>
     public int Rotations => this.rotationsCombo.SelectedItem is ComboBoxItem item
@@ -96,6 +126,27 @@ namespace DeepNestSharp.Ui.Views
       this.spacingUpDown.CommitInput();
       this.marginUpDown.CommitInput();
       this.minutesUpDown.CommitInput();
+      this.ccAngleUpDown.CommitInput();
+      this.ccMinEdgeUpDown.CommitInput();
+      this.ccGapMinUpDown.CommitInput();
+      this.ccGapMaxUpDown.CommitInput();
+      this.ccOverlapUpDown.CommitInput();
+
+      // A window that cannot describe a seam would just turn the feature off without saying so.
+      try
+      {
+        this.CommonCutting.Validate();
+      }
+      catch (System.ArgumentOutOfRangeException)
+      {
+        MessageBox.Show(
+          this,
+          "Those common cutting tolerances cannot describe a seam. The gap window needs a smaller minimum than maximum, and the angle has to be above zero.",
+          "Advanced Settings",
+          MessageBoxButton.OK,
+          MessageBoxImage.Warning);
+        return;
+      }
 
       // Settings-backed properties persist in their setters; Rotations and the autosave options are
       // persisted by the caller (SessionState).

@@ -84,7 +84,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void MeasureFullNestCost()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (Environment.GetEnvironmentVariable("SHEETNEST_PERF") != "1"
           || string.IsNullOrWhiteSpace(exe) || !System.IO.File.Exists(exe))
       {
@@ -285,7 +285,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void MeasureRealJobStageBreakdown()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       string dxf = Environment.GetEnvironmentVariable("SHEETNEST_PERF_DXF");
       if (Environment.GetEnvironmentVariable("SHEETNEST_PERF") != "1"
           || string.IsNullOrWhiteSpace(exe) || !System.IO.File.Exists(exe)

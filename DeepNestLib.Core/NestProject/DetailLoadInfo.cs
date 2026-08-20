@@ -24,7 +24,58 @@
 
     public double Spacing { get; set; } = -1; // per-part gap to neighbours (drawing units); -1 = job default
 
-    public bool CommonLine { get; set; } = false; // nest copies TOUCHING (shared edges cut once)
+    public CommonCuttingMode CommonCutting { get; set; } = CommonCuttingMode.None; // who this part may share a cut edge with
+
+    /// <summary>
+    /// Gets who this part may share a cut edge with, once where it came from is taken into account.
+    /// </summary>
+    /// <remarks>
+    /// <para>Common cutting is built on the kerf: it is both the gap the two parts are placed at and the
+    /// width of the single cut that severs them. The kerf is MEASURED off the lead geometry of a SheetCam
+    /// .nest, so a part that did not come from one has no kerf and nothing to share, and the engine agrees
+    /// — its whole common-cut phase gives up when no part has a kerf.</para>
+    /// <para>Answering None here rather than clearing <see cref="CommonCutting"/> is deliberate. Before
+    /// common cutting was restricted to nest jobs the setting was offered for any part at all, so a project
+    /// saved back then can carry it on a plain DXF (see <see cref="LegacyCommonLine"/>), and there is no
+    /// longer a control to turn it off. Overwriting what the file says would rewrite the user's project
+    /// behind their back on nothing more than opening it; this leaves the file alone and simply declines to
+    /// act on it.</para>
+    /// </remarks>
+    [JsonIgnore]
+    public CommonCuttingMode EffectiveCommonCutting
+      => string.IsNullOrEmpty(this.NestSourcePath) ? CommonCuttingMode.None : this.CommonCutting;
+
+    /// <summary>
+    /// Gets or sets common cutting as the plain on/off it used to be, so every existing caller still
+    /// compiles and reads the same answer. <see cref="CommonCutting"/> is the real setting: turning this
+    /// on means Unrestricted, and it reads true for SamePart too.
+    /// </summary>
+    [JsonIgnore]
+    public bool CommonLine
+    {
+      get => this.CommonCutting != CommonCuttingMode.None;
+      set => this.CommonCutting = value ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
+    }
+
+    /// <summary>
+    /// Gets or sets the boolean "CommonLine" that projects saved before common cutting had modes carry.
+    /// READ ONLY in practice: the getter is always false and WhenWritingDefault drops it, so we never
+    /// write it back. That is what makes the two properties order-independent in a file — a project can
+    /// only ever carry one of them, so whichever comes first cannot overwrite the other.
+    /// </summary>
+    [JsonPropertyName("CommonLine")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyCommonLine
+    {
+      get => false;
+      set
+      {
+        if (value && this.CommonCutting == CommonCuttingMode.None)
+        {
+          this.CommonCutting = CommonCuttingMode.Unrestricted;
+        }
+      }
+    }
 
     // Colour this part is drawn in (0xRRGGBB); -1 = none chosen, so it takes the palette colour for its
     // POSITION in the part list (part 1 the first colour, part 2 the second...). Persists to the .dnest;

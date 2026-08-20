@@ -6,6 +6,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   using System.Linq;
   using ClipperLib;
   using DeepNestLib;
+  using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
   using DeepNestSharp.RasterNest;
   using FluentAssertions;
@@ -78,8 +79,8 @@ namespace DeepNestSharp.CiTests.RasterNest
       // slide them right together.
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = tooling, X = 1, Y = 1, Spacing = 0 },
-        new CompactItem { Poly = tooling, X = 60, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = tooling, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
+        new CompactItem { Poly = tooling, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
       };
 
       RasterCompact.Compact(items, 200, 200, 0.5);
@@ -114,8 +115,8 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = withLead, X = 1, Y = 1, Spacing = 0 },   // lead points right, toward B
-        new CompactItem { Poly = plain, X = 60, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = withLead, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },   // lead points right, toward B
+        new CompactItem { Poly = plain, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
       };
 
       RasterCompact.Compact(items, 400, 200, 0.5);
@@ -143,8 +144,8 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = outline, X = 1, Y = 1, Spacing = 0 },
-        new CompactItem { Poly = outline, X = 60, Y = 1, Spacing = 0 },
+        new CompactItem { Poly = outline, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
+        new CompactItem { Poly = outline, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
       };
 
       RasterCompact.Compact(items, 200, 200, 0.5);
@@ -183,7 +184,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       var kerfById = new Dictionary<int, double> { { 0, kerf } };
       var toolingById = new Dictionary<int, INfp> { { 0, tooling } };
 
-      SparrowNestService.SnapCommonLineEdges(all, kerfById, toolingById);
+      SparrowNestService.SnapCommonLineEdges(all, kerfById, toolingById, Share(0, CommonCuttingMode.Unrestricted, 0));
 
       // B's left edge now sits exactly one kerf off A's right edge, and their edges line up in Y.
       (b.PlacedPart.MinX - a.PlacedPart.MaxX).Should().BeApproximately(kerf, 1e-6, "the shared cut is exactly one kerf");
@@ -209,11 +210,97 @@ namespace DeepNestSharp.CiTests.RasterNest
       SparrowNestService.SnapCommonLineEdges(
         all,
         new Dictionary<int, double> { { 0, kerf } },
-        new Dictionary<int, INfp> { { 0, tooling } });
+        new Dictionary<int, INfp> { { 0, tooling } },
+        Share(0, CommonCuttingMode.Unrestricted, 0));
 
       b.X.Should().Be(20, "nothing to snap to means no move");
       b.Y.Should().Be(1);
     }
+
+    /// <summary>
+    /// "Same part" has to mean something at the seam, not just in the packing. Two DIFFERENT drawings that
+    /// happen to land a hair over one kerf apart must be left alone: welding them into a shared cut would
+    /// hand the machine one pass across two parts the operator asked to keep separate.
+    /// <para>
+    /// The control below is the half that makes this worth anything: the SAME geometry, same distance, same
+    /// everything except the identity, does snap. Before this commit the snap paired purely on geometry and
+    /// both cases moved.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(1, false)]  // B is a different drawing -> no snap
+    [InlineData(0, true)]   // B is the same drawing    -> snap
+    public void SnapOnlyWeldsASamePartOntoItsOwnDrawing(int bShareKey, bool expectSnap)
+    {
+      const double kerf = 0.3;
+      var barPts = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(2, 0), new SvgPoint(2, 10), new SvgPoint(0, 10),
+      };
+      INfp Bar() => new NoFitPolygon(barPts);
+      var tooling = SparrowNestService.ToolingFootprint(new NoFitPolygon(barPts), null, kerf, 0);
+
+      // Same geometry as SnapAlignsNearNeighboursToExactlyOneKerf: a hair over one kerf apart, shifted up.
+      var a = new PartPlacement(Bar()) { X = 1, Y = 1, Rotation = 0, Source = 0 };
+      var b = new PartPlacement(Bar()) { X = 3.35, Y = 1.2, Rotation = 0, Source = 1 };
+
+      var cc = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+      {
+        { 0, (CommonCuttingMode.SamePart, 0) },
+        { 1, (CommonCuttingMode.SamePart, bShareKey) },
+      };
+
+      SparrowNestService.SnapCommonLineEdges(
+        new List<IPartPlacement> { a, b },
+        new Dictionary<int, double> { { 0, kerf }, { 1, kerf } },
+        new Dictionary<int, INfp> { { 0, tooling }, { 1, tooling } },
+        cc);
+
+      if (expectSnap)
+      {
+        (b.PlacedPart.MinX - a.PlacedPart.MaxX).Should().BeApproximately(kerf, 1e-6, "its own kind welds to one kerf");
+        b.PlacedPart.MinY.Should().BeApproximately(a.PlacedPart.MinY, 1e-6);
+      }
+      else
+      {
+        b.X.Should().Be(3.35, "a different drawing must be left exactly where the engine put it");
+        b.Y.Should().Be(1.2);
+      }
+    }
+
+    /// <summary>A mirrored copy is the other hand, so its edges are not this part's edges. Same drawing,
+    /// different ShareKey, and the seam must not be welded.</summary>
+    [Fact]
+    public void SnapTreatsAMirroredCopyAsADifferentPart()
+    {
+      const double kerf = 0.3;
+      var barPts = new[]
+      {
+        new SvgPoint(0, 0), new SvgPoint(2, 0), new SvgPoint(2, 10), new SvgPoint(0, 10),
+      };
+      INfp Bar() => new NoFitPolygon(barPts);
+      var tooling = SparrowNestService.ToolingFootprint(new NoFitPolygon(barPts), null, kerf, 0);
+
+      var a = new PartPlacement(Bar()) { X = 1, Y = 1, Rotation = 0, Source = 0 };
+      var b = new PartPlacement(Bar()) { X = 3.35, Y = 1.2, Rotation = 0, Source = 1, IsMirrored = true };
+
+      SparrowNestService.SnapCommonLineEdges(
+        new List<IPartPlacement> { a, b },
+        new Dictionary<int, double> { { 0, kerf }, { 1, kerf } },
+        new Dictionary<int, INfp> { { 0, tooling }, { 1, tooling } },
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        {
+          { 0, (CommonCuttingMode.SamePart, 0) },
+          { 1, (CommonCuttingMode.SamePart, 1) }, // LoadAll keys the mirrored population separately
+        });
+
+      b.X.Should().Be(3.35);
+      b.Y.Should().Be(1.2);
+    }
+
+    /// <summary>One entry per source, all sharing the same key.</summary>
+    private static Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> Share(int source, CommonCuttingMode cc, int shareKey)
+      => new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> { { source, (cc, shareKey) } };
 
     /// <summary>Plain DXF parts carry no tooling, and must keep nesting exactly as they did before.</summary>
     [Fact]
@@ -233,7 +320,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void ProducesRenderableOverlapFreeResult()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("SVC: SPARROW_EXE not set — skipping.");
@@ -327,7 +414,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void FreeRotationIsContinuous()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("CONT: SPARROW_EXE not set — skipping.");
@@ -374,10 +461,79 @@ namespace DeepNestSharp.CiTests.RasterNest
       TotalOverlapArea(polys).Should().BeLessThan(side * side * 0.001, "continuous-rotation layout must be overlap-free");
     }
 
+    /// <summary>
+    /// Common cutting clips a part to 90-degree steps, because the shared-edge snap only understands
+    /// horizontal and vertical edges. That clip is the COMMON-CUT part's business and nobody else's.
+    /// <para>
+    /// This is the trap in the obvious way to make mixed jobs work. The old code decided common line
+    /// once for the whole job (All parts), so a mixed job simply turned the feature off for everyone;
+    /// changing that All to an Any would have switched it on for everyone instead, and silently taken
+    /// free rotation away from every part that never asked for it. Verified by putting the job-wide
+    /// test back: this test fails, and the free part comes out on 15-degree steps.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OneCommonCutPartDoesNotStripFreeRotationFromTheRest()
+    {
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("MIXROT: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+
+      var helper = new NestExecutionHelper();
+      double maxExtent = 0;
+      var parts = new List<RasterPartInfo>();
+      for (int i = 1; i <= 2; i++)
+      {
+        string path = Path.Combine(dxfDir, $"_{i}.dxf");
+        if (File.Exists(path) && helper.LoadRawDetail(new FileInfo(path)) is { } det
+            && det.TryConvertToNfp(0, out INfp nfp) && nfp.Points.Length > 2)
+        {
+          maxExtent = Math.Max(maxExtent, Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY));
+
+          // Part 0 is common-cut (it accepts the 4-way clip); part 1 is not and must stay free.
+          parts.Add(new RasterPartInfo
+          {
+            Path = path,
+            Quantity = 3,
+            Cc = i == 1 ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None,
+          });
+        }
+      }
+
+      parts.Should().HaveCount(2);
+      int side = (int)Math.Ceiling(maxExtent * 4);
+
+      var result = SparrowNestService.Nest(parts, new List<(int, int, int)> { (side, side, 1) }, 36, 1.0, 0.5, 8, exe, out string err);
+
+      result.Should().NotBeNull($"nest must return a result (err={err})");
+
+      var freeRots = result.UsedSheets.SelectMany(s => s.PartPlacements)
+        .Where(p => p.Source == 1)                                   // the part that is NOT common-cut
+        .Select(p => ((p.Rotation % 360) + 360) % 360)
+        .ToList();
+
+      freeRots.Should().NotBeEmpty("the free part has to be placed for this to prove anything");
+      this.output.WriteLine("MIXROT free-part angles: " + string.Join(", ", freeRots.Select(r => r.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))));
+
+      // Same continuity probe as FreeRotationIsContinuous: a clipped part could only land on 90s, and
+      // even a discrete "free" set could only land on 15s.
+      freeRots.Any(r =>
+      {
+        double m = ((r % 15) + 15) % 15;
+        return Math.Min(m, 15 - m) > 1.0;
+      }).Should().BeTrue("a common-cut neighbour must not clip THIS part's rotations");
+    }
+
     [Fact]
     public void ZeroAnd90ModeRotatesOnlyByZeroOr90()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("0/90: SPARROW_EXE not set — skipping.");
@@ -426,7 +582,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void MultiSheetFillsSeveralSheets()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("MS: SPARROW_EXE not set — skipping.");
@@ -478,7 +634,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void NestsPartsIntoHoles()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("HOLE: SPARROW_EXE not set — skipping.");
@@ -538,7 +694,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void HighPriorityPartsAreNestedBeforeLowPriorityWhenMaterialRunsShort()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("PRIO: SPARROW_EXE not set — skipping.");
@@ -599,7 +755,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void MirroredPartsCarryTheMirrorFlagForExport()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("MIR: SPARROW_EXE not set — skipping.");
@@ -710,7 +866,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void Test2StripPacks26InTheChosenOrientationConsistently()
     {
-      string exe = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
         this.output.WriteLine("T2: SPARROW_EXE not set — skipping.");
@@ -815,6 +971,139 @@ namespace DeepNestSharp.CiTests.RasterNest
       }
 
       return total;
+    }
+
+    /// <summary>
+    /// An unlimited size must keep handing out sheets past whatever number is sitting in its Quantity.
+    /// The stock says ONE on purpose: if the flag is ignored the nest stops after a single sheet and
+    /// leaves most of the order unplaced, so this fails loudly rather than merely nesting differently.
+    /// </summary>
+    [Fact]
+    public void UnlimitedStockGoesPastItsQuantity()
+    {
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("UNL: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+      string one = Path.Combine(dxfDir, "_1.dxf");
+      File.Exists(one).Should().BeTrue();
+
+      var helper = new NestExecutionHelper();
+      helper.LoadRawDetail(new FileInfo(one)).TryConvertToNfp(0, out INfp nfp).Should().BeTrue();
+      int side = (int)Math.Ceiling(Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY) * 2.3);
+
+      var parts = new List<RasterPartInfo> { new RasterPartInfo { Path = one, Quantity = 12 } };
+      var stock = new List<(int, int, int, bool)> { (side, side, 1, true) };
+
+      var result = SparrowNestService.Nest(parts, stock, 4, 1.0, 0.5, 5, exe, out string err);
+
+      result.Should().NotBeNull($"the unlimited nest must return a result (err={err})");
+      int placed = result.UsedSheets.Sum(s => s.PartPlacements.Count);
+      this.output.WriteLine(FormattableString.Invariant(
+        $"UNL: sheets={result.UsedSheets.Count} placed={placed}/12 unplaced={result.UnplacedParts.Count()}"));
+
+      result.UsedSheets.Count.Should().BeGreaterThan(1, "12 parts do not fit one sheet, and the size never runs out");
+      placed.Should().Be(12, "an unlimited size cannot run out, so nothing may be left over");
+      result.UnplacedParts.Count().Should().Be(0);
+    }
+
+    /// <summary>
+    /// A part too big for every size has to END the nest, not keep asking an unlimited size for one more
+    /// sheet. Delete the `bestSize == null` break in RunNestBody and this test does not fail, it HANGS:
+    /// with no sheet placed the loop's counter never advances. That is the whole point of it.
+    /// </summary>
+    [Fact]
+    public void AnOversizePartStopsAnUnlimitedNestInsteadOfSpinning()
+    {
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("OVR: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+      string one = Path.Combine(dxfDir, "_1.dxf");
+      File.Exists(one).Should().BeTrue();
+
+      var helper = new NestExecutionHelper();
+      helper.LoadRawDetail(new FileInfo(one)).TryConvertToNfp(0, out INfp nfp).Should().BeTrue();
+
+      // Half the part's own extent: nothing can ever go on it, however many sheets are offered.
+      int tooSmall = Math.Max(2, (int)Math.Floor(Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY) / 2));
+
+      var parts = new List<RasterPartInfo> { new RasterPartInfo { Path = one, Quantity = 3 } };
+      var stock = new List<(int, int, int, bool)> { (tooSmall, tooSmall, 1, true) };
+
+      var watch = System.Diagnostics.Stopwatch.StartNew();
+      var result = SparrowNestService.Nest(parts, stock, 4, 1.0, 0.5, 5, exe, out string err);
+      watch.Stop();
+
+      this.output.WriteLine(FormattableString.Invariant(
+        $"OVR: returned in {watch.ElapsedMilliseconds}ms result={(result == null ? "null" : "some")} err={err}"));
+
+      // Either answer is honest here — no placements at all is reported as an error — but it must ARRIVE.
+      if (result != null)
+      {
+        result.UsedSheets.Sum(s => s.PartPlacements.Count).Should().Be(0);
+      }
+      else
+      {
+        err.Should().NotBeNullOrWhiteSpace();
+      }
+    }
+
+    /// <summary>
+    /// With two sizes in stock the nest must cut the one that fills most of its own sheet, not the one
+    /// listed first. The wasteful size is listed FIRST on purpose: that is exactly what the old
+    /// walk-the-list-in-order code would have taken, so this goes red the moment the choice is removed.
+    /// </summary>
+    [Fact]
+    public void ChoosesTheSizeThatFillsMostOfItsSheet()
+    {
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("SEL: SPARROW_EXE not set — skipping.");
+        return;
+      }
+
+      string dxfDir = FindDxfDir();
+      dxfDir.Should().NotBeNull();
+      string one = Path.Combine(dxfDir, "_1.dxf");
+      File.Exists(one).Should().BeTrue();
+
+      var helper = new NestExecutionHelper();
+      helper.LoadRawDetail(new FileInfo(one)).TryConvertToNfp(0, out INfp nfp).Should().BeTrue();
+      int side = (int)Math.Ceiling(Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY) * 2.3);
+      int oversized = side * 4;
+
+      // Four parts against a sheet sixteen times the area they need: whatever the packer does with them,
+      // that sheet ends up mostly empty, while the snug one is mostly full.
+      var parts = new List<RasterPartInfo> { new RasterPartInfo { Path = one, Quantity = 4 } };
+      var stock = new List<(int, int, int, bool)>
+      {
+        (oversized, oversized, 1, true),
+        (side, side, 1, true),
+      };
+
+      var result = SparrowNestService.Nest(parts, stock, 4, 1.0, 0.5, 5, exe, out string err);
+
+      result.Should().NotBeNull($"the mixed-stock nest must return a result (err={err})");
+      var used = result.UsedSheets
+        .Select(s => ((int)Math.Round(s.Sheet.WidthCalculated), (int)Math.Round(s.Sheet.HeightCalculated)))
+        .ToList();
+      this.output.WriteLine(FormattableString.Invariant(
+        $"SEL: snug={side} wasteful={oversized} used={string.Join(",", used.Select(u => $"{u.Item1}x{u.Item2}"))}"));
+
+      used.Should().NotBeEmpty();
+      used.Should().OnlyContain(u => u.Item1 == side, "the snug size wastes less of itself than one 16x its area");
     }
 
     private static string FindDxfDir()

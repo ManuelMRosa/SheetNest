@@ -48,8 +48,22 @@
     double Spacing { get; set; }
 
     /// <summary>
-    /// Gets or sets common-line cutting: copies of this part nest TOUCHING each other (spacing 0),
-    /// so shared edges are cut once.
+    /// Gets or sets who this part may share a cut edge with. Sharing nests the two touching so the
+    /// shared edge is cut once. <see cref="Spacing"/> still applies to everyone it may NOT share with.
+    /// </summary>
+    CommonCuttingMode CommonCutting { get; set; }
+
+    /// <summary>
+    /// Gets who this part may share a cut edge with once the part's origin is taken into account:
+    /// <see cref="CommonCuttingMode.None"/> for anything that did not come from a SheetCam nest file,
+    /// whatever <see cref="CommonCutting"/> says.
+    /// </summary>
+    CommonCuttingMode EffectiveCommonCutting { get; }
+
+    /// <summary>
+    /// Gets or sets common cutting as a plain on/off. True for any mode but
+    /// <see cref="CommonCuttingMode.None"/>; setting it true means
+    /// <see cref="CommonCuttingMode.Unrestricted"/>.
     /// </summary>
     bool CommonLine { get; set; }
 

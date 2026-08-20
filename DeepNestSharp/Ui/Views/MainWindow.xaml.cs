@@ -33,6 +33,10 @@ namespace DeepNestSharp.Ui.Views
     private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
+
+    // What counts as a shared edge on THIS machine. Null = the shipped starting values. Per user and
+    // not per project: it is a calibration, and opening someone else's job must not overwrite it.
+    private DeepNestLib.NestProject.CommonCuttingTolerances commonCuttingTolerances;
     private bool preferRectOffcut; // pack the last sheet toward one end for a rectangular offcut (SessionState)
     private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
     private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
@@ -184,6 +188,8 @@ namespace DeepNestSharp.Ui.Views
         this.ApplyAutosaveSettings(
           session.AutosaveEnabled ?? true,
           session.AutosaveMinutes >= 1 && session.AutosaveMinutes <= 60 ? session.AutosaveMinutes : 5);
+
+        this.commonCuttingTolerances = session.CommonCutting;
 
         // Global default rotations (plain in-memory config property — resets to 4 without this).
         if (session.DefaultRotations > 0)
@@ -462,7 +468,11 @@ namespace DeepNestSharp.Ui.Views
     private void OnAdvancedSettings(object sender, RoutedEventArgs e)
     {
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
-      var dialog = new AdvancedSettingsWindow(cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm) { Owner = this };
+      var dialog = new AdvancedSettingsWindow(
+        cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, this.commonCuttingTolerances)
+      {
+        Owner = this,
+      };
       if (dialog.ShowDialog() != true)
       {
         return;
@@ -480,6 +490,8 @@ namespace DeepNestSharp.Ui.Views
       session.DefaultRotations = cfg.Rotations;
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
+      this.commonCuttingTolerances = dialog.CommonCutting;
+      session.CommonCutting = this.commonCuttingTolerances;
       session.Save();
     }
 
@@ -538,20 +550,7 @@ namespace DeepNestSharp.Ui.Views
 
       if (hadResult && lastNestConsumed != null && ViewModel.ActiveDocument is NestProjectViewModel doc)
       {
-        foreach (var kv in lastNestConsumed)
-        {
-          var row = doc.ProjectInfo.SheetLoadInfos.FirstOrDefault(s => s.Width == kv.Key.W && s.Height == kv.Key.H);
-          if (row != null)
-          {
-            row.Quantity += kv.Value;
-          }
-          else
-          {
-            // The user removed the row after nesting — bring the size back so no stock is lost.
-            doc.ProjectInfo.SheetLoadInfos.Add(new SheetLoadInfo(kv.Key.W, kv.Key.H, kv.Value));
-          }
-        }
-
+        ReturnStock(doc.ProjectInfo.SheetLoadInfos, lastNestConsumed);
         this.sheetsListView.Items.Refresh();
       }
 
@@ -611,8 +610,12 @@ namespace DeepNestSharp.Ui.Views
             .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
               g => g.Key,
-              g => g.Min(o => o.CommonLine ? 0.0 : (o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing))),
+              g => g.Min(o => o.Spacing >= 0 ? o.Spacing : System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.Spacing)),
               System.StringComparer.OrdinalIgnoreCase);
+          this.dxfViewer.PartCommonCutting = doc.ProjectInfo.DetailLoadInfos
+            .Where(o => !string.IsNullOrWhiteSpace(o.Path))
+            .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(o => o.EffectiveCommonCutting)), System.StringComparer.OrdinalIgnoreCase);
 
           // And this project's own tooling, the same way a fresh nest hands it over. Without it the
           // restored nest kept whatever the last job left behind: its lead-ins drawn over these parts, and
@@ -622,9 +625,8 @@ namespace DeepNestSharp.Ui.Views
           this.dxfViewer.LeadPaths = restoredTooling.Count == 0
             ? null
             : restoredTooling.ToDictionary(kv => kv.Key, kv => kv.Value.Paths, System.StringComparer.OrdinalIgnoreCase);
-          this.dxfViewer.KerfByPart = restoredTooling.Count == 0
-            ? null
-            : restoredTooling.ToDictionary(kv => kv.Key, kv => kv.Value.Kerf, System.StringComparer.OrdinalIgnoreCase);
+          var restoredKerf = KerfByPath(restoredTooling);
+          this.dxfViewer.KerfByPart = restoredKerf.Values.Any(k => k > 0) ? restoredKerf : null;
         }
 
         this.ApplyPartColours(doc.ProjectInfo.DetailLoadInfos);
@@ -879,7 +881,7 @@ namespace DeepNestSharp.Ui.Views
         var dialog = new AddSheetWindow(this.unitsMm) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
-          this.AddSheetOfSize(dialog.SheetWidth, dialog.SheetHeight, dialog.SheetQuantity);
+          this.AddSheetOfSize(dialog.SheetWidth, dialog.SheetHeight, dialog.SheetQuantity, dialog.SheetUnlimited);
           if (dialog.RememberAsPreset && !this.userSheetPresets.Contains((dialog.SheetWidth, dialog.SheetHeight)))
           {
             this.userSheetPresets.Add((dialog.SheetWidth, dialog.SheetHeight));
@@ -929,17 +931,18 @@ namespace DeepNestSharp.Ui.Views
     private void OpenEditSheet(ISheetLoadInfo row)
     {
       var dialog = new AddSheetWindow(this.unitsMm) { Owner = this };
-      dialog.PrefillForEdit(row.Width, row.Height, row.Quantity);
+      dialog.PrefillForEdit(row.Width, row.Height, row.Quantity, row.Unlimited);
       if (dialog.ShowDialog() == true)
       {
         row.Width = dialog.SheetWidth;
         row.Height = dialog.SheetHeight;
         row.Quantity = dialog.SheetQuantity;
+        row.Unlimited = dialog.SheetUnlimited;
         this.sheetsListView.Items.Refresh();
       }
     }
 
-    private void AddSheetOfSize(int width, int height, int quantity)
+    private void AddSheetOfSize(int width, int height, int quantity, bool unlimited = false)
     {
       if (ViewModel.ActiveDocument is NestProjectViewModel doc && doc.AddSheetCommand.CanExecute(null))
       {
@@ -950,6 +953,7 @@ namespace DeepNestSharp.Ui.Views
           sheet.Width = width;
           sheet.Height = height;
           sheet.Quantity = quantity;
+          sheet.Unlimited = unlimited;
         }
 
         this.sheetsListView.Items.Refresh();
@@ -1392,7 +1396,8 @@ namespace DeepNestSharp.Ui.Views
         {
           tooling.TryGetValue(o.Path, out var tool);
 
-          bool commonLine = o.CommonLine;
+          var cc = o.EffectiveCommonCutting;
+          double kerf = tool.Kerf;
           var populations = new List<RasterPartInfo>
           {
             new RasterPartInfo
@@ -1401,10 +1406,10 @@ namespace DeepNestSharp.Ui.Views
               Quantity = o.Quantity + o.Extra,               // required + spares
               Rotations = o.Rotations,                       // -1 = engine default
               Priority = o.Priority,                         // higher nests first
-              Spacing = commonLine ? 0.0 : o.Spacing,        // common-line = touch; -1 = job default
-              CommonLine = commonLine,
+              Spacing = o.Spacing,                           // kept to whoever it cannot share a cut with; -1 = job default
+              Cc = cc,
               ToolPaths = tool.Paths,
-              Kerf = tool.Kerf,
+              Kerf = kerf,
             },
           };
 
@@ -1417,23 +1422,23 @@ namespace DeepNestSharp.Ui.Views
               Quantity = o.MirrorQuantity,
               Rotations = o.Rotations,
               Priority = o.Priority,
-              Spacing = commonLine ? 0.0 : o.Spacing,
-              CommonLine = commonLine,
+              Spacing = o.Spacing,
+              Cc = cc,
               Mirrored = true,
               ToolPaths = tool.Paths,
-              Kerf = tool.Kerf,
+              Kerf = kerf,
             });
           }
 
           return populations;
         })
         .ToList();
-      // EVERY sheet entry participates; the engine picks the size that wastes least material at each
-      // step (mixed stock — the bulk lands on the densest-packing size, the tail on the smallest
-      // sheet that takes it). List order only breaks ties.
+      // EVERY sheet entry participates. For each sheet the engine packs the pending work onto every size
+      // still in stock and cuts whichever filled most of its own sheet, so list order decides nothing; a
+      // size marked Unlimited never runs down, and its Quantity is carried along only to be ignored.
       var sheetStock = project.SheetLoadInfos
-        .Where(s => s.Width > 0 && s.Height > 0 && s.Quantity > 0)
-        .Select(s => (s.Width, s.Height, s.Quantity))
+        .Where(s => s.Width > 0 && s.Height > 0 && (s.Unlimited || s.Quantity > 0))
+        .Select(s => (s.Width, s.Height, s.Quantity, s.Unlimited))
         .ToList();
       if (sheetStock.Count == 0)
       {
@@ -1441,7 +1446,9 @@ namespace DeepNestSharp.Ui.Views
         return;
       }
 
-      int sheetQty = sheetStock.Sum(s => s.Quantity);   // total sheets the job may use (for the warning)
+      // Total sheets the job may use — only meaningful when every size is counted, which is why the
+      // warning that quotes it is skipped once a size is unlimited.
+      int sheetQty = sheetStock.Sum(s => s.Quantity);
       var config = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       int rotations = config.Rotations;
       double spacing = config.Spacing;          // part spacing (drawing units = inches)
@@ -1494,10 +1501,6 @@ namespace DeepNestSharp.Ui.Views
           throw new System.InvalidOperationException("Synthetic crash for testing the problem-report dialog.");
         }
 
-        // Common-line jobs need aligned grid layout (identical parts one kerf apart, edges coinciding) so
-        // the post processor sees the shared cut and cuts it once — sparrow's irregular packing never does.
-        bool commonLineJob = parts.Count > 0 && parts.All(p => p.CommonLine);
-
         var token = nestCts.Token;
         var (result, error) = await Task.Run(() =>
         {
@@ -1506,9 +1509,8 @@ namespace DeepNestSharp.Ui.Views
           // perSheetBudgetSec caps the per-try sparrow time. 5 is plenty: density does NOT converge past
           // ~4-6s (its run-to-run spread is inherent), so best-of-K — not a longer single run — is what
           // buys quality. Keeping this low keeps nesting fast.
-          // commonLineJob: sparrow restricts rotation to 0/180 and snaps shared edges to one exact kerf so
-          // the post can cut each shared edge once (still dense/irregular, unlike a grid).
-          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, commonLineJob);
+          // Common cutting rides along on each part's own mode; there is no job-wide flag to keep in step.
+          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, this.commonCuttingTolerances);
           return (r, err);
         });
 
@@ -1544,14 +1546,22 @@ namespace DeepNestSharp.Ui.Views
               g => g.Min(p => p.Spacing >= 0 ? p.Spacing : System.Math.Max(0, spacing)),
               System.StringComparer.OrdinalIgnoreCase);
 
+          // And the mode, or hand editing would demand full clearance between parts the nester put
+          // touching on purpose and paint the whole layout red. Same tie-break as the spacing above: when
+          // one file is listed twice, take the most permissive so editing never blocks what the nest allowed.
+          this.dxfViewer.PartCommonCutting = parts
+            .GroupBy(p => p.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(p => p.Cc)), System.StringComparer.OrdinalIgnoreCase);
+
           // Draw the lead-ins/outs the engine just reserved room for, so the gaps it left make sense, and
           // the cut itself as a band of the real kerf width. Null clears any tooling from a previous nest.
           this.dxfViewer.LeadPaths = tooling.Count == 0
             ? null
             : tooling.ToDictionary(kv => kv.Key, kv => kv.Value.Paths, System.StringComparer.OrdinalIgnoreCase);
-          this.dxfViewer.KerfByPart = tooling.Count == 0
-            ? null
-            : tooling.ToDictionary(kv => kv.Key, kv => kv.Value.Kerf, System.StringComparer.OrdinalIgnoreCase);
+          // Off the SAME tooling the nest just used, or the editor forgives a different amount of overlap
+          // than the engine enforced.
+          var viewerKerf = KerfByPath(tooling);
+          this.dxfViewer.KerfByPart = viewerKerf.Values.Any(k => k > 0) ? viewerKerf : null;
         }
 
         // Show it in the results list + viewer + status bar so utilization / placed / sheets / fitness /
@@ -1571,33 +1581,26 @@ namespace DeepNestSharp.Ui.Views
           used[key] = used.TryGetValue(key, out int n) ? n + 1 : 1;
         }
 
-        var consumed = new Dictionary<(int W, int H), int>();
-        foreach (var row in project.SheetLoadInfos)
-        {
-          if (used.TryGetValue((row.Width, row.Height), out int n) && n > 0)
-          {
-            int take = System.Math.Min(row.Quantity, n);
-            row.Quantity -= take;
-            used[(row.Width, row.Height)] = n - take;
-            if (take > 0)
-            {
-              consumed[(row.Width, row.Height)] = consumed.TryGetValue((row.Width, row.Height), out int c) ? c + take : take;
-            }
-          }
-        }
-
-        lastNestConsumed = consumed;
+        lastNestConsumed = ConsumeStock(project.SheetLoadInfos, used);
         this.sheetsListView.Items.Refresh();
         this.UpdateNestedInfo(result);
 
         // Not enough sheets for the whole order? Say so clearly — don't let a partial nest pass as done.
+        // With an unlimited size in the stock the job never ran OUT of sheets, so telling the operator to
+        // raise a quantity would send them to change a number that is already ignored: the only way a part
+        // is left over then is that no sheet size is big enough to hold it.
         int unplacedCount = result.UnplacedParts?.Count ?? 0;
         if (unplacedCount > 0)
         {
+          bool anyUnlimited = project.SheetLoadInfos.Any(s => s.Unlimited);
           ViewModel.MessageService.DisplayMessageBox(
-            $"{unplacedCount} part(s) did not fit on the {sheetQty} available sheet(s).\n\n" +
-            "Increase the sheet Qty in the Sheets tab (or add another sheet) and nest again.",
-            "Not enough sheets",
+            anyUnlimited
+              ? $"{unplacedCount} part(s) do not fit on any of the sheet sizes in the Sheets tab.\n\n" +
+                "Sheets were not the limit — one of the sizes is unlimited. The part is bigger than every " +
+                "sheet it could go on, so add a bigger sheet size (or check the part's spacing and margin)."
+              : $"{unplacedCount} part(s) did not fit on the {sheetQty} available sheet(s).\n\n" +
+                "Increase the sheet Qty in the Sheets tab, tick Unlimited on a size, or add another sheet, and nest again.",
+            anyUnlimited ? "Parts do not fit" : "Not enough sheets",
             DeepNestLib.MessageBoxIcon.Warning);
         }
       }
@@ -1630,7 +1633,17 @@ namespace DeepNestSharp.Ui.Views
         // otherwise (error) clear the status text.
         if (nestSucceeded)
         {
-          this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}");
+          // Say what common cutting actually managed. Giving a group up used to be completely silent,
+          // so a job could come out with no shared cuts on it and look exactly like a job that never
+          // had any to make.
+          string seams = SparrowNestService.DiagSeamsSnapped > 0 || SparrowNestService.DiagSeamsGivenUp > 0
+            ? FormattableString.Invariant($"  ·  {SparrowNestService.DiagSeamsSnapped} shared cuts")
+              + (SparrowNestService.DiagSeamsGivenUp > 0
+                ? FormattableString.Invariant($", {SparrowNestService.DiagSeamsGivenUp} given up (a cut would have reached a neighbour)")
+                : string.Empty)
+            : string.Empty;
+
+          this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}{seams}");
         }
         else if (this.nestPhaseText.Text != "Nest cancelled")
         {
@@ -1889,9 +1902,9 @@ namespace DeepNestSharp.Ui.Views
         }
 
         // PartSpacing="0" means common-line: nest the copies touching so they share the cut.
-        bool commonLine = IsCommonLineJob(nest);
+        var commonCutting = CommonCuttingOf(nest);
         doc.AddNestParts(written.Select(w => new NestProjectViewModel.NestPartInfo(
-          w.DxfPath, nestPath, w.Part.Name, !this.unitsMm, w.Part.Quantity, commonLine)));
+          w.DxfPath, nestPath, w.Part.Name, !this.unitsMm, w.Part.Quantity, commonCutting)));
 
         this.ApplyNestSpacings(nest);
 
@@ -1977,15 +1990,142 @@ namespace DeepNestSharp.Ui.Views
       return result;
     }
 
+    /// <summary>Cut width per part FILE, in DRAWING units, for the viewer, which keys everything by path.</summary>
+    /// <remarks>
+    /// ⚠️ Everything that needs a kerf has to come through here, off the same tooling the nest was run
+    /// with. The nester and the manual editor judging with different kerfs is not theoretical: a clean
+    /// nest reopens red, or a real overlap is forgiven, and the comment on the restored-tooling block
+    /// above records that it has already happened once.
+    /// </remarks>
+    private static System.Collections.Generic.Dictionary<string, double> KerfByPath(
+      System.Collections.Generic.IDictionary<string, (System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>> Paths, double Kerf)> tooling)
+      => tooling == null
+        ? new System.Collections.Generic.Dictionary<string, double>(System.StringComparer.OrdinalIgnoreCase)
+        : tooling.ToDictionary(kv => kv.Key, kv => kv.Value.Kerf, System.StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Adopts the job's clearances. Nesting tighter than SheetCam asked for produces parts that touch,
-    /// which is unusable as a cut file — so the file's spacings win over whatever the app had.
+    /// The loosest of several common cutting modes, for when one DXF is listed more than once. Not the
+    /// enum's own order: Unrestricted shares with everyone, Same part only with its own kind, None with
+    /// nobody. The viewer needs the loosest so hand editing never refuses a contact the nest allowed.
     /// </summary>
+    private static DeepNestLib.NestProject.CommonCuttingMode MostPermissiveCc(
+      System.Collections.Generic.IEnumerable<DeepNestLib.NestProject.CommonCuttingMode> modes)
+    {
+      var best = DeepNestLib.NestProject.CommonCuttingMode.None;
+      foreach (var m in modes)
+      {
+        if (m == DeepNestLib.NestProject.CommonCuttingMode.Unrestricted)
+        {
+          return m;
+        }
+
+        if (m == DeepNestLib.NestProject.CommonCuttingMode.SamePart)
+        {
+          best = m;
+        }
+      }
+
+      return best;
+    }
+
     /// <summary>True when the job is common-line: SheetCam signals it with PartSpacing="0" — the parts
     /// share the cut and end up a single kerf apart, not a part gap.</summary>
     private static bool IsCommonLineJob(DeepNestLib.IO.SheetCamNestFile nest)
       => nest.PartSpacing * nest.SettingsToDrawingUnits(false) <= 0;
 
+    /// <summary>
+    /// The mode to import a SheetCam job as. Unrestricted, never Same part: the file says the JOB shares
+    /// cuts and says nothing about which parts may share with which, so restricting it here would invent a
+    /// rule the operator never asked for and quietly pack the sheet looser than SheetCam expected.
+    /// </summary>
+    internal static CommonCuttingMode CommonCuttingOf(DeepNestLib.IO.SheetCamNestFile nest)
+      => IsCommonLineJob(nest) ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
+
+    /// <summary>
+    /// Charge a finished nest to the stock: counted sizes lose what it used, and the record of what each
+    /// size gave up comes back for the Available badge and for <see cref="ReturnStock"/> to undo.
+    /// <para>An unlimited size is REPORTED and not charged. Those are two different jobs and conflating
+    /// them is what put "0 used" on the badge: leaving the size out of the record to stop Clear Result
+    /// crediting it also took away the only number the badge had to show.</para>
+    /// <para>Lives here, out of the click handler, so it can be tested at all. The whole reason it exists
+    /// as a method is that it failed twice in one afternoon inside <c>OnNest</c>, where the suite cannot
+    /// reach it without instantiating a WPF Window.</para>
+    /// </summary>
+    /// <param name="rows">The stock rows, whose Quantity this mutates.</param>
+    /// <param name="usedBySize">How many sheets of each size the nest consumed. Not modified.</param>
+    internal static Dictionary<(int W, int H), int> ConsumeStock(
+      IEnumerable<ISheetLoadInfo> rows,
+      IReadOnlyDictionary<(int W, int H), int> usedBySize)
+    {
+      var consumed = new Dictionary<(int W, int H), int>();
+      if (rows == null || usedBySize == null)
+      {
+        return consumed;
+      }
+
+      // A copy, because the remaining count is walked down as rows claim it — two rows of the same size
+      // must share what was used rather than both taking all of it. Doing that to the caller's dictionary
+      // would leave it emptied behind their back.
+      var remaining = usedBySize.ToDictionary(kv => kv.Key, kv => kv.Value);
+
+      foreach (var row in rows)
+      {
+        var key = (row.Width, row.Height);
+        if (!remaining.TryGetValue(key, out int n) || n <= 0)
+        {
+          continue;
+        }
+
+        int take = row.Unlimited ? n : Math.Min(row.Quantity, n);
+        if (!row.Unlimited)
+        {
+          row.Quantity -= take;
+        }
+
+        remaining[key] = n - take;
+        if (take > 0)
+        {
+          consumed[key] = consumed.TryGetValue(key, out int c) ? c + take : take;
+        }
+      }
+
+      return consumed;
+    }
+
+    /// <summary>
+    /// Undo <see cref="ConsumeStock"/>: the sheets a discarded result was holding go back on the rack.
+    /// <para>An unlimited size gets nothing, because nothing was taken from it. That guard has to live
+    /// here rather than at the deduction: reopening a saved project rebuilds the consumed record from the
+    /// result itself, so this is the only place BOTH routes into a give-back pass through.</para>
+    /// </summary>
+    internal static void ReturnStock(
+      System.Collections.Generic.IList<ISheetLoadInfo> rows,
+      IReadOnlyDictionary<(int W, int H), int> consumed)
+    {
+      if (rows == null || consumed == null)
+      {
+        return;
+      }
+
+      foreach (var kv in consumed)
+      {
+        var row = rows.FirstOrDefault(s => s.Width == kv.Key.W && s.Height == kv.Key.H);
+        if (row == null)
+        {
+          // The user removed the row after nesting — bring the size back so no stock is lost.
+          rows.Add(new SheetLoadInfo(kv.Key.W, kv.Key.H, kv.Value));
+        }
+        else if (!row.Unlimited)
+        {
+          row.Quantity += kv.Value;
+        }
+      }
+    }
+
+    /// <summary>
+    /// Adopts the job's clearances. Nesting tighter than SheetCam asked for produces parts that touch,
+    /// which is unusable as a cut file, so the file's spacings win over whatever the app had.
+    /// </summary>
     private void ApplyNestSpacings(DeepNestLib.IO.SheetCamNestFile nest)
     {
       // Settings are in the unit the file declares, which need not be the drawing unit.

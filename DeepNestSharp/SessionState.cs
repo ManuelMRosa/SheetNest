@@ -72,6 +72,18 @@ namespace DeepNestSharp
     /// <summary>How far the offcut cut runs past the sheet edge at each end; -1/0 = flush with the edge.</summary>
     public double OffcutEdgeOverlap { get; set; } = -1;
 
+    /// <summary>
+    /// How close to parallel, how long and how far apart two faces have to be to be cut as one.
+    /// Null = the shipped defaults.
+    /// </summary>
+    /// <remarks>
+    /// Here, and NOT in the nest config, on purpose. Opening a project runs a full copy of the saved
+    /// config over the live one, so a calibration would be silently replaced by whatever was in force
+    /// on the machine that saved that job. These are properties of the machine in this shop, they are
+    /// not properties of the job, and they must survive opening someone else's file.
+    /// </remarks>
+    public DeepNestLib.NestProject.CommonCuttingTolerances? CommonCutting { get; set; }
+
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");
 

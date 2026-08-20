@@ -6,11 +6,15 @@
 
   public class LocalContour<TSourceEntity> : ILocalContour
   {
-    public LocalContour(List<PointF> points, HashSet<TSourceEntity> entities)
+    public LocalContour(List<PointF> points, HashSet<TSourceEntity> entities, IReadOnlyList<bool> curvedSegments = null)
     {
       Entities = entities;
       Points = points;
+      CurvedSegments = curvedSegments;
     }
+
+    /// <inheritdoc />
+    public IReadOnlyList<bool> CurvedSegments { get; }
 
     public double Len
     {

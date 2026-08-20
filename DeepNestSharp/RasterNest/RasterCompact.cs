@@ -5,6 +5,7 @@
   using System.Linq;
   using ClipperLib;
   using DeepNestLib;
+  using DeepNestLib.NestProject;
 
   /// <summary>A placed part being compacted: its rotated polygon and the placement offset (inches).</summary>
   internal sealed class CompactItem
@@ -12,7 +13,9 @@
     public INfp Poly;       // rotated part geometry (absolute points = Poly points + (X, Y))
     public double X;
     public double Y;
-    public double Spacing;  // this part's spacing (in); 0 = common-line part (slides to true contact)
+    public double Spacing;  // this part's NOMINAL spacing (in) — what it keeps to anything it cannot share a cut with
+    public CommonCuttingMode Cc;  // who it may share a cut edge with; None = nobody
+    public int ShareKey;    // identity for SamePart: same drawing AND same hand. Only compared, never ordered
   }
 
   /// <summary>
@@ -46,6 +49,32 @@
     /// spacing. (Kept at the historic 0.003/2 hazard threshold.)
     /// </summary>
     internal const double MixedPairFloor = 0.0015;
+
+    /// <summary>
+    /// True when these two placements are allowed to share a cut edge, so the pair closes to CONTACT
+    /// instead of to a clearance. The stricter of the two modes wins: a Same-part item shares only with
+    /// its own kind no matter who is looking at it, which is what "Same part" means everywhere else.
+    /// </summary>
+    /// <remarks>
+    /// This replaced a `Spacing &lt;= 0` test on both sides. That test conflated two different things —
+    /// "shares a cut" and "asks for no clearance" — and the price was that a common-line part offered
+    /// NOTHING to a spaced neighbour, so the pair closed to sB/2 instead of (sA + sB)/2. Measured on
+    /// three 20" squares: a neighbour that asked for 0.5" got 0.2536".
+    /// </remarks>
+    internal static bool MayShare(CompactItem a, CompactItem b)
+    {
+      if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
+      {
+        return false;
+      }
+
+      if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
+      {
+        return a.ShareKey == b.ShareKey;
+      }
+
+      return true;
+    }
 
     /// <summary>
     /// Compact one sheet's placements in place (mutates item X/Y). Every part slides toward the pack
@@ -95,13 +124,20 @@
       }
 
       // Clearance is PER PAIR: spacing pairs need (sA+sB)/2 â€” expressed by half-inflated shells â€” and
-      // CC-CC pairs close to EXACT contact (CommonLineGap = 0: the shared edge exports as one cut).
-      // The CC shell must NOT leak into CC-vs-spaced pairs (the raster already placed those at exactly
-      // s/2, and inflating would make every one look violated), hence TWO shells per item.
+      // pairs that may SHARE a cut close to EXACT contact (CommonLineGap = 0: the shared edge exports as
+      // one cut). The CC shell must NOT leak into shared-vs-spaced pairs (the raster already placed those
+      // at exactly s/2, and inflating would make every one look violated), hence TWO shells per item.
+      // Which shell a pair is judged by is MayShare's call, not the spacing's: a common-cut part still
+      // carries its full spacing for everyone it cannot share with.
       var pathsRaw = items.Select(ToPaths).ToArray();
       var pathsHalf = items.Select(it => it.Spacing > 0 ? Inflate(ToPaths(it), it.Spacing / 2.0) : ToPaths(it)).ToArray();
-      var pathsCC = items.Select(it => it.Spacing <= 0 ? Inflate(ToPaths(it), CommonLineGap / 2.0) : null).ToArray();
-      var bounds = items.Select((it, i) => BoundsOf(pathsCC[i] ?? pathsHalf[i])).ToArray();
+      var pathsCC = items.Select(it => it.Cc != CommonCuttingMode.None ? Inflate(ToPaths(it), CommonLineGap / 2.0) : null).ToArray();
+      // Box pre-filter for every pair test below, so it has to be the OUTER of an item's two shells or a
+      // pair gets skipped before it is ever measured. pathsHalf always contains pathsCC (raw, inflated by
+      // nothing). This used to read `pathsCC[i] ?? pathsHalf[i]` and was harmless only because a
+      // common-line item had spacing 0, making both shells the same outline. Now that such an item keeps
+      // its real spacing, taking the CC box let a spaced neighbour slide to half its clearance unchecked.
+      var bounds = items.Select((it, i) => BoundsOf(pathsHalf[i])).ToArray();
 
       // HARD INVARIANT: no move may ever create a REAL overlap. The engine hands us an overlap-free
       // layout; every push/slide below is additionally checked against the raw outlines of ALL parts.
@@ -133,7 +169,7 @@
         return true;
       }
 
-      bool BothCC(int i, int j) => items[i].Spacing <= 0 && items[j].Spacing <= 0;
+      bool BothCC(int i, int j) => MayShare(items[i], items[j]);
 
       bool ValidOffset(int i, double ox, double oy)
       {
@@ -146,7 +182,11 @@
           int mm = set != null ? set[s] : i;
           var movedHalf = tx == 0 && ty == 0 ? pathsHalf[mm] : Translate(pathsHalf[mm], tx, ty);
           var movedCC = pathsCC[mm] == null ? null : tx == 0 && ty == 0 ? pathsCC[mm] : Translate(pathsCC[mm], tx, ty);
-          var mb = BoundsOf(movedCC ?? movedHalf);
+          // The OUTER shell, like the bounds array it is matched against. Taking the CC box here skipped
+          // the pair before it was ever measured whenever the MOVER was common-cut and the neighbour was
+          // not, and a common-cut part then slid to half its neighbour's clearance. That combination only
+          // became reachable with Same part, where one part shares with its own kind and with nobody else.
+          var mb = BoundsOf(movedHalf);
           for (int j = 0; j < items.Count; j++)
           {
             if (j == mm || (set != null && memberSets[j] == set) || !BoxesTouch(mb, bounds[j]))
@@ -185,7 +225,7 @@
             pathsCC[mm] = Translate(pathsCC[mm], tx, ty);
           }
 
-          bounds[mm] = BoundsOf(pathsCC[mm] ?? pathsHalf[mm]);
+          bounds[mm] = BoundsOf(pathsHalf[mm]); // the OUTER shell, same reason as where bounds is built
         }
       }
 
@@ -479,14 +519,30 @@
       double weldMax = 0.05;
       long weldMaxInt = (long)Math.Round(weldMax * Scale);
       long marginInt = (long)Math.Round(margin * Scale);
-      for (int sweep = 0; sweep < 2; sweep++)
+
+      // The weld closes toward -X and -Y, so a part has to settle AFTER whatever it comes to rest
+      // against. `order` above is deliberately built from the INPUT positions (see the comment there:
+      // ordering the SLIDE along X split interlocked module mates and left whole columns hanging), but
+      // by the time the weld runs every part has moved, and inheriting that order welds parts before
+      // their own anchors. Measured on the six-bar row: bar 5 closed onto bar 1, then bar 1 moved
+      // 0.002217 further left and reopened the seam from behind. Re-sorting on the SETTLED positions
+      // is local to the weld, so the slide's ordering - and the fix it carries - is untouched.
+      var weldOrder = (growX
+          ? order.OrderBy(i => items[i].X + items[i].Poly.MinX).ThenBy(i => items[i].Y + items[i].Poly.MinY)
+          : order.OrderBy(i => items[i].Y + items[i].Poly.MinY).ThenBy(i => items[i].X + items[i].Poly.MinX))
+        .ToArray();
+
+      // Sweeps run until nothing moves. Two was not enough once a cascade could still shift a part
+      // that a later part had already closed onto; the loop breaks the moment a sweep welds nothing,
+      // so a converged layout still costs exactly one extra measuring sweep.
+      for (int sweep = 0; sweep < 8; sweep++)
       {
         bool welded = false;
         Array.Clear(processed, 0, processed.Length);
-        foreach (int i in order)
+        foreach (int i in weldOrder)
         {
           cancel.ThrowIfCancellationRequested();
-          if (items[i].Spacing > 0 || processed[i])
+          if (items[i].Cc == CommonCuttingMode.None || processed[i])
           {
             continue;
           }
@@ -509,7 +565,12 @@
               double g = gap / Scale;
               double ox = alongX ? -g : 0;
               double oy = alongX ? 0 : -g;
-              if (RawClearAll(i, ox, oy))
+              // ValidOffset as well as RawClearAll. RawClearAll only forbids REAL overlap, which was the
+              // whole rule back when the weld ran solely on jobs where every part could touch every
+              // other. It cannot see a clearance, so on its own it lets the weld close onto a neighbour
+              // this part may not share a cut with. ValidOffset is the pair rule; keep both, since the
+              // cheap one still guards the hard invariant.
+              if (RawClearAll(i, ox, oy) && ValidOffset(i, ox, oy))
               {
                 ApplyMove(i, ox, oy);
                 welded = true;
@@ -548,38 +609,56 @@
 
       // A rigid module measures from ALL its members' outlines and ignores its own mates.
       var iSet = memberSets?[i];
-      List<List<IntPoint>> mine;
-      if (iSet == null)
+      List<List<IntPoint>> Mine(List<List<IntPoint>>[] source)
       {
-        mine = pathsRaw[i];
-      }
-      else
-      {
-        mine = new List<List<IntPoint>>();
+        if (iSet == null)
+        {
+          return source[i];
+        }
+
+        var all = new List<List<IntPoint>>();
         foreach (int mm in iSet)
         {
-          mine.AddRange(pathsRaw[mm]);
+          all.AddRange(source[mm]);
         }
+
+        return all;
       }
+
+      // TWO shells for the MOVER, the same way every pair test upstream keeps two: raw where the pair may
+      // share a cut, half-inflated where it may not. Measuring the mover raw against a spaced neighbour's
+      // shell asks for sB/2 instead of (sA+sB)/2, and the weld then closes onto it — the very halving
+      // this file already fixed for the slide, which survived here because the weld only ever ran on jobs
+      // where EVERY part could touch every other. Reported as parts turning red on a Same part nest.
+      var mineRaw = Mine(pathsRaw);
+      var mineHalf = Mine(pathsHalf);
+
+      (long MinU, long MaxU, long MinV, long MaxV) FrameBounds(List<List<IntPoint>> paths)
+      {
+        long minU = long.MaxValue, maxU = long.MinValue, minV = long.MaxValue, maxV = long.MinValue;
+        foreach (var path in paths)
+        {
+          foreach (var p in path)
+          {
+            long u = U(p);
+            long v = V(p);
+            if (u < minU) { minU = u; }
+            if (u > maxU) { maxU = u; }
+            if (v < minV) { minV = v; }
+            if (v > maxV) { maxV = v; }
+          }
+        }
+
+        return (minU, maxU, minV, maxV);
+      }
+
+      var rawBox = FrameBounds(mineRaw);
+      var halfBox = FrameBounds(mineHalf);
 
       long best = long.MaxValue;
 
-      // My bounds in the rotated frame (also gives the margin gap along the slide axis).
-      long myMinU = long.MaxValue, myMaxU = long.MinValue, myMinV = long.MaxValue, myMaxV = long.MinValue;
-      foreach (var path in mine)
-      {
-        foreach (var p in path)
-        {
-          long u = U(p);
-          long v = V(p);
-          if (u < myMinU) { myMinU = u; }
-          if (u > myMaxU) { myMaxU = u; }
-          if (v < myMinV) { myMinV = v; }
-          if (v > myMaxV) { myMaxV = v; }
-        }
-      }
-
-      best = Math.Min(best, myMinU - marginInt);
+      // The sheet margin applies to the PART, not to its clearance shell, so it is measured raw.
+      best = Math.Min(best, rawBox.MinU - marginInt);
 
       // Ray from vertex v toward -U against edge (a,b): hits where the edge spans v's V coordinate.
       long RayGap(IntPoint v, IntPoint a, IntPoint b)
@@ -616,7 +695,12 @@
           continue;
         }
 
-        var theirs = items[j].Spacing <= 0 ? pathsRaw[j] : pathsHalf[j];
+        // Both sides of the pair, or neither: shell against shell for a pair that must keep a clearance,
+        // outline against outline for one that may share the cut.
+        bool share = MayShare(items[i], items[j]);
+        var theirs = share ? pathsRaw[j] : pathsHalf[j];
+        var mine = share ? mineRaw : mineHalf;
+        var (myMinU, myMaxU, myMinV, myMaxV) = share ? rawBox : halfBox;
 
         // BBox pre-filter (essential: without it an 800-part common-line job timed out — this scan
         // is O(vertsA x vertsB) per pair). The constraint can only bite if it overlaps my V-range
@@ -635,7 +719,25 @@
           }
         }
 
-        if (thMinV > myMaxV || thMaxV < myMinV || thMinU > myMaxU || thMaxU < myMinU - capInt)
+        // Three of these four bounds are CLOSED (>=, <=), and that is load-bearing rather than
+        // cosmetic: a neighbour that only touches cannot block, but measured as if it could it
+        // returns a gap of exactly 0, and the `best == 0` short-circuit below then freezes this part
+        // along this axis for the rest of the pass. Both halves of that were measured on a six-bar
+        // common-line row, and between them they accounted for EVERY seam this pass failed to close.
+        //
+        //   thMinU >= myMaxU  - they sit entirely at or beyond my leading edge, so sliding -U only
+        //                       opens the pair. Touching one used to read 0 and pin the part: in the
+        //                       row, bar 5 welded first, landed flush against bar 1's trailing edge,
+        //                       and bar 1 could then never close its own seam (left open 0.003353).
+        //   V ranges touching at a single coordinate - contact along one line has NO AREA, and the
+        //                       predicate that vets the move (Intersects, area-based with EpsArea)
+        //                       agrees it is not a collision. Measuring it as one contradicted the
+        //                       vetting rule: four of six bars were held 0.001 off the sheet margin
+        //                       by a side-by-side neighbour whose corner grazed the ray's origin.
+        //
+        // Both rules are conservative by construction - they only ever DROP a pair that cannot
+        // produce an area overlap - so the hard no-interference invariant is untouched.
+        if (thMinV >= myMaxV || thMaxV <= myMinV || thMinU >= myMaxU || thMaxU < myMinU - capInt)
         {
           continue;
         }
@@ -741,9 +843,9 @@
         var padded = new IntRect(bi.left - pad, bi.top - pad, bi.right + pad, bi.bottom + pad);
         for (int j = i + 1; j < items.Count; j++)
         {
-          if (items[i].Spacing <= 0 && items[j].Spacing <= 0)
+          if (MayShare(items[i], items[j]))
           {
-            continue; // common-line pair — exact contact is intended
+            continue; // shared-cut pair — exact contact is intended
           }
 
           if (!BoxesTouch(padded, rawBounds[j]))
@@ -782,7 +884,7 @@
       var grownByFloor = new Dictionary<double, List<List<IntPoint>>>();
       foreach (var it in items)
       {
-        double req = cand.Spacing <= 0 && it.Spacing <= 0
+        double req = MayShare(cand, it)
           ? CommonLineGap
           : (Math.Max(0, cand.Spacing) + Math.Max(0, it.Spacing)) / 2.0;
         double floor = Math.Max(0, req - Eps);

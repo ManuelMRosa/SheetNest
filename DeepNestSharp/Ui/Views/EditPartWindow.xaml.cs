@@ -30,8 +30,20 @@ namespace DeepNestSharp.Ui.Views
       // Spacing is per-part; a part that has never been edited starts from the job default.
       this.spacingUpDown.Value = part.Spacing >= 0 ? part.Spacing : defaultSpacing;
 
-      this.commonLineCheck.IsChecked = part.CommonLine;
-      this.spacingUpDown.IsEnabled = !part.CommonLine;
+      // Common cutting is a MODE, not a switch, and spacing stays live in all three: it is what the
+      // part keeps to everything it may not share a cut with. Offered only for a part that came in from
+      // a SheetCam nest file, because that is where the kerf it needs is measured from and there is
+      // nothing to share without one. Hidden rather than greyed out: a disabled control invites the
+      // question of why, and "because this part did not come from SheetCam" does not fit in a tooltip.
+      // The RAW mode, not the effective one — this is where the user's own choice is shown back.
+      if (!string.IsNullOrEmpty(part.NestSourcePath))
+      {
+        this.commonCuttingGroup.Visibility = Visibility.Visible;
+        this.commonCuttingCombo.Items.Add("None");
+        this.commonCuttingCombo.Items.Add("Unrestricted (any part)");
+        this.commonCuttingCombo.Items.Add("Same part");
+        this.commonCuttingCombo.SelectedIndex = (int)part.CommonCutting;
+      }
 
       var poly = LoadPolygon(part.Path);
 
@@ -83,6 +95,19 @@ namespace DeepNestSharp.Ui.Views
         this.thickness3DText.Text = FormatThickness(part.ThicknessMm, part.UnfoldUnitInch);
       }
     }
+
+    /// <summary>
+    /// The mode to write back: whatever the combo says, or what the part already had when the combo was
+    /// never shown.
+    /// </summary>
+    /// <remarks>
+    /// An empty ComboBox reads back SelectedIndex -1, and clamping that into range lands on None. So
+    /// without this, now that the control is only filled in for parts that came from a nest file,
+    /// opening Edit Part on a plain DXF and pressing OK would quietly wipe a setting the dialog never
+    /// offered to change, on a part whose owner cannot put it back.
+    /// </remarks>
+    internal static CommonCuttingMode ChosenMode(int selectedIndex, CommonCuttingMode current)
+      => selectedIndex < 0 ? current : (CommonCuttingMode)System.Math.Min(2, selectedIndex);
 
     private static string FormatThickness(double thicknessMm, bool inch)
     {
@@ -201,16 +226,6 @@ namespace DeepNestSharp.Ui.Views
       return "Lowest";
     }
 
-    private void OnCommonLineChanged(object sender, RoutedEventArgs e)
-    {
-      if (this.spacingUpDown != null)
-      {
-        // Common-line = spacing 0 by definition; the field stays visible (greyed) so the previous
-        // value is still there when the box is unticked.
-        this.spacingUpDown.IsEnabled = this.commonLineCheck.IsChecked != true;
-      }
-    }
-
     private void OnOk(object sender, RoutedEventArgs e)
     {
       // Xceed up/downs only commit TYPED text on focus loss — pressing Enter (OK is IsDefault) would
@@ -225,7 +240,7 @@ namespace DeepNestSharp.Ui.Views
       this.part.MirrorQuantity = this.mirroredUpDown.Value ?? this.part.MirrorQuantity;
       this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
 
-      this.part.CommonLine = this.commonLineCheck.IsChecked == true;
+      this.part.CommonCutting = ChosenMode(this.commonCuttingCombo.SelectedIndex, this.part.CommonCutting);
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;
