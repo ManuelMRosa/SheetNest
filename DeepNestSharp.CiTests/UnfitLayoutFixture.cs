@@ -1,9 +1,10 @@
-namespace DeepNestSharp.CiTests
+﻿namespace DeepNestSharp.CiTests
 {
   using System;
   using System.Collections.Generic;
   using DeepNestLib;
   using DeepNestLib.Placement;
+  using DeepNestSharp.RasterNest;
   using DeepNestSharp.Ui.UserControls;
   using FluentAssertions;
   using Xunit;
@@ -27,7 +28,7 @@ namespace DeepNestSharp.CiTests
     {
       var parts = new List<IPartPlacement> { Square(0, 0), Square(20, 0), Square(40, 0) };
 
-      DxfViewer.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(0);
+      PlacementAcceptance.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(0);
     }
 
     [Fact]
@@ -36,7 +37,7 @@ namespace DeepNestSharp.CiTests
       // The same two parts both turn red on screen, so both are counted here.
       var parts = new List<IPartPlacement> { Square(0, 0), Square(5, 0), Square(40, 0) };
 
-      DxfViewer.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(2);
+      PlacementAcceptance.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(2);
     }
 
     [Fact]
@@ -44,7 +45,7 @@ namespace DeepNestSharp.CiTests
     {
       var parts = new List<IPartPlacement> { Square(0, 0), Square(95, 0) };
 
-      DxfViewer.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(1);
+      PlacementAcceptance.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(1);
     }
 
     /// <summary>
@@ -57,8 +58,8 @@ namespace DeepNestSharp.CiTests
     {
       var parts = new List<IPartPlacement> { Square(0, 0), Square(95, 0) };
 
-      DxfViewer.CountUnfit(parts, 100, SheetH, NoMargin, Clear).Should().Be(1, "it runs off a 100 wide sheet");
-      DxfViewer.CountUnfit(parts, 200, SheetH, NoMargin, Clear).Should().Be(0, "the very same parts fit a 200 wide one");
+      PlacementAcceptance.CountUnfit(parts, 100, SheetH, NoMargin, Clear).Should().Be(1, "it runs off a 100 wide sheet");
+      PlacementAcceptance.CountUnfit(parts, 200, SheetH, NoMargin, Clear).Should().Be(0, "the very same parts fit a 200 wide one");
     }
 
     /// <summary>
@@ -70,8 +71,8 @@ namespace DeepNestSharp.CiTests
     {
       var parts = new List<IPartPlacement> { Square(1, 1) };
 
-      DxfViewer.CountUnfit(parts, SheetW, SheetH, 2, Clear).Should().Be(1, "a margin of 2 leaves it inside the band");
-      DxfViewer.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(0, "with no margin the same part is fine");
+      PlacementAcceptance.CountUnfit(parts, SheetW, SheetH, 2, Clear).Should().Be(1, "a margin of 2 leaves it inside the band");
+      PlacementAcceptance.CountUnfit(parts, SheetW, SheetH, NoMargin, Clear).Should().Be(0, "with no margin the same part is fine");
     }
 
     /// <summary>The engine anchors its pack exactly at the margin, so a part resting right on it is the
@@ -81,7 +82,7 @@ namespace DeepNestSharp.CiTests
     {
       var parts = new List<IPartPlacement> { Square(2, 2) };
 
-      DxfViewer.CountUnfit(parts, SheetW, SheetH, 2, Clear).Should().Be(0);
+      PlacementAcceptance.CountUnfit(parts, SheetW, SheetH, 2, Clear).Should().Be(0);
     }
 
     /// <summary>Common-line parts nest touching by design, so a near-zero clearance must not read as an
@@ -91,7 +92,7 @@ namespace DeepNestSharp.CiTests
     {
       var parts = new List<IPartPlacement> { Square(0, 0), Square(10.001, 0) };
 
-      DxfViewer.CountUnfit(parts, SheetW, SheetH, NoMargin, (a, b) => 0).Should().Be(0);
+      PlacementAcceptance.CountUnfit(parts, SheetW, SheetH, NoMargin, (a, b) => 0).Should().Be(0);
     }
 
     /// <summary>
@@ -102,9 +103,9 @@ namespace DeepNestSharp.CiTests
     [Fact]
     public void CachedBoundsInsideTheEdgeMarginAreOutsideTheUsableArea()
     {
-      DxfViewer.IsOutsideUsableArea(1, 1, 11, 11, SheetW, SheetH, 2)
+      PlacementAcceptance.IsOutsideUsableArea(1, 1, 11, 11, SheetW, SheetH, 2)
         .Should().BeTrue("a margin of 2 leaves those bounds inside the band");
-      DxfViewer.IsOutsideUsableArea(1, 1, 11, 11, SheetW, SheetH, NoMargin)
+      PlacementAcceptance.IsOutsideUsableArea(1, 1, 11, 11, SheetW, SheetH, NoMargin)
         .Should().BeFalse("the very same bounds are fine with no margin");
     }
 
@@ -114,11 +115,11 @@ namespace DeepNestSharp.CiTests
     [Fact]
     public void TheTwoFaultsAreToldApart()
     {
-      var overlapping = DxfViewer.FindUnfit(new List<IPartPlacement> { Square(0, 0), Square(5, 0) }, SheetW, SheetH, NoMargin, Clear);
+      var overlapping = PlacementAcceptance.FindUnfit(new List<IPartPlacement> { Square(0, 0), Square(5, 0) }, SheetW, SheetH, NoMargin, Clear);
       overlapping.Overlapping.Count.Should().Be(2);
       overlapping.OutsideMargin.Should().BeEmpty();
 
-      var inMargin = DxfViewer.FindUnfit(new List<IPartPlacement> { Square(1, 1) }, SheetW, SheetH, 2, Clear);
+      var inMargin = PlacementAcceptance.FindUnfit(new List<IPartPlacement> { Square(1, 1) }, SheetW, SheetH, 2, Clear);
       inMargin.OutsideMargin.Count.Should().Be(1);
       inMargin.Overlapping.Should().BeEmpty();
     }
@@ -128,7 +129,7 @@ namespace DeepNestSharp.CiTests
     [Fact]
     public void APartWithBothFaultsIsStillOnePart()
     {
-      var found = DxfViewer.FindUnfit(new List<IPartPlacement> { Square(1, 1), Square(6, 1) }, SheetW, SheetH, 2, Clear);
+      var found = PlacementAcceptance.FindUnfit(new List<IPartPlacement> { Square(1, 1), Square(6, 1) }, SheetW, SheetH, 2, Clear);
 
       found.Overlapping.Count.Should().Be(2);
       found.OutsideMargin.Count.Should().Be(2);
@@ -138,7 +139,7 @@ namespace DeepNestSharp.CiTests
     [Fact]
     public void AnEmptySheetIsFit()
     {
-      DxfViewer.CountUnfit(new List<IPartPlacement>(), SheetW, SheetH, NoMargin, Clear).Should().Be(0);
+      PlacementAcceptance.CountUnfit(new List<IPartPlacement>(), SheetW, SheetH, NoMargin, Clear).Should().Be(0);
     }
 
     private static IPartPlacement Square(double x, double y, double side = 10)

@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Ui.UserControls
+﻿namespace DeepNestSharp.Ui.UserControls
 {
   using System;
   using System.Collections.Generic;
@@ -2297,7 +2297,7 @@ namespace DeepNestSharp.Ui.UserControls
       if (this.dragCache != null && ReferenceEquals(candidate, this.selectedPp) && ReferenceEquals(exclude, this.selectedPp))
       {
         var (bMinX, bMinY, bMaxX, bMaxY) = this.dragCache.BoundsAt(candidate.X, candidate.Y);
-        if (IsOutsideUsableArea(bMinX, bMinY, bMaxX, bMaxY, this.currentSheetW, this.currentSheetH, this.SheetEdgeMargin))
+        if (RasterNest.PlacementAcceptance.IsOutsideUsableArea(bMinX, bMinY, bMaxX, bMaxY, this.currentSheetW, this.currentSheetH, this.SheetEdgeMargin))
         {
           return false;
         }
@@ -3290,105 +3290,9 @@ namespace DeepNestSharp.Ui.UserControls
     /// same margin the nester packed to. Without it a part could be dragged right to the sheet edge and the
     /// nest would quietly stop honouring what the job asked for.</summary>
     private bool OutOfSheet(IPartPlacement pp)
-      => IsOutsideUsableArea(pp, this.currentSheetW, this.currentSheetH, this.SheetEdgeMargin);
+      => RasterNest.PlacementAcceptance.IsOutsideUsableArea(pp, this.currentSheetW, this.currentSheetH, this.SheetEdgeMargin);
 
-    private static bool IsOutsideUsableArea(IPartPlacement pp, double sheetWidth, double sheetHeight, double margin)
-    {
-      var placed = pp.PlacedPart;
-      return IsOutsideUsableArea(placed.MinX, placed.MinY, placed.MaxX, placed.MaxY, sheetWidth, sheetHeight, margin);
-    }
 
-    /// <summary>The same rule over plain numbers, so the drag's cached bounds are judged by it too. It was
-    /// written out twice and the copies drifted: the cached path kept testing the raw sheet edge after the
-    /// margin arrived, so a drag went red at a different place than the drop did.</summary>
-    internal static bool IsOutsideUsableArea(
-      double minX, double minY, double maxX, double maxY, double sheetWidth, double sheetHeight, double margin)
-    {
-      const double Tol = 0.002;
-      double m = Math.Max(0, margin);
-      return minX < m - Tol || minY < m - Tol
-        || maxX > sheetWidth - m + Tol || maxY > sheetHeight - m + Tol;
-    }
-
-    /// <summary>
-    /// The placements on one sheet that are not fit to cut: overlapping a neighbour, or hanging off the
-    /// sheet. Both sides of an overlap count, the same way both go red on screen.
-    /// <para>Takes the sheet's OWN size rather than reading the viewer's: <see cref="OutOfSheet"/> measures
-    /// against the sheet being LOOKED AT, which is right while editing one layout and wrong for checking a
-    /// whole job - every other layout would be judged by the visible one's dimensions.</para>
-    /// </summary>
-    internal static int CountUnfit(
-      IReadOnlyList<IPartPlacement> placements,
-      double sheetWidth,
-      double sheetHeight,
-      double sheetEdgeMargin,
-      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
-      Func<IPartPlacement, IPartPlacement, double> sliverBetween = null)
-      => FindUnfit(placements, sheetWidth, sheetHeight, sheetEdgeMargin, clearanceBetween, sliverBetween).All.Count;
-
-    /// <summary>
-    /// The same sweep, handing back WHICH parts and WHY rather than a number: the two faults need
-    /// different things done about them (move a part, or re-nest with a smaller margin), and the operator
-    /// is the one who has to tell them apart. <see cref="Unfit.All"/> is the union, since a part can be
-    /// both on top of a neighbour and in the edge margin.
-    /// </summary>
-    /// <param name="sliverBetween">How deep a pair may bite into each other before it means anything - the
-    /// width of the cut about to run between them. Left out, nothing beyond the noise in the numbers is
-    /// forgiven; it used to assume an inch-drawing kerf, which a metric caller had no way to correct.</param>
-    internal static Unfit FindUnfit(
-      IReadOnlyList<IPartPlacement> placements,
-      double sheetWidth,
-      double sheetHeight,
-      double sheetEdgeMargin,
-      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
-      Func<IPartPlacement, IPartPlacement, double> sliverBetween = null)
-    {
-      var unfit = new Unfit();
-      sliverBetween = sliverBetween ?? ((a, b) => RasterNest.PlacementCollision.PlacementNoise);
-      for (int i = 0; i < placements.Count; i++)
-      {
-        var a = placements[i];
-        var placedA = a?.PlacedPart;
-        if (placedA == null)
-        {
-          continue;
-        }
-
-        if (IsOutsideUsableArea(a, sheetWidth, sheetHeight, sheetEdgeMargin))
-        {
-          unfit.OutsideMargin.Add(a);
-          unfit.All.Add(a);
-        }
-
-        for (int j = i + 1; j < placements.Count; j++)
-        {
-          var b = placements[j];
-          if (b?.PlacedPart != null && RasterNest.PlacementCollision.TooClose(placedA, b.PlacedPart, clearanceBetween(a, b), sliverBetween(a, b)))
-          {
-            unfit.Overlapping.Add(a);
-            unfit.Overlapping.Add(b);
-            unfit.All.Add(a);
-            unfit.All.Add(b);
-          }
-        }
-      }
-
-      return unfit;
-    }
-
-    /// <summary>What is wrong on one sheet, split by fault.</summary>
-    internal sealed class Unfit
-    {
-      /// <summary>Sitting closer to a neighbour than the pair's clearance allows. Both sides count, the
-      /// same way both go red on screen.</summary>
-      public HashSet<IPartPlacement> Overlapping { get; } = new HashSet<IPartPlacement>();
-
-      /// <summary>Off the sheet, or inside the edge margin the job asked to keep clear.</summary>
-      public HashSet<IPartPlacement> OutsideMargin { get; } = new HashSet<IPartPlacement>();
-
-      /// <summary>Every part with something wrong with it, counted once.</summary>
-      public HashSet<IPartPlacement> All { get; } = new HashSet<IPartPlacement>();
-    }
 
     /// <summary>
     /// Layouts that must not be cut yet, and how many parts are wrong on each. Empty means the job is fit
@@ -3416,7 +3320,7 @@ namespace DeepNestSharp.Ui.UserControls
 
     /// <summary>What is wrong on one layout's representative sheet, judged by that sheet's OWN size and the
     /// current job's clearances. Null when the group has nothing to judge.</summary>
-    private Unfit UnfitOn(SheetGroup group)
+    private RasterNest.PlacementAcceptance.Unfit UnfitOn(SheetGroup group)
     {
       var sheet = group?.Representative;
       if (sheet?.PartPlacements == null || sheet.Sheet == null)
@@ -3424,7 +3328,7 @@ namespace DeepNestSharp.Ui.UserControls
         return null;
       }
 
-      return FindUnfit(
+      return RasterNest.PlacementAcceptance.FindUnfit(
         sheet.PartPlacements.ToList(),
         sheet.Sheet.WidthCalculated,
         sheet.Sheet.HeightCalculated,
