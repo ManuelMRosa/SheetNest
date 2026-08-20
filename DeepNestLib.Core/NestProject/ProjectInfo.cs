@@ -77,7 +77,13 @@ namespace DeepNestLib.NestProject
           result.config = config;
           if (deserialized != null)
           {
-            SvgNestConfigJsonConverter.FullCopy(deserialized, config);
+            // The job's settings, applied and not adopted. Without the scope every project open wrote the
+            // file's values down as this operator's preferences, so a setting they had turned off came
+            // back on for ever, and the same for the other twenty-nine that travel in a .dnest.
+            using (SvgNestConfig.ApplyWithoutAdopting())
+            {
+              SvgNestConfigJsonConverter.CopyJobSettings(deserialized, config);
+            }
           }
 
           return result;

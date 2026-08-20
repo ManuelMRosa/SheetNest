@@ -337,6 +337,18 @@ namespace DeepNestLib {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool SettingsCarriedOver {
+            get {
+                return ((bool)(this["SettingsCarriedOver"]));
+            }
+            set {
+                this["SettingsCarriedOver"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool MergeLines {
             get {

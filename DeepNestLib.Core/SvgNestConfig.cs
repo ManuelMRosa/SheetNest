@@ -11,6 +11,67 @@ namespace DeepNestLib
 
   public class SvgNestConfig : ISvgNestConfig
   {
+    /// <summary>Set while values are being APPLIED rather than chosen, so they take effect for this
+    /// session without being written down as what the operator prefers. Per thread, because it is a
+    /// property of the work in hand and not of the program.</summary>
+    [System.ThreadStatic]
+    private static bool suppressPersist;
+
+    /// <summary>Values held by THIS config. Empty means "whatever the operator has saved".</summary>
+    private readonly System.Collections.Generic.Dictionary<string, object> own
+      = new System.Collections.Generic.Dictionary<string, object>();
+
+    /// <summary>Whether this config speaks for the operator. False for one read out of a file.</summary>
+    private readonly bool isOperators;
+
+    private object Read(string key)
+      => this.own.TryGetValue(key, out object v) ? v : Settings.Default[key];
+
+    /// <summary>
+    /// Remember a value, and write it down only if it is the operator's own and they are choosing it.
+    /// <para>Every property here used to read and write <c>Settings.Default</c> directly, which made this
+    /// class a singleton wearing an object's clothes: two instances were never two configs, and merely
+    /// DESERIALIZING one out of a .dnest overwrote the operator's saved preferences before a single line
+    /// of the load code ran. That is why a user on issue #2 could not keep a setting turned off.</para>
+    /// <para>The setter also called <c>Save()</c> and then <c>Upgrade()</c>, thirty times over. Upgrade
+    /// pulls the values from the PREVIOUS installed version over the current ones and reloads, so calling
+    /// it straight after a save can hand back the value just replaced. It belongs once at startup after an
+    /// update, never on a write; the same pattern sits commented out in the app's SettingsService, so it
+    /// was already suspected.</para>
+    /// </summary>
+    private void Write(string key, object value)
+    {
+      this.own[key] = value;
+      if (this.isOperators && !suppressPersist)
+      {
+        Settings.Default[key] = value;
+        Settings.Default.Save();
+      }
+    }
+
+    /// <summary>
+    /// Apply settings without adopting them. Inside the scope a value still takes effect, because the
+    /// setting object itself is updated, but nothing reaches the file that holds the operator's choices.
+    /// <para>This is what opening a project needs. A .dnest carries the spacing, margin and rotations its
+    /// job was nested with and those have to apply, or reopening a job would nest it differently. What
+    /// must not happen is the file's values being written down as this operator's preferences, which is
+    /// how a setting somebody turned off came back on after every project they opened.</para>
+    /// </summary>
+    public static System.IDisposable ApplyWithoutAdopting() => new PersistenceSuppressed();
+
+    private sealed class PersistenceSuppressed : System.IDisposable
+    {
+      private readonly bool previous;
+
+      internal PersistenceSuppressed()
+      {
+        this.previous = suppressPersist;
+        suppressPersist = true;
+      }
+
+      public void Dispose() => suppressPersist = this.previous;
+    }
+
     public const int PopulationMin = 50;
     public const int PopulationMax = 800;
     public const int MultiplierMin = 1;
@@ -18,8 +79,47 @@ namespace DeepNestLib
     public const int ParallelNestsMin = 1;
     public const int ParallelNestsMax = 30;
 
+    /// <summary>
+    /// A config that is nobody's in particular: it reads the operator's saved preferences as its starting
+    /// point but never writes anything back. This is the DEFAULT on purpose. Deserializing a project used
+    /// the parameterless constructor, and while every property wrote straight to the settings file that
+    /// alone was enough to overwrite the preferences on this machine with those of whoever saved the file.
+    /// Only the one config that speaks for the operator opts into writing, and it says so.
+    /// </summary>
     public SvgNestConfig()
+      : this(false)
     {
+    }
+
+    /// <summary>
+    /// Carry the operator's settings across an update, ONCE.
+    /// <para>Windows keeps each version's user settings in its own folder, so a new build starts with the
+    /// defaults until it is told to bring the previous one's over. That is what <c>Upgrade()</c> is for,
+    /// and it has to run exactly once per version: every setter used to call it after saving, which is how
+    /// a value could be handed straight back after being changed.</para>
+    /// </summary>
+    internal static void CarrySettingsOverOnce()
+    {
+      if (Settings.Default.SettingsCarriedOver)
+      {
+        return;
+      }
+
+      Settings.Default.Upgrade();
+      Settings.Default.SettingsCarriedOver = true;
+      Settings.Default.Save();
+    }
+
+    /// <summary>The operator's own config when <paramref name="isOperators"/> is set: their saved
+    /// preferences, and their choices written back.</summary>
+    internal SvgNestConfig(bool isOperators)
+    {
+      this.isOperators = isOperators;
+      if (isOperators)
+      {
+        CarrySettingsOverOnce();
+      }
+
 #if NCRUNCH
       throw new NotImplementedException();
 #endif
@@ -63,14 +163,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["MergeLines"];
+        return (bool)this.Read("MergeLines");
       }
 
       set
       {
-        Settings.Default["MergeLines"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("MergeLines", value);
       }
     }
 
@@ -79,14 +177,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["ClipByHull"];
+        return (bool)this.Read("ClipByHull");
       }
 
       set
       {
-        Settings.Default["ClipByHull"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("ClipByHull", value);
       }
     }
 
@@ -95,14 +191,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (double)Settings.Default["CurveTolerance"];
+        return (double)this.Read("CurveTolerance");
       }
 
       set
       {
-        Settings.Default["CurveTolerance"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("CurveTolerance", value);
       }
     }
 
@@ -111,14 +205,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["DifferentiateChildren"];
+        return (bool)this.Read("DifferentiateChildren");
       }
 
       set
       {
-        Settings.Default["DifferentiateChildren"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("DifferentiateChildren", value);
       }
     }
 
@@ -127,14 +219,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["DrawSimplification"];
+        return (bool)this.Read("DrawSimplification");
       }
 
       set
       {
-        Settings.Default["DrawSimplification"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("DrawSimplification", value);
       }
     }
 
@@ -144,14 +234,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["ExportExecutions"];
+        return (bool)this.Read("ExportExecutions");
       }
 
       set
       {
-        Settings.Default["ExportExecutions"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("ExportExecutions", value);
       }
     }
 
@@ -160,14 +248,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (string)Settings.Default["ExportExecutionPath"];
+        return (string)this.Read("ExportExecutionPath");
       }
 
       set
       {
-        Settings.Default["ExportExecutionPath"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("ExportExecutionPath", value);
       }
     }
 
@@ -175,14 +261,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (string)Settings.Default["LastDebugFilePath"];
+        return (string)this.Read("LastDebugFilePath");
       }
 
       set
       {
-        Settings.Default["LastDebugFilePath"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("LastDebugFilePath", value);
       }
     }
 
@@ -191,14 +275,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (string)Settings.Default["LastNestFilePath"];
+        return (string)this.Read("LastNestFilePath");
       }
 
       set
       {
-        Settings.Default["LastNestFilePath"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("LastNestFilePath", value);
       }
     }
 
@@ -207,14 +289,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (int)Settings.Default["SaveAsFileTypeIndex"];
+        return (int)this.Read("SaveAsFileTypeIndex");
       }
 
       set
       {
-        Settings.Default["SaveAsFileTypeIndex"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("SaveAsFileTypeIndex", value);
       }
     }
 
@@ -223,14 +303,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (int)Settings.Default["SheetWidth"];
+        return (int)this.Read("SheetWidth");
       }
 
       set
       {
-        Settings.Default["SheetWidth"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("SheetWidth", value);
       }
     }
 
@@ -239,14 +317,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (int)Settings.Default["SheetHeight"];
+        return (int)this.Read("SheetHeight");
       }
 
       set
       {
-        Settings.Default["SheetHeight"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("SheetHeight", value);
       }
     }
 
@@ -255,14 +331,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (int)Settings.Default["SheetQuantity"];
+        return (int)this.Read("SheetQuantity");
       }
 
       set
       {
-        Settings.Default["SheetQuantity"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("SheetQuantity", value);
       }
     }
 
@@ -271,14 +345,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (PlacementTypeEnum)Settings.Default["PlacementType"];
+        return (PlacementTypeEnum)this.Read("PlacementType");
       }
 
       set
       {
-        Settings.Default["PlacementType"] = (int)value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("PlacementType", (int)value);
       }
     }
 
@@ -287,14 +359,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["Simplify"];
+        return (bool)this.Read("Simplify");
       }
 
       set
       {
-        Settings.Default["Simplify"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("Simplify", value);
       }
     }
 
@@ -303,14 +373,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["OffsetTreePhase"];
+        return (bool)this.Read("OffsetTreePhase");
       }
 
       set
       {
-        Settings.Default["OffsetTreePhase"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("OffsetTreePhase", value);
       }
     }
 
@@ -319,14 +387,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["OverlapDetection"];
+        return (bool)this.Read("OverlapDetection");
       }
 
       set
       {
-        Settings.Default["OverlapDetection"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("OverlapDetection", value);
       }
     }
 
@@ -335,14 +401,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (double)Settings.Default["Spacing"];
+        return (double)this.Read("Spacing");
       }
 
       set
       {
-        Settings.Default["Spacing"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("Spacing", value);
       }
     }
 
@@ -351,7 +415,7 @@ namespace DeepNestLib
     {
       get
       {
-        var result = (int)Settings.Default["PopulationSize"];
+        var result = (int)this.Read("PopulationSize");
         if (result < PopulationMin) return PopulationMin;
         if (result > PopulationMax) return PopulationMax;
         return result;
@@ -359,9 +423,7 @@ namespace DeepNestLib
 
       set
       {
-        Settings.Default["PopulationSize"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("PopulationSize", value);
       }
     }
 
@@ -370,15 +432,13 @@ namespace DeepNestLib
     {
       get
       {
-        var result = (int)Settings.Default["ProcreationTimeout"];
+        var result = (int)this.Read("ProcreationTimeout");
         return result;
       }
 
       set
       {
-        Settings.Default["ProcreationTimeout"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("ProcreationTimeout", value);
       }
     }
 
@@ -387,7 +447,7 @@ namespace DeepNestLib
     {
       get
       {
-        var result = (int)Settings.Default["MutationRate"];
+        var result = (int)this.Read("MutationRate");
         if (result < MutationRateMin)
         {
           return MutationRateMin;
@@ -403,9 +463,7 @@ namespace DeepNestLib
 
       set
       {
-        Settings.Default["MutationRate"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("MutationRate", value);
       }
     }
 
@@ -418,7 +476,7 @@ namespace DeepNestLib
     {
       get
       {
-        var result = (int)Settings.Default["Multiplier"];
+        var result = (int)this.Read("Multiplier");
         if (result < MutationRateMin)
         {
           return MultiplierMin;
@@ -434,9 +492,7 @@ namespace DeepNestLib
 
       set
       {
-        Settings.Default["Multiplier"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("Multiplier", value);
       }
     }
 
@@ -447,7 +503,7 @@ namespace DeepNestLib
       {
         try
         {
-          return (AnglesEnum)Settings.Default["StrictAngles"];
+          return (AnglesEnum)this.Read("StrictAngles");
         }
         catch (System.Exception)
         {
@@ -457,9 +513,7 @@ namespace DeepNestLib
 
       set
       {
-        Settings.Default["StrictAngles"] = (int)value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("StrictAngles", (int)value);
       }
     }
 
@@ -468,14 +522,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["UseParallel"];
+        return (bool)this.Read("UseParallel");
       }
 
       set
       {
-        Settings.Default["UseParallel"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("UseParallel", value);
       }
     }
 
@@ -484,7 +536,7 @@ namespace DeepNestLib
     {
       get
       {
-        var result = (int)Settings.Default["ParallelNests"];
+        var result = (int)this.Read("ParallelNests");
         if (result < ParallelNestsMin)
         {
           return ParallelNestsMin;
@@ -500,9 +552,7 @@ namespace DeepNestLib
 
       set
       {
-        Settings.Default["ParallelNests"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("ParallelNests", value);
       }
     }
 
@@ -511,14 +561,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["ShowPartPositions"];
+        return (bool)this.Read("ShowPartPositions");
       }
 
       set
       {
-        Settings.Default["ShowPartPositions"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("ShowPartPositions", value);
       }
     }
 
@@ -527,14 +575,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["UseDllImport"];
+        return (bool)this.Read("UseDllImport");
       }
 
       set
       {
-        Settings.Default["UseDllImport"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("UseDllImport", value);
       }
     }
 
@@ -543,14 +589,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["UseMinkowskiCache"];
+        return (bool)this.Read("UseMinkowskiCache");
       }
 
       set
       {
-        Settings.Default["UseMinkowskiCache"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("UseMinkowskiCache", value);
       }
     }
 
@@ -559,14 +603,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (bool)Settings.Default["UsePriority"];
+        return (bool)this.Read("UsePriority");
       }
 
       set
       {
-        Settings.Default["UsePriority"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("UsePriority", value);
       }
     }
 
@@ -575,14 +617,12 @@ namespace DeepNestLib
     {
       get
       {
-        return (double)Settings.Default["TopDiversity"];
+        return (double)this.Read("TopDiversity");
       }
 
       set
       {
-        Settings.Default["TopDiversity"] = value;
-        Settings.Default.Save();
-        Settings.Default.Upgrade();
+        this.Write("TopDiversity", value);
       }
     }
 

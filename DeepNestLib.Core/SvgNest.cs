@@ -47,7 +47,7 @@
 #if NCRUNCH
     = new TestSvgNestConfig();
 #else
-    = new SvgNestConfig();
+    = new SvgNestConfig(true);
 #endif
 
     public bool IsStopped { get => isStopped; private set => isStopped = value; }

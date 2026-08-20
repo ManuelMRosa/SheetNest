@@ -79,44 +79,40 @@
     /// </summary>
     /// <param name="source"></param>
     /// <param name="target"></param>
-    internal static void FullCopy(ISvgNestConfig source, ISvgNestConfig target)
+    /// <summary>
+    /// Take from a saved project only the settings that describe HOW THAT JOB WAS NESTED. Everything else
+    /// in the file belongs to whoever saved it and is none of this operator's business.
+    /// <para>The line is drawn at the result: a value that changes where the parts land travels with the
+    /// job, because otherwise reopening it would nest it differently from the way it was cut. A value that
+    /// changes how hard this machine searches, where it writes files, what it draws on screen, or what the
+    /// exporter does afterwards is a preference, and opening somebody's project must not overwrite it.
+    /// </para>
+    /// <para>Copying the lot is what put a user on issue #2 through an afternoon of testing a checkbox
+    /// that came back on after every project open. It was also quietly rewriting his last-used file paths
+    /// and whether his machine uses the native library, from a file written on another machine.</para>
+    /// </summary>
+    internal static void CopyJobSettings(ISvgNestConfig source, ISvgNestConfig target)
     {
-      target.ClipByHull = source.ClipByHull;
-      target.ClipperScale = source.ClipperScale;
-      target.CurveTolerance = source.CurveTolerance;
-      target.DrawSimplification = source.DrawSimplification;
-      target.ExploreConcave = source.ExploreConcave;
-      target.ExportExecutionPath = source.ExportExecutionPath;
-      target.ExportExecutions = source.ExportExecutions;
-      target.LastDebugFilePath = source.LastDebugFilePath;
-      target.LastNestFilePath = source.LastNestFilePath;
-      target.MergeLines = source.MergeLines;
-      target.Multiplier = source.Multiplier;
-      target.MutationRate = source.MutationRate;
-      target.OffsetTreePhase = source.OffsetTreePhase;
-      target.ParallelNests = source.ParallelNests;
-      target.PlacementType = source.PlacementType;
-      target.PopulationSize = source.PopulationSize;
-      target.ProcreationTimeout = source.ProcreationTimeout;
-      target.Rotations = source.Rotations;
-      target.SaveAsFileTypeIndex = source.SaveAsFileTypeIndex;
-      target.Scale = source.Scale;
-      target.SheetHeight = source.SheetHeight;
-      target.SheetQuantity = source.SheetQuantity;
-      target.SheetSpacing = source.SheetSpacing;
-      target.SheetWidth = source.SheetWidth;
-      target.ShowPartPositions = source.ShowPartPositions;
-      target.Simplify = source.Simplify;
+      // Clearances and rotation: the geometry the parts were placed to.
       target.Spacing = source.Spacing;
+      target.SheetSpacing = source.SheetSpacing;
+      target.Rotations = source.Rotations;
       target.StrictAngles = source.StrictAngles;
-      target.TimeRatio = source.TimeRatio;
+
+      // What the placer was allowed to do.
+      target.PlacementType = source.PlacementType;
+      target.UseHoles = source.UseHoles;
+      target.UsePriority = source.UsePriority;
+
+      // How the outlines themselves were approximated. Change these and the same DXF is a different shape.
+      target.CurveTolerance = source.CurveTolerance;
+      target.Simplify = source.Simplify;
+      target.ClipByHull = source.ClipByHull;
+      target.ExploreConcave = source.ExploreConcave;
       target.Tolerance = source.Tolerance;
       target.ToleranceSvg = source.ToleranceSvg;
-      target.UseDllImport = source.UseDllImport;
-      target.UseHoles = source.UseHoles;
-      target.UseMinkowskiCache = source.UseMinkowskiCache;
-      target.UseParallel = source.UseParallel;
-      target.UsePriority = source.UsePriority;
+      target.Scale = source.Scale;
+      target.ClipperScale = source.ClipperScale;
     }
   }
 }

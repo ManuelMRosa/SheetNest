@@ -92,7 +92,7 @@
     <GroupBox Header="DXF export" Padding="8" Margin="0,10,0,0">
       <StackPanel>
         <CheckBox x:Name="mergeLinesCheck" Content="Merge coincident cut lines (common-line)"
-                  ToolTip="Coincident edges of touching parts export as ONE cut line, so the laser cuts shared edges once." />
+                  ToolTip="Coincident edges of touching parts export as ONE cut line, so the laser cuts shared edges once. It only has anything to do where parts actually share a cut, which is a job imported from SheetCam; on plain DXF parts nothing ever touches, so this changes nothing either way." />
         <CheckBox x:Name="differentiateCheck" Content="Color-differentiate hole contours" Margin="0,8,0,0"
                   ToolTip="Hole (child) contours export in a distinct color so the CAM can treat them separately." />
       </StackPanel>
