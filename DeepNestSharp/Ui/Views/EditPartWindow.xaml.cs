@@ -51,19 +51,23 @@ namespace DeepNestSharp.Ui.Views
       // GEOMETRY-BASED suggestion: 90°-rotation-symmetric shapes (circles, squares) default to
       // "No turn" — rotating them cannot change the nest. Everything else starts at 90° steps, which
       // the engine's best-of search narrows per job automatically (e.g. triangles win at {0,180}).
+      // A part that has chosen nothing stays that way, and OK will not choose for it. This dialog used to
+      // seed the job's number and write it straight back on every OK, with no way to say "follow the job",
+      // so opening a part once and pressing OK pinned it for good: the job could then be set to free
+      // rotation and that part would go on turning in ninety degree steps, which is what a user spent a
+      // month reporting. The symmetric shape is still worth pointing out, but as a hint, not a decision.
       if (part.Rotations > 0)
       {
         this.rotationSelector.Rotations = part.Rotations;
       }
-      else if (poly != null && IsRotationSymmetric(poly))
-      {
-        this.rotationSelector.Rotations = 1;
-        this.geoHint.Text = "Detected rotation-symmetric shape (circle/square): turning it can't improve the nest.";
-        this.geoHint.Visibility = Visibility.Visible;
-      }
       else
       {
-        this.rotationSelector.Rotations = globalRotations;
+        this.rotationSelector.Rotations = UserControls.RotationSelector.InheritsJob;
+        if (poly != null && IsRotationSymmetric(poly))
+        {
+          this.geoHint.Text = "Detected rotation-symmetric shape (circle/square): turning it can't improve the nest, so \"As drawn\" saves the search.";
+          this.geoHint.Visibility = Visibility.Visible;
+        }
       }
 
       // A DXF that is really a WHOLE NESTED SHEET (a frame rectangle full of part silhouettes) imports

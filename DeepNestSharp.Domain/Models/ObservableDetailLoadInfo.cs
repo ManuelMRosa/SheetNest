@@ -213,8 +213,11 @@
           1001 => "90° only",   // orientation permission codes (see RotationCodes.PermittedSet)
           1002 => "0°+90°",
           1003 => "90°+270°",
-          > 4 => "free",
-          _ => "rot: auto",
+          8 => "45° steps",     // NOT free: the engine gets eight discrete angles, and calling this "free"
+                                // here and in the picker is how a user came to report free rotation broken
+          36 => "free",
+          > 4 => "rot: other",
+          _ => "job default",   // -1, and it follows Settings > Advanced Settings
         };
         return $"{spacing} · {rot}";
       }

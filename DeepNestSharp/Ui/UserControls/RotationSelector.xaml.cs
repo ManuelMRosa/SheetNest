@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Ui.UserControls
+﻿namespace DeepNestSharp.Ui.UserControls
 {
   using System;
   using System.Collections.Generic;
@@ -20,7 +20,7 @@ namespace DeepNestSharp.Ui.UserControls
       nameof(Rotations),
       typeof(int),
       typeof(RotationSelector),
-      new FrameworkPropertyMetadata(4, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnValueChanged));
+      new FrameworkPropertyMetadata(InheritsJob, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnValueChanged));
 
     public static readonly DependencyProperty StrictAnglesProperty = DependencyProperty.Register(
       nameof(StrictAngles),
@@ -41,16 +41,23 @@ namespace DeepNestSharp.Ui.UserControls
       ArrowV,
       FourArrows,
       AnyCircle,
+      Inherit,
     }
+
+    /// <summary>The part has chosen nothing and follows the job. Anything above zero is a choice, which
+    /// is what the engine tests, so this has to be the same sentinel the model was born with.</summary>
+    internal const int InheritsJob = -1;
 
     private static readonly (string Label, int Rotations, IconKind Icon, AnglesEnum Strict, string Tip)[] Options = new[]
     {
+      ("Job default", InheritsJob, IconKind.Inherit, AnglesEnum.None, "Whatever the job is set to, under Settings > Advanced Settings. Change it there and this part follows."),
       ("As drawn", 1, IconKind.ArrowUp, AnglesEnum.None, "Only 0°, so the part stays exactly as drawn (respects grain)."),
       ("90° only", RasterNest.RotationCodes.RotOnly90, IconKind.ArrowRight, AnglesEnum.None, "Only 90°, so the part is always turned once."),
       ("0°+90°", RasterNest.RotationCodes.RotZeroAnd90, IconKind.QuarterTurn, AnglesEnum.None, "0° and 90° permitted."),
       ("0°+180°", 2, IconKind.ArrowH, AnglesEnum.AsPreviewed, "0° and 180°: respects material grain but can flip."),
       ("90°+270°", RasterNest.RotationCodes.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270°: always turned, either way."),
       ("4-way", 4, IconKind.FourArrows, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°)."),
+      ("45° steps", 8, IconKind.FourArrows, AnglesEnum.None, "Eight orientations, 45° apart. The job setting offers this too, and without it here a part could not be shown what it was really set to."),
       ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle (best fit, ignores grain)."),
     };
 
@@ -131,17 +138,11 @@ namespace DeepNestSharp.Ui.UserControls
         }
       }
 
-      if (this.Rotations <= 1)
-      {
-        return 0; // As drawn
-      }
-
-      if (this.Rotations <= 4)
-      {
-        return 5; // 4-way
-      }
-
-      return Options.Length - 1; // Free
+      // An exact match is handled above. What is left is a code no option represents, and the honest
+      // answer is that the part follows the job rather than a shape that is not what it says. Showing
+      // 45 degree steps as "Free" is how a user came to believe free rotation was broken: the picker
+      // said free, the parts list said free, and the engine was handed eight discrete angles.
+      return 0; // Job default
     }
 
     private static FrameworkElement BuildContent(string label, IconKind icon)
@@ -208,6 +209,21 @@ namespace DeepNestSharp.Ui.UserControls
           Canvas.SetLeft(circle, 4.5);
           Canvas.SetTop(circle, 4.5);
           canvas.Children.Add(circle);
+          break;
+
+        // Dashed, because this part has chosen nothing: the shape comes from the job.
+        case IconKind.Inherit:
+          var dashed = new Ellipse
+          {
+            Width = 15,
+            Height = 15,
+            Stroke = IconFill,
+            StrokeThickness = 1.8,
+            StrokeDashArray = new DoubleCollection(new[] { 2.0, 2.0 }),
+          };
+          Canvas.SetLeft(dashed, 4.5);
+          Canvas.SetTop(dashed, 4.5);
+          canvas.Children.Add(dashed);
           break;
       }
 
