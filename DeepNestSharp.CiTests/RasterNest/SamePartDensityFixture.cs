@@ -103,10 +103,16 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       this.output.WriteLine($"SEAM spacing 1/{spacingDivisor}: none={none} samePart={samePart}");
 
-      // Measured against the build before the weld/bounds fix, same job: samePart was 9 at 1/10 and 8 at
-      // 1/50, against a none of 5 and 3. Now it is 1 and 1.
-      samePart.Should().BeLessOrEqualTo(none,
-        "common cutting must not make the engine and the editor disagree more than a plain spaced job does");
+      // This used to compare the two counts, because neither was ever zero: samePart was 9 at 1/10 and 8
+      // at 1/50 against a none of 5 and 3, and after the weld/bounds fix 1 and 1 against 5 and 3. A
+      // relative guard was all that could be asserted while the engine and the editor were still two
+      // different judges.
+      //
+      // They are one judge now, and the engine is held to it, so the honest assertion is the invariant
+      // itself: a nest nobody has touched is never red. That is STRICTER than what stood here, which
+      // tolerated five disagreements on a plain job as long as common cutting was no worse.
+      none.Should().Be(0, "a fresh nest must never hand the operator a layout the editor calls unfit");
+      samePart.Should().Be(0, "and common cutting is no exception");
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-namespace DeepNestSharp.RasterNest
+﻿namespace DeepNestSharp.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -42,6 +42,10 @@ namespace DeepNestSharp.RasterNest
     /// <summary>Seams welded on the last nest, and groups of them given up because a cut would have
     /// invaded a neighbour. The second number is the one worth showing: it is the difference between
     /// "there was nothing to share" and "there was, and it had to be abandoned".</summary>
+    /// <summary>Parts a sheet had to give back because the finished layout would not have been cuttable.
+    /// Zero on a healthy job; anything else is material the pack claimed and could not keep.</summary>
+    internal static int DiagDeferred;
+
     internal static int DiagSeamsSnapped;
 
     internal static int DiagSeamsGivenUp;
@@ -163,6 +167,7 @@ namespace DeepNestSharp.RasterNest
       // Common-line packs as densely as sparrow can (mixing orientations); the snap then aligns whatever
       // near-parallel edges it left, and the post decides which shared edges to cut once. The snap needs
       // straight H/V edges, so common-line uses axis-aligned rotation (4-way) rather than free/fine angles.
+      DiagDeferred = 0;
       DiagSeamsSnapped = 0;
       DiagSeamsGivenUp = 0;
       var diagLoad = System.Diagnostics.Stopwatch.StartNew();
@@ -313,6 +318,20 @@ namespace DeepNestSharp.RasterNest
           // and asking again would only ask the same question. This is what stops an unlimited size: with
           // no sheet placed the loop's own counter never advances, so without this break it would spin.
           break;
+        }
+
+        // The sheet is judged by the rule that decides whether it may be cut, before it is handed over.
+        // Whatever fails goes back in the pool and lands on the next sheet, so no layout ever leaves here
+        // that the app would paint red. See DeferUnfit for why this is not the same as trusting the pack.
+        int deferred = DeferUnfit(bestPlacements, bestPlacedBySrc, loadedById, bestW, bestH, margin);
+        if (bestPlacements.Count == 0)
+        {
+          break; // nothing on this sheet survived the check, so another sheet of it would fare no better
+        }
+
+        if (deferred > 0)
+        {
+          DiagDeferred += deferred;
         }
 
         sheetLayouts.Add(bestPlacements);
@@ -1309,6 +1328,187 @@ namespace DeepNestSharp.RasterNest
 
     private static List<IntPoint> ShiftPath(List<IntPoint> path, long dx, long dy)
       => path.Select(p => new IntPoint(p.X + dx, p.Y + dy)).ToList();
+
+    /// <summary>
+    /// Judge a finished sheet by the rule that decides whether it may be cut, and hand back whatever fails
+    /// so the next sheet can take it. Returns how many placements were given up.
+    /// <para>The engine cannot simply be trusted to have honoured the clearance it was asked for. Measured
+    /// on the job from issue #2: the compaction slide applied THIRTY moves that its own acceptance test
+    /// allowed and this rule rejects, and two parts came to rest 0.01 mm inside a 9 mm clearance. The two
+    /// tests are built differently and agreeing them exactly is a long tail; what closes the hole for good
+    /// is checking the ANSWER against the rule the operator will be held to, rather than trusting the
+    /// search that produced it.</para>
+    /// <para>Only one side of each offending pair is given back. Both are equally guilty, and dropping
+    /// both would give away a part that has somewhere perfectly good to sit.</para>
+    /// </summary>
+    private static int DeferUnfit(
+      List<IPartPlacement> placements,
+      Dictionary<int, int> placedBySrc,
+      Dictionary<int, Loaded> loadedById,
+      double sheetW,
+      double sheetH,
+      double margin)
+    {
+      int deferred = 0;
+
+      // Whatever is dropped may free the pair it was fighting with, so re-judge until the sheet is clean.
+      // Each pass gives up at least one part, so this cannot run longer than the sheet has parts.
+      for (int guard = 0; guard <= placements.Count; guard++)
+      {
+        var unfit = PlacementAcceptance.FindUnfit(
+          placements,
+          sheetW,
+          sheetH,
+          margin,
+          (a, b) => ClearanceOf(a, b, loadedById),
+          (a, b) => PlacementCollision.SliverFor(KerfOf(a, loadedById), KerfOf(b, loadedById)));
+
+        if (unfit.All.Count == 0)
+        {
+          return deferred;
+        }
+
+        // The last one placed is the one to answer for it: the parts before it are what the layout was
+        // built around, and taking one of those apart tends to unpick the whole sheet.
+        var victim = placements.LastOrDefault(p => unfit.All.Contains(p));
+        if (victim == null)
+        {
+          return deferred;
+        }
+
+        // Try to MOVE it before giving it up. What is usually wrong is a hair: measured at a hundredth of
+        // a millimetre inside a nine millimetre clearance, and giving back a whole part for that would
+        // spend a sheet to buy nothing. Only when it genuinely has nowhere to go does it go back.
+        if (TryNudgeClear(placements, victim, loadedById, sheetW, sheetH, margin))
+        {
+          continue;
+        }
+
+        placements.Remove(victim);
+        if (placedBySrc.TryGetValue(victim.Source, out int n))
+        {
+          if (n <= 1)
+          {
+            placedBySrc.Remove(victim.Source);
+          }
+          else
+          {
+            placedBySrc[victim.Source] = n - 1;
+          }
+        }
+
+        deferred++;
+      }
+
+      return deferred;
+    }
+
+    /// <summary>
+    /// Walk one part off its neighbours without taking it off the sheet. True when the sheet came clean.
+    /// <para>The ladder is a FRACTION of the clearance rather than a list of numbers, because the error it
+    /// is closing is proportional to the clearance too: a figure that reads as a comfortable shove on an
+    /// inch drawing is a quarter of a millimetre on a metric one, and the existing separation pass has
+    /// exactly that bug. It never pushes further than the clearance itself, so a part that needs more than
+    /// that is not being nudged, it is in the wrong place, and it goes back in the pool.</para>
+    /// </summary>
+    private static bool TryNudgeClear(
+      List<IPartPlacement> placements,
+      IPartPlacement victim,
+      Dictionary<int, Loaded> loadedById,
+      double sheetW,
+      double sheetH,
+      double margin)
+    {
+      double clearance = placements
+        .Where(p => !ReferenceEquals(p, victim))
+        .Select(p => ClearanceOf(victim, p, loadedById))
+        .DefaultIfEmpty(0)
+        .Max();
+      if (clearance <= 0)
+      {
+        return false;
+      }
+
+      double x0 = victim.X;
+      double y0 = victim.Y;
+
+      foreach (double step in new[] { 0.002, 0.01, 0.05, 0.2, 0.5, 1.0 })
+      {
+        double d = clearance * step;
+        foreach (var (dx, dy) in new[] { (d, 0.0), (-d, 0.0), (0.0, d), (0.0, -d), (d, d), (-d, -d), (d, -d), (-d, d) })
+        {
+          victim.X = x0 + dx;
+          victim.Y = y0 + dy;
+          if (IsClearWhereItStands(placements, victim, loadedById, sheetW, sheetH, margin))
+          {
+            return true;
+          }
+        }
+      }
+
+      victim.X = x0;
+      victim.Y = y0;
+      return false;
+    }
+
+    /// <summary>One part against the sheet and against everybody else, by the rule the app judges with.</summary>
+    private static bool IsClearWhereItStands(
+      List<IPartPlacement> placements,
+      IPartPlacement victim,
+      Dictionary<int, Loaded> loadedById,
+      double sheetW,
+      double sheetH,
+      double margin)
+    {
+      if (PlacementAcceptance.IsOutsideUsableArea(victim, sheetW, sheetH, margin))
+      {
+        return false;
+      }
+
+      foreach (var other in placements)
+      {
+        if (ReferenceEquals(other, victim) || other?.PlacedPart == null)
+        {
+          continue;
+        }
+
+        double need = ClearanceOf(victim, other, loadedById);
+        double sliver = PlacementCollision.SliverFor(KerfOf(victim, loadedById), KerfOf(other, loadedById));
+        if (PlacementCollision.TooClose(victim.PlacedPart, other.PlacedPart, need, sliver))
+        {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>The clearance this pair must keep, by the same rule the app judges it with: nothing when
+    /// they may share a cut, otherwise the mean of what each asked for.</summary>
+    private static double ClearanceOf(IPartPlacement a, IPartPlacement b, Dictionary<int, Loaded> loadedById)
+    {
+      if (!loadedById.TryGetValue(a.Source, out var la) || !loadedById.TryGetValue(b.Source, out var lb))
+      {
+        return 0;
+      }
+
+      // The same three lines as RasterCompact.MayShare and the viewer's: the stricter of the two modes
+      // wins, and Same part means the same drawing in the same hand.
+      bool mayShare = la.Cc != CommonCuttingMode.None && lb.Cc != CommonCuttingMode.None
+        && (la.Cc != CommonCuttingMode.SamePart && lb.Cc != CommonCuttingMode.SamePart
+            ? true
+            : la.ShareKey == lb.ShareKey);
+      if (mayShare)
+      {
+        return RasterCompact.CommonLineGap;
+      }
+
+      double c = (Math.Max(0, la.EffSpacing) + Math.Max(0, lb.EffSpacing)) / 2.0;
+      return c <= 0 ? RasterCompact.CommonLineGap : c;
+    }
+
+    private static double KerfOf(IPartPlacement p, Dictionary<int, Loaded> loadedById)
+      => loadedById.TryGetValue(p.Source, out var l) ? Math.Max(0, l.Kerf) : 0;
 
     private static void Deduct(Dictionary<int, int> pool, Dictionary<int, int> counts)
     {

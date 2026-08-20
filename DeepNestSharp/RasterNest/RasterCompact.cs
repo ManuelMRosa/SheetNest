@@ -33,7 +33,22 @@
   {
     private const double Scale = 1e6;              // Clipper integer units per inch (120" sheet â‰ˆ 1.2e8 Â« long range)
     private const double EpsArea = 1e-6 * Scale * Scale; // ignore sub-1e-6 inÂ² contact slivers as "touching"
-    private const double Backoff = 0.001;          // extra slack left after a slide (0.025 mm)
+    private const double Backoff = 0.001;          // floor: extra slack left after a slide (0.001" = 0.025 mm)
+
+    /// <summary>
+    /// How much of the clearance being enforced a slide leaves as slack, on top of <see cref="Backoff"/>.
+    /// <para>The slide stops where its own acceptance test is still happy, and that test is not the one the
+    /// finished sheet is judged by. The gap between the two is proportional to the clearance, because both
+    /// are polygonal approximations of an offset BY that clearance. A fixed figure is therefore right for
+    /// exactly one size of number: 0.001 is a thousandth of an inch on an imperial job and a thousandth of
+    /// a MILLIMETRE on a metric one, twenty five times less slack for a clearance twenty five times bigger.
+    /// </para>
+    /// <para>Measured on the job from issue #2 (2650x2070 mm, 9 mm spacing): the slide applied thirty moves
+    /// its own test allowed and the judge rejects, and a pair came to rest 0.01 mm inside the 9 mm asked
+    /// for. That is 0.0011 of the clearance; this leaves roughly three times it. Below an inch-sized
+    /// clearance the floor still wins, so imperial jobs slide exactly as before.</para>
+    /// </summary>
+    private const double BackoffPerClearance = 0.003;
 
     /// <summary>
     /// Gap between common-line parts: ZERO — true common-line cutting means the shared edge is
@@ -401,22 +416,26 @@
         // Furthest the part could go: down to the sheet margin (sliding only ever shrinks the extent,
         // so the far edges can't be violated). For a rigid module: the closest member bounds it.
         double max = double.MaxValue;
+        double clearance = 0;
         var slideSet = memberSets[i];
         int slideN = slideSet?.Length ?? 1;
         for (int s = 0; s < slideN; s++)
         {
           var it = items[slideSet != null ? slideSet[s] : i];
           max = Math.Min(max, dirX != 0 ? (it.X + it.Poly.MinX) - margin : (it.Y + it.Poly.MinY) - margin);
+          clearance = Math.Max(clearance, it.Spacing);
         }
 
-        if (max <= Backoff)
+        double backoff = Math.Max(Backoff, clearance * BackoffPerClearance);
+
+        if (max <= backoff)
         {
           return false;
         }
 
         // Pre-probe: a part that cannot move even 2× the backoff nets a no-op slide — skip the whole
         // binary search (most parts are already blocked in round 2, and each probe is a Clipper call).
-        if (!ValidOffset(i, dirX * System.Math.Min(max, Backoff * 2.0), dirY * System.Math.Min(max, Backoff * 2.0)))
+        if (!ValidOffset(i, dirX * System.Math.Min(max, backoff * 2.0), dirY * System.Math.Min(max, backoff * 2.0)))
         {
           return false;
         }
@@ -432,7 +451,7 @@
           // is invisible behind the 0.001" backoff, and every iteration is a Clipper intersection —
           // with ALL parts sliding, the old fixed 30 iterations dominated the nest's wall time).
           double lo = 0, hi = max;
-          while (hi - lo > Backoff / 2.0)
+          while (hi - lo > backoff / 2.0)
           {
             double mid = (lo + hi) / 2.0;
             if (ValidOffset(i, dirX * mid, dirY * mid))
@@ -448,7 +467,7 @@
           slide = lo;
         }
 
-        slide -= Backoff;
+        slide -= backoff;
         if (slide <= 1e-9)
         {
           return false;
