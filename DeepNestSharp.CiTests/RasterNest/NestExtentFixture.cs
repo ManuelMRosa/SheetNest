@@ -88,21 +88,24 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       this.output.WriteLine(string.Format(
         "{0,-8} {1,-8} {2,10} {3,10} {4,10} {5,9} {6,8}", "effort", "placed", "extentX", "extentY", "strip", "fill", "sec"));
-      foreach (var effort in new[] { NestEffort.Fast, NestEffort.Normal, NestEffort.Best })
+      foreach (int rot in new[] { 4, 8, 36 })
       {
-        var m = Measure(effort);
-        if (m == null)
+        foreach (var effort in new[] { NestEffort.Fast, NestEffort.Normal })
         {
-          return;
-        }
+          var m = Measure(effort, rot);
+          if (m == null)
+          {
+            return;
+          }
 
-        this.output.WriteLine(m.Value.Line);
+          this.output.WriteLine(m.Value.Line);
+        }
       }
     }
 
     /// <summary>Nests the bench job at one effort and reports the block the parts landed in. Null when the
     /// engine or the drawings are not on this machine.</summary>
-    private static (string Line, int Placed, int Total, double Fill, double Strip, double SheetW)? Measure(NestEffort effort)
+    private static (string Line, int Placed, int Total, double Fill, double Strip, double SheetW)? Measure(NestEffort effort, int rotations = 4)
     {
       string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
@@ -129,7 +132,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         {
           partArea += Math.Abs(nfp.NetArea) * Copies;
           maxSide = Math.Max(maxSide, Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY));
-          parts.Add(new RasterPartInfo { Path = path, Quantity = Copies, Rotations = 4, Cc = CommonCuttingMode.None });
+          parts.Add(new RasterPartInfo { Path = path, Quantity = Copies, Rotations = rotations, Cc = CommonCuttingMode.None });
         }
       }
 
@@ -152,7 +155,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       var result = SparrowNestService.Nest(
         parts,
         new List<(int, int, int)> { (sheetW, sheetH, 1) },
-        4,
+        rotations,
         spacing,
         margin,
         5,
@@ -175,7 +178,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       double strip = sheetW - margin - (placements.Max(p => p.PlacedPart.MaxX));
 
       string line = FormattableString.Invariant(
-        $"{effort,-8} {placements.Count,-8} {ex,10:F0} {ey,10:F0} {strip,10:F0} {fill,9:P1} {watch.Elapsed.TotalSeconds,8:F1}");
+        $"rot{rotations,-3} {effort,-8} {placements.Count,-8} {ex,10:F0} {ey,10:F0} {strip,10:F0} {fill,9:P1} {watch.Elapsed.TotalSeconds,8:F1}");
       return (line, placements.Count, Copies * 2, fill, strip, sheetW);
     }
 
