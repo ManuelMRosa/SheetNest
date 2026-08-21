@@ -367,3 +367,10 @@ SheetNest-*.zip
 SheetNest-*.wixpdb
 SheetNest-*-win-x64/
 publish-*/
+
+# Files a user sent us to reproduce a bug. Theirs, not ours: never commit them.
+reference/
+
+# The nesting engine writes its log and solution next to its working directory;
+# running it from the repo root leaves this behind.
+output/
