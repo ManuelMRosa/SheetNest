@@ -291,6 +291,43 @@
             return null;
           }
 
+          // LAST CHANCE. If this is the only sheet left and the search still has not taken everything, the
+          // parts it leaves behind are not going anywhere else: they come back as unplaced. That is worth
+          // paying for, and only there.
+          //
+          // Measured on the job from issue #2, fourteen parts that have to share one sheet. The default
+          // budget is max(15, parts/2), so FIFTEEN iterations, and it seats twelve at 52.6%. Raise it and
+          // all fourteen go on at 60.5% with nothing overlapping, which is the same figure the operator's
+          // own screenshot reached while painting two of them red.
+          //
+          // Raising the default instead would be a poor trade, and the second of his jobs says so plainly:
+          // twenty-seven parts across three sheets place fully at every setting, so the extra search buys
+          // exactly nothing there and costs twenty-five times the wall clock, 2.7 seconds against 66.8.
+          // The difference is not the size of the job, it is whether the parts have anywhere else to go.
+          // Only when it NEARLY managed. "Are any parts left?" is the wrong question: a sheet is handed a
+          // batch of about 1.3 times what it can hold, so something is left over almost every time, and
+          // asking that spent the big budget on every last sheet in the job. Measured: the test suite went
+          // from 2m13s to 26m23s for no better answer anywhere. What is worth paying for is the sheet that
+          // came within a couple of parts, which is the one more searching can actually finish.
+          int packedHere = placedBySrc?.Values.Sum() ?? 0;
+          int leftOver = pool.Values.Sum() - packedHere;
+          if (placements != null && packedHere > 0 && leftOver > 0
+              && leftOver * 4 <= packedHere
+              && IsLastChanceFor(size, sizes))
+          {
+            var (retryPl, retryBy, retryW, retryH) = PackOneSheet(
+              loaded, batchQty, w, h, margin, LastChanceIterations, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
+
+            if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
+                && retryBy.Values.Sum() > placedBySrc.Values.Sum())
+            {
+              placements = retryPl;
+              placedBySrc = retryBy;
+              packW = retryW;
+              packH = retryH;
+            }
+          }
+
           if (placements == null || placements.Count == 0)
           {
             continue; // nothing fits this size: it is not a candidate for this sheet
@@ -1341,6 +1378,36 @@
     /// <para>Only one side of each offending pair is given back. Both are equally guilty, and dropping
     /// both would give away a part that has somewhere perfectly good to sit.</para>
     /// </summary>
+    /// <summary>
+    /// How hard to search when this is the last sheet the job will get. Measured, not guessed: on the
+    /// fourteen-part job from issue #2 the knee is at 400, where all fourteen seat at 60.5%, and 600, 800
+    /// and 1000 return that identical layout for five, thirty and thirty-four times the wall clock. The
+    /// watchdog that kills a stuck search sits at 150 seconds and 800 iterations was already hitting it,
+    /// so this stays well under.
+    /// </summary>
+    private const int LastChanceIterations = 400;
+
+    /// <summary>True when no size has a sheet left once this one is taken, so whatever this pack leaves
+    /// behind comes back to the operator as unplaced rather than landing somewhere else.</summary>
+    private static bool IsLastChanceFor(StockSize size, List<StockSize> sizes)
+    {
+      if (size.Unlimited)
+      {
+        return false; // there is always another sheet of it, so nothing is about to be lost
+      }
+
+      foreach (var other in sizes)
+      {
+        int left = ReferenceEquals(other, size) ? other.Remaining - 1 : other.Remaining;
+        if (other.Unlimited || left > 0)
+        {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
     private static int DeferUnfit(
       List<IPartPlacement> placements,
       Dictionary<int, int> placedBySrc,
@@ -1352,8 +1419,12 @@
       int deferred = 0;
 
       // Whatever is dropped may free the pair it was fighting with, so re-judge until the sheet is clean.
-      // Each pass gives up at least one part, so this cannot run longer than the sheet has parts.
-      for (int guard = 0; guard <= placements.Count; guard++)
+      // The budget is worked out ONCE and counts every pass, because not every pass gives a part up: a
+      // successful nudge fixes the sheet without shrinking it. Testing `guard <= placements.Count` inside
+      // the loop compared a rising counter against a falling count and could quit with the sheet still
+      // unfit, which is the opposite of what this method exists to guarantee.
+      int budget = (placements.Count * 2) + 8;
+      while (budget-- > 0)
       {
         var unfit = PlacementAcceptance.FindUnfit(
           placements,
@@ -1368,9 +1439,15 @@
           return deferred;
         }
 
-        // The last one placed is the one to answer for it: the parts before it are what the layout was
-        // built around, and taking one of those apart tends to unpick the whole sheet.
-        var victim = placements.LastOrDefault(p => unfit.All.Contains(p));
+        // Give up the CHEAPEST offender, by area. "The last one placed" reads like the fair choice and is
+        // not: SelectBatch breaks ties on the source id, a mirrored population always carries a higher id
+        // than the hand it was made from, so mirrored copies enter every batch last, are placed last, and
+        // were therefore picked as the victim almost every time. A job of five plus two mirrored lost a
+        // mirrored one over and over. Area is blind to which hand a part is.
+        var victim = unfit.All
+          .OrderBy(p => Math.Abs(p.PlacedPart?.Area ?? 0))
+          .ThenByDescending(p => p.Source)
+          .FirstOrDefault(p => placements.Contains(p));
         if (victim == null)
         {
           return deferred;
