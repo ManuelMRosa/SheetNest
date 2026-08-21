@@ -31,6 +31,11 @@
     internal static long DiagSparrowMs;
     internal static long DiagMapMs;
     internal static long DiagHolesMs;
+
+    /// <summary>Placements the engine made that fell outside the sheet and were thrown away, summed over
+    /// every candidate. A strip packer is asked for a strip and handed a sheet, so some overhang is normal;
+    /// a lot of it means the batch we fed it was the wrong size for the sheet.</summary>
+    internal static long DiagCulled;
     internal static long DiagWaves;
     internal static long DiagTries;
 
@@ -229,6 +234,7 @@
       int totalParts = pool.Values.Sum();
 
       var sheetLayouts = new List<List<IPartPlacement>>();
+      string firstPackError = null;
       var sheetSizes = new List<(int W, int H)>();
 
       // A sheet that gets used places at least one part, so the job cannot ask for more sheets than it has
@@ -289,6 +295,7 @@
           int hardTimeoutSec = WatchdogSeconds(perSheetBudgetSec, effort);
 
           var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
+          firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
             error = "Cancelled.";
@@ -396,7 +403,9 @@
 
       if (sheetLayouts.Count == 0)
       {
-        error = "The nesting engine returned no placements.";
+        error = firstPackError == null
+          ? "The nesting engine returned no placements."
+          : "The nesting engine returned no placements: " + firstPackError;
         return null;
       }
 
@@ -571,7 +580,14 @@
     /// source variety for mixed jobs. Always returns at least one part so an oversize part gets a try.</summary>
     private static Dictionary<int, int> SelectBatch(Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, int w, int h)
     {
-      double cap = 1.3 * w * h;
+      // Area of parts offered to the engine for one sheet. MORE than a sheetful on purpose: the engine is a
+      // strip packer, so it arranges everything it is given and we keep whatever landed inside the sheet.
+      // It was 1.3, which was calibrated against a search that packed loosely; a tighter search fits more per
+      // unit of width and RUNS OUT OF PARTS before the sheet edge, which is how a longer search came to place
+      // FEWER parts. Measured on the common-line strip job (7 x 36 parts, 120 x 60 sheet): at 1.3 the full
+      // sheets took 26 each at the old budget and 25 at the new one, at 1.1 they took 25 either way, and at
+      // 1.5 they take 26 at every budget tried. 1.7 is no better than 1.5 and costs a bigger pack.
+      double cap = 1.5 * w * h;
       double sheetArea = (double)w * h;
       var batch = new Dictionary<int, int>();
       double acc = 0;
@@ -682,6 +698,7 @@
         bool longAxisIsX = sheetW >= sheetH;
         var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed)>();
         int bestIndex = -1, launched = 0;
+        string firstTryError = null;
         int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
 
         while (launched < tries && !cancel.IsCancellationRequested)
@@ -698,7 +715,15 @@
             string tryDir = Path.Combine(workDir, "try" + seed.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(tryDir);
             var diagRun = System.Diagnostics.Stopwatch.StartNew();
-            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, hardTimeoutSec, seed, cancel, aggDensity, out _);
+            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, hardTimeoutSec, seed, cancel, aggDensity, out string tryErr);
+            if (tryErr != null)
+            {
+              // Not fatal on its own: the other races may still return something. But when they ALL fail the
+              // caller used to be told only "no solution", which is the least useful thing that could be said
+              // about a watchdog kill or a crashed engine, so keep the first reason to hand.
+              System.Threading.Interlocked.CompareExchange(ref firstTryError, tryErr, null);
+            }
+
             System.Threading.Interlocked.Add(ref DiagSparrowMs, diagRun.ElapsedMilliseconds);
             if (outJson == null || cancel.IsCancellationRequested)
             {
@@ -754,7 +779,9 @@
 
         if (winners.Count == 0)
         {
-          error = "The nesting engine produced no solution.";
+          error = firstTryError == null
+            ? "The nesting engine produced no solution."
+            : "The nesting engine produced no solution: " + firstTryError;
           return (null, null, sheetW, sheetH);
         }
 
@@ -857,6 +884,7 @@
         var ppp = pp.PlacedPart;
         if (ppp.MinX < -tol || ppp.MinY < -tol || ppp.MaxX > sheetWin + tol || ppp.MaxY > sheetHin + tol)
         {
+          System.Threading.Interlocked.Increment(ref DiagCulled);
           continue; // past the sheet edge → not placed on this sheet (stays in the pool)
         }
 
