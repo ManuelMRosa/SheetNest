@@ -65,13 +65,35 @@ namespace DeepNestSharp.RasterNest
         return false;
       }
 
-      var pathsA = ToPaths(placedA);
+      // BOTH ways round, and too close if EITHER says so. Growing one outline by the clearance and growing
+      // the other are the same question in exact arithmetic and NOT the same answer in polygons: the round
+      // offset is approximated, and the two approximations fall on opposite sides of a pair that sits on the
+      // boundary. Measured on the job from the common-cutting fixture: one pair 0.0014 mm inside a 9 mm
+      // clearance answered true one way round and false the other.
+      //
+      // That is not a curiosity, it is the bug. This rule decides both whether the engine hands a part back
+      // and whether the viewer paints it red and refuses the export, and those two walk the placements in
+      // different orders, so they were asking the same question with the arguments swapped and getting
+      // different answers. The engine kept a layout the viewer then condemned.
+      //
+      // Taking either as disqualifying makes it symmetric, and errs toward calling a borderline pair unfit,
+      // which is the safe direction: a part handed back can be nested elsewhere, a sheet that will not
+      // export cannot be cut at all.
+      return TooCloseOneWay(placedA, placedB, clearance, sliver)
+        || TooCloseOneWay(placedB, placedA, clearance, sliver);
+    }
+
+    /// <summary>One direction of <see cref="TooClose"/>: grow the first outline by the clearance and see
+    /// whether the second bites into it. Asymmetric by construction, which is why nobody may call it alone.</summary>
+    private static bool TooCloseOneWay(INfp grown, INfp other, double clearance, double sliver)
+    {
+      var paths = ToPaths(grown);
       if (clearance > 0)
       {
-        pathsA = InflateOuter(pathsA, clearance);
+        paths = InflateOuter(paths, clearance);
       }
 
-      return Overlaps(pathsA, ToPaths(placedB), sliver);
+      return Overlaps(paths, ToPaths(other), sliver);
     }
 
     /// <summary>Cheap reject: the two bounding boxes are already further apart than the clearance.</summary>
