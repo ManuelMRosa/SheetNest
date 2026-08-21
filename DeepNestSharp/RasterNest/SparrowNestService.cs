@@ -294,7 +294,7 @@
           // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
           int hardTimeoutSec = WatchdogSeconds(perSheetBudgetSec, effort);
 
-          var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
+          var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
           firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
@@ -331,7 +331,7 @@
           if (placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
           {
             var (retryPl, retryBy, retryW, retryH) = PackOneSheet(
-              loaded, batchQty, w, h, margin, LastChanceBudget(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
+              loaded, batchQty, w, h, margin, LastChanceBudget(effort), SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
 
             if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
                 && retryBy.Values.Sum() > placedBySrc.Values.Sum())
@@ -653,7 +653,7 @@
     /// Packs ONLY in the user's chosen sheet orientation — the sheet is never auto-rotated (a 120×60 preset must
     /// render 120×60); to use the other orientation the operator picks that preset.</summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
@@ -719,7 +719,7 @@
             string tryDir = Path.Combine(workDir, "try" + seed.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(tryDir);
             var diagRun = System.Diagnostics.Stopwatch.StartNew();
-            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, hardTimeoutSec, seed, cancel, aggDensity, out string tryErr);
+            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, workers, hardTimeoutSec, seed, cancel, aggDensity, out string tryErr);
             if (tryErr != null)
             {
               // Not fatal on its own: the other races may still return something. But when they ALL fail the
@@ -2000,18 +2000,31 @@
     /// composition is part of the answer, not part of the scheduling.</summary>
     private const int WaveSize = 8;
 
-    /// <summary>Threads INSIDE one engine process. One, so that the only parallelism is the races themselves.</summary>
+    /// <summary>Threads INSIDE one engine process, per effort.</summary>
     /// <remarks>
-    /// <para>The engine defaults to eight, and we race up to eight searches at once, so the old arrangement
-    /// asked a machine for sixty four busy threads. Measured on twenty cores, eight races of the same job at
-    /// the same budget: eight workers took 103 s and its best answer was 2174 mm; four took 74 s and 2143;
-    /// one took 54 s and 2147. Fewer threads was both faster AND no worse, because the searches were queueing
-    /// behind each other rather than cooperating.</para>
-    /// <para>A constant rather than something derived from the core count, because the worker count is part of
-    /// the search: each worker carries its own generator and the best of their competing proposals is kept, so
-    /// a machine with a different number of them lands on a different layout for the same job.</para>
+    /// <para>The engine defaults to eight and we race several searches at once, so leaving it there asked a
+    /// machine for sixty four busy threads and they queued behind each other rather than cooperating.</para>
+    /// <para>What the right number is turns out to depend on how long the search runs, so it is chosen per
+    /// effort and measured, not assumed. On the fourteen part reference job, free strip left and seconds
+    /// taken, one thread against two:</para>
+    /// <code>
+    ///   rotation  effort   1 thread        2 threads
+    ///   4-way     Fast     196 mm  1.5 s    57 mm  1.3 s
+    ///   4-way     Normal   359 mm   29 s   367 mm   15 s
+    ///   4-way     Best     388 mm  124 s   481 mm   95 s
+    ///   free      Fast     144 mm   14 s   159 mm  6.1 s
+    ///   free      Normal   272 mm   43 s   298 mm   29 s
+    ///   free      Best     292 mm  219 s   334 mm  190 s
+    /// </code>
+    /// <para>Two threads win on five of the six, on BOTH counts at once, and the exception is the one with the
+    /// smallest budget and the fewest races, where the run is short enough to be a lottery and the second
+    /// thread drew badly. So Fast keeps one. Giving Fast more races instead was measured and rejected: it
+    /// recovered the strip but took free rotation from 6 s to 32 s, which is not a Fast.</para>
+    /// <para>A constant per effort rather than something derived from the core count, because the worker count
+    /// is part of the search: each worker carries its own generator and the best of their competing proposals
+    /// is kept, so a machine with a different number of them lands on a different layout for the same job.</para>
     /// </remarks>
-    private const int SearchWorkers = 1;
+    private static int SearchWorkers(NestEffort effort) => effort == NestEffort.Fast ? 1 : 2;
 
     /// <summary>How hard a sheet is searched, in sparrow iterations, for each <see cref="NestEffort"/>.
     /// An "iteration" is one pass of sparrow's outer loop.</summary>
@@ -2253,7 +2266,7 @@
     /// machine is, which is what made a repeated nest come back with a different offcut every time.
     /// <paramref name="hardTimeoutSec"/> is only a watchdog for a hung process — if it ever fires the
     /// result is discarded rather than used, because a truncated search is not reproducible.</summary>
-    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
+    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, int workers, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
     {
       error = null;
       var psi = new ProcessStartInfo
@@ -2273,7 +2286,7 @@
       psi.ArgumentList.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
       psi.ArgumentList.Add(seed.ToString(CultureInfo.InvariantCulture));
       psi.ArgumentList.Add("--workers");
-      psi.ArgumentList.Add(SearchWorkers.ToString(CultureInfo.InvariantCulture));
+      psi.ArgumentList.Add(workers.ToString(CultureInfo.InvariantCulture));
 
       Process proc;
       try
