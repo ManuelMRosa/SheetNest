@@ -23,6 +23,7 @@
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Grid.Column="0" Text="Default part rotations:" VerticalAlignment="Center" Margin="0,0,10,6" />
@@ -40,10 +41,18 @@
                            Minimum="0" Increment="0.05" FormatString="0.###"
                            ToolTip="Default gap between parts (drawing units). Edit Part can override it per part; common-line parts touch." />
 
-        <TextBlock x:Name="marginLabel" Grid.Row="2" Grid.Column="0" Text="Sheet edge margin (in):" VerticalAlignment="Center" Margin="0,0,10,0" />
-        <xctk:DoubleUpDown Grid.Row="2" Grid.Column="1" x:Name="marginUpDown" Width="80" HorizontalAlignment="Left"
+        <TextBlock x:Name="marginLabel" Grid.Row="2" Grid.Column="0" Text="Sheet edge margin (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
+        <xctk:DoubleUpDown Grid.Row="2" Grid.Column="1" x:Name="marginUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
                            Minimum="0" Increment="0.05" FormatString="0.###"
                            ToolTip="Clear border kept between every part and the sheet edge." />
+
+        <TextBlock Grid.Row="3" Grid.Column="0" Text="Nesting effort:" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <ComboBox Grid.Row="3" Grid.Column="1" x:Name="effortCombo" Width="150" HorizontalAlignment="Left"
+                  ToolTip="How long the nester searches each sheet. It buys a TIGHTER pack, not more parts on the sheet: the parts that fit are found almost at once, and the rest of the search is spent squeezing them together so the material left over comes back as one usable piece.">
+          <ComboBoxItem Tag="0">Fast</ComboBoxItem>
+          <ComboBoxItem Tag="1">Normal</ComboBoxItem>
+          <ComboBoxItem Tag="2">Best (slowest)</ComboBoxItem>
+        </ComboBox>
       </Grid>
     </GroupBox>
 

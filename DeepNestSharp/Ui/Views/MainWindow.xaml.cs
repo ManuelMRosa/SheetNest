@@ -37,7 +37,8 @@ namespace DeepNestSharp.Ui.Views
     // What counts as a shared edge on THIS machine. Null = the shipped starting values. Per user and
     // not per project: it is a calibration, and opening someone else's job must not overwrite it.
     private DeepNestLib.NestProject.CommonCuttingTolerances commonCuttingTolerances;
-    private bool preferRectOffcut; // pack the last sheet toward one end for a rectangular offcut (SessionState)
+    private DeepNestSharp.RasterNest.NestEffort nestEffort = DeepNestSharp.RasterNest.NestEffort.Normal; // how hard the nester searches (SessionState)
+    private bool preferRectOffcut; // cut the last sheet's leftover off as a rectangular offcut (SessionState)
     private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
     private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
     private double offcutMinWidth = -1; // narrowest strip worth cutting; <=0 = automatic 5% rule (SessionState)
@@ -190,6 +191,11 @@ namespace DeepNestSharp.Ui.Views
           session.AutosaveMinutes >= 1 && session.AutosaveMinutes <= 60 ? session.AutosaveMinutes : 5);
 
         this.commonCuttingTolerances = session.CommonCutting;
+
+        if (session.NestEffort >= 0 && session.NestEffort <= (int)DeepNestSharp.RasterNest.NestEffort.Best)
+        {
+          this.nestEffort = (DeepNestSharp.RasterNest.NestEffort)session.NestEffort;
+        }
 
         // Global default rotations (plain in-memory config property — resets to 4 without this).
         if (session.DefaultRotations > 0)
@@ -469,7 +475,7 @@ namespace DeepNestSharp.Ui.Views
     {
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       var dialog = new AdvancedSettingsWindow(
-        cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, this.commonCuttingTolerances)
+        cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, this.commonCuttingTolerances, this.nestEffort)
       {
         Owner = this,
       };
@@ -492,6 +498,8 @@ namespace DeepNestSharp.Ui.Views
       session.UnitsMm = this.unitsMm;
       this.commonCuttingTolerances = dialog.CommonCutting;
       session.CommonCutting = this.commonCuttingTolerances;
+      this.nestEffort = dialog.Effort;
+      session.NestEffort = (int)this.nestEffort;
       session.Save();
     }
 
@@ -1506,11 +1514,11 @@ namespace DeepNestSharp.Ui.Views
         {
           // The sparrow engine: dense collision-separation nesting, per-sheet, corner-compacted, with
           // pattern replication across identical sheets. Works in real drawing units (no raster grid).
-          // perSheetBudgetSec caps the per-try sparrow time. 5 is plenty: density does NOT converge past
-          // ~4-6s (its run-to-run spread is inherent), so best-of-K — not a longer single run — is what
-          // buys quality. Keeping this low keeps nesting fast.
+          // perSheetBudgetSec no longer bounds the search: how hard a sheet is searched is the operator's
+          // effort setting, in iterations, so two machines agree on the nest and only the clock differs. What
+          // survives here is the scale for the watchdog that kills a hung engine process.
           // Common cutting rides along on each part's own mode; there is no job-wide flag to keep in step.
-          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, this.commonCuttingTolerances);
+          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, this.commonCuttingTolerances, this.nestEffort);
           return (r, err);
         });
 

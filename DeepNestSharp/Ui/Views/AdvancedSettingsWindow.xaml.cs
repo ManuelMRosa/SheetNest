@@ -14,12 +14,13 @@ namespace DeepNestSharp.Ui.Views
   {
     private readonly ISvgNestConfig config;
 
-    public AdvancedSettingsWindow(
+    internal AdvancedSettingsWindow(
       ISvgNestConfig config,
       bool autosaveEnabled,
       int autosaveMinutes,
       bool unitsMm = false,
-      DeepNestLib.NestProject.CommonCuttingTolerances commonCutting = null)
+      DeepNestLib.NestProject.CommonCuttingTolerances commonCutting = null,
+      DeepNestSharp.RasterNest.NestEffort effort = DeepNestSharp.RasterNest.NestEffort.Normal)
     {
       this.config = config;
       InitializeComponent();
@@ -37,6 +38,7 @@ namespace DeepNestSharp.Ui.Views
       this.marginLabel.Text = $"Sheet edge margin ({u}):";
 
       SelectRotations(config.Rotations);
+      this.effortCombo.SelectedIndex = (int)effort;
       this.spacingUpDown.Value = System.Math.Max(0, config.Spacing);
       this.marginUpDown.Value = System.Math.Max(0, config.SheetSpacing);
       this.mergeLinesCheck.IsChecked = config.MergeLines;
@@ -72,6 +74,13 @@ namespace DeepNestSharp.Ui.Views
         };
       }
     }
+
+    /// <summary>How hard the nester searches each sheet. Persisted by the caller (SessionState), per user
+    /// and not per project: it is a preference about this operator's time, so opening somebody else's job
+    /// must not change it.</summary>
+    internal DeepNestSharp.RasterNest.NestEffort Effort => this.effortCombo.SelectedItem is ComboBoxItem e
+      ? (DeepNestSharp.RasterNest.NestEffort)int.Parse((string)e.Tag, System.Globalization.CultureInfo.InvariantCulture)
+      : DeepNestSharp.RasterNest.NestEffort.Normal;
 
     /// <summary>The chosen global rotation code (1/2/4/8/36) — persisted by the caller.</summary>
     public int Rotations => this.rotationsCombo.SelectedItem is ComboBoxItem item

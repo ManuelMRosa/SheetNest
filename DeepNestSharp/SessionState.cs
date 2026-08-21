@@ -46,7 +46,11 @@ namespace DeepNestSharp
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
 
-    /// <summary>Pack parts to one end of the last sheet, leaving a rectangular offcut; null = default (off).</summary>
+    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = default (normal).
+    /// Kept per user and not in the project, because it is a preference about this operator's own time.</summary>
+    public int NestEffort { get; set; } = -1;
+
+    /// <summary>Cut the last sheet's leftover off as a rectangular offcut; null = default (off).</summary>
     public bool? PreferRectangularOffcut { get; set; }
 
     /// <summary>Offcut direction: 0 = end of sheet, 1 = side, 2 = both (L-shaped), 3 = auto (best remnant); -1 = default (end).</summary>

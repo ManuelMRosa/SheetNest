@@ -56,7 +56,7 @@ namespace DeepNestSharp.Ui.Views
       this.OnEnableToggled(this, null);
     }
 
-    /// <summary>Pack the last sheet toward one end for a rectangular offcut — persisted by the caller.</summary>
+    /// <summary>Cut the leftover on the last sheet off as a rectangular offcut. Persisted by the caller.</summary>
     public bool OffcutEnabled => this.enableCheck.IsChecked == true;
 
     /// <summary>Offcut direction (0 = end, 1 = side, 2 = both, 3 = auto) — persisted by the caller.</summary>

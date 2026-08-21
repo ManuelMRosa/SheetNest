@@ -34,9 +34,9 @@
   <StackPanel Margin="14">
 
     <CheckBox x:Name="enableCheck"
-              Content="Enable rectangular offcut (pack parts to one end)"
+              Content="Cut the leftover off as a rectangular offcut"
               Checked="OnEnableToggled" Unchecked="OnEnableToggled"
-              ToolTip="Packs the last sheet's parts toward one end so the leftover material stays one clean, reusable rectangle. The nest itself is never compromised: same parts, same sheet count, and the re-pack is only kept when it frees a usable remnant." />
+              ToolTip="Measures the free area the nest left on the last sheet and adds a cut line so it comes away as a reusable rectangle. It never moves a part: the nest is already finished by the time this is worked out, so turning it on cannot change where anything is placed." />
 
     <StackPanel x:Name="detailsPanel" Margin="0,10,0,0">
 
@@ -80,7 +80,7 @@
         </RadioButton>
 
         <RadioButton x:Name="bothRadio" GroupName="offcutDir" Margin="0,0,10,0" VerticalContentAlignment="Top"
-                     ToolTip="The parts pack into a corner, leaving an L-shaped leftover cut as two rectangles (guillotine cuts, so no cut ever splits a remnant in two).">
+                     ToolTip="When the nest left room on both sides, the leftover comes away as two rectangles (guillotine cuts, so no cut ever splits a remnant in two).">
           <Border Style="{StaticResource OffcutCardBorder}">
             <StackPanel>
               <Canvas Width="96" Height="56">
@@ -98,7 +98,7 @@
         </RadioButton>
 
         <RadioButton x:Name="autoRadio" GroupName="offcutDir" VerticalContentAlignment="Top"
-                     ToolTip="The nest tries End, Side and Both and keeps whichever leaves the largest reusable remnant.">
+                     ToolTip="Weighs End, Side and Both against the layout the nest produced and keeps whichever frees the most material.">
           <Border Style="{StaticResource OffcutCardBorder}">
             <StackPanel>
               <Canvas Width="96" Height="56">

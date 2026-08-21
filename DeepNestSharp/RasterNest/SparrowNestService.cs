@@ -87,8 +87,9 @@
       int timeLimitSec,
       string sparrowExePath,
       out string error,
-      CancellationToken cancel = default)
-      => Nest(parts, new[] { ((int)Math.Round(sheetWin), (int)Math.Round(sheetHin), 1) }, rotations, spacing, margin, timeLimitSec, sparrowExePath, out error, cancel);
+      CancellationToken cancel = default,
+      NestEffort effort = NestEffort.Normal)
+      => Nest(parts, new[] { ((int)Math.Round(sheetWin), (int)Math.Round(sheetHin), 1) }, rotations, spacing, margin, timeLimitSec, sparrowExePath, out error, cancel, null, null, effort);
 
     /// <summary>Multi-sheet nest: fills sheets from <paramref name="stock"/> until the pool is empty or
     /// the stock is exhausted; whatever cannot fit is returned as unplaced.
@@ -107,7 +108,8 @@
       out string error,
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
-      CommonCuttingTolerances tolerances = null)
+      CommonCuttingTolerances tolerances = null,
+      NestEffort effort = NestEffort.Normal)
       => Nest(
         parts,
         stock?.Select(s => (s.Win, s.Hin, s.Qty, false)).ToList(),
@@ -119,7 +121,8 @@
         out error,
         cancel,
         progress,
-        tolerances);
+        tolerances,
+        effort);
 
     /// <summary>The same nest with stock that may declare a size UNLIMITED: one the job can keep taking
     /// sheets of until every part is placed, so its quantity is not a stock level and is ignored.</summary>
@@ -134,7 +137,8 @@
       out string error,
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
-      CommonCuttingTolerances tolerances = null)
+      CommonCuttingTolerances tolerances = null,
+      NestEffort effort = NestEffort.Normal)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -179,7 +183,7 @@
         return null;
       }
 
-      return RunNestBody(loaded, sizes, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, tolerances, out error);
+      return RunNestBody(loaded, sizes, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, tolerances, effort, out error);
     }
 
     /// <summary>One size of stock and how much of it is left. An unlimited size never runs down, so its
@@ -216,6 +220,7 @@
       CancellationToken cancel,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
       CommonCuttingTolerances tolerances,
+      NestEffort effort,
       out string error)
     {
       error = null;
@@ -258,12 +263,11 @@
           int h = size.H;
           var batchQty = SelectBatch(pool, loadedById, w, h);
 
-          // Search budget, in ITERATIONS rather than seconds — see RunSparrowOnce. A sheet with few parts
-          // converges sooner, so the budget scales with the batch (this matters for the sparse tail sheet
-          // and for many small sheets); early termination (-x) still trims a sheet that gets stuck. The
-          // wall clock a sheet takes is now a consequence of the machine, not an input to the answer.
+          // Search budget, in ITERATIONS rather than seconds (see RunSparrowOnce), chosen by the operator's
+          // effort setting. The wall clock a sheet takes is a consequence of the machine, not an input to the
+          // answer, so two computers still agree on the nest.
           int batchParts = batchQty.Values.Sum();
-          int budget = IterationBudget(batchParts);
+          int budget = IterationBudget(effort);
 
           // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
           // A batch that governs many clones is worth many best-of-K tries — the cost is amortized over all
@@ -275,14 +279,14 @@
           // It is a single one-off — replicas=1 → base tries → it varies run-to-run. Since it's just ONE
           // sheet, invest more best-of-K in it so it lands consistently, like the replicated body already does.
           bool isFinalSheet = batchParts == pool.Values.Sum();
-          int tries = TriesFor(replicas, isFinalSheet);
+          int tries = TriesFor(replicas, isFinalSheet, effort);
 
           // packW/packH = the sheet dims PackOneSheet packed in (always the stock size's own orientation — the
           // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
           // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
           // of seconds. Scaled off the caller's time preference so a user who asks for longer nests also
           // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
-          int hardTimeoutSec = Math.Max(60, perSheetBudgetSec * 30);
+          int hardTimeoutSec = WatchdogSeconds(perSheetBudgetSec, effort);
 
           var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
           if (cancel.IsCancellationRequested)
@@ -316,7 +320,7 @@
               && IsLastChanceFor(size, sizes))
           {
             var (retryPl, retryBy, retryW, retryH) = PackOneSheet(
-              loaded, batchQty, w, h, margin, LastChanceIterations, hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
+              loaded, batchQty, w, h, margin, LastChanceBudget(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
 
             if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
                 && retryBy.Values.Sum() > placedBySrc.Values.Sum())
@@ -677,7 +681,7 @@
         // is measured on its own strip BEFORE the compaction, so the two can disagree.
         bool longAxisIsX = sheetW >= sheetH;
         var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed)>();
-        int bestCount = -1, launched = 0;
+        int bestIndex = -1, launched = 0;
         int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
 
         while (launched < tries && !cancel.IsCancellationRequested)
@@ -726,15 +730,20 @@
             }
           }
 
-          // Plateau: stop once a full wave fails to beat the best part-count so far (≥1 wave already ran).
-          // Part-count is a hard metric that plateaus fast on easy sheets and correlates with density.
-          int waveBest = winners.Count == 0 ? -1 : winners.Max(w => w.Count);
-          if (bestCount >= 0 && waveBest <= bestCount)
+          // Plateau: stop once a full wave fails to produce a better candidate than the ones already in
+          // hand, judged by the SAME ordering that will pick the winner (parts, then extent, then density).
+          // It used to count parts only, and parts placed is a metric that stops moving almost at once: a
+          // wave that was still tightening the pack read as no progress, so the search was cut while the
+          // block was still too wide, which is the whole complaint this change exists to answer.
+          int waveBest = winners.Count == 0
+            ? -1
+            : PickBest(winners.Select(w => (w.Count, w.Extent, w.Density, w.Seed)).ToList());
+          if (bestIndex >= 0 && waveBest == bestIndex)
           {
             break;
           }
 
-          bestCount = waveBest;
+          bestIndex = waveBest;
         }
 
         if (cancel.IsCancellationRequested)
@@ -1366,27 +1375,6 @@
     private static List<IntPoint> ShiftPath(List<IntPoint> path, long dx, long dy)
       => path.Select(p => new IntPoint(p.X + dx, p.Y + dy)).ToList();
 
-    /// <summary>
-    /// Judge a finished sheet by the rule that decides whether it may be cut, and hand back whatever fails
-    /// so the next sheet can take it. Returns how many placements were given up.
-    /// <para>The engine cannot simply be trusted to have honoured the clearance it was asked for. Measured
-    /// on the job from issue #2: the compaction slide applied THIRTY moves that its own acceptance test
-    /// allowed and this rule rejects, and two parts came to rest 0.01 mm inside a 9 mm clearance. The two
-    /// tests are built differently and agreeing them exactly is a long tail; what closes the hole for good
-    /// is checking the ANSWER against the rule the operator will be held to, rather than trusting the
-    /// search that produced it.</para>
-    /// <para>Only one side of each offending pair is given back. Both are equally guilty, and dropping
-    /// both would give away a part that has somewhere perfectly good to sit.</para>
-    /// </summary>
-    /// <summary>
-    /// How hard to search when this is the last sheet the job will get. Measured, not guessed: on the
-    /// fourteen-part job from issue #2 the knee is at 400, where all fourteen seat at 60.5%, and 600, 800
-    /// and 1000 return that identical layout for five, thirty and thirty-four times the wall clock. The
-    /// watchdog that kills a stuck search sits at 150 seconds and 800 iterations was already hitting it,
-    /// so this stays well under.
-    /// </summary>
-    private const int LastChanceIterations = 400;
-
     /// <summary>True when no size has a sheet left once this one is taken, so whatever this pack leaves
     /// behind comes back to the operator as unplaced rather than landing somewhere else.</summary>
     private static bool IsLastChanceFor(StockSize size, List<StockSize> sizes)
@@ -1408,6 +1396,18 @@
       return true;
     }
 
+    /// <summary>
+    /// Judge a finished sheet by the rule that decides whether it may be cut, and hand back whatever fails
+    /// so the next sheet can take it. Returns how many placements were given up.
+    /// <para>The engine cannot simply be trusted to have honoured the clearance it was asked for. Measured
+    /// on the job from issue #2: the compaction slide applied THIRTY moves that its own acceptance test
+    /// allowed and this rule rejects, and two parts came to rest 0.01 mm inside a 9 mm clearance. The two
+    /// tests are built differently and agreeing them exactly is a long tail; what closes the hole for good
+    /// is checking the ANSWER against the rule the operator will be held to, rather than trusting the
+    /// search that produced it.</para>
+    /// <para>Only one side of each offending pair is given back. Both are equally guilty, and dropping
+    /// both would give away a part that has somewhere perfectly good to sit.</para>
+    /// </summary>
     private static int DeferUnfit(
       List<IPartPlacement> placements,
       Dictionary<int, int> placedBySrc,
@@ -1968,14 +1968,54 @@
     /// composition is part of the answer, not part of the scheduling.</summary>
     private const int WaveSize = 8;
 
-    /// <summary>Search iterations per part in the batch. An "iteration" here is one pass of sparrow's outer
-    /// loop, which is coarse — the reference two-sheet job (40 parts on its first sheet) reaches its best
-    /// result by about 20 and does not improve at 40, 70, 100, 200 or 400, while the wall clock triples.
-    /// Calibrated to land on that knee, which also puts a nest back at the time the clock budget took.</summary>
-    private const double IterationsPerPart = 0.5;
+    /// <summary>Threads INSIDE one engine process. One, so that the only parallelism is the races themselves.</summary>
+    /// <remarks>
+    /// <para>The engine defaults to eight, and we race up to eight searches at once, so the old arrangement
+    /// asked a machine for sixty four busy threads. Measured on twenty cores, eight races of the same job at
+    /// the same budget: eight workers took 103 s and its best answer was 2174 mm; four took 74 s and 2143;
+    /// one took 54 s and 2147. Fewer threads was both faster AND no worse, because the searches were queueing
+    /// behind each other rather than cooperating.</para>
+    /// <para>A constant rather than something derived from the core count, because the worker count is part of
+    /// the search: each worker carries its own generator and the best of their competing proposals is kept, so
+    /// a machine with a different number of them lands on a different layout for the same job.</para>
+    /// </remarks>
+    private const int SearchWorkers = 1;
 
-    /// <summary>The floor for a tiny batch, which would otherwise get a budget too small to separate.</summary>
-    private const int MinIterations = 15;
+    /// <summary>How hard a sheet is searched, in sparrow iterations, for each <see cref="NestEffort"/>.
+    /// An "iteration" is one pass of sparrow's outer loop.</summary>
+    /// <remarks>
+    /// <para>These replace a budget of <c>max(15, parts * 0.5)</c>, which for any ordinary job was just the
+    /// floor of 15. It was calibrated on the wrong metric: the note it carried said a 40 part sheet "reaches
+    /// its best result by about 20 and does not improve at 40, 70, 100, 200 or 400", and that was measured in
+    /// PARTS PLACED, which saturates almost at once. Measured in EXTENT, the same range is still climbing
+    /// steeply.</para>
+    /// <para>Measured the way the app actually runs, best of eight races on the fourteen part reference job,
+    /// reporting the width the winner packs them into and the wall clock for the whole race:</para>
+    /// <code>
+    ///   iterations     width      race
+    ///          200   2644 mm     1.0 s
+    ///          300   2527 mm     1.4 s
+    ///          450   2362 mm     3.0 s
+    ///          600   2212 mm    10.5 s
+    ///          800   2147 mm    53 s
+    /// </code>
+    /// <para>The bar is 2247.7 mm, which is what another nester leaves on that job, so 600 clears it in about
+    /// ten seconds. 300 is the last point that still feels instant. 800 is the floor of the curve at five
+    /// times the price, and past 1250 there is nothing left to buy at any price.</para>
+    /// <para>The clock is set by the BEST race, not the average: on that job the seed that finished in four
+    /// seconds returned 2292 mm and the three that took the longest returned 2146 to 2179. A search runs long
+    /// precisely because it keeps finding something, so buying quality here is buying time by definition.</para>
+    /// <para>NOT scaled by part count, deliberately. What the budget buys is shrink steps of the strip, and how
+    /// many of those a job needs is a property of how far its first layout sits from a tight one, not of how
+    /// many parts it has. A sparse tail sheet converges long before it spends the budget anyway, because its
+    /// iterations are cheap.</para>
+    /// </remarks>
+    private static int BudgetFor(NestEffort effort) => effort switch
+    {
+      NestEffort.Fast => 300,
+      NestEffort.Best => 800,
+      _ => 600,   // measured on two different part sets; see the remarks above
+    };
 
     /// <summary>How many searches run at the same instant. This is the ONLY place the machine is allowed
     /// to influence a nest, and it influences only how long it takes — a slower machine finishes the same
@@ -1989,13 +2029,15 @@
         return n;
       }
 
-      return Environment.ProcessorCount / 2;
+      // One thread per race now (see SearchWorkers), so the machine can afford one race per core rather
+      // than the half it was given back when each race brought eight threads of its own.
+      return Math.Max(1, Environment.ProcessorCount);
     }
 
     /// <summary>How long a sheet's search runs, in sparrow iterations. Deliberately NOT a function of the
     /// clock or of the machine: this is the number that has to match for two computers to agree on a
     /// nest. Overridable via SHEETNEST_NEST_ITERS for calibration.</summary>
-    internal static int IterationBudget(int batchParts)
+    internal static int IterationBudget(NestEffort effort)
     {
       var env = Environment.GetEnvironmentVariable("SHEETNEST_NEST_ITERS");
       if (int.TryParse(env, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n > 0)
@@ -2003,14 +2045,34 @@
         return n;
       }
 
-      return Math.Max(MinIterations, (int)Math.Ceiling(batchParts * IterationsPerPart));
+      return BudgetFor(effort);
+    }
+
+    /// <summary>The budget for the last-chance re-pack: one notch harder than the operator asked for, because
+    /// by then the alternative is handing back parts that will not be cut at all.</summary>
+    private static int LastChanceBudget(NestEffort effort)
+      => BudgetFor(effort == NestEffort.Fast ? NestEffort.Normal : NestEffort.Best);
+
+    /// <summary>How long a single engine process may run before it is killed. A WATCHDOG, not a budget: a
+    /// search must end because it ran out of iterations, never because it ran out of seconds, so this sits far
+    /// above any healthy run. It has to follow the effort, because Best legitimately takes ten times what
+    /// Normal does and the old fixed leash of 150 s turned that into no result at all.</summary>
+    private static int WatchdogSeconds(int perSheetBudgetSec, NestEffort effort)
+    {
+      int leash = Math.Max(60, perSheetBudgetSec * 30);
+      return effort switch
+      {
+        NestEffort.Fast => leash,
+        NestEffort.Best => leash * 8,
+        _ => leash * 2,
+      };
     }
 
     /// <summary>How many independent sparrow searches to race per sheet (best-of-N). A constant: it used
     /// to be <c>ProcessorCount >= 12 ? 3 : 2</c>, which handed a smaller machine fewer attempts and so a
     /// different — and on average worse — nest for the very same job. Overridable via
     /// SHEETNEST_NEST_TRIES for experiments. Always ≥2 so a single unlucky run can't stand.</summary>
-    private static int NestTries()
+    private static int NestTries(NestEffort effort)
     {
       var env = Environment.GetEnvironmentVariable("SHEETNEST_NEST_TRIES");
       if (int.TryParse(env, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 1)
@@ -2018,23 +2080,35 @@
         return Math.Min(n, 8);
       }
 
-      return 3;
+      return effort == NestEffort.Fast ? 2 : 3;
     }
+
+    /// <summary>The fewest races a one-off sheet gets at each effort.</summary>
+    /// <remarks>
+    /// Best does NOT get more races than Normal, and that is a measured decision rather than an oversight.
+    /// The spread between seeds is wide (2146 to 2292 mm on the reference job at one budget), so doubling
+    /// the races looks like obvious free quality; it is not, because a wave larger than
+    /// <see cref="WaveSize"/> is a second wave and costs a second wave's wall clock. Measured on that job at
+    /// the Best budget: eight races returned a 2249 mm block in 106 s, sixteen returned the SAME 2249 mm in
+    /// 210 s. What Best buys is iterations.
+    /// </remarks>
+    private static int RaceFloor(NestEffort effort) => effort == NestEffort.Fast ? 4 : 8;
 
     /// <summary>Best-of-K count for a batch that will pattern-replicate onto `replicas` identical sheets.
     /// A one-off sheet uses the base <see cref="NestTries"/>; a template governing many clones gets more
     /// tries (up to 16) because that cost is amortized over all the clones and drives the layout to a
     /// denser result — a search is one draw from a wide spread (measured: 30 to 40 parts on the same
     /// sheet across seeds), so racing more of them is what raises the floor.</summary>
-    internal static int TriesForReplicas(int replicas) => Math.Clamp(replicas, NestTries(), 16);
+    internal static int TriesForReplicas(int replicas, NestEffort effort = NestEffort.Normal)
+      => Math.Clamp(replicas, NestTries(effort), 16);
 
     /// <summary>Best-of-K for a sheet: scales with its clone count (<see cref="TriesForReplicas"/>), and the
     /// single final/tail sheet gets at least 8 tries so that leftover partial sheet lands consistently too
     /// (it doesn't amortize over clones, but it's only one sheet so the extra tries are cheap).</summary>
-    internal static int TriesFor(int replicas, bool isFinalSheet)
+    internal static int TriesFor(int replicas, bool isFinalSheet, NestEffort effort = NestEffort.Normal)
     {
-      int t = TriesForReplicas(replicas);
-      return isFinalSheet ? Math.Max(t, 8) : t;
+      int t = TriesForReplicas(replicas, effort);
+      return isFinalSheet ? Math.Max(t, RaceFloor(effort)) : t;
     }
 
     /// <summary>The bounding box the placed parts actually occupy. This is what decides the offcut the
@@ -2158,6 +2232,8 @@
       psi.ArgumentList.Add("-x"); // stop a search that is stuck (counts failures, not seconds)
       psi.ArgumentList.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
       psi.ArgumentList.Add(seed.ToString(CultureInfo.InvariantCulture));
+      psi.ArgumentList.Add("--workers");
+      psi.ArgumentList.Add(SearchWorkers.ToString(CultureInfo.InvariantCulture));
 
       Process proc;
       try

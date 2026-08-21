@@ -130,9 +130,9 @@ namespace DeepNestSharp.RasterNest
     }
 
     /// <summary>
-    /// The pure math behind <see cref="CutPositions"/>, shared with the engine's Auto mode (which
-    /// measures candidate layouts by their extents before any ISheetPlacement exists). Auto counts
-    /// like Both: every axis is eligible and the strip filter decides what actually qualifies.
+    /// The pure math behind <see cref="CutPositions"/>, taking the extents directly so it can be tested
+    /// without building an ISheetPlacement. Auto counts like Both: every axis is eligible and the strip
+    /// filter decides what actually qualifies.
     /// </summary>
     public static (double? CutX, double? CutY) CutPositionsCore(double extentX, double extentY, double w, double h, double spacing, OffcutDirection direction, OffcutLimits limits = default)
     {
