@@ -93,7 +93,7 @@
       string sparrowExePath,
       out string error,
       CancellationToken cancel = default,
-      NestEffort effort = NestEffort.Normal)
+      NestEffort effort = NestEffort.Fast)
       => Nest(parts, new[] { ((int)Math.Round(sheetWin), (int)Math.Round(sheetHin), 1) }, rotations, spacing, margin, timeLimitSec, sparrowExePath, out error, cancel, null, null, effort);
 
     /// <summary>Multi-sheet nest: fills sheets from <paramref name="stock"/> until the pool is empty or
@@ -114,7 +114,7 @@
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
       CommonCuttingTolerances tolerances = null,
-      NestEffort effort = NestEffort.Normal)
+      NestEffort effort = NestEffort.Fast)
       => Nest(
         parts,
         stock?.Select(s => (s.Win, s.Hin, s.Qty, false)).ToList(),
@@ -143,7 +143,7 @@
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
       CommonCuttingTolerances tolerances = null,
-      NestEffort effort = NestEffort.Normal)
+      NestEffort effort = NestEffort.Fast)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -322,9 +322,13 @@
           // came within a couple of parts, which is the one more searching can actually finish.
           int packedHere = placedBySrc?.Values.Sum() ?? 0;
           int leftOver = pool.Values.Sum() - packedHere;
-          if (placements != null && packedHere > 0 && leftOver > 0
-              && leftOver * 4 <= packedHere
-              && IsLastChanceFor(size, sizes))
+          // Whatever this sheet leaves behind is about to be handed back as uncut, so search again, harder.
+          // There used to be a `leftOver * 4 <= packedHere` clause here, which quietly made the retry refuse
+          // the cases that need it most: a job that seats 11 of 14 has too much left over to qualify and gets
+          // no second chance at all, while one that seats 13 of 14 gets one. It was there to keep the cost
+          // down when a single budget served everybody; the operator picks the effort now, and giving parts
+          // back uncut is worth more seconds than any of them.
+          if (placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
           {
             var (retryPl, retryBy, retryW, retryH) = PackOneSheet(
               loaded, batchQty, w, h, margin, LastChanceBudget(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
@@ -2090,13 +2094,15 @@
     /// inside the range a legitimate search uses now, and it showed: a twelve part job on a roomy sheet takes
     /// about 270 s at Normal, and under load it crossed the leash and came back as no nest at all. Waiting is
     /// the operator's call and there is a Cancel button for it; being killed silently is not.
+    /// <para>Fast gets the same leash as Normal rather than a shorter one, because the last-chance re-pack
+    /// runs a notch harder than the effort asked for: a short leash sized to Fast's own budget killed the very
+    /// retry that was there to stop parts being handed back uncut.</para>
     /// </remarks>
     private static int WatchdogSeconds(int perSheetBudgetSec, NestEffort effort)
     {
       int leash = Math.Max(60, perSheetBudgetSec * 30);
       return effort switch
       {
-        NestEffort.Fast => leash * 2,
         NestEffort.Best => leash * 24,
         _ => leash * 8,
       };

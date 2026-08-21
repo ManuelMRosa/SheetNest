@@ -37,7 +37,7 @@ namespace DeepNestSharp.Ui.Views
     // What counts as a shared edge on THIS machine. Null = the shipped starting values. Per user and
     // not per project: it is a calibration, and opening someone else's job must not overwrite it.
     private DeepNestLib.NestProject.CommonCuttingTolerances commonCuttingTolerances;
-    private DeepNestSharp.RasterNest.NestEffort nestEffort = DeepNestSharp.RasterNest.NestEffort.Normal; // how hard the nester searches (SessionState)
+    private DeepNestSharp.RasterNest.NestEffort nestEffort = DeepNestSharp.RasterNest.NestEffort.Fast; // how hard the nester searches (SessionState)
     private bool preferRectOffcut; // cut the last sheet's leftover off as a rectangular offcut (SessionState)
     private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
     private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
