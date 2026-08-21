@@ -24,12 +24,12 @@ namespace DeepNestSharp.RasterNest
   /// </remarks>
   internal enum NestEffort
   {
-    /// <summary>The default, because a nest that answers straight away is what the work feels like, and this
-    /// already packs far tighter than what shipped before it.</summary>
+    /// <summary>For when the wait matters more than the last few percent. Still packs far tighter than what
+    /// shipped before any of this.</summary>
     Fast = 0,
 
-    /// <summary>The knee of the curve above: as tight as the pack meaningfully gets, at a wait the operator
-    /// has to have chosen.</summary>
+    /// <summary>The default: the knee of the curve above, as tight as the pack meaningfully gets, and short
+    /// enough now that it does not get in the way.</summary>
     Normal = 1,
 
     /// <summary>For expensive material, where waiting is cheaper than the offcut. Buys the tail of the

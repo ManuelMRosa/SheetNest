@@ -46,7 +46,7 @@ namespace DeepNestSharp
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
 
-    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = default (fast).
+    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = default (normal).
     /// Kept per user and not in the project, because it is a preference about this operator's own time.</summary>
     public int NestEffort { get; set; } = -1;
 

@@ -86,10 +86,17 @@ namespace DeepNestSharp.CiTests.RasterNest
     /// decides whether a part is painted red and whether Export DXF is refused.
     /// </para>
     /// </summary>
+    /// <param name="spacingDivisor">The part gap, as a fraction of the biggest part.</param>
+    /// <param name="effortCode">Which <see cref="NestEffort"/> to nest at, as an int because the enum is
+    /// internal. The Fast row is not redundant: this guard used to take whatever the default happened to be,
+    /// and the defect it now catches showed up at one effort and not the other, purely because the layouts
+    /// differ. Left to the default it would have gone quiet the moment the default moved, with nothing
+    /// fixed.</param>
     [Theory]
-    [InlineData(10)]
-    [InlineData(50)]
-    public void ASamePartNestDoesNotDisagreeWithTheEditorMoreThanAPlainOne(int spacingDivisor)
+    [InlineData(10, 1)]
+    [InlineData(50, 1)]
+    [InlineData(10, 0)]
+    public void ASamePartNestDoesNotDisagreeWithTheEditorMoreThanAPlainOne(int spacingDivisor, int effortCode)
     {
       string exe = Sparrow();
       if (exe == null)
@@ -98,10 +105,11 @@ namespace DeepNestSharp.CiTests.RasterNest
         return;
       }
 
-      int none = UnfitByTheEditorsRule(exe, CommonCuttingMode.None, spacingDivisor);
-      int samePart = UnfitByTheEditorsRule(exe, CommonCuttingMode.SamePart, spacingDivisor);
+      var effort = (NestEffort)effortCode;
+      int none = UnfitByTheEditorsRule(exe, CommonCuttingMode.None, spacingDivisor, effort);
+      int samePart = UnfitByTheEditorsRule(exe, CommonCuttingMode.SamePart, spacingDivisor, effort);
 
-      this.output.WriteLine($"SEAM spacing 1/{spacingDivisor}: none={none} samePart={samePart}");
+      this.output.WriteLine($"SEAM spacing 1/{spacingDivisor} effort {effort}: none={none} samePart={samePart}");
 
       // This used to compare the two counts, because neither was ever zero: samePart was 9 at 1/10 and 8
       // at 1/50 against a none of 5 and 3, and after the weld/bounds fix 1 and 1 against 5 and 3. A
@@ -126,9 +134,9 @@ namespace DeepNestSharp.CiTests.RasterNest
     /// separate defect and it is not this feature's to fix; what this guards is that common cutting does
     /// not ADD to it.
     /// </remarks>
-    private int UnfitByTheEditorsRule(string exe, CommonCuttingMode mode, int spacingDivisor)
+    private int UnfitByTheEditorsRule(string exe, CommonCuttingMode mode, int spacingDivisor, NestEffort effort)
     {
-      var (result, spacing) = NestTwoDrawings(exe, mode, spacingDivisor);
+      var (result, spacing) = NestTwoDrawings(exe, mode, spacingDivisor, effort);
 
       int unfit = 0;
       foreach (var sheet in result.UsedSheets)
@@ -156,7 +164,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       return unfit;
     }
 
-    private static (INestResult Result, double Spacing) NestTwoDrawings(string exe, CommonCuttingMode cc, int spacingDivisor = 10)
+    private static (INestResult Result, double Spacing) NestTwoDrawings(string exe, CommonCuttingMode cc, int spacingDivisor, NestEffort effort)
     {
       string dxfDir = FindDxfDir();
       dxfDir.Should().NotBeNull();
@@ -183,7 +191,8 @@ namespace DeepNestSharp.CiTests.RasterNest
       }
 
       int side = (int)Math.Ceiling(maxExtent * 5);
-      var result = SparrowNestService.Nest(parts, new List<(int, int, int)> { (side, side, 1) }, 4, spacing, spacing, 8, exe, out string err);
+      var result = SparrowNestService.Nest(
+        parts, new List<(int, int, int)> { (side, side, 1) }, 4, spacing, spacing, 8, exe, out string err, default, null, null, effort);
       result.Should().NotBeNull($"nest must return a result (err={err})");
       return (result, spacing);
     }

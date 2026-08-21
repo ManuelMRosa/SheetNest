@@ -20,7 +20,7 @@ namespace DeepNestSharp.Ui.Views
       int autosaveMinutes,
       bool unitsMm = false,
       DeepNestLib.NestProject.CommonCuttingTolerances commonCutting = null,
-      DeepNestSharp.RasterNest.NestEffort effort = DeepNestSharp.RasterNest.NestEffort.Fast)
+      DeepNestSharp.RasterNest.NestEffort effort = DeepNestSharp.RasterNest.NestEffort.Normal)
     {
       this.config = config;
       InitializeComponent();
@@ -80,7 +80,7 @@ namespace DeepNestSharp.Ui.Views
     /// must not change it.</summary>
     internal DeepNestSharp.RasterNest.NestEffort Effort => this.effortCombo.SelectedItem is ComboBoxItem e
       ? (DeepNestSharp.RasterNest.NestEffort)int.Parse((string)e.Tag, System.Globalization.CultureInfo.InvariantCulture)
-      : DeepNestSharp.RasterNest.NestEffort.Fast;
+      : DeepNestSharp.RasterNest.NestEffort.Normal;
 
     /// <summary>The chosen global rotation code (1/2/4/8/36) — persisted by the caller.</summary>
     public int Rotations => this.rotationsCombo.SelectedItem is ComboBoxItem item

@@ -93,7 +93,7 @@
       string sparrowExePath,
       out string error,
       CancellationToken cancel = default,
-      NestEffort effort = NestEffort.Fast)
+      NestEffort effort = NestEffort.Normal)
       => Nest(parts, new[] { ((int)Math.Round(sheetWin), (int)Math.Round(sheetHin), 1) }, rotations, spacing, margin, timeLimitSec, sparrowExePath, out error, cancel, null, null, effort);
 
     /// <summary>Multi-sheet nest: fills sheets from <paramref name="stock"/> until the pool is empty or
@@ -114,7 +114,7 @@
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
       CommonCuttingTolerances tolerances = null,
-      NestEffort effort = NestEffort.Fast)
+      NestEffort effort = NestEffort.Normal)
       => Nest(
         parts,
         stock?.Select(s => (s.Win, s.Hin, s.Qty, false)).ToList(),
@@ -143,7 +143,7 @@
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
       CommonCuttingTolerances tolerances = null,
-      NestEffort effort = NestEffort.Fast)
+      NestEffort effort = NestEffort.Normal)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))

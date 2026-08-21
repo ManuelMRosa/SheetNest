@@ -49,8 +49,8 @@
         <TextBlock Grid.Row="3" Grid.Column="0" Text="Nesting effort:" VerticalAlignment="Center" Margin="0,0,10,0" />
         <ComboBox Grid.Row="3" Grid.Column="1" x:Name="effortCombo" Width="150" HorizontalAlignment="Left"
                   ToolTip="How long the nester searches each sheet. It buys a TIGHTER pack, not more parts on the sheet: the parts that fit are found almost at once, and the rest of the search is spent squeezing them together so the material left over comes back as one usable piece.">
-          <ComboBoxItem Tag="0">Fast (default)</ComboBoxItem>
-          <ComboBoxItem Tag="1">Normal</ComboBoxItem>
+          <ComboBoxItem Tag="0">Fast</ComboBoxItem>
+          <ComboBoxItem Tag="1">Normal (default)</ComboBoxItem>
           <ComboBoxItem Tag="2">Best (slowest)</ComboBoxItem>
         </ComboBox>
       </Grid>
