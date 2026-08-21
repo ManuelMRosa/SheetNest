@@ -2042,8 +2042,9 @@
     {
       NestEffort.Fast => 300,
       NestEffort.Best => 800,
-      _ => 600,   // measured on two different part sets; see the remarks above
+      _ => 600,
     };
+
 
     /// <summary>How many searches run at the same instant. This is the ONLY place the machine is allowed
     /// to influence a nest, and it influences only how long it takes — a slower machine finishes the same
@@ -2082,17 +2083,22 @@
       => BudgetFor(effort == NestEffort.Fast ? NestEffort.Normal : NestEffort.Best);
 
     /// <summary>How long a single engine process may run before it is killed. A WATCHDOG, not a budget: a
-    /// search must end because it ran out of iterations, never because it ran out of seconds, so this sits far
-    /// above any healthy run. It has to follow the effort, because Best legitimately takes ten times what
-    /// Normal does and the old fixed leash of 150 s turned that into no result at all.</summary>
+    /// search must end because it ran out of iterations, never because it ran out of seconds.</summary>
+    /// <remarks>
+    /// Deliberately far above any healthy run, because a kill is TOTAL: the engine writes its solution once,
+    /// at the end, so there is nothing to salvage and the whole race is lost. The old fixed 150 s was already
+    /// inside the range a legitimate search uses now, and it showed: a twelve part job on a roomy sheet takes
+    /// about 270 s at Normal, and under load it crossed the leash and came back as no nest at all. Waiting is
+    /// the operator's call and there is a Cancel button for it; being killed silently is not.
+    /// </remarks>
     private static int WatchdogSeconds(int perSheetBudgetSec, NestEffort effort)
     {
       int leash = Math.Max(60, perSheetBudgetSec * 30);
       return effort switch
       {
-        NestEffort.Fast => leash,
-        NestEffort.Best => leash * 8,
-        _ => leash * 2,
+        NestEffort.Fast => leash * 2,
+        NestEffort.Best => leash * 24,
+        _ => leash * 8,
       };
     }
 
