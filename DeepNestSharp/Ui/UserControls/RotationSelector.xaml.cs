@@ -56,9 +56,9 @@
       ("0°+90°", RasterNest.RotationCodes.RotZeroAnd90, IconKind.QuarterTurn, AnglesEnum.None, "0° and 90° permitted."),
       ("0°+180°", 2, IconKind.ArrowH, AnglesEnum.AsPreviewed, "0° and 180°: respects material grain but can flip."),
       ("90°+270°", RasterNest.RotationCodes.Rot90And270, IconKind.ArrowV, AnglesEnum.None, "90° and 270°: always turned, either way."),
-      ("4-way", 4, IconKind.FourArrows, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°). The safe first choice on square and L shaped parts, where it usually beats free rotation and always costs less to search."),
+      ("4-way", 4, IconKind.FourArrows, AnglesEnum.None, "All four square orientations (0 / 90 / 180 / 270°). The safe first choice on square and L shaped parts: it usually beats free rotation on those, and always costs less to search."),
       ("45° steps", 8, IconKind.FourArrows, AnglesEnum.None, "Eight orientations, 45° apart. The job setting offers this too, and without it here a part could not be shown what it was really set to."),
-      ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle, and NOT automatically the tightest: it wins on parts with slanted or curved edges and loses on square or L shaped ones, which interlock exactly at right angles and gain nothing from being tilted. Measured on two real jobs, material left inside the block: 84.3% against 4-way's 81.6% on one, 69.6% against 73.2% on the other. It also costs about twice the search. Ignores grain."),
+      ("Free", 36, IconKind.AnyCircle, AnglesEnum.None, "Any angle, and NOT automatically the tightest. It wins on parts with slanted or curved edges, and loses on square or L shaped ones, which interlock exactly at right angles and gain nothing from being tilted. Measured on two real jobs: 84.3% of the block filled against 4-way's 81.6% on one, and 69.6% against 73.2% on the other. Costs about twice the search. Ignores grain."),
     };
 
     private static readonly Brush IconFill = new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x80)); // classic navy
@@ -80,10 +80,12 @@
         var btn = new ToggleButton
         {
           Style = (Style)this.Resources["RotationOptionStyle"],
-          ToolTip = opt.Tip,
+          ToolTip = BuildTip(opt.Tip),
           Tag = i,
           Content = BuildContent(opt.Label, opt.Icon),
         };
+        ToolTipService.SetShowDuration(btn, 30000);
+        ToolTipService.SetInitialShowDelay(btn, 300);
         btn.Click += this.OnOptionClick;
         this.buttons.Add(btn);
         this.optionsPanel.Children.Add(btn);
@@ -144,6 +146,15 @@
       // said free, the parts list said free, and the engine was handed eight discrete angles.
       return 0; // Job default
     }
+
+    /// <summary>A tooltip that WRAPS. The default renders a string on one line however long it is, so
+    /// anything past a short phrase comes out as a box wider than the screen, which is no tooltip at all.
+    /// These say what each option costs and when it wins, so they are sentences, not phrases.</summary>
+    private static ToolTip BuildTip(string text)
+      => new ToolTip
+      {
+        Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 340 },
+      };
 
     private static FrameworkElement BuildContent(string label, IconKind icon)
     {
