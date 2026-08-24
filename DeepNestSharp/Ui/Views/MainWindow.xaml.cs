@@ -2184,6 +2184,57 @@ namespace DeepNestSharp.Ui.Views
       session.Save();
     }
 
+    /// <summary>
+    /// Whether this job is set up for common-line cutting at all, said in words rather than left to be
+    /// worked out from the part spacing. Empty when there is nothing to warn about.
+    /// </summary>
+    /// <remarks>
+    /// A job arrived with a part spacing of 0.04in while its owner was trying to get common-line cutting
+    /// working, and nothing said that a stated spacing is exactly what turns common line OFF: a positive
+    /// value imports as <see cref="CommonCuttingMode.None"/> and no cut is ever shared. The summary
+    /// repeated the number and read like an ordinary job. The piece count is the same kind of silence
+    /// from the other end - one piece cannot share a cut with anybody.
+    /// </remarks>
+    /// <param name="partSpacing">The job's part spacing, already in drawing units.</param>
+    /// <param name="units">What to call those units in the text.</param>
+    /// <param name="totalPieces">Every copy the job asks for, across all its parts.</param>
+    /// <param name="kerf">The job's cut width in the same units, or 0 when the job carries no tooling to
+    /// measure one off. Only used to spot a spacing too small to be a gap at all.</param>
+    internal static string CommonLineNotice(double partSpacing, string units, int totalPieces, double kerf = 0)
+    {
+      var text = new System.Text.StringBuilder();
+
+      if (partSpacing > 0)
+      {
+        // Enough digits that the number shown is never "0.000" while the sentence calls it positive. One
+        // of the shop's own jobs states 0.0003mm, which at three decimals prints as zero and makes the
+        // warning contradict itself.
+        string shown = partSpacing.ToString(partSpacing < 0.0005 ? "0.0000000" : "0.###", System.Globalization.CultureInfo.InvariantCulture);
+        text.AppendLine(FormattableString.Invariant(
+          $"This job is NOT set up for common-line cutting: it states a part spacing of {shown} {units}."));
+
+        // A gap narrower than a tenth of the cut is not a gap anyone asked for; the machine cannot even
+        // position to it. Almost certainly a zero that did not survive a unit conversion, and worth
+        // saying so, because otherwise this reads as "you asked for a spacing" when nobody did.
+        if (kerf > 0 && partSpacing < kerf / 10d)
+        {
+          text.AppendLine(FormattableString.Invariant(
+            $"That is far smaller than the {kerf:0.####} {units} cut itself, so it was probably meant to be 0."));
+        }
+
+        text.AppendLine("A spacing of 0 is how SheetCam says the parts share their cuts. Set it to 0 and");
+        text.AppendLine("export again if that is what these parts are for.");
+      }
+
+      if (totalPieces < 2)
+      {
+        text.AppendLine(FormattableString.Invariant(
+          $"The job asks for {totalPieces} piece(s), so there is nothing for a shared cut to join."));
+      }
+
+      return text.ToString();
+    }
+
     /// <summary>Reports what came in and what was adopted from the job.</summary>
     private string BuildNestImportSummary(DeepNestLib.IO.SheetCamNestFile nest, int partCount)
     {
@@ -2205,6 +2256,13 @@ namespace DeepNestSharp.Ui.Views
       {
         text.AppendLine(FormattableString.Invariant(
           $"Common-line: the parts share the cut and sit one kerf apart. Edge margin {edge:0.###} {units}."));
+      }
+
+      string notice = CommonLineNotice(nest.PartSpacing * scale, units, nest.Parts.Sum(p => p.Quantity), nest.DeriveKerfMm() / mm);
+      if (notice.Length > 0)
+      {
+        text.AppendLine();
+        text.Append(notice);
       }
 
       text.AppendLine();
