@@ -24,6 +24,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// nodes has at most N - 1 edges).
   /// </para>
   /// </summary>
+  [Collection(SparrowEngineCollection.Name)]
   public class SeamCountReflectsTheCutSheetFixture
   {
     private readonly ITestOutputHelper output;

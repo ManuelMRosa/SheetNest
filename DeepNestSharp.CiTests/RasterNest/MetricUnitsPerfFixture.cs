@@ -21,6 +21,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// same 0.354", which resampled every clearance shell into ~10k vertices and made each collision test
   /// ~13x dearer. The deep timings behind this guard are opt-in via SHEETNEST_PERF=1.
   /// </summary>
+  [Collection(SparrowEngineCollection.Name)]
   public class MetricUnitsPerfFixture
   {
     private readonly ITestOutputHelper output;

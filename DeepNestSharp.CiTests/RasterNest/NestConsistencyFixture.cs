@@ -21,6 +21,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   ///   2. is sparrow's own density — what PickBest ranks by — the same winner the extent would pick?
   /// Opt-in: SHEETNEST_PERF=1, SPARROW_EXE, and SHEETNEST_PERF_DXF pointing at a part file.
   /// </summary>
+  [Collection(SparrowEngineCollection.Name)]
   public class NestConsistencyFixture
   {
     private readonly ITestOutputHelper output;

@@ -62,11 +62,46 @@ namespace DeepNestLib.NestProject
     public double MinOverlapKerfs { get; set; } = 2.0;
 
     /// <summary>
-    /// How far a part may be moved to close a seam, in kerfs. Infinity keeps the behaviour that
-    /// shipped before this setting existed, where the only thing stopping a long slide was the
-    /// tooling-clearance check afterwards.
+    /// How far a part may be slid ALONG a seam to line the two faces' ends up, in kerfs. It does not
+    /// bound the perpendicular move onto the seam, which is the shared cut itself and is already held
+    /// under 0.6 of a kerf by the gap window. Travel past this is clamped, not rejected: a partly
+    /// aligned seam is still a seam over the overlap, and throwing the candidate away loses the cut.
     /// </summary>
-    public double MaxSnapTravelKerfs { get; set; } = double.PositiveInfinity;
+    /// <remarks>
+    /// <para>
+    /// ⚠️ THIS DEFAULTED TO INFINITY AND THAT DESTROYED EVERY SEAM ON A FULL SHEET. Lining two faces up
+    /// end to end also slides a part ALONG the seam, and with no bound that slide can be arbitrarily
+    /// long. On a packed sheet a long slide runs into some other neighbour, the tooling check fails, and
+    /// because a group is applied all-or-nothing the WHOLE chain is reverted. One bad candidate pair
+    /// anywhere took every shared cut on the sheet with it.
+    /// </para>
+    /// <para>
+    /// Measured on the shop's own common-line job (26 parts, 120x60in sheet, kerf 0.0134in), sweeping
+    /// this value and counting the seams the kept sheet actually has:
+    /// </para>
+    /// <code>
+    /// maxTravel   placed   seams   givenup
+    /// infinite    26           0         1
+    /// 8 kerfs     26          25         0
+    /// 4 kerfs     26          25         0
+    /// 2 kerfs     26          25         0
+    /// 1 kerf      26          25         0
+    /// </code>
+    /// <para>
+    /// 25 seams over 26 parts is a spanning forest with nothing left out: the whole sheet welded into one
+    /// chain, which is the point of common-line cutting. Same 26 parts placed either way, so the bound
+    /// costs no material. It held whether every part carried a lead or only one did, which also refuted
+    /// the guess that the leads were what blocked the seams.
+    /// </para>
+    /// <para>
+    /// ⚠️ 1, 2, 4 and 8 measured IDENTICAL, so 4 is a judgement inside a measured-safe band and not a
+    /// tuned optimum. Only one common-line job exists in the corpus to measure on. What the bound is for
+    /// is rejecting a candidate whose faces barely overlap, where lining the ends up would drag the part
+    /// a long way; a real seam between parts the packer already put side by side needs a nudge, not a
+    /// journey.
+    /// </para>
+    /// </remarks>
+    public double MaxSnapTravelKerfs { get; set; } = 4.0;
 
     /// <summary>The shipped defaults. Callers that pass null get this.</summary>
     public static CommonCuttingTolerances Default => new CommonCuttingTolerances();

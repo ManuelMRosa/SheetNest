@@ -19,6 +19,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// build without the unlimited flag: that is what makes an A/B against the previous engine possible.</para>
   /// <para>Set SPARROW_EXE to run; otherwise no-ops.</para>
   /// </summary>
+  [Collection(SparrowEngineCollection.Name)]
   public class MixedStockUtilizationFixture
   {
     private readonly ITestOutputHelper output;

@@ -26,6 +26,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// drawings shaped into the same kind of problem: a demand that fits with room to spare, on a sheet wider
   /// than it is tall.</para>
   /// </remarks>
+  [Collection(SparrowEngineCollection.Name)]
   public class NestExtentFixture
   {
     /// <summary>The proportion of the sheet the parts take up, matched to the reported job (60.5%), so the

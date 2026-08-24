@@ -18,6 +18,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// is handed over already spaced and only compaction can win the seams back. This measures whether that
   /// is a real loss or a rounding error, on the same parts, same quantities, same sheet.
   /// </summary>
+  [Collection(SparrowEngineCollection.Name)]
   public class SamePartDensityFixture
   {
     private readonly ITestOutputHelper output;

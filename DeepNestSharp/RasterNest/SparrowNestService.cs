@@ -1216,9 +1216,11 @@
             double dx = (perp * ea.Nx) + (along * ea.Ux);
             double dy = (perp * ea.Ny) + (along * ea.Uy);
 
-            // Nothing else bounds the travel: lining the ends up can ask for a long slide when two faces
-            // barely overlap, and the only thing that used to stop it was the tooling check at the very
-            // end, which throws the whole pass away when it fires.
+            // Lining the ends up can ask for a long slide when two faces barely overlap, and a long
+            // slide on a packed sheet runs into some other neighbour. Since a group is applied
+            // all-or-nothing, one such pair used to revert the ENTIRE chain: with this unbounded, the
+            // shop's own 26-part job came out with zero shared cuts. Dropping the greedy candidate
+            // instead leaves the pairs that only need a nudge, and those weld.
             if (Math.Sqrt((dx * dx) + (dy * dy)) > tol.MaxSnapTravelKerfs * kerf)
             {
               continue;

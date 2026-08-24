@@ -19,6 +19,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// every part placed and ~0 pairwise overlap (a correct mapping of sparrow's feasible layout).
   /// Set env SPARROW_EXE to run; otherwise no-ops.
   /// </summary>
+  [Collection(SparrowEngineCollection.Name)]
   public class SparrowNestServiceFixture
   {
     private readonly ITestOutputHelper output;

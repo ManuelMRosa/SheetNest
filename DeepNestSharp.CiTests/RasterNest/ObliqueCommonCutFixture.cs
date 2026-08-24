@@ -22,6 +22,17 @@ namespace DeepNestSharp.CiTests.RasterNest
   {
     private const double Kerf = 0.3;
 
+    /// <summary>
+    /// Every gate pinned, so each test below exercises exactly the one it is about.
+    /// </summary>
+    /// <remarks>
+    /// The travel bound is pinned OPEN on purpose. These fixtures place a pair in isolation and offset
+    /// them by most of a face to set up a small overlap, which makes lining the ends up ask for a long
+    /// slide - so a finite bound would decide the outcome of tests that are about the angle, the gap or
+    /// the overlap, and they would pass or fail for the wrong reason. It used to be open by accident,
+    /// because the shipped default was infinity; it is now a real number, so this has to say so.
+    /// <see cref="TravelIsBounded"/> is the test that is actually about travel, and it sets its own.
+    /// </remarks>
     private static CommonCuttingTolerances Tol(double angleDeg = 0.25) => new CommonCuttingTolerances
     {
       AngleToleranceDeg = angleDeg,
@@ -29,6 +40,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       GapMinKerfs = 0.4,
       GapMaxKerfs = 1.6,
       MinOverlapKerfs = 2,
+      MaxSnapTravelKerfs = double.PositiveInfinity,
     };
 
     /// <summary>The point of the whole commit: a seam at 30 degrees closes to exactly one kerf.</summary>

@@ -28,6 +28,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// the point: if it does not, the interior/exterior split below is wrong and phase 2 is built on sand.
   /// </para>
   /// </summary>
+  [Collection(SparrowEngineCollection.Name)]
   public class LeadFootprintBenchFixture
   {
     /// <summary>Where SheetCam writes the jobs this bench reads. Override with SHEETNEST_NEST_CORPUS.</summary>
@@ -84,6 +85,50 @@ namespace DeepNestSharp.CiTests.RasterNest
       foreach (string path in files)
       {
         this.MeasureOneJob(path, exe);
+      }
+    }
+
+    /// <summary>
+    /// THE measurement, once the question was put right. Set SHEETNEST_BENCH=1 to run.
+    /// <para>
+    /// Manuel's correction: parts that share a common line are ONE cut, so the group needs ONE lead in,
+    /// not one per part. That is not a preference, and it exposes a mechanical fault. Welded parts sit
+    /// one kerf apart (0.34mm on this corpus) while an exterior lead reaches 3.72mm past the outline, so
+    /// an INTERIOR part's lead has nowhere to go but into its neighbour. There is no scrap around an
+    /// interior part, only more parts. <c>ToolingClearsEveryone</c> catches exactly that and throws the
+    /// seam away.
+    /// </para>
+    /// <para>
+    /// So SheetNest reserves N-1 leads the cut does not need, and then abandons seams because of them.
+    /// This measures that: seams FORMED and seams GIVEN UP, which is the metric that matches the logic.
+    /// Extent and fill, which the earlier benches here report, answer a different question (material
+    /// yield) and answered it correctly - freeing the lead wins no parts. This one is about the cut.
+    /// </para>
+    /// <para>
+    /// "One lead for the group" is expressed as two populations of the SAME drawing: one copy carrying
+    /// the lead, the rest carrying none. That is the shape the engine already supports (it is how a
+    /// mirrored population works) and it models a fully welded sheet, where all but one part is interior.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MeasureTheSeamsLostToLeadsTheCutDoesNotNeed()
+    {
+      if (Environment.GetEnvironmentVariable("SHEETNEST_BENCH") != "1")
+      {
+        this.output.WriteLine("BENCH: set SHEETNEST_BENCH=1 to run.");
+        return;
+      }
+
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("BENCH: SPARROW_EXE not set - skipping.");
+        return;
+      }
+
+      foreach (string path in CorpusFiles())
+      {
+        this.MeasureSeamsForOneJob(path, exe);
       }
     }
 
@@ -462,7 +507,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         $"  sheet {sheetW}x{sheetH} in | offering {wanted} piece(s) of {partArea:F1} in2 each | cc {cc} | kerf {kerf:F4} in"));
       this.output.WriteLine(string.Format(
         "  {0,-14} {1,-7} {2,9} {3,9} {4,8} {5,7} {6,7} {7,7}",
-        "leads", "placed", "extentX", "extentY", "fill", "cumSnap", "cumGave", "sec"));
+        "leads", "placed", "extentX", "extentY", "fill", "seams", "givenup", "sec"));
 
       var placedBy = new Dictionary<LeadMode, int>();
       foreach (var mode in new[] { LeadMode.All, LeadMode.None })
@@ -525,6 +570,296 @@ namespace DeepNestSharp.CiTests.RasterNest
       }
     }
 
+    /// <summary>
+    /// Seams formed and abandoned for one job, under three lead models. Skips jobs that cannot answer:
+    /// a job with no common cutting has no seams to win, and one with no exterior lead has nothing to
+    /// free. Saying so is the point - a silent skip reads as "no gain".
+    /// </summary>
+    /// <summary>
+    /// Why NO seam forms at all, which is the thing to settle before building anything. Set
+    /// SHEETNEST_BENCH=1 to run.
+    /// <para>
+    /// The shop's own common-line job produces zero shared cuts in every lead model, with one group found
+    /// and then abandoned. Two mechanisms could do that and they have to be told apart:
+    /// </para>
+    /// <para>
+    /// 1. THE LEAD HOLDS THEM APART. Compaction closes sharing pairs until their FOOTPRINTS touch
+    /// (RasterCompact.CommonLineGap = 0), and the footprint swallows the lead. The lead reaches 0.146in
+    /// past the outline against a 0.0134in kerf, so what meets is lead against neighbour and the outlines
+    /// stop 0.146in apart. The seam finder only accepts a gap inside [0.4, 1.6] kerfs, so 0.146in is ten
+    /// times too far and not one candidate is even generated. This should keep "one per part" at zero no
+    /// matter what else is swept, which makes it the control row.
+    /// </para>
+    /// <para>
+    /// 2. THE ALIGNMENT SLIDE IS UNBOUNDED. MaxSnapTravelKerfs ships as PositiveInfinity, so lining two
+    /// faces up end to end may slide a part as far as it likes. On a sheet packed to 96% that runs into
+    /// another neighbour, and the whole group is reverted rather than the one pair. This one is only a
+    /// hypothesis, which is what this sweep is for.
+    /// </para>
+    /// <para>
+    /// No production code is touched: Nest already takes the tolerances as a parameter.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void SweepTheSnapTravelLimitToSeeWhatIsKillingTheSeams()
+    {
+      if (Environment.GetEnvironmentVariable("SHEETNEST_BENCH") != "1")
+      {
+        this.output.WriteLine("BENCH: set SHEETNEST_BENCH=1 to run.");
+        return;
+      }
+
+      string exe = SparrowExe.Resolve();
+      if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+      {
+        this.output.WriteLine("BENCH: SPARROW_EXE not set - skipping.");
+        return;
+      }
+
+      foreach (string path in CorpusFiles())
+      {
+        this.SweepOneJob(path, exe);
+      }
+    }
+
+    private void SweepOneJob(string nestPath, string exe)
+    {
+      SheetCamNestFile nest;
+      try
+      {
+        nest = SheetCamNestFile.Load(nestPath);
+      }
+      catch (InvalidDataException)
+      {
+        return;
+      }
+
+      const double Scale = 1d / 25.4d;
+      double settings = nest.SettingsToDrawingUnits(false);
+      if (nest.PartSpacing * settings > 0)
+      {
+        return; // common cutting is off on this job: nothing to sweep
+      }
+
+      int exteriorLeads = nest.Parts.Sum(p => p.ToolPaths.Count(t => !LiesInside(t, p.External)));
+      var written = SheetCamNestPartWriter.WriteAll(nest, nestPath, Scale);
+      var sheet = nest.Sheets.FirstOrDefault();
+      if (sheet == null || sheet.Width <= 0 || sheet.Height <= 0)
+      {
+        return;
+      }
+
+      int sheetW = (int)Math.Round(sheet.Width * Scale);
+      int sheetH = (int)Math.Round(sheet.Height * Scale);
+      double kerf = nest.DeriveKerfMm() * Scale;
+      double margin = nest.EdgeSpacing * settings;
+      var defaults = CommonCuttingTolerances.Default;
+
+      this.output.WriteLine(string.Empty);
+      this.output.WriteLine($"===== {Path.GetFileName(nestPath)} : snap travel sweep =====");
+      this.output.WriteLine(FormattableString.Invariant(
+        $"  kerf {kerf:F5} in | {exteriorLeads} exterior lead(s) | seam gap window [{defaults.GapMinKerfs * kerf:F5}, {defaults.GapMaxKerfs * kerf:F5}] in"));
+      this.output.WriteLine(string.Format(
+        "  {0,-16} {1,-14} {2,-7} {3,7} {4,8} {5,7}", "lead model", "maxTravel", "placed", "seams", "givenup", "sec"));
+
+      foreach (string model in new[] { "one per part", "one per group" })
+      {
+        foreach (double travel in new[] { double.PositiveInfinity, 8d, 4d, 2d, 1d })
+        {
+          var parts = new List<RasterPartInfo>();
+          foreach (var w in written)
+          {
+            var withLead = LeadsFor(w.Part, LeadMode.All, Scale);
+            var interior = LeadsFor(w.Part, LeadMode.InteriorOnly, Scale);
+            if (model == "one per part")
+            {
+              parts.Add(Population(w, w.Part.Quantity, withLead, FallbackSpacingIn, CommonCuttingMode.Unrestricted, kerf));
+            }
+            else
+            {
+              parts.Add(Population(w, 1, withLead, FallbackSpacingIn, CommonCuttingMode.Unrestricted, kerf));
+              if (w.Part.Quantity > 1)
+              {
+                parts.Add(Population(w, w.Part.Quantity - 1, interior, FallbackSpacingIn, CommonCuttingMode.Unrestricted, kerf));
+              }
+            }
+          }
+
+          var tol = new CommonCuttingTolerances { MaxSnapTravelKerfs = travel };
+          var watch = System.Diagnostics.Stopwatch.StartNew();
+          var result = SparrowNestService.Nest(
+            parts,
+            new List<(int, int, int)> { (sheetW, sheetH, 1) },
+            4,
+            FallbackSpacingIn,
+            margin,
+            15,
+            exe,
+            out string err,
+            default,
+            null,
+            tol,
+            NestEffort.Normal);
+          watch.Stop();
+
+          string travelText = double.IsPositiveInfinity(travel) ? "infinite" : travel.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + " kerfs";
+          if (result == null)
+          {
+            this.output.WriteLine($"  {model,-16} {travelText,-14} FAILED: {err}");
+            continue;
+          }
+
+          int placed = result.UsedSheets.Sum(s => s.PartPlacements.Count);
+          int snapped = SparrowNestService.DiagSeamsSnapped;
+          int givenUp = SparrowNestService.DiagSeamsGivenUp;
+          double secs = watch.Elapsed.TotalSeconds;
+          this.output.WriteLine(FormattableString.Invariant(
+            $"  {model,-16} {travelText,-14} {placed,-7} {snapped,7} {givenUp,8} {secs,7:F1}"));
+        }
+      }
+
+      this.output.WriteLine("  (one per part is the CONTROL: mechanism 1 should hold it at zero seams whatever the travel does)");
+    }
+
+    private void MeasureSeamsForOneJob(string nestPath, string exe)
+    {
+      SheetCamNestFile nest;
+      try
+      {
+        nest = SheetCamNestFile.Load(nestPath);
+      }
+      catch (InvalidDataException)
+      {
+        return;
+      }
+
+      const double Scale = 1d / 25.4d;
+      double settings = nest.SettingsToDrawingUnits(false);
+      var cc = nest.PartSpacing * settings <= 0 ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
+      int exteriorLeads = nest.Parts.Sum(p => p.ToolPaths.Count(t => !LiesInside(t, p.External)));
+
+      this.output.WriteLine(string.Empty);
+      this.output.WriteLine($"===== {Path.GetFileName(nestPath)} : seams =====");
+      if (cc == CommonCuttingMode.None)
+      {
+        this.output.WriteLine("  SKIPPED: the job states a part spacing, so common cutting is off and there are no seams to win.");
+        return;
+      }
+
+      if (exteriorLeads == 0)
+      {
+        this.output.WriteLine("  SKIPPED: no lead reaches past an outline, so there is no phantom lead to remove.");
+        return;
+      }
+
+      var written = SheetCamNestPartWriter.WriteAll(nest, nestPath, Scale);
+      var sheet = nest.Sheets.FirstOrDefault();
+      if (sheet == null || sheet.Width <= 0 || sheet.Height <= 0)
+      {
+        this.output.WriteLine("  SKIPPED: no usable sheet.");
+        return;
+      }
+
+      int sheetW = (int)Math.Round(sheet.Width * Scale);
+      int sheetH = (int)Math.Round(sheet.Height * Scale);
+      double kerf = nest.DeriveKerfMm() * Scale;
+      double spacing = FallbackSpacingIn;
+      double margin = nest.EdgeSpacing * settings;
+
+      this.output.WriteLine(FormattableString.Invariant(
+        $"  sheet {sheetW}x{sheetH} in | kerf {kerf:F4} in | {exteriorLeads} exterior lead(s) | spacing {spacing:F4} in (job states none: it is a common-line flag)"));
+      this.output.WriteLine(string.Format(
+        "  {0,-22} {1,-7} {2,7} {3,8} {4,7}", "lead model", "placed", "seams", "givenup", "sec"));
+
+      var seamsBy = new Dictionary<string, int>();
+      foreach (var model in new[] { "one per part", "one per group", "none at all" })
+      {
+        var parts = new List<RasterPartInfo>();
+        foreach (var w in written)
+        {
+          var withLead = LeadsFor(w.Part, LeadMode.All, Scale);
+          var interior = LeadsFor(w.Part, LeadMode.InteriorOnly, Scale);
+
+          if (model == "one per part")
+          {
+            parts.Add(Population(w, w.Part.Quantity, withLead, spacing, cc, kerf));
+          }
+          else if (model == "none at all")
+          {
+            parts.Add(Population(w, w.Part.Quantity, null, spacing, cc, kerf));
+          }
+          else
+          {
+            // One copy keeps the lead the cut actually needs; the rest are interior to the weld and
+            // keep only the leads that never leave the part.
+            parts.Add(Population(w, 1, withLead, spacing, cc, kerf));
+            if (w.Part.Quantity > 1)
+            {
+              parts.Add(Population(w, w.Part.Quantity - 1, interior, spacing, cc, kerf));
+            }
+          }
+        }
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var result = SparrowNestService.Nest(
+          parts,
+          new List<(int, int, int)> { (sheetW, sheetH, 1) },
+          4,
+          spacing,
+          margin,
+          15,
+          exe,
+          out string err,
+          default,
+          null,
+          null,
+          NestEffort.Normal);
+        watch.Stop();
+
+        if (result == null)
+        {
+          this.output.WriteLine($"  {model,-22} FAILED: {err}");
+          continue;
+        }
+
+        int placed = result.UsedSheets.Sum(s => s.PartPlacements.Count);
+        int snapped = SparrowNestService.DiagSeamsSnapped;
+        int givenUp = SparrowNestService.DiagSeamsGivenUp;
+        double secs = watch.Elapsed.TotalSeconds;
+        seamsBy[model] = snapped;
+
+        this.output.WriteLine(FormattableString.Invariant(
+          $"  {model,-22} {placed,-7} {snapped,7} {givenUp,8} {secs,7:F1}"));
+      }
+
+      if (seamsBy.TryGetValue("one per part", out int perPart) && seamsBy.TryGetValue("one per group", out int perGroup))
+      {
+        this.output.WriteLine(
+          perGroup == perPart
+            ? "  NO CHANGE: the same seams form either way, so on this job the leads were not what blocked them."
+            : FormattableString.Invariant($"  one lead per group wins {perGroup - perPart:+#;-#;0} seam(s) against one per part"));
+      }
+    }
+
+    /// <summary>One population of a drawing: same file, its own copy count and its own tooling.</summary>
+    private static RasterPartInfo Population(
+      (SheetCamNestPart Part, string DxfPath) w,
+      int quantity,
+      IReadOnlyList<IReadOnlyList<SvgPoint>> toolPaths,
+      double spacing,
+      CommonCuttingMode cc,
+      double kerf)
+      => new RasterPartInfo
+      {
+        Path = w.DxfPath,
+        Quantity = quantity,
+        Rotations = 4,
+        Spacing = spacing,
+        Cc = cc,
+        Kerf = kerf,
+        ToolPaths = toolPaths,
+      };
+
     private void MeasureOneJob(string nestPath, string exe)
     {
       SheetCamNestFile nest;
@@ -584,10 +919,11 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       this.output.WriteLine(string.Format(
         "  {0,-14} {1,-7} {2,-7} {3,9} {4,9} {5,8} {6,7} {7,7} {8,7}",
-        "leads", "placed", "sheets", "extentX", "extentY", "fill", "cumSnap", "cumGave", "sec"));
+        "leads", "placed", "sheets", "extentX", "extentY", "fill", "seams", "givenup", "sec"));
       this.output.WriteLine(
-        "  (cumSnap/cumGave accumulate over EVERY attempt the engine made, losers included, so they are"
-        + " not this nest's shared cuts and do not compare across runs. Judge on placed/extent/fill.)");
+        "  (seams/givenup are the KEPT sheet's own, since the counter was fixed. This bench is about"
+        + " material yield though, so judge it on placed/extent/fill; seams are measured properly in"
+        + " MeasureTheSeamsLostToLeadsTheCutDoesNotNeed.)");
 
       foreach (var mode in new[] { LeadMode.All, LeadMode.InteriorOnly, LeadMode.None })
       {
