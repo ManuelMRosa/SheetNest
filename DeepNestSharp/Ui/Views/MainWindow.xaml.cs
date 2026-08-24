@@ -2220,6 +2220,33 @@ namespace DeepNestSharp.Ui.Views
         text.AppendLine();
       }
 
+      // WHICH parts brought a way in, one line each. Parts sharing a common line are cut as one path and
+      // the chain needs a single lead-in, so the job is set up with the drawing twice: one part with a
+      // lead and one without. Whether that setup took effect is decided in SheetCam, by giving the second
+      // part its OWN operation with the lead-in off - and until this line existed there was no way to
+      // tell a job that was set up right from one that was not until after nesting and writing back.
+      var entries = nest.Parts
+        .Select(p => (p.Name, p.Quantity, Entry: SparrowNestService.HasEntryLead(new DeepNestLib.NoFitPolygon(p.External), p.ToolPaths)))
+        .ToList();
+
+      if (entries.Count > 0)
+      {
+        text.AppendLine("Lead-in per part (a lead that starts outside the outline is the way in):");
+        foreach (var e in entries)
+        {
+          text.AppendLine(FormattableString.Invariant(
+            $"    {e.Name}  -  {e.Quantity} piece(s)  -  lead-in: {(e.Entry ? "yes" : "NO")}"));
+        }
+
+        text.AppendLine();
+        if (entries.All(e => !e.Entry))
+        {
+          text.AppendLine("None of these parts has a lead-in, so nothing here can be cut. Give at least");
+          text.AppendLine("one part its own operation WITH a lead-in in SheetCam and export again.");
+          text.AppendLine();
+        }
+      }
+
       text.AppendLine("Sheet set to the job's:");
       foreach (var s in nest.Sheets)
       {
