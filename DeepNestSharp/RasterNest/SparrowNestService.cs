@@ -551,7 +551,10 @@
           double effSpacing = part.Spacing >= 0 ? part.Spacing : Math.Max(0, spacing);
           double fitSpacing = everyPartShares ? 0 : effSpacing;
 
-          var shareOf = (Path: part.Path ?? string.Empty, part.Mirrored);
+          // The file path is what "the same part" means, unless the caller says otherwise. It says
+          // otherwise for the one-lead-per-chain pair: the same drawing under two SheetCam names is two
+          // files, and keyed by path Same part would refuse to weld them.
+          var shareOf = (Path: part.ShareGroup ?? part.Path ?? string.Empty, part.Mirrored);
           if (!shareKeys.TryGetValue(shareOf, out int shareKey))
           {
             shareKeys[shareOf] = shareKey = shareKeys.Count;

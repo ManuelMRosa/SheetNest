@@ -16,5 +16,19 @@ namespace DeepNestSharp.RasterNest
     // which then nest exactly as before.
     public System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>> ToolPaths; // lead-ins/outs/loops, part-local, drawing units
     public double Kerf;         // cut width in drawing units; the cut runs half of it outside the outline
+
+    /// <summary>
+    /// What "the same part" means for <see cref="DeepNestLib.NestProject.CommonCuttingMode.SamePart"/>.
+    /// Null (the default) means the file path, which is the behaviour every ordinary job gets.
+    /// </summary>
+    /// <remarks>
+    /// It exists for the one-lead-per-chain setup: SheetCam cannot be told to drop a lead in, so the job
+    /// carries the same drawing twice under two names, one set up with a lead and one without. Those are
+    /// two FILES, so keyed by path they read as two different drawings and Same part refuses to weld them
+    /// - which strands the single leaded copy in a chain of its own and leaves the other chain with no
+    /// entry at all, uncuttable. Naming both members of the pair to the same share group fixes that
+    /// without touching what any other job does.
+    /// </remarks>
+    public string ShareGroup;
   }
 }
