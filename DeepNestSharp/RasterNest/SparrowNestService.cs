@@ -257,6 +257,8 @@
         int bestW = 0;
         int bestH = 0;
         double bestUtilization = -1;
+        int bestSeamsSnapped = 0;
+        int bestSeamsGivenUp = 0;
 
         foreach (var size in sizes)
         {
@@ -294,7 +296,7 @@
           // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
           int hardTimeoutSec = WatchdogSeconds(perSheetBudgetSec, effort);
 
-          var (placements, placedBySrc, packW, packH) = PackOneSheet(loaded, batchQty, w, h, margin, budget, SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
+          var (placements, placedBySrc, packW, packH, seamsSnapped, seamsGivenUp) = PackOneSheet(loaded, batchQty, w, h, margin, budget, SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
           firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
@@ -330,7 +332,7 @@
           // back uncut is worth more seconds than any of them.
           if (placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
           {
-            var (retryPl, retryBy, retryW, retryH) = PackOneSheet(
+            var (retryPl, retryBy, retryW, retryH, retrySeamsSnapped, retrySeamsGivenUp) = PackOneSheet(
               loaded, batchQty, w, h, margin, LastChanceBudget(effort), SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
 
             if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
@@ -340,6 +342,8 @@
               placedBySrc = retryBy;
               packW = retryW;
               packH = retryH;
+              seamsSnapped = retrySeamsSnapped;
+              seamsGivenUp = retrySeamsGivenUp;
             }
           }
 
@@ -361,6 +365,8 @@
             bestPlacedBySrc = placedBySrc;
             bestW = packW;
             bestH = packH;
+            bestSeamsSnapped = seamsSnapped;
+            bestSeamsGivenUp = seamsGivenUp;
           }
         }
 
@@ -371,6 +377,12 @@
           // no sheet placed the loop's own counter never advances, so without this break it would spin.
           break;
         }
+
+        // Only the size/attempt that was actually kept ever gets cut — every other stock size tried for
+        // this sheet, and the first attempt when the last-chance retry beat it, are thrown away just like
+        // a losing search candidate, and their seam counts go with them.
+        System.Threading.Interlocked.Add(ref DiagSeamsSnapped, bestSeamsSnapped);
+        System.Threading.Interlocked.Add(ref DiagSeamsGivenUp, bestSeamsGivenUp);
 
         // The sheet is judged by the rule that decides whether it may be cut, before it is handed over.
         // Whatever fails goes back in the pool and lands on the next sheet, so no layout ever leaves here
@@ -652,14 +664,22 @@
     /// converge in a wave or two, so they don't burn all `tries`; hard/variable sheets keep going up to `tries`.
     /// Packs ONLY in the user's chosen sheet orientation — the sheet is never auto-rotated (a 120×60 preset must
     /// render 120×60); to use the other orientation the operator picks that preset.</summary>
-    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH) PackOneSheet(
+    /// <summary>
+    /// <paramref name="error"/> aside, the seam counts in the return tuple are the WINNING candidate's
+    /// only — every other candidate this call raced also snapped its own common-line edges, but was
+    /// thrown away, and its counts have to go with it. The caller decides whether to add them to the
+    /// running <see cref="DiagSeamsSnapped"/> / <see cref="DiagSeamsGivenUp"/> totals, because a caller
+    /// that discards this result (the last-chance retry, when the first attempt placed more) must not
+    /// add it either.
+    /// </summary>
+    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp) PackOneSheet(
       List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
       if (batch.Count == 0)
       {
-        return (null, null, sheetW, sheetH);
+        return (null, null, sheetW, sheetH, 0, 0);
       }
 
       // Live-density progress reports the best seen across all tries so the bar climbs with the winner.
@@ -700,7 +720,7 @@
         // much of the sheet is left in one piece. It is the metric the operator sees; sparrow's density
         // is measured on its own strip BEFORE the compaction, so the two can disagree.
         bool longAxisIsX = sheetW >= sheetH;
-        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed)>();
+        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp)>();
         int bestIndex = -1, launched = 0;
         string firstTryError = null;
         int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
@@ -710,7 +730,7 @@
           int waveSize = Math.Min(waveTries, tries - launched);
           var wPl = new List<IPartPlacement>[waveSize];
           var wBy = new Dictionary<int, int>[waveSize];
-          var wSt = new (int Count, double Density, int Seed)?[waveSize];
+          var wSt = new (int Count, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp)?[waveSize];
           int startSeed = launched + 1;
           var options = new ParallelOptions { MaxDegreeOfParallelism = maxConc };
           Parallel.For(0, waveSize, options, j =>
@@ -735,11 +755,11 @@
             }
 
             var diagMap = System.Diagnostics.Stopwatch.StartNew();
-            var (pl, by) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, tolerances, cancel);
+            var (pl, by, seamsSnapped, seamsGivenUp) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, tolerances, cancel);
             System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
-            wSt[j] = (pl.Count, ParseDensity(outJson), seed);
+            wSt[j] = (pl.Count, ParseDensity(outJson), seed, seamsSnapped, seamsGivenUp);
           });
 
           launched += waveSize;
@@ -750,7 +770,7 @@
             if (wSt[j].HasValue)
             {
               var (ex, ey) = Extent(wPl[j]);
-              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed));
+              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp));
               lock (DiagCandidates)
               {
                 DiagCandidates.Add(FormattableString.Invariant(
@@ -778,7 +798,7 @@
         if (cancel.IsCancellationRequested)
         {
           error = "Cancelled.";
-          return (null, null, sheetW, sheetH);
+          return (null, null, sheetW, sheetH, 0, 0);
         }
 
         if (winners.Count == 0)
@@ -786,12 +806,12 @@
           error = firstTryError == null
             ? "The nesting engine produced no solution."
             : "The nesting engine produced no solution: " + firstTryError;
-          return (null, null, sheetW, sheetH);
+          return (null, null, sheetW, sheetH, 0, 0);
         }
 
         int bi = PickBest(winners.Select(w => (w.Count, w.Extent, w.Density, w.Seed)).ToList());
         var sel = winners[bi];
-        return (sel.Pl, sel.By, sheetW, sheetH);
+        return (sel.Pl, sel.By, sheetW, sheetH, sel.SeamsSnapped, sel.SeamsGivenUp);
       }
       finally
       {
@@ -807,7 +827,7 @@
 
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
     /// and splits off anything past the sheet edge (not placed).</summary>
-    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource) MapAndCompact(
+    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int SeamsSnapped, int SeamsGivenUp) MapAndCompact(
       string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CommonCuttingTolerances tolerances, CancellationToken cancel)
     {
       using var doc = JsonDocument.Parse(outputJson);
@@ -837,7 +857,7 @@
 
       if (all.Count == 0)
       {
-        return (new List<IPartPlacement>(), new Dictionary<int, int>());
+        return (new List<IPartPlacement>(), new Dictionary<int, int>(), 0, 0);
       }
 
       // Pre-anchor min → margin so compaction starts on-sheet, then gravity-compact to the corner.
@@ -875,9 +895,15 @@
       // Common-line: nudge near-parallel neighbour edges onto exactly one kerf apart and aligned, so the
       // post processor recognises the shared cut and cuts it once. Best-effort per part (all-or-nothing):
       // a part only moves if the shift keeps every part's tooling clear of every other.
+      //
+      // Calls the CORE directly, not SnapCommonLineEdges: this runs once per racing candidate (every
+      // seed in the wave), and only one candidate is ever kept, so counting every one of them would
+      // report seams that were never actually cut. The counts are threaded back through the return
+      // tuple and PackOneSheet adds only the WINNING candidate's numbers to the running totals.
+      int seamsSnapped = 0, seamsGivenUp = 0;
       if (batch.Any(l => l.Cc != CommonCuttingMode.None))
       {
-        SnapCommonLineEdges(all, kerfById, toolingById, ccById, tolerances);
+        (seamsSnapped, seamsGivenUp) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tolerances);
       }
 
       const double tol = 1e-3;
@@ -896,7 +922,7 @@
         placedBySource[pp.Source] = placedBySource.TryGetValue(pp.Source, out int n) ? n + 1 : 1;
       }
 
-      return (placements, placedBySource);
+      return (placements, placedBySource, seamsSnapped, seamsGivenUp);
     }
 
     /// <summary>Twice-signed area of a ring: positive when the ring is wound counter-clockwise.</summary>
@@ -976,7 +1002,31 @@
     /// drawing. All-or-nothing per connected group: a group of parts only moves if, after moving, every
     /// part's tooling footprint still clears every other part (no cut eating into a neighbour).
     /// </summary>
+    /// <summary>
+    /// Snaps common-line edges and updates the running <see cref="DiagSeamsSnapped"/> /
+    /// <see cref="DiagSeamsGivenUp"/> totals. This is the entry point for the ~10 direct unit-test call
+    /// sites, which call it once and expect exactly this side effect.
+    /// <para>
+    /// <see cref="MapAndCompact"/> does NOT call this: it races several candidate layouts per sheet (one
+    /// per seed) and only one of them is ever kept, so counting every candidate here would count seams
+    /// that were never cut — it calls <see cref="SnapCommonLineEdgesCore"/> directly and the totals are
+    /// updated once, for the winning candidate only, in <see cref="PackOneSheet"/>.
+    /// </para>
+    /// </summary>
     internal static void SnapCommonLineEdges(
+      List<IPartPlacement> all,
+      Dictionary<int, double> kerfById,
+      Dictionary<int, INfp> toolingById,
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById,
+      CommonCuttingTolerances tol = null)
+    {
+      var (snapped, givenUp) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tol);
+      System.Threading.Interlocked.Add(ref DiagSeamsSnapped, snapped);
+      System.Threading.Interlocked.Add(ref DiagSeamsGivenUp, givenUp);
+    }
+
+    /// <summary>Does the work; returns what it did instead of touching the diagnostic totals itself.</summary>
+    private static (int Snapped, int GivenUp) SnapCommonLineEdgesCore(
       List<IPartPlacement> all,
       Dictionary<int, double> kerfById,
       Dictionary<int, INfp> toolingById,
@@ -987,14 +1037,14 @@
       int n = all.Count;
       if (n < 2)
       {
-        return;
+        return (0, 0);
       }
 
       double KerfOf(int i) => kerfById.TryGetValue(all[i].Source, out double k) ? Math.Max(0, k) : 0;
 
       if (Enumerable.Range(0, n).All(i => KerfOf(i) <= 0))
       {
-        return; // no tooling anywhere: there is no kerf to snap onto (compaction already closed these)
+        return (0, 0); // no tooling anywhere: there is no kerf to snap onto (compaction already closed these)
       }
 
       bool MayShare(int ia, int ib)
@@ -1182,7 +1232,7 @@
 
       if (candidates.Count == 0)
       {
-        return;
+        return (0, 0);
       }
 
       // A SPANNING FOREST, not "the first pair between these two parts wins". Every seam is a constraint
@@ -1220,7 +1270,7 @@
 
       if (shifts.Count == 0)
       {
-        return;
+        return (0, 0);
       }
 
       // Connected groups by union-find; propagate a per-part offset from an anchor via BFS. A group whose
@@ -1332,23 +1382,24 @@
           RevertGroup(group);
         }
 
+        int retrySnapped = 0, retryGivenUp = 0;
         foreach (var group in good)
         {
           ApplyGroup(group);
           if (!ToolingClearsEveryone(all, toolingById, new HashSet<int>(group)))
           {
             RevertGroup(group);
-            System.Threading.Interlocked.Increment(ref DiagSeamsGivenUp);
+            retryGivenUp++;
             continue;
           }
 
-          System.Threading.Interlocked.Add(ref DiagSeamsSnapped, group.Count - 1);
+          retrySnapped += group.Count - 1;
         }
 
-        return;
+        return (retrySnapped, retryGivenUp);
       }
 
-      System.Threading.Interlocked.Add(ref DiagSeamsSnapped, good.Sum(g => g.Count - 1));
+      return (good.Sum(g => g.Count - 1), 0);
     }
 
     /// <summary>True when no part's tooling footprint overlaps another part's outline by more than a sliver
