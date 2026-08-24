@@ -101,8 +101,54 @@ namespace DeepNestSharp.CiTests.RasterNest
         + "sheet comes out as one chain with exactly one entry on it");
     }
 
+    /// <summary>
+    /// The safety net. A chain welded out of leadless copies alone has no way in and cannot be run, and
+    /// the layout looks perfect either way - which is exactly how it would reach the machine. Naming the
+    /// drawings is the point: the fix is in their SheetCam setup and nowhere else.
+    /// </summary>
+    [Fact]
+    public void AChainWithNoLeadInAnywhereIsReported()
+    {
+      var m = this.Nest(CommonCuttingMode.Unrestricted, leadedCopies: 0);
+      if (m == null)
+      {
+        return;
+      }
+
+      string[] noEntry;
+      lock (SparrowNestService.DiagNoEntry)
+      {
+        noEntry = SparrowNestService.DiagNoEntry.ToArray();
+      }
+
+      this.output.WriteLine($"NOENTRY: placed={m.Value.Placed} seams={m.Value.Seams} reported=[{string.Join(", ", noEntry)}]");
+      noEntry.Should().NotBeEmpty(
+        "every copy on this sheet was set up without a lead-in, so the welded chain has no way into it "
+        + "and the operator has to be told before it reaches the machine");
+    }
+
+    /// <summary>And the control: the same sheet WITH its one leaded copy says nothing.</summary>
+    [Fact]
+    public void AChainThatHasItsOneLeadInIsNotReported()
+    {
+      var m = this.Nest(CommonCuttingMode.Unrestricted);
+      if (m == null)
+      {
+        return;
+      }
+
+      string[] noEntry;
+      lock (SparrowNestService.DiagNoEntry)
+      {
+        noEntry = SparrowNestService.DiagNoEntry.ToArray();
+      }
+
+      this.output.WriteLine($"HASENTRY: placed={m.Value.Placed} seams={m.Value.Seams} reported=[{string.Join(", ", noEntry)}]");
+      noEntry.Should().BeEmpty("one lead-in on the chain is all the cut needs, so there is nothing to warn about");
+    }
+
     /// <summary>Nests the shop's job as TWO parts: one leaded copy and the rest leadless.</summary>
-    private (int Placed, int Seams, int GivenUp)? Nest(CommonCuttingMode cc, string shareGroup = null)
+    private (int Placed, int Seams, int GivenUp)? Nest(CommonCuttingMode cc, string shareGroup = null, int leadedCopies = 1)
     {
       string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
@@ -138,20 +184,22 @@ namespace DeepNestSharp.CiTests.RasterNest
       var withLead = Scaled(part.ToolPaths);
       var interiorOnly = Scaled(part.ToolPaths.Where(t => LiesInside(t, part.External)));
 
-      var parts = new List<RasterPartInfo>
+      var parts = new List<RasterPartInfo>();
+      if (leadedCopies > 0)
       {
-        new RasterPartInfo
+        parts.Add(new RasterPartInfo
         {
-          Path = written.DxfPath, Quantity = 1, Rotations = 4, Spacing = 0.25,
+          Path = written.DxfPath, Quantity = leadedCopies, Rotations = 4, Spacing = 0.25,
           Cc = cc, Kerf = kerf, ToolPaths = withLead, ShareGroup = shareGroup,
-        },
-        new RasterPartInfo
-        {
-          Path = leadless, Quantity = Math.Max(1, part.Quantity - 1), Rotations = 4, Spacing = 0.25,
-          Cc = cc, Kerf = kerf, ToolPaths = interiorOnly.Count == 0 ? null : interiorOnly,
-          ShareGroup = shareGroup,
-        },
-      };
+        });
+      }
+
+      parts.Add(new RasterPartInfo
+      {
+        Path = leadless, Quantity = Math.Max(1, part.Quantity - leadedCopies), Rotations = 4, Spacing = 0.25,
+        Cc = cc, Kerf = kerf, ToolPaths = interiorOnly.Count == 0 ? null : interiorOnly,
+        ShareGroup = shareGroup,
+      });
 
       var result = SparrowNestService.Nest(
         parts,

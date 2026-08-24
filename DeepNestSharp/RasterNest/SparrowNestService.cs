@@ -55,6 +55,19 @@
 
     internal static int DiagSeamsGivenUp;
 
+    /// <summary>
+    /// Drawings that came out of the last nest in a group with NO way into it. Every part welded into a
+    /// chain is cut as one path, so the chain needs ONE lead that starts outside a part; a part welded to
+    /// nobody needs its own. A group with neither cannot be cut at all.
+    /// </summary>
+    /// <remarks>
+    /// This is the failure the one-lead-per-chain setup invites: the job carries the drawing twice, one
+    /// copy leaded and the rest not, and if a chain forms out of leadless copies alone - a second sheet,
+    /// a chain that split in two, or simply forgetting the leaded copy - the operator gets a layout that
+    /// looks perfect and cannot be run. Caller resets, like the seam counts beside it.
+    /// </remarks>
+    internal static readonly List<string> DiagNoEntry = new List<string>();
+
     private static int diagPackSeq;
 
     private sealed class Loaded
@@ -79,6 +92,13 @@
       public int Qty;
       public bool Mirrored;   // this population is X-flipped — placements carry IsMirrored for the exporter
       public int Priority;    // 1-10, LOWER nests first (1 = highest); decides which parts fill earlier sheets
+
+      /// <summary>Does this part bring a lead that starts OUTSIDE its own outline: an entry the machine
+      /// can actually pierce with. A lead that stays inside a hole is not one.</summary>
+      public bool HasEntryLead;
+
+      /// <summary>Drawing name, for saying WHICH parts a warning is about.</summary>
+      public string Drawing;
     }
 
     /// <summary>Single-sheet convenience (used by tests): one sheet of the given size.</summary>
@@ -179,6 +199,10 @@
       DiagDeferred = 0;
       DiagSeamsSnapped = 0;
       DiagSeamsGivenUp = 0;
+      lock (DiagNoEntry)
+      {
+        DiagNoEntry.Clear();
+      }
       var diagLoad = System.Diagnostics.Stopwatch.StartNew();
       var loaded = LoadAll(parts, rotations, spacing, out error);
       DiagLoadMs = diagLoad.ElapsedMilliseconds;
@@ -259,6 +283,7 @@
         double bestUtilization = -1;
         int bestSeamsSnapped = 0;
         int bestSeamsGivenUp = 0;
+        IReadOnlyList<string> bestStranded = Array.Empty<string>();
 
         foreach (var size in sizes)
         {
@@ -296,7 +321,7 @@
           // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
           int hardTimeoutSec = WatchdogSeconds(perSheetBudgetSec, effort);
 
-          var (placements, placedBySrc, packW, packH, seamsSnapped, seamsGivenUp) = PackOneSheet(loaded, batchQty, w, h, margin, budget, SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
+          var (placements, placedBySrc, packW, packH, seamsSnapped, seamsGivenUp, stranded) = PackOneSheet(loaded, batchQty, w, h, margin, budget, SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
           firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
@@ -332,7 +357,7 @@
           // back uncut is worth more seconds than any of them.
           if (placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
           {
-            var (retryPl, retryBy, retryW, retryH, retrySeamsSnapped, retrySeamsGivenUp) = PackOneSheet(
+            var (retryPl, retryBy, retryW, retryH, retrySeamsSnapped, retrySeamsGivenUp, retryStranded) = PackOneSheet(
               loaded, batchQty, w, h, margin, LastChanceBudget(effort), SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
 
             if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
@@ -344,6 +369,7 @@
               packH = retryH;
               seamsSnapped = retrySeamsSnapped;
               seamsGivenUp = retrySeamsGivenUp;
+              stranded = retryStranded;
             }
           }
 
@@ -367,6 +393,7 @@
             bestH = packH;
             bestSeamsSnapped = seamsSnapped;
             bestSeamsGivenUp = seamsGivenUp;
+            bestStranded = stranded;
           }
         }
 
@@ -383,6 +410,16 @@
         // a losing search candidate, and their seam counts go with them.
         System.Threading.Interlocked.Add(ref DiagSeamsSnapped, bestSeamsSnapped);
         System.Threading.Interlocked.Add(ref DiagSeamsGivenUp, bestSeamsGivenUp);
+        lock (DiagNoEntry)
+        {
+          foreach (string drawing in bestStranded ?? Array.Empty<string>())
+          {
+            if (!DiagNoEntry.Contains(drawing))
+            {
+              DiagNoEntry.Add(drawing);
+            }
+          }
+        }
 
         // The sheet is judged by the rule that decides whether it may be cut, before it is handed over.
         // Whatever fails goes back in the pool and lands on the next sheet, so no layout ever leaves here
@@ -587,6 +624,8 @@
             Qty = part.Quantity,
             Mirrored = part.Mirrored,
             Priority = part.Priority,
+            HasEntryLead = HasEntryLead(nfp, toolPaths),
+            Drawing = string.IsNullOrEmpty(part.Path) ? "(unnamed)" : Path.GetFileNameWithoutExtension(part.Path),
           });
           source++;
         }
@@ -675,14 +714,14 @@
     /// that discards this result (the last-chance retry, when the first attempt placed more) must not
     /// add it either.
     /// </summary>
-    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp) PackOneSheet(
+    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded) PackOneSheet(
       List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
       if (batch.Count == 0)
       {
-        return (null, null, sheetW, sheetH, 0, 0);
+        return (null, null, sheetW, sheetH, 0, 0, Array.Empty<string>());
       }
 
       // Live-density progress reports the best seen across all tries so the bar climbs with the winner.
@@ -723,7 +762,7 @@
         // much of the sheet is left in one piece. It is the metric the operator sees; sparrow's density
         // is measured on its own strip BEFORE the compaction, so the two can disagree.
         bool longAxisIsX = sheetW >= sheetH;
-        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp)>();
+        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded)>();
         int bestIndex = -1, launched = 0;
         string firstTryError = null;
         int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
@@ -733,7 +772,7 @@
           int waveSize = Math.Min(waveTries, tries - launched);
           var wPl = new List<IPartPlacement>[waveSize];
           var wBy = new Dictionary<int, int>[waveSize];
-          var wSt = new (int Count, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp)?[waveSize];
+          var wSt = new (int Count, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded)?[waveSize];
           int startSeed = launched + 1;
           var options = new ParallelOptions { MaxDegreeOfParallelism = maxConc };
           Parallel.For(0, waveSize, options, j =>
@@ -758,11 +797,11 @@
             }
 
             var diagMap = System.Diagnostics.Stopwatch.StartNew();
-            var (pl, by, seamsSnapped, seamsGivenUp) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, tolerances, cancel);
+            var (pl, by, seamsSnapped, seamsGivenUp, stranded) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, tolerances, cancel);
             System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
-            wSt[j] = (pl.Count, ParseDensity(outJson), seed, seamsSnapped, seamsGivenUp);
+            wSt[j] = (pl.Count, ParseDensity(outJson), seed, seamsSnapped, seamsGivenUp, stranded);
           });
 
           launched += waveSize;
@@ -773,7 +812,7 @@
             if (wSt[j].HasValue)
             {
               var (ex, ey) = Extent(wPl[j]);
-              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp));
+              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wSt[j].Value.Stranded));
               lock (DiagCandidates)
               {
                 DiagCandidates.Add(FormattableString.Invariant(
@@ -801,7 +840,7 @@
         if (cancel.IsCancellationRequested)
         {
           error = "Cancelled.";
-          return (null, null, sheetW, sheetH, 0, 0);
+          return (null, null, sheetW, sheetH, 0, 0, Array.Empty<string>());
         }
 
         if (winners.Count == 0)
@@ -809,12 +848,12 @@
           error = firstTryError == null
             ? "The nesting engine produced no solution."
             : "The nesting engine produced no solution: " + firstTryError;
-          return (null, null, sheetW, sheetH, 0, 0);
+          return (null, null, sheetW, sheetH, 0, 0, Array.Empty<string>());
         }
 
         int bi = PickBest(winners.Select(w => (w.Count, w.Extent, w.Density, w.Seed)).ToList());
         var sel = winners[bi];
-        return (sel.Pl, sel.By, sheetW, sheetH, sel.SeamsSnapped, sel.SeamsGivenUp);
+        return (sel.Pl, sel.By, sheetW, sheetH, sel.SeamsSnapped, sel.SeamsGivenUp, sel.Stranded);
       }
       finally
       {
@@ -830,7 +869,7 @@
 
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
     /// and splits off anything past the sheet edge (not placed).</summary>
-    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int SeamsSnapped, int SeamsGivenUp) MapAndCompact(
+    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded) MapAndCompact(
       string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CommonCuttingTolerances tolerances, CancellationToken cancel)
     {
       using var doc = JsonDocument.Parse(outputJson);
@@ -860,7 +899,7 @@
 
       if (all.Count == 0)
       {
-        return (new List<IPartPlacement>(), new Dictionary<int, int>(), 0, 0);
+        return (new List<IPartPlacement>(), new Dictionary<int, int>(), 0, 0, Array.Empty<string>());
       }
 
       // Pre-anchor min → margin so compaction starts on-sheet, then gravity-compact to the corner.
@@ -904,9 +943,40 @@
       // report seams that were never actually cut. The counts are threaded back through the return
       // tuple and PackOneSheet adds only the WINNING candidate's numbers to the running totals.
       int seamsSnapped = 0, seamsGivenUp = 0;
+      List<List<int>> chains = null;
       if (batch.Any(l => l.Cc != CommonCuttingMode.None))
       {
-        (seamsSnapped, seamsGivenUp) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tolerances);
+        (seamsSnapped, seamsGivenUp, chains) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tolerances);
+      }
+
+      // Which drawings end up in a group with no way into it. Everything welded into one chain is cut as
+      // a single path, so the chain needs ONE lead that starts outside a part; a part left on its own
+      // needs its own. Either way, a group with no entry lead cannot be cut at all, and that used to
+      // reach the operator in silence.
+      var entryById = batch.ToDictionary(l => l.Source, l => (l.HasEntryLead, l.Drawing));
+      var stranded = new List<string>();
+      var inAChain = new HashSet<int>();
+      foreach (var chain in chains ?? Enumerable.Empty<List<int>>())
+      {
+        foreach (int i in chain)
+        {
+          inAChain.Add(i);
+        }
+
+        if (!chain.Any(i => entryById.TryGetValue(all[i].Source, out var e) && e.HasEntryLead))
+        {
+          stranded.AddRange(chain
+            .Select(i => entryById.TryGetValue(all[i].Source, out var e) ? e.Drawing : null)
+            .Where(d => d != null));
+        }
+      }
+
+      for (int i = 0; i < all.Count; i++)
+      {
+        if (!inAChain.Contains(i) && entryById.TryGetValue(all[i].Source, out var e) && !e.HasEntryLead)
+        {
+          stranded.Add(e.Drawing); // welded to nobody and no entry of its own
+        }
       }
 
       const double tol = 1e-3;
@@ -925,7 +995,7 @@
         placedBySource[pp.Source] = placedBySource.TryGetValue(pp.Source, out int n) ? n + 1 : 1;
       }
 
-      return (placements, placedBySource, seamsSnapped, seamsGivenUp);
+      return (placements, placedBySource, seamsSnapped, seamsGivenUp, stranded.Distinct().ToList());
     }
 
     /// <summary>Twice-signed area of a ring: positive when the ring is wound counter-clockwise.</summary>
@@ -1023,13 +1093,13 @@
       Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById,
       CommonCuttingTolerances tol = null)
     {
-      var (snapped, givenUp) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tol);
+      var (snapped, givenUp, _) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tol);
       System.Threading.Interlocked.Add(ref DiagSeamsSnapped, snapped);
       System.Threading.Interlocked.Add(ref DiagSeamsGivenUp, givenUp);
     }
 
     /// <summary>Does the work; returns what it did instead of touching the diagnostic totals itself.</summary>
-    private static (int Snapped, int GivenUp) SnapCommonLineEdgesCore(
+    private static (int Snapped, int GivenUp, List<List<int>> Chains) SnapCommonLineEdgesCore(
       List<IPartPlacement> all,
       Dictionary<int, double> kerfById,
       Dictionary<int, INfp> toolingById,
@@ -1040,14 +1110,14 @@
       int n = all.Count;
       if (n < 2)
       {
-        return (0, 0);
+        return (0, 0, null);
       }
 
       double KerfOf(int i) => kerfById.TryGetValue(all[i].Source, out double k) ? Math.Max(0, k) : 0;
 
       if (Enumerable.Range(0, n).All(i => KerfOf(i) <= 0))
       {
-        return (0, 0); // no tooling anywhere: there is no kerf to snap onto (compaction already closed these)
+        return (0, 0, null); // no tooling anywhere: there is no kerf to snap onto (compaction already closed these)
       }
 
       bool MayShare(int ia, int ib)
@@ -1237,7 +1307,7 @@
 
       if (candidates.Count == 0)
       {
-        return (0, 0);
+        return (0, 0, null);
       }
 
       // A SPANNING FOREST, not "the first pair between these two parts wins". Every seam is a constraint
@@ -1275,7 +1345,7 @@
 
       if (shifts.Count == 0)
       {
-        return (0, 0);
+        return (0, 0, null);
       }
 
       // Connected groups by union-find; propagate a per-part offset from an anchor via BFS. A group whose
@@ -1388,6 +1458,7 @@
         }
 
         int retrySnapped = 0, retryGivenUp = 0;
+        var survivors = new List<List<int>>();
         foreach (var group in good)
         {
           ApplyGroup(group);
@@ -1399,12 +1470,13 @@
           }
 
           retrySnapped += group.Count - 1;
+          survivors.Add(group);
         }
 
-        return (retrySnapped, retryGivenUp);
+        return (retrySnapped, retryGivenUp, survivors);
       }
 
-      return (good.Sum(g => g.Count - 1), 0);
+      return (good.Sum(g => g.Count - 1), 0, good);
     }
 
     /// <summary>True when no part's tooling footprint overlaps another part's outline by more than a sliver
@@ -1984,6 +2056,57 @@
 
       var biggest = solution.OrderByDescending(p => Math.Abs(Clipper.Area(p))).First();
       return new NoFitPolygon(biggest.Select(ip => new SvgPoint(ip.X / scale, ip.Y / scale)));
+    }
+
+    /// <summary>
+    /// True when the part brings a lead the machine can actually pierce with: one that starts OUTSIDE
+    /// the outline, in scrap. A lead that stays within the outline is piercing inside a hole, which cuts
+    /// that hole and does nothing for the part's own contour.
+    /// </summary>
+    /// <remarks>
+    /// This is what decides whether a welded chain has an entry at all. Every part of a chain is cut as
+    /// one path, so the chain needs ONE such lead somewhere on it; a chain of parts that all pierce
+    /// inside their own holes has no way in and cannot be cut.
+    /// </remarks>
+    internal static bool HasEntryLead(INfp outline, IReadOnlyList<IReadOnlyList<SvgPoint>> toolPaths)
+    {
+      if (outline == null || toolPaths == null)
+      {
+        return false;
+      }
+
+      foreach (var path in toolPaths)
+      {
+        if (path == null)
+        {
+          continue;
+        }
+
+        foreach (var p in path)
+        {
+          if (!PointInPolygon(p, outline.Points))
+          {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    private static bool PointInPolygon(SvgPoint p, SvgPoint[] poly)
+    {
+      bool inside = false;
+      for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
+      {
+        double xi = poly[i].X, yi = poly[i].Y, xj = poly[j].X, yj = poly[j].Y;
+        if (((yi > p.Y) != (yj > p.Y)) && (p.X < (((xj - xi) * (p.Y - yi)) / (yj - yi)) + xi))
+        {
+          inside = !inside;
+        }
+      }
+
+      return inside;
     }
 
     private static INfp OffsetOutward(INfp poly, double offset)

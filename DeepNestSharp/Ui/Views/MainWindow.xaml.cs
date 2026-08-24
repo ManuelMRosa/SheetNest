@@ -1652,6 +1652,27 @@ namespace DeepNestSharp.Ui.Views
             : string.Empty;
 
           this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}{seams}");
+
+          // A welded chain is cut as ONE path, so it needs one lead that starts outside a part. A chain
+          // made only of copies set up WITHOUT a lead has no way in and cannot be run, and until now
+          // that reached the operator as a layout that looks perfect. Say it plainly, and name the
+          // drawings, because the fix is in their SheetCam setup and nowhere else.
+          string[] noEntry;
+          lock (SparrowNestService.DiagNoEntry)
+          {
+            noEntry = SparrowNestService.DiagNoEntry.ToArray();
+          }
+
+          if (noEntry.Length > 0)
+          {
+            ViewModel.MessageService.DisplayMessageBox(
+              "Some parts came out in a group with no lead-in, so that group cannot be cut:\n\n"
+              + "    " + string.Join(", ", noEntry) + "\n\n"
+              + "Parts sharing a common line are cut as one path and need ONE lead-in on the group. "
+              + "Add a copy that does have a lead-in to each group, or give these parts a lead-in in SheetCam.",
+              "Nest",
+              DeepNestLib.MessageBoxIcon.Warning);
+          }
         }
         else if (this.nestPhaseText.Text != "Nest cancelled")
         {
