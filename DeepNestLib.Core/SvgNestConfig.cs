@@ -139,6 +139,15 @@ namespace DeepNestLib
         : CommonLineDefaults.DefaultGapInches;
     }
 
+    private int commonLineMaxClusterParts = CommonLineDefaults.AutoMaxClusterParts;
+
+    /// <inheritdoc />
+    public int CommonLineMaxClusterParts
+    {
+      get => this.commonLineMaxClusterParts;
+      set => this.commonLineMaxClusterParts = CommonLineDefaults.NormalizeMaxClusterParts(value);
+    }
+
     /// <inheritdoc />
     public double ClipperScale { get; set; } = 10000000;
 

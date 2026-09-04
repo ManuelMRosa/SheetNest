@@ -59,7 +59,7 @@
     private const double BackoffPerClearance = 0.003;
 
     /// <summary>
-    /// Legacy fallback for direct callers that do not supply an explicit gap. Production V1 always passes
+    /// Legacy fallback for direct callers that do not supply an explicit gap. Production direct planning passes
     /// the job's positive CommonLineGap; keeping this default preserves the old compaction API for tests
     /// and callers that use it only for ordinary spacing.
     /// </summary>

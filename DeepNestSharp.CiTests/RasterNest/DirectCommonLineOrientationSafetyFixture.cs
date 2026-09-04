@@ -157,6 +157,53 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
+    public void RotatedCommonLineComponentIsTranslatedBackInsideTheSheetAsOneRigidUnit()
+    {
+      INfp horizontal = Rectangle(4D, 1D);
+      INfp vertical = Rectangle(1D, 4D);
+      var placements = new List<IPartPlacement>
+      {
+        // Rotating this part about its placed centre produces bounds y=-0.5..3.5. The common-line
+        // relationship itself is valid; the complete pair only needs a rigid +0.5 Y translation.
+        PlaceAt(horizontal, 0, 0D, 2D, 1D),
+        PlaceAt(vertical, 1, 0D, 4.8D, 0D),
+      };
+      var rules = new Dictionary<int, (CommonCuttingMode, int, string, bool, double)>
+      {
+        [0] = (CommonCuttingMode.Unrestricted, 0, "direct", true, NormalGap),
+        [1] = (CommonCuttingMode.Unrestricted, 1, "direct", true, NormalGap),
+      };
+      var profiles = new Dictionary<int, SparrowNestService.DirectOrientationProfile>
+      {
+        [0] = new SparrowNestService.DirectOrientationProfile(horizontal, new[] { 90 }),
+        [1] = new SparrowNestService.DirectOrientationProfile(vertical, new[] { 0 }),
+      };
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        rules,
+        profiles,
+        sheetW: 10D,
+        sheetH: 6D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance,
+        effort: NestEffort.Fast);
+
+      CommonEdge record = Record(result);
+      using (new AssertionScope())
+      {
+        result.GivenUp.Should().Be(0);
+        Length(record).Should().BeApproximately(4D, GeometryTolerance);
+        Normalize(placements.Single(part => part.Source == 0).Rotation).Should().Be(90D);
+        placements.Should().OnlyContain(part => part.MinY >= -GeometryTolerance
+          && part.MaxY <= 6D + GeometryTolerance);
+        placements.Min(part => part.MinY).Should().BeApproximately(0D, GeometryTolerance,
+          "the selected component should be translated, not rejected, when its centred pose crosses an edge");
+      }
+    }
+
+    [Fact]
     public void OnePartCannotPromiseTwoLongEdgesThatRequireConflictingPoses()
     {
       INfp source = OneLongEdgeBar();
@@ -180,8 +227,12 @@ namespace DeepNestSharp.CiTests.RasterNest
       List<CommonEdge> records = result.Edges.Select(intent => CommonLineGeometryResolver.CreateCommonEdge(
         intent.PartA,
         intent.EdgeAIndex,
+        intent.EdgeAStart,
+        intent.EdgeAEnd,
         intent.PartB,
         intent.EdgeBIndex,
+        intent.EdgeBStart,
+        intent.EdgeBEnd,
         CommonLineGap,
         GeometryTolerance)).ToList();
 
@@ -192,6 +243,221 @@ namespace DeepNestSharp.CiTests.RasterNest
         result.Edges.Should().OnlyContain(intent => placements.Contains(intent.PartA) && placements.Contains(intent.PartB),
           "every accepted intent must reference the final committed pose objects");
         result.Groups.Where(group => group > 0).Distinct().Should().ContainSingle();
+      }
+    }
+
+    [Fact]
+    public void ArbitraryDiscreteAnglesCreateATriangleCommonLineWithoutCardinalClamping()
+    {
+      INfp source = Triangle(4D, 2D);
+      List<IPartPlacement> placements = FacingBasePair(
+        source,
+        finalFirstRotation: 37D,
+        finalSecondRotation: 217D,
+        currentFirstRotation: 0D,
+        currentSecondRotation: 0D);
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        DirectRules(),
+        Profiles(source, new[] { 0, 37, 217 }),
+        sheetW: 40D,
+        sheetH: 40D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance);
+
+      CommonEdge record = Record(result);
+      using (new AssertionScope())
+      {
+        Length(record).Should().BeApproximately(4D, GeometryTolerance);
+        placements.Select(placement => Normalize(placement.Rotation)).Should().BeEquivalentTo(new[] { 37D, 217D });
+        result.Fallbacks.Should().BeEmpty();
+      }
+    }
+
+    [Fact]
+    public void ContinuousPolicyDerivesTheExactFacingAngleFromNeighbourEdges()
+    {
+      INfp source = Triangle(4D, 2D);
+      List<IPartPlacement> placements = FacingBasePair(
+        source,
+        finalFirstRotation: 17D,
+        finalSecondRotation: 197D,
+        currentFirstRotation: 17D,
+        currentSecondRotation: 43D);
+      // Non-common anchors hold the sheet footprint constant so this test isolates the continuous-angle
+      // derivation rather than the separate material-first finalist objective.
+      placements.Add(PlaceAt(Rectangle(0.1D, 0.1D), 1, 0D, 0.5D, 0.5D));
+      placements.Add(PlaceAt(Rectangle(0.1D, 0.1D), 1, 0D, 39D, 39D));
+      var profiles = new Dictionary<int, SparrowNestService.DirectOrientationProfile>
+      {
+        [0] = new SparrowNestService.DirectOrientationProfile(
+          source,
+          RotationCodes.AnglesN(4),
+          continuous: true),
+      };
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        DirectRules(),
+        profiles,
+        sheetW: 40D,
+        sheetH: 40D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance);
+
+      CommonEdge record = Record(result);
+      double separation = Math.Abs(Normalize(placements[0].Rotation) - Normalize(placements[1].Rotation));
+      separation = Math.Min(separation, 360D - separation);
+      using (new AssertionScope())
+      {
+        separation.Should().BeApproximately(180D, 1e-6,
+          "a continuous profile derives the exact opposing pose instead of rounding to 15-degree samples");
+        Length(record).Should().BeApproximately(4D, GeometryTolerance);
+        placements.Select(placement => Normalize(placement.Rotation)).Should().Contain(17D,
+          "the already legal arbitrary Sparrow pose remains available");
+      }
+    }
+
+    [Fact]
+    public void ActualMaterialFootprintWinsBeforeTheLongerSeam()
+    {
+      INfp source = Triangle(4D, 2D);
+      List<IPartPlacement> placements = FacingBasePair(
+        source,
+        finalFirstRotation: 17D,
+        finalSecondRotation: 197D,
+        currentFirstRotation: 17D,
+        currentSecondRotation: 43D);
+      var profiles = new Dictionary<int, SparrowNestService.DirectOrientationProfile>
+      {
+        [0] = new SparrowNestService.DirectOrientationProfile(
+          source,
+          RotationCodes.AnglesN(4),
+          continuous: true),
+      };
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        DirectRules(),
+        profiles,
+        sheetW: 40D,
+        sheetH: 40D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance,
+        effort: NestEffort.Fast);
+
+      CommonEdge record = Record(result);
+      using (new AssertionScope())
+      {
+        placements.Select(placement => Normalize(placement.Rotation))
+          .Should().BeEquivalentTo(new[] { 90D, 270D },
+            "the smaller occupied material box outranks the four-unit oblique seam");
+        Length(record).Should().BeLessThan(4D,
+          "cut saving is deliberately the tie-breaker after actual footprint density");
+      }
+    }
+
+    [Fact]
+    public void FastPairPruningRetainsAShortMaterialWinnerBeyondFourLongCandidates()
+    {
+      const double wideNormalGap = 6D;
+      INfp bar = Rectangle(10D, 1D);
+      var placements = new List<IPartPlacement>
+      {
+        PlaceAt(bar, 0, 0D, 1D, 1D),
+        PlaceAt(bar, 0, 0D, 17D, 8D),
+      };
+      var rules = new Dictionary<int, (CommonCuttingMode, int, string, bool, double)>
+      {
+        [0] = (CommonCuttingMode.Unrestricted, 0, "direct", true, wideNormalGap),
+      };
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        rules,
+        Profiles(bar, new[] { 0, 180 }),
+        sheetW: 50D,
+        sheetH: 30D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance,
+        effort: NestEffort.Fast);
+
+      CommonEdge record = Record(result);
+      double width = placements.Max(placement => placement.MaxX)
+        - placements.Min(placement => placement.MinX);
+      double height = placements.Max(placement => placement.MaxY)
+        - placements.Min(placement => placement.MinY);
+      using (new AssertionScope())
+      {
+        Length(record).Should().BeApproximately(1D, GeometryTolerance,
+          "four longer pose variants must not prune the fifth material-superior side seam");
+        (width * height).Should().BeApproximately(20.01D, 0.01D,
+          "the short side-by-side seam occupies less material envelope than stacking on a long edge");
+        result.GivenUp.Should().Be(0);
+      }
+    }
+
+    [Fact]
+    public void GlobalBeamPrefersTwoShortTriangleSpansOverOneLongerAlternative()
+    {
+      INfp triangle = Triangle(10D, 3D);
+      INfp longBar = Rectangle(8D, 1D);
+      INfp shortBar = Rectangle(4.4D, 1D);
+      var placements = new List<IPartPlacement>
+      {
+        PlaceAt(triangle, 0, 0D, 5D, 5D),
+        PlaceAt(longBar, 1, 0D, 6D, 3.7D),
+        PlaceAt(shortBar, 2, 0D, 5D, 8.3D),
+        PlaceAt(shortBar, 3, 0D, 10.6D, 8.3D),
+      };
+      var rules = new Dictionary<int, (CommonCuttingMode, int, string, bool, double)>();
+      for (int source = 0; source < placements.Count; source++)
+      {
+        rules[source] = (CommonCuttingMode.Unrestricted, source, "direct", true, NormalGap);
+      }
+
+      var profiles = new Dictionary<int, SparrowNestService.DirectOrientationProfile>
+      {
+        [0] = new SparrowNestService.DirectOrientationProfile(triangle, new[] { 0, 180 }),
+        [1] = new SparrowNestService.DirectOrientationProfile(longBar, new[] { 0 }),
+        [2] = new SparrowNestService.DirectOrientationProfile(shortBar, new[] { 0 }),
+        [3] = new SparrowNestService.DirectOrientationProfile(shortBar, new[] { 0 }),
+      };
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        rules,
+        profiles,
+        sheetW: 25D,
+        sheetH: 15D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance,
+        effort: NestEffort.Fast);
+
+      List<CommonEdge> records = result.Edges.Select(intent => CommonLineGeometryResolver.CreateCommonEdge(
+        intent.PartA,
+        intent.EdgeAIndex,
+        intent.EdgeAStart,
+        intent.EdgeAEnd,
+        intent.PartB,
+        intent.EdgeBIndex,
+        intent.EdgeBStart,
+        intent.EdgeBEnd,
+        CommonLineGap,
+        GeometryTolerance)).ToList();
+      using (new AssertionScope())
+      {
+        result.Edges.Should().HaveCount(2);
+        records.Sum(Length).Should().BeApproximately(8.8D, GeometryTolerance);
+        Normalize(placements.Single(placement => placement.Source == 0).Rotation).Should().Be(180D);
+        result.Edges.SelectMany(edge => new[] { edge.PartA.Source, edge.PartB.Source })
+          .Should().NotContain(1, "the single eight-unit alternative saves less total cut length");
       }
     }
 
@@ -226,6 +492,39 @@ namespace DeepNestSharp.CiTests.RasterNest
           "the same physical pair ultimately received a valid common edge");
         result.Fallbacks.Should().BeEmpty(
           "diagnostics from a losing candidate must not describe the accepted pair");
+      }
+    }
+
+    [Fact]
+    public void ManualClusterLimitIsHardWhileAutoAllowsTheRequiredTenByTenCapacity()
+    {
+      SparrowNestService.ResolveCommonLineMaxClusterParts(
+        CommonLineDefaults.AutoMaxClusterParts,
+        250).Should().Be(100);
+      SparrowNestService.ResolveCommonLineMaxClusterParts(6, 250).Should().Be(6);
+
+      INfp source = Rectangle(2D, 1D);
+      var placements = Enumerable.Range(0, 6)
+        .Select(column => PlaceAt(source, 0, 0D, 1D + (column * (2D + NormalGap)), 1D))
+        .ToList();
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        DirectRules(),
+        Profiles(source, new[] { 0 }),
+        sheetW: 20D,
+        sheetH: 5D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance,
+        commonLineMaxClusterParts: 2);
+
+      using (new AssertionScope())
+      {
+        result.Edges.Should().HaveCount(3);
+        result.Groups.Where(group => group > 0)
+          .GroupBy(group => group)
+          .Should().OnlyContain(group => group.Count() <= 2,
+            "a manual limit is enforced by every beam and rollback forest branch");
       }
     }
 
@@ -277,7 +576,8 @@ namespace DeepNestSharp.CiTests.RasterNest
         sheetH: 20D,
         margin: 0D,
         commonLineGap: CommonLineGap,
-        geometryTolerance: GeometryTolerance);
+        geometryTolerance: GeometryTolerance,
+        commonLineMaxClusterParts: CommonLineDefaults.AutoMaxClusterParts);
       return new GridRun(placements, result);
     }
 
@@ -356,8 +656,12 @@ namespace DeepNestSharp.CiTests.RasterNest
       return CommonLineGeometryResolver.CreateCommonEdge(
         intent.PartA,
         intent.EdgeAIndex,
+        intent.EdgeAStart,
+        intent.EdgeAEnd,
         intent.PartB,
         intent.EdgeBIndex,
+        intent.EdgeBStart,
+        intent.EdgeBEnd,
         CommonLineGap,
         GeometryTolerance);
     }
@@ -418,6 +722,62 @@ namespace DeepNestSharp.CiTests.RasterNest
         new SvgPoint(0D, 0D),
         new SvgPoint(0D, 1.375D),
         new SvgPoint(10D, 1.375D),
+      });
+
+    private static List<IPartPlacement> FacingBasePair(
+      INfp source,
+      double finalFirstRotation,
+      double finalSecondRotation,
+      double currentFirstRotation,
+      double currentSecondRotation)
+    {
+      INfp finalFirst = source.Rotate(finalFirstRotation);
+      INfp finalSecond = source.Rotate(finalSecondRotation);
+      const double firstX = 15D;
+      const double firstY = 15D;
+      SvgPoint aStart = finalFirst.Points[0];
+      SvgPoint aEnd = finalFirst.Points[1];
+      double edgeLength = Math.Sqrt(
+        Math.Pow(aEnd.X - aStart.X, 2D)
+        + Math.Pow(aEnd.Y - aStart.Y, 2D));
+      double normalX = (aEnd.Y - aStart.Y) / edgeLength;
+      double normalY = -(aEnd.X - aStart.X) / edgeLength;
+      SvgPoint bEnd = finalSecond.Points[1];
+      double secondX = firstX + aStart.X + (NormalGap * normalX) - bEnd.X;
+      double secondY = firstY + aStart.Y + (NormalGap * normalY) - bEnd.Y;
+      double firstCentreX = firstX + ((finalFirst.MinX + finalFirst.MaxX) / 2D);
+      double firstCentreY = firstY + ((finalFirst.MinY + finalFirst.MaxY) / 2D);
+      double secondCentreX = secondX + ((finalSecond.MinX + finalSecond.MaxX) / 2D);
+      double secondCentreY = secondY + ((finalSecond.MinY + finalSecond.MaxY) / 2D);
+      INfp currentFirst = source.Rotate(currentFirstRotation);
+      INfp currentSecond = source.Rotate(currentSecondRotation);
+      return new List<IPartPlacement>
+      {
+        PlaceAtCentre(currentFirst, 0, currentFirstRotation, firstCentreX, firstCentreY),
+        PlaceAtCentre(currentSecond, 0, currentSecondRotation, secondCentreX, secondCentreY),
+      };
+    }
+
+    private static IPartPlacement PlaceAtCentre(
+      INfp part,
+      int source,
+      double rotation,
+      double centreX,
+      double centreY)
+      => new PartPlacement(part)
+      {
+        Source = source,
+        Rotation = rotation,
+        X = centreX - ((part.MinX + part.MaxX) / 2D),
+        Y = centreY - ((part.MinY + part.MaxY) / 2D),
+      };
+
+    private static INfp Triangle(double width, double height)
+      => new NoFitPolygon(new[]
+      {
+        new SvgPoint(0D, 0D),
+        new SvgPoint(width, 0D),
+        new SvgPoint(width * 0.4D, height),
       });
 
     private static INfp Rectangle(double width, double height)

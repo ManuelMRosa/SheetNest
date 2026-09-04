@@ -90,8 +90,12 @@ namespace DeepNestSharp.CiTests.RasterNest
       CommonEdge record = CommonLineGeometryResolver.CreateCommonEdge(
         intent.PartA,
         intent.EdgeAIndex,
+        intent.EdgeAStart,
+        intent.EdgeAEnd,
         intent.PartB,
         intent.EdgeBIndex,
+        intent.EdgeBStart,
+        intent.EdgeBEnd,
         CommonLineGap,
         GeometryTolerance);
       var sheet = new SheetPlacement(

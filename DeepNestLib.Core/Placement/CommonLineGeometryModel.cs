@@ -5,6 +5,22 @@ namespace DeepNestLib.Placement
   using System.Linq;
   using System.Text.Json.Serialization;
 
+  /// <summary>The analytic source or common-cut primitive used by a boundary span.</summary>
+  public enum CommonLineGeometryKind
+  {
+    /// <summary>A finite straight line segment.</summary>
+    Line = 0,
+
+    /// <summary>A circular arc, including a span taken from a DXF CIRCLE.</summary>
+    CircularArc = 1,
+
+    /// <summary>An elliptic arc, preserved as source metadata but ineligible as a common seam.</summary>
+    Ellipse = 2,
+
+    /// <summary>A NURBS spline, preserved as source metadata but ineligible as a common seam.</summary>
+    Spline = 3,
+  }
+
   /// <summary>A serializable point used by deterministic common-line geometry.</summary>
   public sealed class CommonLinePoint
   {
@@ -21,11 +37,99 @@ namespace DeepNestLib.Placement
   }
 
   /// <summary>
-  /// Records one intentional full-edge relationship made by the nester. Edge indexes address
-  /// <c>Part.Points[i] -&gt; Part.Points[(i + 1) % ringLength]</c>; Start and End are the midpoint cut.
+  /// Identifies a stable parametric interval on one ordered source-contour primitive. Parameters are
+  /// normalized to the primitive's directed range: zero is its start and one is its end.
+  /// </summary>
+  public sealed class CommonBoundarySpan
+  {
+    [JsonConstructor]
+    public CommonBoundarySpan(
+      int contourIndex,
+      int primitiveIndex,
+      double startParameter,
+      double endParameter,
+      string sourceFingerprint = null,
+      string contourFingerprint = null)
+    {
+      this.ContourIndex = contourIndex;
+      this.PrimitiveIndex = primitiveIndex;
+      this.StartParameter = startParameter;
+      this.EndParameter = endParameter;
+      this.SourceFingerprint = sourceFingerprint;
+      this.ContourFingerprint = contourFingerprint;
+    }
+
+    public int ContourIndex { get; }
+
+    public int PrimitiveIndex { get; }
+
+    public double StartParameter { get; }
+
+    public double EndParameter { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string SourceFingerprint { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string ContourFingerprint { get; }
+  }
+
+  /// <summary>
+  /// Describes the resolved center cut for a parametric common edge. Lines use Start/End; circular arcs
+  /// additionally use Center/Radius/angles. Ellipses and splines are deliberately not emitted as
+  /// sampled common cuts: they remain ineligible until an exact analytic representation exists.
+  /// </summary>
+  public sealed class CommonCenterCurve
+  {
+    [JsonConstructor]
+    public CommonCenterCurve(
+      CommonLineGeometryKind geometryKind,
+      CommonLinePoint start,
+      CommonLinePoint end,
+      CommonLinePoint center = null,
+      double radius = 0D,
+      double startAngleRadians = 0D,
+      double sweepRadians = 0D)
+    {
+      this.GeometryKind = geometryKind;
+      this.Start = start;
+      this.End = end;
+      this.Center = center;
+      this.Radius = radius;
+      this.StartAngleRadians = startAngleRadians;
+      this.SweepRadians = sweepRadians;
+    }
+
+    public CommonLineGeometryKind GeometryKind { get; }
+
+    public CommonLinePoint Start { get; }
+
+    public CommonLinePoint End { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CommonLinePoint Center { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Radius { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double StartAngleRadians { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double SweepRadians { get; }
+  }
+
+  /// <summary>
+  /// Records one intentional common-edge relationship made by the nester. Legacy records address a
+  /// complete tessellated edge by index; schema-two records address exact parametric source spans.
+  /// Start and End retain the resolved midpoint cut for compatibility and fail-closed revalidation.
   /// </summary>
   public sealed class CommonEdge
   {
+    public const int LegacySchemaVersion = 0;
+
+    public const int ParametricSchemaVersion = 2;
+
     [JsonConstructor]
     public CommonEdge(
       int partAId,
@@ -34,7 +138,12 @@ namespace DeepNestLib.Placement
       int edgeBIndex,
       CommonLinePoint start,
       CommonLinePoint end,
-      double gap)
+      double gap,
+      int schemaVersion = LegacySchemaVersion,
+      CommonLineGeometryKind geometryKind = CommonLineGeometryKind.Line,
+      CommonBoundarySpan spanA = null,
+      CommonBoundarySpan spanB = null,
+      CommonCenterCurve centerCurve = null)
     {
       this.PartAId = partAId;
       this.PartBId = partBId;
@@ -43,6 +152,11 @@ namespace DeepNestLib.Placement
       this.Start = start;
       this.End = end;
       this.Gap = gap;
+      this.SchemaVersion = schemaVersion;
+      this.GeometryKind = geometryKind;
+      this.SpanA = spanA;
+      this.SpanB = spanB;
+      this.CenterCurve = centerCurve;
     }
 
     public int PartAId { get; }
@@ -58,6 +172,22 @@ namespace DeepNestLib.Placement
     public CommonLinePoint End { get; }
 
     public double Gap { get; }
+
+    /// <summary>Zero/missing is the legacy full-straight-edge contract; two is parametric.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int SchemaVersion { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public CommonLineGeometryKind GeometryKind { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CommonBoundarySpan SpanA { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CommonBoundarySpan SpanB { get; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CommonCenterCurve CenterCurve { get; }
   }
 
   /// <summary>An undirected line segment in the resolved common-cut graph.</summary>
@@ -121,17 +251,58 @@ namespace DeepNestLib.Placement
       IReadOnlyList<int> partIds,
       IReadOnlyList<CommonLinePath> outerBoundaries,
       IReadOnlyList<CommonLineSegment> commonLines)
+      : this(partIds, outerBoundaries, Array.Empty<CommonLinePath>(), commonLines, null)
+    {
+    }
+
+    public CommonLineCluster(
+      IReadOnlyList<int> partIds,
+      IReadOnlyList<CommonLinePath> outerBoundaries,
+      IReadOnlyList<CommonLineSegment> commonLines,
+      IReadOnlyList<CommonCenterCurve> commonCurves)
+      : this(partIds, outerBoundaries, Array.Empty<CommonLinePath>(), commonLines, commonCurves)
+    {
+    }
+
+    public CommonLineCluster(
+      IReadOnlyList<int> partIds,
+      IReadOnlyList<CommonLinePath> outerBoundaries,
+      IReadOnlyList<CommonLinePath> innerBoundaries,
+      IReadOnlyList<CommonLineSegment> commonLines,
+      IReadOnlyList<CommonCenterCurve> commonCurves)
     {
       this.PartIds = partIds ?? throw new ArgumentNullException(nameof(partIds));
       this.OuterBoundaries = outerBoundaries ?? throw new ArgumentNullException(nameof(outerBoundaries));
-      this.CommonLines = commonLines ?? throw new ArgumentNullException(nameof(commonLines));
+      this.InnerBoundaries = innerBoundaries ?? throw new ArgumentNullException(nameof(innerBoundaries));
+      this.CommonLines = commonLines?.ToArray()
+        ?? (commonCurves ?? Array.Empty<CommonCenterCurve>())
+          .Where(curve => curve?.GeometryKind == CommonLineGeometryKind.Line)
+          .Select(curve => new CommonLineSegment(curve.Start, curve.End))
+          .ToArray();
+      this.CommonCurves = commonCurves?.ToArray()
+        ?? this.CommonLines
+          .Select(line => new CommonCenterCurve(CommonLineGeometryKind.Line, line.Start, line.End))
+          .ToArray();
     }
 
     public IReadOnlyList<int> PartIds { get; }
 
     public IReadOnlyList<CommonLinePath> OuterBoundaries { get; }
 
+    /// <summary>
+    /// Closed voids formed by the external boundaries of multiple cluster members. These are cutting
+    /// holes, not additional outside islands, and therefore belong on CUT_INNER.
+    /// </summary>
+    public IReadOnlyList<CommonLinePath> InnerBoundaries { get; }
+
     public IReadOnlyList<CommonLineSegment> CommonLines { get; }
+
+    /// <summary>
+    /// Runtime cutting primitives. Legacy straight seams are projected into this collection, while
+    /// circular common seams can coexist without pretending to be their endpoint chord.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<CommonCenterCurve> CommonCurves { get; }
   }
 
   /// <summary>The fully validated cutting geometry for every common-line component on a sheet.</summary>

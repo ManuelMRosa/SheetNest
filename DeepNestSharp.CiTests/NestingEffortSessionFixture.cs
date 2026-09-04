@@ -47,7 +47,8 @@ namespace DeepNestSharp.CiTests
         5,
         4,
         chosen,
-        0.015);
+        0.015,
+        36);
 
       string json = JsonSerializer.Serialize(session);
       var reopened = JsonSerializer.Deserialize<SessionState>(json);
@@ -58,6 +59,8 @@ namespace DeepNestSharp.CiTests
       reopened.OffcutSpacing.Should().Be(0.375);
       reopened.EffectiveCommonLineGapInches.Should().BeApproximately(0.015, 1e-12,
         "closing must retain the physical common-line gap alongside the other dialog preferences");
+      reopened.EffectiveCommonLineMaxClusterParts.Should().Be(36,
+        "closing must retain the common-line cluster policy alongside the other dialog preferences");
     }
 
     [Fact]
@@ -69,7 +72,7 @@ namespace DeepNestSharp.CiTests
         .Where(parameter => parameter.Name == "effort" && parameter.IsOptional)
         .ToList();
 
-      effortParameters.Should().HaveCount(5);
+      effortParameters.Should().HaveCount(7);
       effortParameters.Should().OnlyContain(parameter =>
         object.Equals(parameter.DefaultValue, NestEffortDefaults.Default));
     }

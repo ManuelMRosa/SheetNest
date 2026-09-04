@@ -190,6 +190,126 @@ namespace DeepNestSharp.CiTests
         "equal nominal positions do not make normal and common-line export contracts interchangeable");
     }
 
+    [Fact]
+    public void LayoutSignatureDistinguishesParametricCurvesWithTheSameEndpoints()
+    {
+      const double gap = 0.01;
+      IReadOnlyList<IPartPlacement> placements = new[]
+      {
+        Square(0, 0, 10),
+        Square(10 + gap, 0, 11),
+      };
+      var start = new CommonLinePoint(10.005, 0);
+      var end = new CommonLinePoint(10.005, 10);
+      var spanA = new CommonBoundarySpan(0, 1, 0, 1, "source-a", "contour-a");
+      var spanB = new CommonBoundarySpan(0, 3, 0, 1, "source-b", "contour-b");
+
+      SheetPlacement WithSweep(double sweep) => new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        placements,
+        0,
+        requiresMergedLines: false,
+        commonEdges: new[]
+        {
+          new CommonEdge(
+            10,
+            11,
+            -1,
+            -1,
+            start,
+            end,
+            gap,
+            CommonEdge.ParametricSchemaVersion,
+            CommonLineGeometryKind.CircularArc,
+            spanA,
+            spanB,
+            new CommonCenterCurve(
+              CommonLineGeometryKind.CircularArc,
+              start,
+              end,
+              new CommonLinePoint(0, 0),
+              10,
+              0,
+              sweep)),
+        },
+        commonLineGap: gap,
+        geometryTolerance: 0.0001);
+
+      DxfViewer.Signature(WithSweep(Math.PI / 2D)).Should().NotBe(
+        DxfViewer.Signature(WithSweep(3D * Math.PI / 2D)),
+        "equal endpoints do not identify the same circular cut");
+    }
+
+    [Fact]
+    public void LayoutSignatureCanonicalizesTheDirectionOfAParametricArcRecord()
+    {
+      const double gap = 0.01D;
+      var placements = new IPartPlacement[]
+      {
+        Square(0, 0, 10),
+        Square(10 + gap, 0, 11),
+      };
+      var start = new CommonLinePoint(10D, 0D);
+      var end = new CommonLinePoint(0D, 10D);
+      var center = new CommonLinePoint(0D, 0D);
+      var spanA = new CommonBoundarySpan(0, 1, 0D, 1D, "source-a", "contour-a");
+      var spanB = new CommonBoundarySpan(0, 3, 0D, 1D, "source-b", "contour-b");
+      var forward = new CommonEdge(
+        10,
+        11,
+        -1,
+        -1,
+        start,
+        end,
+        gap,
+        CommonEdge.ParametricSchemaVersion,
+        CommonLineGeometryKind.CircularArc,
+        spanA,
+        spanB,
+        new CommonCenterCurve(
+          CommonLineGeometryKind.CircularArc,
+          start,
+          end,
+          center,
+          10D,
+          0D,
+          Math.PI / 2D));
+      var reverse = new CommonEdge(
+        11,
+        10,
+        -1,
+        -1,
+        end,
+        start,
+        gap,
+        CommonEdge.ParametricSchemaVersion,
+        CommonLineGeometryKind.CircularArc,
+        spanB,
+        spanA,
+        new CommonCenterCurve(
+          CommonLineGeometryKind.CircularArc,
+          end,
+          start,
+          center,
+          10D,
+          Math.PI / 2D,
+          -Math.PI / 2D));
+
+      SheetPlacement With(CommonEdge edge) => new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        placements,
+        0D,
+        requiresMergedLines: true,
+        commonEdges: new[] { edge },
+        commonLineGap: gap,
+        geometryTolerance: 0.0001D);
+
+      DxfViewer.Signature(With(forward)).Should().Be(DxfViewer.Signature(With(reverse)),
+        "record direction must not split identical physical cut layouts into different production groups");
+    }
+
     private static ISheetPlacement FullSheet(bool requiresMergedLines = false)
     {
       var placements = new List<IPartPlacement>

@@ -199,6 +199,68 @@ namespace DeepNestLib.CiTests.Placement
         point.X > 1.9D && point.X < 4.1D && point.Y > 1.9D && point.Y < 3.1D);
     }
 
+    [Fact]
+    public void FacingCShapesClassifyTheEnclosedClusterVoidAsCutInner()
+    {
+      var left = new NoFitPolygon(new[]
+      {
+        new SvgPoint(0D, 0D),
+        new SvgPoint(5D, 0D),
+        new SvgPoint(5D, 2D),
+        new SvgPoint(2D, 2D),
+        new SvgPoint(2D, 8D),
+        new SvgPoint(5D, 8D),
+        new SvgPoint(5D, 10D),
+        new SvgPoint(0D, 10D),
+      });
+      var right = new NoFitPolygon(new[]
+      {
+        new SvgPoint(0D, 0D),
+        new SvgPoint(5D, 0D),
+        new SvgPoint(5D, 10D),
+        new SvgPoint(0D, 10D),
+        new SvgPoint(0D, 8D),
+        new SvgPoint(3D, 8D),
+        new SvgPoint(3D, 2D),
+        new SvgPoint(0D, 2D),
+      });
+      var parts = new List<IPartPlacement>
+      {
+        new PartPlacement(left) { Id = 0 },
+        new PartPlacement(right) { Id = 1, X = 5D + Gap },
+      };
+      IReadOnlyList<CommonEdge> edges = Edges(parts, (0, 1, 1, 7), (0, 5, 1, 3));
+
+      CommonLineCluster cluster = CommonLineGeometryResolver.Resolve(Placement(parts, edges))
+        .Clusters.Single();
+
+      cluster.OuterBoundaries.Should().ContainSingle(path => path.IsClosed);
+      cluster.InnerBoundaries.Should().ContainSingle(path => path.IsClosed,
+        "the center void is a hole in the material envelope, not a second CUT_OUTER island");
+      cluster.CommonLines.Should().HaveCount(2);
+      cluster.InnerBoundaries.Single().Points.Should().OnlyContain(point =>
+        point.X >= 2D - Tolerance
+        && point.X <= 8D + Gap + Tolerance
+        && point.Y >= 2D - Tolerance
+        && point.Y <= 8D + Tolerance);
+    }
+
+    [Fact]
+    public void DisconnectedClusterBoundaryIsRejectedInsteadOfExportingMultipleOuterIslands()
+    {
+      CommonLinePath first = ClosedRectangle(0D, 0D, 2D, 2D);
+      CommonLinePath second = ClosedRectangle(4D, 0D, 2D, 2D);
+
+      Action act = () => CommonLineGeometryResolver.ClassifyClusterBoundaries(
+        new[] { first, second },
+        Tolerance,
+        out _,
+        out _);
+
+      act.Should().Throw<CommonLineValidationException>()
+        .WithMessage("*exactly one closed external boundary*");
+    }
+
     [Theory]
     [InlineData(0.010D)]
     [InlineData(0.015D)]
@@ -265,6 +327,57 @@ namespace DeepNestLib.CiTests.Placement
 
       act.Should().Throw<CommonLineValidationException>()
         .WithMessage("*same usable length*");
+    }
+
+    [Fact]
+    public void PartialStraightSpanSharesTheShorterEdgeAndKeepsOneClosedOuter()
+    {
+      var parts = new List<IPartPlacement>
+      {
+        new PartPlacement(Rectangle(10D, 10D)) { Id = 0 },
+        new PartPlacement(Rectangle(10D, 4D)) { Id = 1, X = 10D + Gap, Y = 3D },
+      };
+      CommonEdge edge = CommonLineGeometryResolver.CreateCommonEdge(
+        parts[0],
+        1,
+        0.3D,
+        0.7D,
+        parts[1],
+        3,
+        0D,
+        1D,
+        Gap,
+        Tolerance);
+
+      CommonLineCluster cluster = CommonLineGeometryResolver.Resolve(
+        Placement(parts, new[] { edge })).Clusters.Single();
+
+      edge.SchemaVersion.Should().Be(CommonEdge.ParametricSchemaVersion);
+      cluster.OuterBoundaries.Should().ContainSingle(path => path.IsClosed);
+      CommonLineSegment seam = cluster.CommonLines.Should().ContainSingle().Subject;
+      Distance(seam.Start, seam.End).Should().BeApproximately(4D, Tolerance);
+      new[] { seam.Start.Y, seam.End.Y }.Should().BeEquivalentTo(new[] { 3D, 7D });
+    }
+
+    [Fact]
+    public void OverlappingIntervalsOnOneOutsideEdgeAreRejected()
+    {
+      var parts = new List<IPartPlacement>
+      {
+        new PartPlacement(Rectangle(10D, 10D)) { Id = 0 },
+        new PartPlacement(Rectangle(10D, 4D)) { Id = 1, X = 10D + Gap, Y = 2D },
+        new PartPlacement(Rectangle(10D, 4D)) { Id = 2, X = 10D + Gap, Y = 4D },
+      };
+      CommonEdge first = CommonLineGeometryResolver.CreateCommonEdge(
+        parts[0], 1, 0.2D, 0.6D, parts[1], 3, 0D, 1D, Gap, Tolerance);
+      CommonEdge second = CommonLineGeometryResolver.CreateCommonEdge(
+        parts[0], 1, 0.4D, 0.8D, parts[2], 3, 0D, 1D, Gap, Tolerance);
+
+      Action act = () => CommonLineGeometryResolver.Resolve(
+        Placement(parts, new[] { first, second }));
+
+      act.Should().Throw<CommonLineValidationException>()
+        .WithMessage("*interval belongs to more than one*");
     }
 
     [Fact]
@@ -408,6 +521,19 @@ namespace DeepNestLib.CiTests.Placement
         new SvgPoint(width, height),
         new SvgPoint(0D, height),
       });
+
+    private static CommonLinePath ClosedRectangle(
+      double x,
+      double y,
+      double width,
+      double height)
+      => new CommonLinePath(new[]
+      {
+        new CommonLinePoint(x, y),
+        new CommonLinePoint(x + width, y),
+        new CommonLinePoint(x + width, y + height),
+        new CommonLinePoint(x, y + height),
+      }, isClosed: true);
 
     private static IReadOnlyList<CommonEdge> Edges(
       IReadOnlyList<IPartPlacement> parts,

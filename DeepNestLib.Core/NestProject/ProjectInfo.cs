@@ -13,12 +13,15 @@ namespace DeepNestLib.NestProject
     public const string FileDialogFilter = "DeepNest Projects (*.dnest)|*.dnest|Json (*.json)|*.json|All files (*.*)|*.*";
     private ISvgNestConfig config;
     private double commonLineGapInches = CommonLineDefaults.DefaultGapInches;
+    private int commonLineMaxClusterParts = CommonLineDefaults.DefaultMaxClusterParts;
     private WrappableList<ISheetLoadInfo, SheetLoadInfo> wrappableSheetLoadInfos;
 
     public ProjectInfo(ISvgNestConfig config)
     {
       this.config = config;
       this.CommonLineGapInches = config?.CommonLineGapInches ?? CommonLineDefaults.DefaultGapInches;
+      this.CommonLineMaxClusterParts = config?.CommonLineMaxClusterParts
+        ?? CommonLineDefaults.DefaultMaxClusterParts;
     }
 
     [JsonInclude]
@@ -82,6 +85,18 @@ namespace DeepNestLib.NestProject
         : CommonLineDefaults.DefaultGapInches;
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Like <see cref="CommonLineGapInches"/>, this is a document-owned snapshot patched into Config
+    /// during serialization so concurrently open projects remain independent.
+    /// </remarks>
+    [JsonIgnore]
+    public int CommonLineMaxClusterParts
+    {
+      get => this.commonLineMaxClusterParts;
+      set => this.commonLineMaxClusterParts = CommonLineDefaults.NormalizeMaxClusterParts(value);
+    }
+
     public static ProjectInfo FromJson(ISvgNestConfig config, string json)
     {
       try
@@ -99,6 +114,8 @@ namespace DeepNestLib.NestProject
           result.config = config;
           result.CommonLineGapInches = deserialized?.CommonLineGapInches
             ?? CommonLineDefaults.DefaultGapInches;
+          result.CommonLineMaxClusterParts = deserialized?.CommonLineMaxClusterParts
+            ?? CommonLineDefaults.DefaultMaxClusterParts;
           if (deserialized != null)
           {
             // The job's settings, applied and not adopted. Without the scope every project open wrote the
@@ -129,6 +146,7 @@ namespace DeepNestLib.NestProject
     {
       this.LastNestResultJson = source.LastNestResultJson;
       this.CommonLineGapInches = source.CommonLineGapInches;
+      this.CommonLineMaxClusterParts = source.CommonLineMaxClusterParts;
       this.DetailLoadInfos.Clear();
       foreach (var p in source.DetailLoadInfos)
       {
@@ -174,6 +192,7 @@ namespace DeepNestLib.NestProject
       if (root?[nameof(Config)] is JsonObject serializedConfig)
       {
         serializedConfig[nameof(ISvgNestConfig.CommonLineGapInches)] = this.CommonLineGapInches;
+        serializedConfig[nameof(ISvgNestConfig.CommonLineMaxClusterParts)] = this.CommonLineMaxClusterParts;
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
       }
 

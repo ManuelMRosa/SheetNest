@@ -4,7 +4,7 @@ namespace DeepNestSharp.RasterNest
   using DeepNestLib.NestProject;
 
   /// <summary>
-  /// The one common-cutting compatibility rule used by loading, compaction, V1 planning, SheetCam
+  /// The one common-cutting compatibility rule used by loading, compaction, exact direct planning, SheetCam
   /// measured-kerf snapping and final placement acceptance. A non-empty matching domain is the outer
   /// gate; only then do the per-part modes and SamePart identity decide whether a pair may share.
   /// </summary>

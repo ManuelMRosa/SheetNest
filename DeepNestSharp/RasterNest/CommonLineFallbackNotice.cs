@@ -9,7 +9,7 @@ namespace DeepNestSharp.RasterNest
   /// </summary>
   internal sealed class CommonLineFallbackNotice
   {
-    internal const string ContourFormatReason = "outside contour format is not supported by Common Line V1";
+    internal const string ContourFormatReason = "outside contour format is not supported by exact Common Line geometry";
     internal const string TopologyReason = "common-line cluster topology was invalid";
 
     public CommonLineFallbackNotice(string drawing, string reason)

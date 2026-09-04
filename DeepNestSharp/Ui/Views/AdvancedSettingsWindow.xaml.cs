@@ -13,6 +13,7 @@ namespace DeepNestSharp.Ui.Views
   {
     private readonly ISvgNestConfig config;
     private double commonLineGapInches;
+    private int commonLineMaxClusterParts;
     private bool displayedUnitsMm;
     private bool suppressUnitsChanged = true;
 
@@ -22,10 +23,12 @@ namespace DeepNestSharp.Ui.Views
       int autosaveMinutes,
       bool unitsMm = false,
       double commonLineGapInches = DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches,
-      DeepNestSharp.RasterNest.NestEffort effort = DeepNestSharp.RasterNest.NestEffortDefaults.Default)
+      DeepNestSharp.RasterNest.NestEffort effort = DeepNestSharp.RasterNest.NestEffortDefaults.Default,
+      int commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts)
     {
       this.config = config;
       this.commonLineGapInches = NormalizeCommonLineGapInches(commonLineGapInches);
+      this.commonLineMaxClusterParts = NormalizeCommonLineMaxClusterParts(commonLineMaxClusterParts);
       InitializeComponent();
 
       this.unitsCombo.SelectedIndex = unitsMm ? 1 : 0;
@@ -39,6 +42,14 @@ namespace DeepNestSharp.Ui.Views
       this.marginUpDown.Value = System.Math.Max(0, config.SheetSpacing);
       this.mergeLinesCheck.IsChecked = config.MergeLines;
       this.differentiateCheck.IsChecked = config.DifferentiateChildren;
+
+      bool automaticClusterLimit = this.commonLineMaxClusterParts
+        == DeepNestLib.Placement.CommonLineDefaults.AutoMaxClusterParts;
+      this.commonLineMaxClusterPartsUpDown.Value = automaticClusterLimit
+        ? DeepNestLib.Placement.CommonLineDefaults.MinimumMaxClusterParts
+        : this.commonLineMaxClusterParts;
+      this.commonLineClusterModeCombo.SelectedIndex = automaticClusterLimit ? 0 : 1;
+      this.UpdateCommonLineClusterLimitPresentation();
 
       this.autosaveCheck.IsChecked = autosaveEnabled;
       this.minutesUpDown.Value = autosaveMinutes;
@@ -54,6 +65,9 @@ namespace DeepNestSharp.Ui.Views
 
     /// <summary>The physical common-line gap, in canonical inches, for the caller to persist.</summary>
     public double CommonLineGapInches => this.commonLineGapInches;
+
+    /// <summary>Zero selects automatic common-line cluster sizing; manual limits are 2..500.</summary>
+    public int CommonLineMaxClusterParts => this.commonLineMaxClusterParts;
 
     public int AutosaveMinutes => this.minutesUpDown.Value ?? 5;
 
@@ -119,6 +133,28 @@ namespace DeepNestSharp.Ui.Views
       this.ShowCommonLineGap();
     }
 
+    private void OnCommonLineClusterModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+      this.UpdateCommonLineClusterLimitPresentation();
+    }
+
+    private void OnResetCommonLineMaxClusterParts(object sender, RoutedEventArgs e)
+    {
+      this.commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts;
+      this.commonLineClusterModeCombo.SelectedIndex = 0;
+      this.commonLineMaxClusterPartsUpDown.Value =
+        DeepNestLib.Placement.CommonLineDefaults.MinimumMaxClusterParts;
+      this.UpdateCommonLineClusterLimitPresentation();
+    }
+
+    private void UpdateCommonLineClusterLimitPresentation()
+    {
+      if (this.commonLineMaxClusterPartsUpDown != null)
+      {
+        this.commonLineMaxClusterPartsUpDown.IsEnabled = this.commonLineClusterModeCombo?.SelectedIndex == 1;
+      }
+    }
+
     private void UpdateUnitPresentation()
     {
       string unit = this.displayedUnitsMm ? "mm" : "in";
@@ -155,6 +191,23 @@ namespace DeepNestSharp.Ui.Views
         ? value
         : DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches;
 
+    internal static int NormalizeCommonLineMaxClusterParts(int value)
+      => DeepNestLib.Placement.CommonLineDefaults.NormalizeMaxClusterParts(value);
+
+    private void CommitCommonLineMaxClusterParts()
+    {
+      if (this.commonLineClusterModeCombo.SelectedIndex != 1)
+      {
+        this.commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.AutoMaxClusterParts;
+        return;
+      }
+
+      this.commonLineMaxClusterPartsUpDown.CommitInput();
+      this.commonLineMaxClusterParts = NormalizeCommonLineMaxClusterParts(
+        this.commonLineMaxClusterPartsUpDown.Value
+          ?? DeepNestLib.Placement.CommonLineDefaults.MinimumMaxClusterParts);
+    }
+
     private void OnIntegrate(object sender, RoutedEventArgs e)
     {
       DeepNestSharp.Ui.Services.SheetCamIntegration.Integrate(this);
@@ -182,6 +235,7 @@ namespace DeepNestSharp.Ui.Views
       this.marginUpDown.CommitInput();
       this.minutesUpDown.CommitInput();
       this.CommitCommonLineGap(this.displayedUnitsMm);
+      this.CommitCommonLineMaxClusterParts();
 
       // Settings-backed properties persist in their setters; Rotations and the autosave options are
       // persisted by the caller (SessionState).

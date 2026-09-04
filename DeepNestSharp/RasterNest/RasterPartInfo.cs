@@ -13,9 +13,9 @@ namespace DeepNestSharp.RasterNest
     // SheetCam uses the source .nest path, so an already-offset SheetCam toolpath can never be welded
     // to an exact direct-export contour (or to a different SheetCam job) merely because both modes allow it.
     public string CommonCuttingDomain = string.Empty;
-    // Opts a nominal DXF/STEP contour into V1 resolved output: indexed edges stay at the configured gap,
-    // then export as a cluster perimeter plus one midpoint COMMON_LINE. False keeps SheetCam on its
-    // separate measured-kerf .nest return path.
+    // Opts a nominal DXF/STEP contour into schema-aware resolved output: selected LINE/ARC spans stay at
+    // the configured gap, then export as a closed cluster perimeter plus midpoint COMMON_LINE geometry.
+    // False keeps SheetCam on its separate measured-kerf .nest return path.
     public bool RequiresMergedLines;
     public bool ValidateEntryLead;   // SheetCam tooling: warn when a cut chain has no exterior entry lead
     public bool Mirrored;       // nest this population X-flipped; its placements carry IsMirrored for the exporter

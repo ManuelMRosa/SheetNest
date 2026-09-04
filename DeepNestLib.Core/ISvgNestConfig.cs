@@ -12,6 +12,12 @@
     double CommonLineGapInches { get; set; }
 
     /// <summary>
+    /// Gets or sets the maximum number of parts in one common-line cluster. Zero selects the
+    /// automatic sizing policy; manual limits are restricted to 2..500 parts.
+    /// </summary>
+    int CommonLineMaxClusterParts { get; set; }
+
+    /// <summary>
     /// Gets or sets whether to clip the simplified polygon used in nesting by the hull.
     /// This often improves the fit to the original part but may slightly increase the number
     /// of points in the simplification and accordingly may marginally slow the nest.

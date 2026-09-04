@@ -10,6 +10,12 @@
     /// </summary>
     double CommonLineGapInches { get; set; }
 
+    /// <summary>
+    /// Gets or sets this document's common-line cluster limit. Zero selects automatic sizing;
+    /// manual limits are restricted to 2..500 parts.
+    /// </summary>
+    int CommonLineMaxClusterParts { get; set; }
+
     IList<IDetailLoadInfo, DetailLoadInfo> DetailLoadInfos { get; }
 
     IList<ISheetLoadInfo, SheetLoadInfo> SheetLoadInfos { get; }

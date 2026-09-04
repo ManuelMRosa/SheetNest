@@ -57,6 +57,76 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
+    public void PartialRecordDoesNotWaiveTheUnrecordedRemainderOfTheSameEdges()
+    {
+      const double gap = 0.01;
+      const double tolerance = 0.0001;
+      var pair = Pair(Square(10), gap);
+      pair[0].Id = 1;
+      pair[1].Id = 2;
+      var partial = new[]
+      {
+        new CommonEdgeClearance.EdgeReference(
+          pair[0],
+          1,
+          pair[1],
+          3,
+          edgeAStart: 0.25,
+          edgeAEnd: 0.75,
+          edgeBStart: 0.25,
+          edgeBEnd: 0.75),
+      };
+
+      CommonEdgeClearance.TooClose(
+        pair[0], pair[1], 0.30, PlacementCollision.PlacementNoise,
+        partial, gap, tolerance).Should().BeTrue(
+          "the two unrecorded quarter-spans remain at CommonLineGap and must keep normal clearance");
+    }
+
+    [Fact]
+    public void CollinearNextEdgesMustRecoverNormalSpacingUnlessTheyAreAlsoRecorded()
+    {
+      const double gap = 0.01;
+      const double tolerance = 0.0001;
+      var aShape = new NoFitPolygon(new[]
+      {
+        new SvgPoint(0, 0),
+        new SvgPoint(1, 0),
+        new SvgPoint(1, 0.5),
+        new SvgPoint(1, 1),
+        new SvgPoint(0, 1),
+      });
+      var bShape = new NoFitPolygon(new[]
+      {
+        new SvgPoint(0, 0),
+        new SvgPoint(1, 0),
+        new SvgPoint(1, 1),
+        new SvgPoint(0, 1),
+        new SvgPoint(0, 0.5),
+      });
+      IPartPlacement a = Place(aShape, 0, 0, 0);
+      IPartPlacement b = Place(bShape, 1, 1 + gap, 0);
+      a.Id = 1;
+      b.Id = 2;
+      var lowerSeamOnly = new[]
+      {
+        new CommonEdgeClearance.EdgeReference(a, 1, b, 4),
+      };
+
+      CommonLineGeometryResolver.TryCreateCommonEdge(a, 1, b, 4, gap, tolerance, out _)
+        .Should().BeTrue();
+      CommonEdgeClearance.TooClose(
+        a,
+        b,
+        0.30,
+        PlacementCollision.PlacementNoise,
+        lowerSeamOnly,
+        gap,
+        tolerance).Should().BeTrue(
+          "the upper collinear sides remain ordinary geometry and cannot inherit the endpoint cap");
+    }
+
+    [Fact]
     public void AConcavePeerWithAnotherLobeInsideNormalSpacingIsRejected()
     {
       const double gap = 0.01;
@@ -75,6 +145,99 @@ namespace DeepNestSharp.CiTests.RasterNest
         gap,
         tolerance).Should().BeTrue(
           "the lobes remain only 0.21 apart near the middle, outside the endpoint caps");
+    }
+
+    [Fact]
+    public void AcuteStraightBranchesCanRecoverNormalSpacingBeyondAFixedEndpointRadius()
+    {
+      const double gap = 0.01D;
+      const double tolerance = 0.0001D;
+      double opening = 10D * Math.Tan(5D * Math.PI / 180D);
+      var left = new NoFitPolygon(new[]
+      {
+        new SvgPoint(-5D, 0D), new SvgPoint(0D, 0D), new SvgPoint(0D, 1D),
+        new SvgPoint(-opening, 11D), new SvgPoint(-5D, 11D),
+      });
+      var right = new NoFitPolygon(new[]
+      {
+        new SvgPoint(0D, 0D), new SvgPoint(5D, 0D), new SvgPoint(5D, 11D),
+        new SvgPoint(opening, 11D), new SvgPoint(0D, 1D),
+      });
+      IPartPlacement a = Place(left, 0, 5D, 1D);
+      IPartPlacement b = Place(right, 1, 5D + gap, 1D);
+      a.Id = 1;
+      b.Id = 2;
+      CommonLineGeometryResolver.TryCreateCommonEdge(a, 1, b, 4, gap, tolerance, out _)
+        .Should().BeTrue();
+      CommonEdgeClearance.TooClose(a, b, 0.30D, PlacementCollision.PlacementNoise,
+        new[] { new CommonEdgeClearance.EdgeReference(a, 1, b, 4) }, gap, tolerance)
+        .Should().BeFalse("the ten-degree opening recovers normal clearance monotonically beyond the old cap");
+    }
+
+    [Fact]
+    public void AShortLobeInsideTheEndpointCapStillKeepsNormalSpacing()
+    {
+      const double gap = 0.01;
+      const double tolerance = 0.0001;
+      var (a, b) = ShortEndpointLobedPair(gap);
+      a.Id = 1;
+      b.Id = 2;
+      CommonLineGeometryResolver.TryCreateCommonEdge(a, 1, b, 7, gap, tolerance, out _).Should().BeTrue();
+
+      CommonEdgeClearance.TooClose(
+        a,
+        b,
+        0.30,
+        PlacementCollision.PlacementNoise,
+        new[] { new CommonEdgeClearance.EdgeReference(a, 1, b, 7) },
+        gap,
+        tolerance).Should().BeTrue(
+          "an unrelated concave lobe cannot inherit the seam exception merely because it fits inside the endpoint cap");
+    }
+
+    [Fact]
+    public void FoldedTransitiveClusterDoesNotCreateAJunctionFromNearbyDistinctVertices()
+    {
+      const double gap = 0.01;
+      const double tolerance = 0.0001;
+      const double narrowWidth = 0.00015;
+      IPartPlacement a = Place(Rectangle(1, 1), 0, 0, 0);
+      IPartPlacement bridge = Place(Rectangle(narrowWidth, 1), 1, 1 + gap, 0);
+      IPartPlacement c = Place(Rectangle(1, 1), 2, 1 + gap + narrowWidth + gap, 0);
+      a.Id = 1;
+      bridge.Id = 2;
+      c.Id = 3;
+      var edges = new[]
+      {
+        new CommonEdgeClearance.EdgeReference(a, 1, bridge, 3),
+        new CommonEdgeClearance.EdgeReference(bridge, 1, c, 3),
+      };
+
+      CommonEdgeClearance.TooClose(
+        a,
+        bridge,
+        0.30,
+        PlacementCollision.PlacementNoise,
+        edges,
+        gap,
+        tolerance).Should().BeFalse("the first direct seam is intentional");
+      CommonEdgeClearance.TooClose(
+        bridge,
+        c,
+        0.30,
+        PlacementCollision.PlacementNoise,
+        edges,
+        gap,
+        tolerance).Should().BeFalse("the second direct seam is intentional");
+      CommonEdgeClearance.TooClose(
+        a,
+        c,
+        0.30,
+        PlacementCollision.PlacementNoise,
+        edges,
+        gap,
+        tolerance).Should().BeTrue(
+          "different bridge vertices that happen to lie within two slot widths are not one T/+ node");
     }
 
     [Fact]
@@ -152,12 +315,11 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
-    public void PartialLengthMatchIsNotACommonEdge()
+    public void UnequalStraightEdgesCreateOneExplicitPartialSpan()
     {
       var first = Place(Rectangle(10, 10), 0, 1, 1);
       var second = Place(Rectangle(10, 8), 1, 11.3, 1);
       var all = new List<IPartPlacement> { first, second };
-      double x = second.X;
 
       var result = SparrowNestService.SnapDirectCommonLineEdges(
         all,
@@ -168,8 +330,27 @@ namespace DeepNestSharp.CiTests.RasterNest
         0.01,
         0.0001);
 
-      result.Edges.Should().BeEmpty("V1 accepts complete equal-length outside edges only");
-      second.X.Should().Be(x, "a rejected relation must leave normal spacing intact");
+      SparrowNestService.CommonEdgeIntent intent = result.Edges.Should().ContainSingle().Subject;
+      using (new FluentAssertions.Execution.AssertionScope())
+      {
+        (second.PlacedPart.MinX - first.PlacedPart.MaxX).Should().BeApproximately(0.01, 1e-8);
+        ((intent.EdgeAEnd - intent.EdgeAStart) * 10D).Should().BeApproximately(8D, 0.0001);
+        (intent.EdgeBEnd - intent.EdgeBStart).Should().BeApproximately(1D, 1e-9);
+      }
+
+      CommonLineGeometryResolver.TryCreateCommonEdge(
+        intent.PartA,
+        intent.EdgeAIndex,
+        intent.EdgeAStart,
+        intent.EdgeAEnd,
+        intent.PartB,
+        intent.EdgeBIndex,
+        intent.EdgeBStart,
+        intent.EdgeBEnd,
+        0.01,
+        0.0001,
+        out CommonEdge record).Should().BeTrue();
+      record.SchemaVersion.Should().Be(2);
     }
 
     [Fact]
@@ -214,21 +395,55 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
-    public void NonQuarterTurnPlacementIsExcludedFromV1()
+    public void NonQuarterTurnStraightEdgesCanCreateACommonLine()
     {
-      var all = Pair(Square(10), 0.30);
-      all[1].Rotation = 45;
+      const double angle = 37D;
+      const double normalGap = 0.30D;
+      const double width = 10D;
+      const double height = 4D;
+      double radians = angle * Math.PI / 180D;
+      double normalX = Math.Sin(radians);
+      double normalY = -Math.Cos(radians);
+      INfp rotated = Rectangle(width, height).Rotate(angle);
+      double firstX = 10D;
+      double firstY = 10D;
+      SvgPoint edgeTwoEnd = rotated.Points[3];
+      var all = new List<IPartPlacement>
+      {
+        new PartPlacement(rotated) { Source = 0, X = firstX, Y = firstY, Rotation = angle },
+        new PartPlacement(rotated)
+        {
+          Source = 1,
+          X = firstX + (normalGap * normalX) - edgeTwoEnd.X,
+          Y = firstY + (normalGap * normalY) - edgeTwoEnd.Y,
+          Rotation = angle,
+        },
+      };
 
       var result = SparrowNestService.SnapDirectCommonLineEdges(
         all,
         Rules(0.30, all.Count),
         40,
-        20,
+        40,
         0,
         0.01,
         0.0001);
 
-      result.Edges.Should().BeEmpty();
+      SparrowNestService.CommonEdgeIntent intent = result.Edges.Should().ContainSingle().Subject;
+      CommonEdge record = CommonLineGeometryResolver.CreateCommonEdge(
+        intent.PartA,
+        intent.EdgeAIndex,
+        intent.EdgeAStart,
+        intent.EdgeAEnd,
+        intent.PartB,
+        intent.EdgeBIndex,
+        intent.EdgeBStart,
+        intent.EdgeBEnd,
+        0.01,
+        0.0001);
+      double seamX = record.End.X - record.Start.X;
+      double seamY = record.End.Y - record.Start.Y;
+      Math.Sqrt((seamX * seamX) + (seamY * seamY)).Should().BeApproximately(width, 0.0001);
     }
 
     [Fact]
@@ -260,8 +475,12 @@ namespace DeepNestSharp.CiTests.RasterNest
       var records = result.Edges.Select(edge => CommonLineGeometryResolver.CreateCommonEdge(
         edge.PartA,
         edge.EdgeAIndex,
+        edge.EdgeAStart,
+        edge.EdgeAEnd,
         edge.PartB,
         edge.EdgeBIndex,
+        edge.EdgeBStart,
+        edge.EdgeBEnd,
         Gap,
         0.0001)).ToList();
       var sheet = new SheetPlacement(
@@ -301,8 +520,12 @@ namespace DeepNestSharp.CiTests.RasterNest
       var records = result.Edges.Select(edge => CommonLineGeometryResolver.CreateCommonEdge(
         edge.PartA,
         edge.EdgeAIndex,
+        edge.EdgeAStart,
+        edge.EdgeAEnd,
         edge.PartB,
         edge.EdgeBIndex,
+        edge.EdgeBStart,
+        edge.EdgeBEnd,
         0.01,
         0.0001)).ToList();
       var sheet = new SheetPlacement(
@@ -362,6 +585,33 @@ namespace DeepNestSharp.CiTests.RasterNest
         new SvgPoint(2, 12),
         new SvgPoint(2, 10),
         new SvgPoint(0, 10), // edge 7 returns to (0, 0), opposite the first common side
+      }), 1, 11 + seamGap, 1);
+      return (a, b);
+    }
+
+    private static (IPartPlacement A, IPartPlacement B) ShortEndpointLobedPair(double seamGap)
+    {
+      var a = Place(new NoFitPolygon(new[]
+      {
+        new SvgPoint(0, 0),
+        new SvgPoint(10, 0),
+        new SvgPoint(10, 10),
+        new SvgPoint(9.9, 10),
+        new SvgPoint(9.9, 10.4),
+        new SvgPoint(9.95, 10.4),
+        new SvgPoint(9.95, 10.8),
+        new SvgPoint(0, 10.8),
+      }), 0, 1, 1);
+      var b = Place(new NoFitPolygon(new[]
+      {
+        new SvgPoint(0, 0),
+        new SvgPoint(10, 0),
+        new SvgPoint(10, 10.8),
+        new SvgPoint(0.05, 10.8),
+        new SvgPoint(0.05, 10.4),
+        new SvgPoint(0.1, 10.4),
+        new SvgPoint(0.1, 10),
+        new SvgPoint(0, 10),
       }), 1, 11 + seamGap, 1);
       return (a, b);
     }

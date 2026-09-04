@@ -3,6 +3,7 @@
   using System;
   using DeepNestLib;
   using DeepNestLib.NestProject;
+  using DeepNestLib.Placement;
   using DeepNestSharp.Domain.Models;
   using DeepNestSharp.Domain.ViewModels;
   using Light.GuardClauses;
@@ -85,6 +86,23 @@
 
         this.wrappedProjectInfo.CommonLineGapInches = value;
         OnPropertyChanged(nameof(CommonLineGapInches));
+      }
+    }
+
+    /// <inheritdoc />
+    public int CommonLineMaxClusterParts
+    {
+      get => this.wrappedProjectInfo.CommonLineMaxClusterParts;
+      set
+      {
+        int normalized = CommonLineDefaults.NormalizeMaxClusterParts(value);
+        if (this.wrappedProjectInfo.CommonLineMaxClusterParts == normalized)
+        {
+          return;
+        }
+
+        this.wrappedProjectInfo.CommonLineMaxClusterParts = normalized;
+        OnPropertyChanged(nameof(CommonLineMaxClusterParts));
       }
     }
 

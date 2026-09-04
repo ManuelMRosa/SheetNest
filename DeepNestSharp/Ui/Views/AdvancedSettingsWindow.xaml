@@ -62,16 +62,37 @@
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-        <TextBlock x:Name="commonLineGapLabel" Grid.Column="0" Text="Common Line Gap (in):"
-                   VerticalAlignment="Center" Margin="0,0,10,0" />
-        <StackPanel Grid.Column="1" Orientation="Horizontal">
+        <TextBlock x:Name="commonLineGapLabel" Grid.Row="0" Grid.Column="0" Text="Common Line Gap (in):"
+                   VerticalAlignment="Center" Margin="0,0,10,6" />
+        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
           <xctk:DoubleUpDown x:Name="commonLineGapUpDown" Width="80" HorizontalAlignment="Left"
                              Increment="0.001" FormatString="0.000##"
                              ToolTip="Common-line placements use the configured gap; SheetNest resolves one center cut before DXF export. The value is stored in inches and converted to the selected drawing units for display." />
           <Button Style="{StaticResource ModernButton}" Content="Reset to Default" Margin="8,0,0,0" Padding="8,2"
                   Click="OnResetCommonLineGap"
                   ToolTip="Restore the shipped common-line gap." />
+        </StackPanel>
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Maximum cluster parts:"
+                   VerticalAlignment="Center" Margin="0,0,10,0" />
+        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+          <ComboBox x:Name="commonLineClusterModeCombo" Width="70" HorizontalAlignment="Left"
+                    SelectionChanged="OnCommonLineClusterModeChanged"
+                    ToolTip="Auto lets SheetNest choose a safe cluster size; Manual applies a hard part-count limit.">
+            <ComboBoxItem Tag="auto">Auto</ComboBoxItem>
+            <ComboBoxItem Tag="manual">Manual</ComboBoxItem>
+          </ComboBox>
+          <xctk:IntegerUpDown x:Name="commonLineMaxClusterPartsUpDown" Width="58" Margin="6,0,0,0"
+                              Minimum="2" Maximum="500" Increment="1"
+                              ToolTip="Hard maximum number of parts in one common-line cluster (2 to 500)." />
+          <Button Style="{StaticResource ModernButton}" Content="Reset" Margin="8,0,0,0" Padding="8,2"
+                  Click="OnResetCommonLineMaxClusterParts"
+                  ToolTip="Restore automatic common-line cluster sizing." />
         </StackPanel>
       </Grid>
     </GroupBox>

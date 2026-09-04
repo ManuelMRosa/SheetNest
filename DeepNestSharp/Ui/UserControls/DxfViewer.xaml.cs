@@ -553,7 +553,7 @@
         .ToList();
 
       // A legacy placement may carry only RequiresMergedLines, and that old export contract must still
-      // survive a production-plan clone. A V1 placement is different: its requirement belongs to concrete
+      // survive a production-plan clone. A resolved direct placement is different: its requirement belongs to concrete
       // CommonEdge records. If a remainder omits either endpoint, do not leave the reduced sheet forcing
       // the old duplicate-line merger with no intentional relationship behind it.
       bool legacyMergeRequirement = template.RequiresMergedLines
@@ -751,6 +751,61 @@
           ? "null"
           : string.Create(CultureInfo.InvariantCulture, $"{Math.Round(p.X, 6)}:{Math.Round(p.Y, 6)}");
 
+      string SpanKey(CommonBoundarySpan span)
+        => span == null
+          ? "null"
+          : string.Create(
+            CultureInfo.InvariantCulture,
+            $"{span.ContourIndex}:{span.PrimitiveIndex}:{Math.Round(span.StartParameter, 12)}:{Math.Round(span.EndParameter, 12)}:{span.SourceFingerprint}:{span.ContourFingerprint}");
+
+      double AngleKey(double angle)
+      {
+        if (!double.IsFinite(angle))
+        {
+          return angle;
+        }
+
+        double normalized = angle % (2D * Math.PI);
+        if (normalized < 0D)
+        {
+          normalized += 2D * Math.PI;
+        }
+
+        normalized = Math.Round(normalized, 12);
+        return normalized == Math.Round(2D * Math.PI, 12) || normalized == 0D
+          ? 0D
+          : normalized;
+      }
+
+      string DirectedCurveKey(CommonCenterCurve curve, bool reverse)
+      {
+        CommonLinePoint start = reverse ? curve.End : curve.Start;
+        CommonLinePoint end = reverse ? curve.Start : curve.End;
+        double startAngle = curve.StartAngleRadians;
+        double sweep = curve.SweepRadians;
+        if (reverse && curve.GeometryKind == CommonLineGeometryKind.CircularArc)
+        {
+          startAngle += sweep;
+          sweep = -sweep;
+        }
+
+        return string.Create(
+          CultureInfo.InvariantCulture,
+          $"{(int)curve.GeometryKind}:{PointKey(start)}:{PointKey(end)}:{PointKey(curve.Center)}:{Math.Round(curve.Radius, 12)}:{AngleKey(startAngle)}:{Math.Round(sweep, 12)}");
+      }
+
+      string CurveKey(CommonCenterCurve curve)
+      {
+        if (curve == null)
+        {
+          return "null";
+        }
+
+        string forward = DirectedCurveKey(curve, reverse: false);
+        string reverse = DirectedCurveKey(curve, reverse: true);
+        return string.CompareOrdinal(forward, reverse) <= 0 ? forward : reverse;
+      }
+
       var edges = (sp.CommonEdges ?? Array.Empty<CommonEdge>())
         .Select(edge =>
         {
@@ -763,10 +818,13 @@
           int b = localById.TryGetValue(edge.PartBId, out int bi) ? bi : -1;
           int ea = edge.EdgeAIndex;
           int eb = edge.EdgeBIndex;
+          CommonBoundarySpan spanA = edge.SpanA;
+          CommonBoundarySpan spanB = edge.SpanB;
           if (a > b || (a == b && ea > eb))
           {
             (a, b) = (b, a);
             (ea, eb) = (eb, ea);
+            (spanA, spanB) = (spanB, spanA);
           }
 
           string start = PointKey(edge.Start);
@@ -778,7 +836,7 @@
 
           return string.Create(
             CultureInfo.InvariantCulture,
-            $"{a}:{ea}-{b}:{eb}@{start}-{end}:{Math.Round(edge.Gap, 8)}");
+            $"{a}:{ea}:{SpanKey(spanA)}-{b}:{eb}:{SpanKey(spanB)}@{start}-{end}:{Math.Round(edge.Gap, 8)}:schema={edge.SchemaVersion}:kind={(int)edge.GeometryKind}:curve={CurveKey(edge.CenterCurve)}");
         })
         .OrderBy(x => x, StringComparer.Ordinal);
 
@@ -2595,7 +2653,7 @@
         : this.NormalClearanceBetween(a, b);
 
     /// <summary>The scalar clearance used by drag-cache and seating helpers: ordinary mean spacing,
-    /// configured gap for an exact persisted V1 edge, or measured kerf for a compatible SheetCam pair.</summary>
+    /// configured gap for an exact persisted direct edge, or measured kerf for a compatible SheetCam pair.</summary>
     private double ClearanceBetween(IPartPlacement a, IPartPlacement b)
     {
       bool intentionalCommonEdge = this.HasValidRecordedCommonEdge(a, b, out double gap);
@@ -2669,7 +2727,7 @@
     /// <summary>
     /// A common-cutting mode only makes a pair eligible. The reduced clearance belongs exclusively to
     /// the explicit <see cref="CommonEdge"/> that the nester created, and it remains active only while
-    /// that exact pair of indexed outside edges still validates. This prevents a manual move from making
+    /// that exact pair of outside boundary spans still validates. This prevents a manual move from making
     /// an unrelated nearby edge common merely because both source rows allow common cutting.
     /// </summary>
     private bool HasValidRecordedCommonEdge(IPartPlacement a, IPartPlacement b, out double gap)
@@ -2686,21 +2744,15 @@
       {
         IPartPlacement first;
         IPartPlacement second;
-        int firstEdge;
-        int secondEdge;
         if (edge.PartAId == a.Id && edge.PartBId == b.Id)
         {
           first = a;
           second = b;
-          firstEdge = edge.EdgeAIndex;
-          secondEdge = edge.EdgeBIndex;
         }
         else if (edge.PartAId == b.Id && edge.PartBId == a.Id)
         {
           first = b;
           second = a;
-          firstEdge = edge.EdgeAIndex;
-          secondEdge = edge.EdgeBIndex;
         }
         else
         {
@@ -2713,11 +2765,10 @@
           continue;
         }
 
-        if (CommonLineGeometryResolver.TryCreateCommonEdge(
+        if (TryRebuildCommonEdge(
+          edge,
           first,
-          firstEdge,
           second,
-          secondEdge,
           expectedGap,
           settings.Tolerance,
           out CommonEdge rebuilt)
@@ -2772,11 +2823,10 @@
           || !byId.TryGetValue(edge.PartAId, out IPartPlacement partA)
           || !byId.TryGetValue(edge.PartBId, out IPartPlacement partB)
           || Math.Abs(edge.Gap - commonLineGap) > geometryTolerance
-          || !CommonLineGeometryResolver.TryCreateCommonEdge(
+          || !TryRebuildCommonEdge(
+            edge,
             partA,
-            edge.EdgeAIndex,
             partB,
-            edge.EdgeBIndex,
             commonLineGap,
             geometryTolerance,
             out CommonEdge rebuilt)
@@ -2785,29 +2835,331 @@
           continue;
         }
 
+        double edgeAStart = edge.SpanA?.StartParameter ?? 0D;
+        double edgeAEnd = edge.SpanA?.EndParameter ?? 1D;
+        double edgeBStart = edge.SpanB?.StartParameter ?? 0D;
+        double edgeBEnd = edge.SpanB?.EndParameter ?? 1D;
+        bool sourceAddressed = edge.SpanA?.ContourIndex >= 0
+          && edge.SpanB?.ContourIndex >= 0;
         result.Add(new RasterNest.CommonEdgeClearance.EdgeReference(
           partA,
           edge.EdgeAIndex,
           partB,
-          edge.EdgeBIndex));
+          edge.EdgeBIndex,
+          edgeAStart,
+          edgeAEnd,
+          edgeBStart,
+          edgeBEnd,
+          sourceAddressed ? edge.SpanA : null,
+          sourceAddressed ? edge.SpanB : null));
       }
 
       return result;
     }
 
-    internal static bool SameUndirectedRecord(CommonEdge persisted, CommonEdge rebuilt, double tolerance)
+    private static bool TryRebuildCommonEdge(
+      CommonEdge persisted,
+      IPartPlacement partA,
+      IPartPlacement partB,
+      double commonLineGap,
+      double geometryTolerance,
+      out CommonEdge rebuilt)
     {
-      if (persisted?.Start == null || persisted.End == null || rebuilt?.Start == null || rebuilt.End == null
-        || Math.Abs(persisted.Gap - rebuilt.Gap) > tolerance)
+      rebuilt = null;
+      if (persisted == null)
       {
         return false;
       }
 
-      bool SamePoint(CommonLinePoint x, CommonLinePoint y)
-        => Math.Abs(x.X - y.X) <= tolerance && Math.Abs(x.Y - y.Y) <= tolerance;
+      if (persisted.SchemaVersion == CommonEdge.ParametricSchemaVersion)
+      {
+        if (persisted.SpanA == null || persisted.SpanB == null)
+        {
+          return false;
+        }
 
-      return SamePoint(persisted.Start, rebuilt.Start) && SamePoint(persisted.End, rebuilt.End)
-        || SamePoint(persisted.Start, rebuilt.End) && SamePoint(persisted.End, rebuilt.Start);
+        bool sourceA = persisted.SpanA.ContourIndex >= 0;
+        bool sourceB = persisted.SpanB.ContourIndex >= 0;
+        if (sourceA != sourceB)
+        {
+          return false;
+        }
+
+        if (sourceA)
+        {
+          return CommonLineGeometryResolver.TryCreateCommonEdge(
+              partA,
+              persisted.SpanA,
+              partB,
+              persisted.SpanB,
+              commonLineGap,
+              geometryTolerance,
+              out rebuilt);
+        }
+
+        return CommonLineGeometryResolver.TryCreateCommonEdge(
+          partA,
+          persisted.EdgeAIndex,
+          persisted.SpanA.StartParameter,
+          persisted.SpanA.EndParameter,
+          partB,
+          persisted.EdgeBIndex,
+          persisted.SpanB.StartParameter,
+          persisted.SpanB.EndParameter,
+          commonLineGap,
+          geometryTolerance,
+          out rebuilt);
+      }
+
+      return persisted.SchemaVersion == CommonEdge.LegacySchemaVersion
+        && CommonLineGeometryResolver.TryCreateCommonEdge(
+          partA,
+          persisted.EdgeAIndex,
+          partB,
+          persisted.EdgeBIndex,
+          commonLineGap,
+          geometryTolerance,
+          out rebuilt);
+    }
+
+    internal static bool SameUndirectedRecord(CommonEdge persisted, CommonEdge rebuilt, double tolerance)
+    {
+      if (persisted == null
+        || rebuilt == null
+        || !double.IsFinite(tolerance)
+        || tolerance <= 0D
+        || !double.IsFinite(persisted.Gap)
+        || !double.IsFinite(rebuilt.Gap)
+        || persisted.Gap <= 0D
+        || rebuilt.Gap <= 0D
+        || Math.Abs(persisted.Gap - rebuilt.Gap) > tolerance
+        || persisted.SchemaVersion != rebuilt.SchemaVersion
+        || persisted.GeometryKind != rebuilt.GeometryKind
+        || !SameUndirectedPoints(persisted.Start, persisted.End, rebuilt.Start, rebuilt.End, tolerance))
+      {
+        return false;
+      }
+
+      bool directSides = SameRecordSides(persisted, rebuilt, reverse: false);
+      bool reverseSides = SameRecordSides(persisted, rebuilt, reverse: true);
+      if (!directSides && !reverseSides)
+      {
+        return false;
+      }
+
+      if (persisted.SchemaVersion == CommonEdge.LegacySchemaVersion)
+      {
+        return persisted.GeometryKind == CommonLineGeometryKind.Line
+          && persisted.SpanA == null
+          && persisted.SpanB == null
+          && rebuilt.SpanA == null
+          && rebuilt.SpanB == null
+          && persisted.CenterCurve == null
+          && rebuilt.CenterCurve == null;
+      }
+
+      if (persisted.SchemaVersion != CommonEdge.ParametricSchemaVersion
+        || persisted.GeometryKind is not (CommonLineGeometryKind.Line or CommonLineGeometryKind.CircularArc)
+        || persisted.SpanA == null
+        || persisted.SpanB == null
+        || rebuilt.SpanA == null
+        || rebuilt.SpanB == null
+        || persisted.CenterCurve == null
+        || rebuilt.CenterCurve == null
+        || persisted.CenterCurve.GeometryKind != persisted.GeometryKind
+        || rebuilt.CenterCurve.GeometryKind != rebuilt.GeometryKind)
+      {
+        return false;
+      }
+
+      return directSides
+        ? SameDirectedCenterCurve(persisted.CenterCurve, rebuilt.CenterCurve, tolerance)
+        : SameReversedCenterCurve(persisted.CenterCurve, rebuilt.CenterCurve, tolerance);
+    }
+
+    private static bool SameRecordSides(CommonEdge first, CommonEdge second, bool reverse)
+    {
+      int secondAId = reverse ? second.PartBId : second.PartAId;
+      int secondBId = reverse ? second.PartAId : second.PartBId;
+      int secondAEdge = reverse ? second.EdgeBIndex : second.EdgeAIndex;
+      int secondBEdge = reverse ? second.EdgeAIndex : second.EdgeBIndex;
+      CommonBoundarySpan secondASpan = reverse ? second.SpanB : second.SpanA;
+      CommonBoundarySpan secondBSpan = reverse ? second.SpanA : second.SpanB;
+      return first.PartAId == secondAId
+        && first.PartBId == secondBId
+        && SameEdgeAddress(first.EdgeAIndex, first.SpanA, secondAEdge, secondASpan, first.SchemaVersion)
+        && SameEdgeAddress(first.EdgeBIndex, first.SpanB, secondBEdge, secondBSpan, first.SchemaVersion);
+    }
+
+    private static bool SameEdgeAddress(
+      int firstEdge,
+      CommonBoundarySpan firstSpan,
+      int secondEdge,
+      CommonBoundarySpan secondSpan,
+      int schemaVersion)
+    {
+      if (schemaVersion == CommonEdge.LegacySchemaVersion)
+      {
+        return firstEdge == secondEdge && firstSpan == null && secondSpan == null;
+      }
+
+      if (schemaVersion != CommonEdge.ParametricSchemaVersion
+        || !SameBoundarySpan(firstSpan, secondSpan))
+      {
+        return false;
+      }
+
+      // A source-parametric span is the stable address. Its old tessellation index is deliberately
+      // ignored because rebuilding the exact DXF span does not (and must not) depend on that index.
+      return firstSpan.ContourIndex >= 0 || firstEdge == secondEdge;
+    }
+
+    private static bool SameBoundarySpan(CommonBoundarySpan first, CommonBoundarySpan second)
+    {
+      const double parameterTolerance = 1e-12D;
+      return first != null
+        && second != null
+        && double.IsFinite(first.StartParameter)
+        && double.IsFinite(first.EndParameter)
+        && double.IsFinite(second.StartParameter)
+        && double.IsFinite(second.EndParameter)
+        && first.StartParameter >= 0D
+        && first.EndParameter <= 1D
+        && first.EndParameter > first.StartParameter
+        && second.StartParameter >= 0D
+        && second.EndParameter <= 1D
+        && second.EndParameter > second.StartParameter
+        && first.ContourIndex == second.ContourIndex
+        && first.PrimitiveIndex == second.PrimitiveIndex
+        && Math.Abs(first.StartParameter - second.StartParameter) <= parameterTolerance
+        && Math.Abs(first.EndParameter - second.EndParameter) <= parameterTolerance
+        && string.Equals(first.SourceFingerprint, second.SourceFingerprint, StringComparison.Ordinal)
+        && string.Equals(first.ContourFingerprint, second.ContourFingerprint, StringComparison.Ordinal);
+    }
+
+    private static bool SameDirectedCenterCurve(
+      CommonCenterCurve first,
+      CommonCenterCurve second,
+      double tolerance)
+    {
+      if (!SameCenterCurveBase(first, second, tolerance)
+        || !SamePoint(first.Start, second.Start, tolerance)
+        || !SamePoint(first.End, second.End, tolerance))
+      {
+        return false;
+      }
+
+      if (first.GeometryKind == CommonLineGeometryKind.Line)
+      {
+        return HasCanonicalLineMetadata(first) && HasCanonicalLineMetadata(second);
+      }
+
+      double angularTolerance = tolerance / Math.Max(Math.Max(first.Radius, second.Radius), tolerance);
+      return AngleDistance(first.StartAngleRadians, second.StartAngleRadians) <= angularTolerance
+        && Math.Abs(first.SweepRadians - second.SweepRadians) <= angularTolerance;
+    }
+
+    private static bool SameReversedCenterCurve(
+      CommonCenterCurve first,
+      CommonCenterCurve second,
+      double tolerance)
+    {
+      if (!SameCenterCurveBase(first, second, tolerance)
+        || !SamePoint(first.Start, second.End, tolerance)
+        || !SamePoint(first.End, second.Start, tolerance))
+      {
+        return false;
+      }
+
+      if (first.GeometryKind == CommonLineGeometryKind.Line)
+      {
+        return HasCanonicalLineMetadata(first) && HasCanonicalLineMetadata(second);
+      }
+
+      double angularTolerance = tolerance / Math.Max(Math.Max(first.Radius, second.Radius), tolerance);
+      return AngleDistance(
+          first.StartAngleRadians,
+          second.StartAngleRadians + second.SweepRadians) <= angularTolerance
+        && Math.Abs(first.SweepRadians + second.SweepRadians) <= angularTolerance;
+    }
+
+    private static bool SameCenterCurveBase(
+      CommonCenterCurve first,
+      CommonCenterCurve second,
+      double tolerance)
+    {
+      if (first == null
+        || second == null
+        || first.GeometryKind != second.GeometryKind
+        || first.GeometryKind is not (CommonLineGeometryKind.Line or CommonLineGeometryKind.CircularArc)
+        || !FinitePoint(first.Start)
+        || !FinitePoint(first.End)
+        || !FinitePoint(second.Start)
+        || !FinitePoint(second.End))
+      {
+        return false;
+      }
+
+      if (first.GeometryKind == CommonLineGeometryKind.Line)
+      {
+        return true;
+      }
+
+      return FinitePoint(first.Center)
+        && FinitePoint(second.Center)
+        && double.IsFinite(first.Radius)
+        && double.IsFinite(second.Radius)
+        && first.Radius > 0D
+        && second.Radius > 0D
+        && double.IsFinite(first.StartAngleRadians)
+        && double.IsFinite(second.StartAngleRadians)
+        && double.IsFinite(first.SweepRadians)
+        && double.IsFinite(second.SweepRadians)
+        && first.SweepRadians != 0D
+        && second.SweepRadians != 0D
+        && SamePoint(first.Center, second.Center, tolerance)
+        && Math.Abs(first.Radius - second.Radius) <= tolerance;
+    }
+
+    private static bool HasCanonicalLineMetadata(CommonCenterCurve curve)
+      => curve.Center == null
+        && curve.Radius == 0D
+        && curve.StartAngleRadians == 0D
+        && curve.SweepRadians == 0D;
+
+    private static bool SameUndirectedPoints(
+      CommonLinePoint firstStart,
+      CommonLinePoint firstEnd,
+      CommonLinePoint secondStart,
+      CommonLinePoint secondEnd,
+      double tolerance)
+      => (SamePoint(firstStart, secondStart, tolerance) && SamePoint(firstEnd, secondEnd, tolerance))
+        || (SamePoint(firstStart, secondEnd, tolerance) && SamePoint(firstEnd, secondStart, tolerance));
+
+    private static bool SamePoint(CommonLinePoint first, CommonLinePoint second, double tolerance)
+    {
+      if (!FinitePoint(first) || !FinitePoint(second))
+      {
+        return false;
+      }
+
+      double dx = first.X - second.X;
+      double dy = first.Y - second.Y;
+      return (dx * dx) + (dy * dy) <= tolerance * tolerance;
+    }
+
+    private static bool FinitePoint(CommonLinePoint point)
+      => point != null && double.IsFinite(point.X) && double.IsFinite(point.Y);
+
+    private static double AngleDistance(double first, double second)
+    {
+      if (!double.IsFinite(first) || !double.IsFinite(second))
+      {
+        return double.PositiveInfinity;
+      }
+
+      double delta = Math.Abs((first - second) % (2D * Math.PI));
+      return Math.Min(delta, (2D * Math.PI) - delta);
     }
 
     /// <summary>

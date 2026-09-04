@@ -44,12 +44,12 @@ namespace DeepNestSharp.CiTests.RasterNest
     };
 
     [Fact]
-    public void SheetCamLegacyKeepsItsObliqueOrientationsWhileDirectV1IsQuarterTurnOnly()
+    public void CommonLineEligibilityNeverNarrowsTheRotationPolicy()
     {
       SparrowNestService.CommonLineRotationCode(8, requiresMergedLines: false).Should().Be(8,
         "the measured-kerf SheetCam snap already supports faces at any angle");
-      SparrowNestService.CommonLineRotationCode(8, requiresMergedLines: true).Should().Be(4,
-        "the V1 nominal-contour cluster resolver is deliberately cardinal");
+      SparrowNestService.CommonLineRotationCode(8, requiresMergedLines: true).Should().Be(8,
+        "direct common-line geometry must keep every orientation the user allowed");
     }
 
     /// <summary>The point of the whole commit: a seam at 30 degrees closes to exactly one kerf.</summary>

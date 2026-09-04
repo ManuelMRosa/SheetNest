@@ -32,6 +32,14 @@
       set => SetProperty(nameof(CommonLineGapInches), () => svgNestConfig.CommonLineGapInches, v => svgNestConfig.CommonLineGapInches = v, value);
     }
 
+    /// <inheritdoc />
+    [Browsable(false)]
+    public int CommonLineMaxClusterParts
+    {
+      get => svgNestConfig.CommonLineMaxClusterParts;
+      set => SetProperty(nameof(CommonLineMaxClusterParts), () => svgNestConfig.CommonLineMaxClusterParts, v => svgNestConfig.CommonLineMaxClusterParts = v, value);
+    }
+
     [Description("Gets or sets whether to clip the simplified polygon used in nesting by the hull. " +
       "This often improves the fit to the original part but may slightly increase the number " +
       "of points in the simplification and accordingly may marginally slow the nest. " +

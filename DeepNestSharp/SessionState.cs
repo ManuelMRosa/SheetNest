@@ -49,6 +49,13 @@ namespace DeepNestSharp
     /// </summary>
     public double? CommonLineGapInches { get; set; }
 
+    /// <summary>
+    /// Maximum parts allowed in one common-line cluster. Zero means Auto; manual limits are 2..500.
+    /// Invalid values from hand-edited or future session files resolve safely to Auto.
+    /// </summary>
+    public int CommonLineMaxClusterParts { get; set; } =
+      DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts;
+
     /// <summary>The valid common-line gap represented by this session.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public double EffectiveCommonLineGapInches
@@ -61,6 +68,12 @@ namespace DeepNestSharp
           : DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches;
       }
     }
+
+    /// <summary>The normalized common-line cluster policy represented by this session.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int EffectiveCommonLineMaxClusterParts
+      => DeepNestLib.Placement.CommonLineDefaults.NormalizeMaxClusterParts(
+        this.CommonLineMaxClusterParts);
 
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
@@ -111,7 +124,8 @@ namespace DeepNestSharp
       int autosaveMinutes,
       int defaultRotations,
       RasterNest.NestEffort nestEffort,
-      double commonLineGapInches)
+      double commonLineGapInches,
+      int commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts)
     {
       this.SheetEdgeMargin = sheetEdgeMargin;
       this.Sheets = new List<SessionSheet>();
@@ -128,6 +142,8 @@ namespace DeepNestSharp
       this.CommonLineGapInches = IsValidCommonLineGap(commonLineGapInches)
         ? commonLineGapInches
         : DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches;
+      this.CommonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.NormalizeMaxClusterParts(
+        commonLineMaxClusterParts);
     }
 
     private static bool IsValidCommonLineGap(double value)

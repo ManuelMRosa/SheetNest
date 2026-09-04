@@ -9,6 +9,8 @@
 
     public double CommonLineGapInches { get; set; } = CommonLineDefaults.DefaultGapInches;
 
+    public int CommonLineMaxClusterParts { get; set; } = CommonLineDefaults.AutoMaxClusterParts;
+
     public double ClipperScale { get; set; } = 10000000;
 
     public double CurveTolerance { get; set; } = 0.72D;

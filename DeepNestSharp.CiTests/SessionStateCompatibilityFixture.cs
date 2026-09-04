@@ -16,6 +16,8 @@ namespace DeepNestSharp.CiTests
       session.Should().NotBeNull();
       session.NestEffort.Should().Be(1);
       session.EffectiveCommonLineGapInches.Should().Be(DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches);
+      session.EffectiveCommonLineMaxClusterParts.Should().Be(
+        DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts);
       JsonSerializer.Serialize(session).Should().NotContain("\"CommonCutting\"");
     }
   }

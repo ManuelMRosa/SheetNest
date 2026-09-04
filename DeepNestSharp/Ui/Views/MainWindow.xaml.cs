@@ -33,6 +33,10 @@ namespace DeepNestSharp.Ui.Views
     private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
+    // Per-user defaults for the NEXT job. The process-wide config is temporarily overwritten whenever
+    // a document becomes active, so it cannot also be the source of truth for session preferences.
+    private double sessionCommonLineGapInches = CommonLineDefaults.DefaultGapInches;
+    private int sessionCommonLineMaxClusterParts = CommonLineDefaults.DefaultMaxClusterParts;
 
     private DeepNestSharp.RasterNest.NestEffort nestEffort = DeepNestSharp.RasterNest.NestEffortDefaults.Default; // how hard the nester searches (SessionState)
     private bool preferRectOffcut; // cut the last sheet's leftover off as a rectangular offcut (SessionState)
@@ -133,6 +137,10 @@ namespace DeepNestSharp.Ui.Views
       // with an empty Sheets tab because each launch is usually a different job — sheet stock
       // belongs to (and travels with) each saved .dnest project.
       var session = SessionState.Load();
+      (this.sessionCommonLineGapInches, this.sessionCommonLineMaxClusterParts) =
+        CommonLinePreferencesFrom(session);
+      cfg.CommonLineGapInches = this.sessionCommonLineGapInches;
+      cfg.CommonLineMaxClusterParts = this.sessionCommonLineMaxClusterParts;
       if (session != null)
       {
         if (session.SheetEdgeMargin >= 0)
@@ -160,10 +168,6 @@ namespace DeepNestSharp.Ui.Views
         {
           this.unitsMm = session.UnitsMm.Value;
         }
-
-        // SessionState is the per-user fallback for a new job. Once a .dnest is opened its Config
-        // replaces this value, because the gap is geometry that must travel with the job.
-        cfg.CommonLineGapInches = session.EffectiveCommonLineGapInches;
 
         if (session.SheetPresets != null)
         {
@@ -473,13 +477,15 @@ namespace DeepNestSharp.Ui.Views
     {
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       double previousCommonLineGapInches = cfg.CommonLineGapInches;
+      int previousCommonLineMaxClusterParts = cfg.CommonLineMaxClusterParts;
       var dialog = new AdvancedSettingsWindow(
         cfg,
         this.autosaveEnabled,
         this.autosaveMinutes,
         this.unitsMm,
         commonLineGapInches: cfg.CommonLineGapInches,
-        effort: this.nestEffort)
+        effort: this.nestEffort,
+        commonLineMaxClusterParts: cfg.CommonLineMaxClusterParts)
       {
         Owner = this,
       };
@@ -490,12 +496,19 @@ namespace DeepNestSharp.Ui.Views
 
       this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
       cfg.CommonLineGapInches = dialog.CommonLineGapInches;
-      if (System.Math.Abs(previousCommonLineGapInches - cfg.CommonLineGapInches) > 1e-12
+      cfg.CommonLineMaxClusterParts = dialog.CommonLineMaxClusterParts;
+      // Confirming Advanced Settings is an explicit operator choice: apply it to this document and also
+      // remember it for future new jobs. Merely activating/opening a document never writes these fields.
+      this.sessionCommonLineGapInches = cfg.CommonLineGapInches;
+      this.sessionCommonLineMaxClusterParts = cfg.CommonLineMaxClusterParts;
+      if ((System.Math.Abs(previousCommonLineGapInches - cfg.CommonLineGapInches) > 1e-12
+            || previousCommonLineMaxClusterParts != cfg.CommonLineMaxClusterParts)
           && ViewModel.ActiveDocument is NestProjectViewModel project)
       {
         // Unlike machine/search preferences, this value changes placed geometry and therefore belongs
         // in the .dnest. Mark the job so Save/Autosave actually writes the new value.
         project.ProjectInfo.CommonLineGapInches = cfg.CommonLineGapInches;
+        project.ProjectInfo.CommonLineMaxClusterParts = cfg.CommonLineMaxClusterParts;
         project.IsDirty = true;
       }
 
@@ -511,6 +524,7 @@ namespace DeepNestSharp.Ui.Views
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
       session.CommonLineGapInches = cfg.CommonLineGapInches;
+      session.CommonLineMaxClusterParts = cfg.CommonLineMaxClusterParts;
       this.nestEffort = dialog.Effort;
       session.NestEffort = (int)this.nestEffort;
       session.Save();
@@ -589,10 +603,20 @@ namespace DeepNestSharp.Ui.Views
         return;
       }
 
+      if (IsFreshUnsavedProject(doc))
+      {
+        ApplyCommonLinePreferencesToNewProject(
+          doc.ProjectInfo,
+          this.sessionCommonLineGapInches,
+          this.sessionCommonLineMaxClusterParts);
+      }
+
       // ProjectInfo keeps this geometry-affecting value per document while the runtime config is shared.
       // Reapply the active tab's snapshot before nesting/export/UI consumers can observe another tab's gap.
       ViewModel.SvgNestConfigViewModel.SvgNestConfig.CommonLineGapInches =
         doc.ProjectInfo.CommonLineGapInches;
+      ViewModel.SvgNestConfigViewModel.SvgNestConfig.CommonLineMaxClusterParts =
+        doc.ProjectInfo.CommonLineMaxClusterParts;
       this.ApplyUnits();
 
       // Recent Projects: record opened files now, and saved-for-the-first-time files when their
@@ -832,9 +856,37 @@ namespace DeepNestSharp.Ui.Views
         this.autosaveMinutes,
         ViewModel.SvgNestConfigViewModel.SvgNestConfig.Rotations,
         this.nestEffort,
-        ViewModel.SvgNestConfigViewModel.SvgNestConfig.CommonLineGapInches);
+        this.sessionCommonLineGapInches,
+        this.sessionCommonLineMaxClusterParts);
       session.Save();
     }
+
+    internal static (double GapInches, int MaxClusterParts) CommonLinePreferencesFrom(SessionState? session)
+      => session == null
+        ? (CommonLineDefaults.DefaultGapInches, CommonLineDefaults.DefaultMaxClusterParts)
+        : (session.EffectiveCommonLineGapInches, session.EffectiveCommonLineMaxClusterParts);
+
+    internal static void ApplyCommonLinePreferencesToNewProject(
+      IProjectInfo project,
+      double gapInches,
+      int maxClusterParts)
+    {
+      if (project == null)
+      {
+        return;
+      }
+
+      // ProjectInfo owns normalization, keeping this handoff identical to deserialization and the dialog.
+      project.CommonLineGapInches = gapInches;
+      project.CommonLineMaxClusterParts = maxClusterParts;
+    }
+
+    private static bool IsFreshUnsavedProject(NestProjectViewModel document)
+      => document != null
+        && string.IsNullOrWhiteSpace(document.FilePath)
+        && document.ProjectInfo.DetailLoadInfos.Count == 0
+        && document.ProjectInfo.SheetLoadInfos.Count == 0
+        && string.IsNullOrWhiteSpace(document.ProjectInfo.LastNestResultJson);
 
     /// <summary>Reflects the drawing units (in/mm) in every unit-labelled UI element.</summary>
     private void ApplyUnits()
@@ -1568,7 +1620,8 @@ namespace DeepNestSharp.Ui.Views
             nestProgress,
             geometryTolerance: CommonLineDefaults.DefaultGeometryToleranceInches * unitScale,
             commonLineGap: config.CommonLineGapInches * unitScale,
-            effort: this.nestEffort);
+            effort: this.nestEffort,
+            commonLineMaxClusterParts: config.CommonLineMaxClusterParts);
           return (r, err);
         });
 
@@ -2566,7 +2619,7 @@ namespace DeepNestSharp.Ui.Views
       }
 
       // A SheetCam .nest return file can carry placements, but it cannot carry the resolved cluster
-      // boundary and single internal seam that Common Line V1 generated. Writing positions alone would
+      // boundary and internal seam network that exact Common Line geometry generated. Writing positions alone would
       // make SheetCam see the two original outside contours again, silently restoring a duplicate cut.
       // The layered DXF exporter is the explicit SheetCam contract for these sheets.
       if (HasResolvedCommonLineGeometry(selected.UsedSheets))

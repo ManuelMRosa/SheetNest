@@ -81,6 +81,69 @@ namespace DeepNestLib.CiTests.IO
     }
 
     [Fact]
+    public async Task ClusterVoidFromFacingCShapesExportsAsClosedCutInner()
+    {
+      string leftPath = Path.Combine(this.tempDirectory, "left-c.dxf");
+      string rightPath = Path.Combine(this.tempDirectory, "right-c.dxf");
+      WriteClosedPolyline(leftPath, new[]
+      {
+        (0D, 0D), (5D, 0D), (5D, 2D), (2D, 2D),
+        (2D, 8D), (5D, 8D), (5D, 10D), (0D, 10D),
+      });
+      WriteClosedPolyline(rightPath, new[]
+      {
+        (0D, 0D), (5D, 0D), (5D, 10D), (0D, 10D),
+        (0D, 8D), (3D, 8D), (3D, 2D), (0D, 2D),
+      });
+      IRawDetail leftDetail = new NestExecutionHelper().LoadRawDetail(new FileInfo(leftPath));
+      IRawDetail rightDetail = new NestExecutionHelper().LoadRawDetail(new FileInfo(rightPath));
+      leftDetail.TryConvertToNfp(0, out INfp left).Should().BeTrue();
+      rightDetail.TryConvertToNfp(1, out INfp right).Should().BeTrue();
+      var parts = new List<IPartPlacement>
+      {
+        new PartPlacement(left) { Id = 0, Source = 0 },
+        new PartPlacement(right) { Id = 1, Source = 1, X = 5D + Gap },
+      };
+      var relationships = new List<CommonEdge>();
+      for (int a = 0; a < left.Points.Length; a++)
+      {
+        for (int b = 0; b < right.Points.Length; b++)
+        {
+          if (CommonLineGeometryResolver.TryCreateCommonEdge(
+            parts[0], a, parts[1], b, Gap, Tolerance, out CommonEdge relationship))
+          {
+            relationships.Add(relationship);
+          }
+        }
+      }
+
+      relationships.Should().HaveCount(2, "the facing C profiles share their upper and lower bar ends");
+      var placement = new SheetPlacement(
+        PlacementTypeEnum.BoundingBox,
+        Sheet.NewSheet(0, 100, 100),
+        parts,
+        0D,
+        SvgNest.Config.ClipperScale,
+        requiresMergedLines: true,
+        commonEdges: relationships,
+        commonLineGap: Gap,
+        geometryTolerance: Tolerance);
+      using var output = new MemoryStream();
+
+      await placement.ExportDxf(output, mergeLines: false, differentiateChildren: false);
+      output.Position = 0;
+      DxfFile actual = DxfFile.Load(output);
+
+      actual.Entities.Where(entity => entity.Layer == DxfExporter.CutInnerLayer)
+        .Should().ContainSingle(entity => IsClosed(entity),
+          "the enclosed cluster void must be a closed CUT_INNER path");
+      actual.Entities.Where(entity => entity.Layer == DxfExporter.CutOuterLayer)
+        .Should().ContainSingle(entity => IsClosed(entity));
+      actual.Entities.Where(entity => entity.Layer == DxfExporter.CommonLineLayer)
+        .Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task InvalidRelationshipRejectsExport()
     {
       SheetPlacement valid = this.BuildPlacement();
@@ -91,6 +154,121 @@ namespace DeepNestLib.CiTests.IO
 
       await act.Should().ThrowAsync<CommonLineValidationException>();
       output.Length.Should().Be(0, "an invalid cluster must never leave a partial ambiguous DXF");
+    }
+
+    [Fact]
+    public void ValidatorRejectsNonFiniteLineArcAndCircleGeometry()
+    {
+      var invalidEntities = new (string Name, DxfEntity Entity)[]
+      {
+        (
+          "LINE P1",
+          new DxfLine(
+            new DxfPoint(double.NaN, 0D, 0D),
+            new DxfPoint(1D, 0D, 0D))),
+        (
+          "LINE P2",
+          new DxfLine(
+            new DxfPoint(0D, 0D, 0D),
+            new DxfPoint(1D, double.PositiveInfinity, 0D))),
+        (
+          "ARC center",
+          new DxfArc(new DxfPoint(double.NaN, 0D, 0D), 1D, 0D, 90D)),
+        (
+          "ARC radius",
+          new DxfArc(new DxfPoint(0D, 0D, 0D), double.PositiveInfinity, 0D, 90D)),
+        (
+          "ARC start angle",
+          new DxfArc(new DxfPoint(0D, 0D, 0D), 1D, double.NaN, 90D)),
+        (
+          "ARC end angle",
+          new DxfArc(new DxfPoint(0D, 0D, 0D), 1D, 0D, double.NegativeInfinity)),
+        (
+          "ARC overflowing sweep",
+          new DxfArc(
+            new DxfPoint(0D, 0D, 0D),
+            1D,
+            double.MaxValue,
+            -double.MaxValue)),
+        (
+          "CIRCLE center",
+          new DxfCircle(new DxfPoint(0D, double.NaN, 0D), 1D)),
+        (
+          "CIRCLE radius",
+          new DxfCircle(new DxfPoint(0D, 0D, 0D), double.NaN)),
+      };
+
+      foreach ((string name, DxfEntity entity) in invalidEntities)
+      {
+        entity.Layer = DxfExporter.CommonLineLayer;
+        var file = new DxfFile();
+        file.Entities.Add(entity);
+
+        Action validate = () => DxfExporter.ValidateCommonLineDxf(file, Tolerance);
+
+        validate.Should().Throw<CommonLineValidationException>(
+          "{0} must never reach SheetCam",
+          name).WithMessage("*non-finite*");
+      }
+    }
+
+    [Fact]
+    public void ValidatorRejectsInvalidClosedCutContours()
+    {
+      var nonFiniteLightweight = new DxfLwPolyline(new[]
+      {
+        new DxfLwPolylineVertex { X = 0D, Y = 0D },
+        new DxfLwPolylineVertex { X = double.NaN, Y = 0D },
+        new DxfLwPolylineVertex { X = 0D, Y = 1D },
+      })
+      { IsClosed = true };
+      var nonFiniteBulge = new DxfLwPolyline(new[]
+      {
+        new DxfLwPolylineVertex { X = 0D, Y = 0D, Bulge = double.PositiveInfinity },
+        new DxfLwPolylineVertex { X = 1D, Y = 0D },
+        new DxfLwPolylineVertex { X = 0D, Y = 1D },
+      })
+      { IsClosed = true };
+      var zeroLengthLegacy = new DxfPolyline(new[]
+      {
+        new DxfVertex(new DxfPoint(0D, 0D, 0D)),
+        new DxfVertex(new DxfPoint(1D, 0D, 0D)),
+        new DxfVertex(new DxfPoint(1D, 0D, 0D)),
+        new DxfVertex(new DxfPoint(0D, 1D, 0D)),
+      })
+      { IsClosed = true };
+      var nonFiniteCircleCenter = new DxfCircle(
+        new DxfPoint(double.PositiveInfinity, 0D, 0D),
+        1D);
+      var nonFiniteEllipseCenter = new DxfEllipse(
+        new DxfPoint(0D, double.NaN, 0D),
+        new DxfVector(2D, 0D, 0D),
+        0.5D)
+      {
+        StartParameter = 0D,
+        EndParameter = 2D * Math.PI,
+      };
+      var invalidEntities = new (string Name, DxfEntity Entity)[]
+      {
+        ("non-finite LWPOLYLINE coordinate", nonFiniteLightweight),
+        ("non-finite LWPOLYLINE bulge", nonFiniteBulge),
+        ("zero-length POLYLINE segment", zeroLengthLegacy),
+        ("non-finite CIRCLE center", nonFiniteCircleCenter),
+        ("non-finite ELLIPSE center", nonFiniteEllipseCenter),
+      };
+
+      foreach ((string name, DxfEntity entity) in invalidEntities)
+      {
+        entity.Layer = DxfExporter.CutOuterLayer;
+        var file = new DxfFile();
+        file.Entities.Add(entity);
+
+        Action validate = () => DxfExporter.ValidateCommonLineDxf(file, Tolerance);
+
+        validate.Should().Throw<CommonLineValidationException>(
+          "{0} must fail closed before SheetCam receives CUT_OUTER",
+          name).WithMessage("*invalid entity*");
+      }
     }
 
     [Fact]
@@ -333,6 +511,123 @@ namespace DeepNestLib.CiTests.IO
     }
 
     [Fact]
+    public void SourceOuterCacheInvalidatesWhenContentChangesAtTheSameSizeAndTimestamp()
+    {
+      string path = Path.Combine(this.tempDirectory, "content-addressed-curved-source.dxf");
+      byte[] firstBytes = BulgedLightweightPolylineBytes(0.25D);
+      byte[] secondBytes = BulgedLightweightPolylineBytes(0.75D);
+      int equalLength = Math.Max(firstBytes.Length, secondBytes.Length) + 128;
+      firstBytes = PadTextDxf(firstBytes, equalLength);
+      secondBytes = PadTextDxf(secondBytes, equalLength);
+      DateTime fixedTimestamp = new DateTime(2024, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+
+      File.WriteAllBytes(path, firstBytes);
+      File.SetLastWriteTimeUtc(path, fixedTimestamp);
+      DateTime unchangedTimestamp = File.GetLastWriteTimeUtc(path);
+      SheetPlacement first = SheetPlacement.FromJson(
+        this.BuildTransformedCurvedPlacement(path, rotation: 0D, mirrored: false).ToJson());
+      CommonLineGeometryResolver.Resolve(first).Clusters.Single().OuterBoundaries.Single().Bulges
+        .Where(bulge => Math.Abs(bulge) > 1e-12)
+        .Select(Math.Abs)
+        .Should().BeEquivalentTo(new[] { 0.25D, 0.25D });
+
+      File.WriteAllBytes(path, secondBytes);
+      File.SetLastWriteTimeUtc(path, unchangedTimestamp);
+      new FileInfo(path).Length.Should().Be(equalLength);
+      File.GetLastWriteTimeUtc(path).Should().Be(unchangedTimestamp);
+      SheetPlacement second = SheetPlacement.FromJson(
+        this.BuildTransformedCurvedPlacement(path, rotation: 0D, mirrored: false).ToJson());
+
+      CommonLineGeometryResolver.Resolve(second).Clusters.Single().OuterBoundaries.Single().Bulges
+        .Where(bulge => Math.Abs(bulge) > 1e-12)
+        .Select(Math.Abs)
+        .Should().BeEquivalentTo(new[] { 0.75D, 0.75D },
+          "the source-boundary cache must follow drawing content, not length and mtime hints");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExactSourceLineMappingAccountsForPointFRoundTripFarFromOrigin(bool metric)
+    {
+      double scale = metric ? CommonLineDefaults.InchesToMillimeters : 1D;
+      double gap = Gap * scale;
+      double tolerance = Tolerance * scale;
+      double sourceX = 1048576.03125D * scale;
+      double sourceY = 524288.03125D * scale;
+      double width = 8D * scale;
+      double height = 4D * scale;
+      string path = Path.Combine(
+        this.tempDirectory,
+        metric ? "far-origin-metric.dxf" : "far-origin-inch.dxf");
+      WriteOffsetRectangle(
+        path,
+        sourceX,
+        sourceY,
+        width,
+        height,
+        metric ? DxfUnits.Millimeters : DxfUnits.Inches,
+        metric ? DxfDrawingUnits.Metric : DxfDrawingUnits.English);
+      Math.Abs(sourceX - (double)(float)sourceX).Should().BeGreaterThan(tolerance,
+        "the fixture must exercise real PointF precision loss");
+
+      IRawDetail detail = new NestExecutionHelper().LoadRawDetail(new FileInfo(path));
+      detail.TryConvertToNfp(0, out INfp firstNfp).Should().BeTrue();
+      detail.TryConvertToNfp(0, out INfp secondNfp).Should().BeTrue();
+      var first = new PartPlacement(firstNfp)
+      {
+        Id = 0,
+        Source = 0,
+        X = -sourceX,
+        Y = -sourceY,
+      };
+      var second = new PartPlacement(secondNfp)
+      {
+        Id = 1,
+        Source = 0,
+        X = -sourceX + width + gap,
+        Y = -sourceY,
+      };
+      int firstRight = FindExtremeVerticalEdge(first.Part, maximumX: true);
+      int secondLeft = FindExtremeVerticalEdge(second.Part, maximumX: false);
+
+      CommonEdge relationship = CommonLineGeometryResolver.CreateCommonEdge(
+        first,
+        firstRight,
+        0D,
+        1D,
+        second,
+        secondLeft,
+        0D,
+        1D,
+        gap,
+        tolerance);
+      relationship.SchemaVersion.Should().Be(CommonEdge.ParametricSchemaVersion);
+      relationship.SpanA.SourceFingerprint.Should().NotBeNullOrWhiteSpace();
+      var sheet = new SheetPlacement(
+        PlacementTypeEnum.BoundingBox,
+        Sheet.NewSheet(
+          0,
+          (int)Math.Ceiling(20D * scale),
+          (int)Math.Ceiling(20D * scale)),
+        new IPartPlacement[] { first, second },
+        0D,
+        SvgNest.Config.ClipperScale,
+        requiresMergedLines: true,
+        commonEdges: new[] { relationship },
+        commonLineGap: gap,
+        geometryTolerance: tolerance);
+
+      CommonLineCluster cluster = CommonLineGeometryResolver.Resolve(sheet)
+        .Clusters.Should().ContainSingle().Subject;
+      cluster.OuterBoundaries.Should().ContainSingle(path => path.IsClosed);
+      CommonCenterCurve seam = cluster.CommonCurves.Should().ContainSingle().Subject;
+      seam.GeometryKind.Should().Be(CommonLineGeometryKind.Line);
+      seam.Start.X.Should().BeApproximately(width + (gap / 2D), tolerance);
+      seam.End.X.Should().BeApproximately(width + (gap / 2D), tolerance);
+    }
+
+    [Fact]
     public async Task ReloadedNinetyDegreeClusterKeepsDirectedSourceBulges()
     {
       string path = this.CreateBulgedLightweightPolyline("rotated-curved-outside.dxf", bulgedVertexIndex: 1);
@@ -509,6 +804,21 @@ namespace DeepNestLib.CiTests.IO
         IsClosed = true,
       };
 
+    private static void WriteClosedPolyline(string path, IEnumerable<(double X, double Y)> points)
+    {
+      var source = new DxfFile();
+      source.Header.Version = DxfAcadVersion.R2000;
+      source.Entities.Add(new DxfLwPolyline(points.Select(point => new DxfLwPolylineVertex
+      {
+        X = point.X,
+        Y = point.Y,
+      }))
+      {
+        IsClosed = true,
+      });
+      source.Save(path, true);
+    }
+
     private static (double MinX, double MaxX) BoundsX(DxfEntity entity)
     {
       List<DxfLine> segments = new DxfLineMerger()
@@ -537,6 +847,118 @@ namespace DeepNestLib.CiTests.IO
       source.Entities.Add(new DxfLwPolyline(vertices) { IsClosed = true });
       source.Save(path, true);
       return path;
+    }
+
+    private static byte[] BulgedLightweightPolylineBytes(double bulge)
+    {
+      var source = new DxfFile();
+      source.Header.Version = DxfAcadVersion.R2000;
+      source.Entities.Add(new DxfLwPolyline(new[]
+      {
+        new DxfLwPolylineVertex { X = 0D, Y = 0D },
+        new DxfLwPolylineVertex { X = 10D, Y = 0D },
+        new DxfLwPolylineVertex { X = 10D, Y = 5D, Bulge = bulge },
+        new DxfLwPolylineVertex { X = 0D, Y = 5D },
+      })
+      {
+        IsClosed = true,
+      });
+      using var stream = new MemoryStream();
+      source.Save(stream, true);
+      return stream.ToArray();
+    }
+
+    private static byte[] PadTextDxf(byte[] source, int length)
+    {
+      if (source.Length == length)
+      {
+        return source;
+      }
+
+      const string windowsEof = "0\r\nEOF\r\n";
+      const string unixEof = "0\nEOF\n";
+      string text = System.Text.Encoding.UTF8.GetString(source);
+      string eof = text.EndsWith(windowsEof, StringComparison.Ordinal)
+        ? windowsEof
+        : unixEof;
+      int eofIndex = text.LastIndexOf(eof, StringComparison.Ordinal);
+      eofIndex.Should().BeGreaterThanOrEqualTo(0);
+
+      string newline = eof == windowsEof ? "\r\n" : "\n";
+      string commentPrefix = $"999{newline}";
+      string commentSuffix = newline;
+      int commentLength = length - source.Length - commentPrefix.Length - commentSuffix.Length;
+      commentLength.Should().BeGreaterThanOrEqualTo(0);
+      string padded = text.Insert(
+        eofIndex,
+        commentPrefix + new string(' ', commentLength) + commentSuffix);
+      byte[] result = System.Text.Encoding.UTF8.GetBytes(padded);
+      if (result.Length != length)
+      {
+        throw new InvalidOperationException("The DXF cache fixture failed to produce equal-size source files.");
+      }
+
+      return result;
+    }
+
+    private static void WriteOffsetRectangle(
+      string path,
+      double x,
+      double y,
+      double width,
+      double height,
+      DxfUnits units,
+      DxfDrawingUnits drawingUnits)
+    {
+      var source = new DxfFile();
+      source.Header.Version = DxfAcadVersion.R2000;
+      source.Header.DefaultDrawingUnits = units;
+      source.Header.DrawingUnits = drawingUnits;
+      source.Entities.Add(new DxfLwPolyline(new[]
+      {
+        new DxfLwPolylineVertex { X = x, Y = y },
+        new DxfLwPolylineVertex { X = x + width, Y = y },
+        new DxfLwPolylineVertex { X = x + width, Y = y + height },
+        new DxfLwPolylineVertex { X = x, Y = y + height },
+      })
+      {
+        IsClosed = true,
+      });
+      source.Save(path, true);
+    }
+
+    private static int FindExtremeVerticalEdge(INfp part, bool maximumX)
+    {
+      SvgPoint[] points = part.Points;
+      int count = points.Length;
+      if (count > 1
+        && points[0].X == points[^1].X
+        && points[0].Y == points[^1].Y)
+      {
+        count--;
+      }
+
+      int result = -1;
+      double best = maximumX ? double.NegativeInfinity : double.PositiveInfinity;
+      for (int i = 0; i < count; i++)
+      {
+        SvgPoint start = points[i];
+        SvgPoint end = points[(i + 1) % count];
+        if (start.X != end.X)
+        {
+          continue;
+        }
+
+        double x = start.X;
+        if ((maximumX && x > best) || (!maximumX && x < best))
+        {
+          result = i;
+          best = x;
+        }
+      }
+
+      result.Should().BeGreaterThanOrEqualTo(0, "the source rectangle must retain a vertical edge");
+      return result;
     }
 
     private SheetPlacement BuildTransformedCurvedPlacement(string path, double rotation, bool mirrored)

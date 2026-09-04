@@ -97,6 +97,7 @@
       target.Spacing = source.Spacing;
       target.SheetSpacing = source.SheetSpacing;
       target.CommonLineGapInches = source.CommonLineGapInches;
+      target.CommonLineMaxClusterParts = source.CommonLineMaxClusterParts;
       target.Rotations = source.Rotations;
       target.StrictAngles = source.StrictAngles;
 

@@ -98,6 +98,76 @@
       actual.Config.CommonLineGapInches.Should().Be(CommonLineDefaults.DefaultGapInches);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    [InlineData(64)]
+    [InlineData(500)]
+    public void ShouldRoundTripTheProjectsCommonLineClusterPolicy(int limit)
+    {
+      var sut = new ProjectInfo(new SvgNestConfig { CommonLineMaxClusterParts = limit });
+
+      string json = sut.ToJson();
+      var activeConfig = new SvgNestConfig { CommonLineMaxClusterParts = 12 };
+      ProjectInfo actual = ProjectInfo.FromJson(activeConfig, json);
+
+      json.Should().Contain(nameof(ISvgNestConfig.CommonLineMaxClusterParts));
+      actual.Config.Should().BeSameAs(activeConfig);
+      actual.Config.CommonLineMaxClusterParts.Should().Be(limit);
+      actual.CommonLineMaxClusterParts.Should().Be(limit);
+    }
+
+    [Fact]
+    public void ConcurrentProjectsKeepIndependentCommonLineClusterPolicies()
+    {
+      string jsonA = new ProjectInfo(new SvgNestConfig { CommonLineMaxClusterParts = 20 }).ToJson();
+      string jsonB = new ProjectInfo(new SvgNestConfig { CommonLineMaxClusterParts = 80 }).ToJson();
+      var runtime = new SvgNestConfig();
+
+      ProjectInfo projectA = ProjectInfo.FromJson(runtime, jsonA);
+      ProjectInfo projectB = ProjectInfo.FromJson(runtime, jsonB);
+      runtime.CommonLineMaxClusterParts.Should().Be(80);
+
+      runtime.CommonLineMaxClusterParts = projectA.CommonLineMaxClusterParts;
+      runtime.CommonLineMaxClusterParts.Should().Be(20);
+      projectB.CommonLineMaxClusterParts.Should().Be(80);
+
+      runtime.CommonLineMaxClusterParts = 200;
+      ProjectInfo.FromJson(new SvgNestConfig(), projectA.ToJson()).CommonLineMaxClusterParts.Should().Be(20);
+      ProjectInfo.FromJson(new SvgNestConfig(), projectB.ToJson()).CommonLineMaxClusterParts.Should().Be(80);
+    }
+
+    [Fact]
+    public void ProjectSavedBeforeCommonLineClusterLimitUsesAuto()
+    {
+      var sut = new ProjectInfo(new SvgNestConfig { CommonLineMaxClusterParts = 25 });
+      var tree = JsonNode.Parse(sut.ToJson());
+      tree[nameof(ProjectInfo.Config)].AsObject()
+        .Remove(nameof(ISvgNestConfig.CommonLineMaxClusterParts)).Should().BeTrue();
+
+      var activeConfig = new SvgNestConfig { CommonLineMaxClusterParts = 40 };
+      ProjectInfo actual = ProjectInfo.FromJson(activeConfig, tree.ToJsonString());
+
+      actual.Config.CommonLineMaxClusterParts.Should().Be(CommonLineDefaults.DefaultMaxClusterParts);
+      actual.CommonLineMaxClusterParts.Should().Be(CommonLineDefaults.DefaultMaxClusterParts);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    [InlineData(501)]
+    public void InvalidSavedCommonLineClusterLimitUsesAuto(int invalidLimit)
+    {
+      var tree = JsonNode.Parse(new ProjectInfo(new SvgNestConfig()).ToJson());
+      tree[nameof(ProjectInfo.Config)][nameof(ISvgNestConfig.CommonLineMaxClusterParts)] = invalidLimit;
+
+      var activeConfig = new SvgNestConfig { CommonLineMaxClusterParts = 40 };
+      ProjectInfo actual = ProjectInfo.FromJson(activeConfig, tree.ToJsonString());
+
+      actual.Config.CommonLineMaxClusterParts.Should().Be(CommonLineDefaults.DefaultMaxClusterParts);
+      actual.CommonLineMaxClusterParts.Should().Be(CommonLineDefaults.DefaultMaxClusterParts);
+    }
+
     /// <summary>
     /// The part-level round-trip is tested on its own, but the path the app actually takes runs through
     /// DetailLoadInfoJsonConverter and WrappableListJsonConverter. A mode that survives one and not the

@@ -2,6 +2,21 @@ namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.IO;
+  using Xunit;
+
+  /// <summary>Reports an actual skip instead of a green early return when the native engine is absent.</summary>
+  public sealed class SparrowTheoryAttribute : TheoryAttribute
+  {
+    public SparrowTheoryAttribute()
+    {
+      string path = Environment.GetEnvironmentVariable("SPARROW_EXE");
+      if (Environment.GetEnvironmentVariable("SHEETNEST_REQUIRE_SPARROW") != "1"
+        && (string.IsNullOrWhiteSpace(path) || !File.Exists(path)))
+      {
+        this.Skip = "Set SPARROW_EXE to run the native nesting regression.";
+      }
+    }
+  }
 
   /// <summary>
   /// Finds the nesting engine for the end-to-end tests.

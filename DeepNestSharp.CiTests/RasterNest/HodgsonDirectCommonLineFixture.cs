@@ -229,20 +229,22 @@ namespace DeepNestSharp.CiTests.RasterNest
           "the packing planner must be able to hand the direct snapper the two baked orientations");
     }
 
-    [Fact]
-    public void RealSparrowPlacesTwentyFiveAndResolvesCompleteHodgsonSeams()
+    [SparrowTheory]
+    [InlineData(15)]
+    [InlineData(25)]
+    [InlineData(50)]
+    public void RealSparrowPlacesRequestedCopiesAndResolvesCompleteHodgsonSeams(int quantity)
     {
       string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
       {
-        this.output.WriteLine("HODGSON: SPARROW_EXE not set - skipping real-engine regression.");
-        return;
+        throw new InvalidOperationException("The native Hodgson regression requires SPARROW_EXE.");
       }
 
       var part = new RasterPartInfo
       {
-        Path = this.sourcePath,
-        Quantity = 25,
+        Path = Environment.GetEnvironmentVariable("SHEETNEST_HODGSON_DXF") ?? this.sourcePath,
+        Quantity = quantity,
         Rotations = RotationCodes.Rot90And270,
         Spacing = 0.25D,
         Cc = CommonCuttingMode.Unrestricted,
@@ -251,6 +253,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       };
       long sparrowBefore = SparrowNestService.DiagSparrowMs;
       long mapBefore = SparrowNestService.DiagMapMs;
+      SparrowNestService.DiagCommonLineTimings.Clear();
       var watch = Stopwatch.StartNew();
       INestResult result = SparrowNestService.Nest(
         new[] { part },
@@ -271,14 +274,28 @@ namespace DeepNestSharp.CiTests.RasterNest
       List<ISheetPlacement> sheets = result.UsedSheets.ToList();
       this.output.WriteLine(FormattableString.Invariant(
         $"HODGSON: elapsed={watch.ElapsedMilliseconds}ms sparrow={SparrowNestService.DiagSparrowMs - sparrowBefore}ms map={SparrowNestService.DiagMapMs - mapBefore}ms sheets={sheets.Count} seams={sheets.Sum(sheet => sheet.CommonEdges?.Count ?? 0)}"));
+      foreach (string timing in SparrowNestService.DiagCommonLineTimings)
+      {
+        this.output.WriteLine(timing);
+        if (Environment.GetEnvironmentVariable("SHEETNEST_ASSERT_COMMON_LINE_PERF") == "1")
+        {
+          long milliseconds = System.Text.RegularExpressions.Regex.Matches(timing, @"=(\d+)ms")
+            .Cast<System.Text.RegularExpressions.Match>().Sum(match => long.Parse(match.Groups[1].Value));
+          milliseconds.Should().BeLessThan(quantity >= 50 ? 30000 : 10000,
+            "the dedicated Release performance job must meet its common-line processing target");
+        }
+      }
 
       using (new AssertionScope())
       {
-        sheets.Sum(sheet => sheet.PartPlacements.Count).Should().Be(25);
+        sheets.Sum(sheet => sheet.PartPlacements.Count).Should().Be(quantity);
         result.UnplacedParts.Should().BeEmpty();
-        sheets.SelectMany(sheet => sheet.CommonEdges ?? Array.Empty<CommonEdge>())
-          .Should().Contain(edge => Distance(edge.Start, edge.End) >= 10D - GeometryTolerance,
-            "the orientation-aware planner must turn at least one pair onto Hodgson's complete ten-inch edge");
+        if (quantity <= 25)
+        {
+          sheets.SelectMany(sheet => sheet.CommonEdges ?? Array.Empty<CommonEdge>())
+            .Should().Contain(edge => Distance(edge.Start, edge.End) >= 10D - GeometryTolerance,
+              "the known 15/25-copy fixtures have a material-safe complete ten-inch seam");
+        }
       }
 
       bool resolvedCompleteTenInchSeam = false;
@@ -309,8 +326,11 @@ namespace DeepNestSharp.CiTests.RasterNest
         }
       }
 
-      resolvedCompleteTenInchSeam.Should().BeTrue(
-        "the raw ten-inch relationship must survive cluster splitting as one complete resolved cut");
+      if (quantity <= 25)
+      {
+        resolvedCompleteTenInchSeam.Should().BeTrue(
+          "the raw ten-inch relationship must survive cluster splitting as one complete resolved cut");
+      }
     }
 
     private static Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> DirectRules()
@@ -328,8 +348,12 @@ namespace DeepNestSharp.CiTests.RasterNest
       CommonEdge record = CommonLineGeometryResolver.CreateCommonEdge(
         intent.PartA,
         intent.EdgeAIndex,
+        intent.EdgeAStart,
+        intent.EdgeAEnd,
         intent.PartB,
         intent.EdgeBIndex,
+        intent.EdgeBStart,
+        intent.EdgeBEnd,
         CommonLineGap,
         GeometryTolerance);
       return new SheetPlacement(
