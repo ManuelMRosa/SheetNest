@@ -53,7 +53,13 @@
       var partPlacementList = new List<IPartPlacement>();
       partPlacementList.Add(partPlacement);
       var sheet = Sheet.NewSheet(1, 100, 200);
-      var sheetPlacement = new SheetPlacement(PlacementTypeEnum.Gravity, sheet, partPlacementList, 121, new TestSvgNestConfig().ClipperScale);
+      var sheetPlacement = new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        sheet,
+        partPlacementList,
+        121,
+        new TestSvgNestConfig().ClipperScale,
+        requiresMergedLines: true);
       var sheetPlacementsCollection = new SheetPlacementCollection();
       sheetPlacementsCollection.Add(sheetPlacement);
 
@@ -61,6 +67,7 @@
       var json = nestResult.ToJson();
       var actual = NestResult.FromJson(json);
 
+      json.Should().Contain("\"RequiresMergedLines\": true");
       actual.Should().BeEquivalentTo(nestResult, options =>
             options// .Including(o => o.MergedLength)
                    // .Including(o => o.UnplacedParts)

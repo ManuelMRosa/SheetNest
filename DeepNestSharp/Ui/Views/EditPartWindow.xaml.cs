@@ -13,6 +13,7 @@ namespace DeepNestSharp.Ui.Views
   {
     private readonly IDetailLoadInfo part;
     private readonly int globalRotations;
+    private bool commonCuttingSelectionChanged;
 
     public EditPartWindow(IDetailLoadInfo part, int globalRotations, double defaultSpacing)
     {
@@ -31,18 +32,25 @@ namespace DeepNestSharp.Ui.Views
       this.spacingUpDown.Value = part.Spacing >= 0 ? part.Spacing : defaultSpacing;
 
       // Common cutting is a MODE, not a switch, and spacing stays live in all three: it is what the
-      // part keeps to everything it may not share a cut with. Offered only for a part that came in from
-      // a SheetCam nest file, because that is where the kerf it needs is measured from and there is
-      // nothing to share without one. Hidden rather than greyed out: a disabled control invites the
-      // question of why, and "because this part did not come from SheetCam" does not fit in a tooltip.
-      // The RAW mode, not the effective one — this is where the user's own choice is shown back.
-      if (!string.IsNullOrEmpty(part.NestSourcePath))
+      // part keeps to everything it may not share a cut with. SheetCam parts show their stored mode;
+      // direct DXF/STEP parts show only their EFFECTIVE mode. Direct SVG/other formats stay hidden:
+      // their exporter cannot emit the resolved CUT_OUTER + midpoint COMMON_LINE cluster contract.
+      if (ShowsCommonCuttingSelector(part))
       {
         this.commonCuttingGroup.Visibility = Visibility.Visible;
         this.commonCuttingCombo.Items.Add("None");
-        this.commonCuttingCombo.Items.Add("Unrestricted (any part)");
+        this.commonCuttingCombo.Items.Add("Unrestricted (compatible parts)");
         this.commonCuttingCombo.Items.Add("Same part");
-        this.commonCuttingCombo.SelectedIndex = (int)part.CommonCutting;
+        this.commonCuttingCombo.SelectedIndex = (int)part.EffectiveCommonCutting;
+        this.commonCuttingCombo.SelectionChanged += (_, __) => this.commonCuttingSelectionChanged = true;
+
+        if (string.IsNullOrWhiteSpace(part.NestSourcePath)
+            && !part.DirectCommonCuttingEnabled
+            && part.CommonCutting != CommonCuttingMode.None)
+        {
+          this.commonCuttingHint.Text = "A saved legacy common-cutting mode is inactive. Choose a mode to confirm it for this direct DXF/STEP part.";
+          this.commonCuttingHint.Visibility = Visibility.Visible;
+        }
       }
 
       var poly = LoadPolygon(part.Path);
@@ -100,18 +108,42 @@ namespace DeepNestSharp.Ui.Views
       }
     }
 
-    /// <summary>
-    /// The mode to write back: whatever the combo says, or what the part already had when the combo was
-    /// never shown.
-    /// </summary>
-    /// <remarks>
-    /// An empty ComboBox reads back SelectedIndex -1, and clamping that into range lands on None. So
-    /// without this, now that the control is only filled in for parts that came from a nest file,
-    /// opening Edit Part on a plain DXF and pressing OK would quietly wipe a setting the dialog never
-    /// offered to change, on a part whose owner cannot put it back.
-    /// </remarks>
+    /// <summary>The mode named by the combo, or the existing raw mode when it has no selection.</summary>
     internal static CommonCuttingMode ChosenMode(int selectedIndex, CommonCuttingMode current)
       => selectedIndex < 0 ? current : (CommonCuttingMode)System.Math.Min(2, selectedIndex);
+
+    /// <summary>Only formats with a cut-once output contract expose the selector.</summary>
+    internal static bool ShowsCommonCuttingSelector(IDetailLoadInfo part)
+      => part?.SupportsCommonCutting ?? false;
+
+    /// <summary>
+    /// Resolves the selector without treating its initial, effective value as a user choice. A direct
+    /// DXF/STEP confirms common cutting only after the selection changes; selecting None withdraws that
+    /// confirmation. SheetCam provenance already enables the stored mode, so its direct flag is untouched.
+    /// </summary>
+    internal static (CommonCuttingMode Mode, bool DirectEnabled) ChosenCommonCutting(
+      int selectedIndex,
+      bool selectionChanged,
+      CommonCuttingMode current,
+      bool directEnabled,
+      bool fromSheetCam,
+      bool supportsCommonCutting = true)
+    {
+      if (!supportsCommonCutting)
+      {
+        // The hidden control cannot be a user choice. Preserve raw project data; the model keeps it
+        // ineffective until the part has a supported output contract.
+        return (current, directEnabled);
+      }
+
+      if (!selectionChanged || selectedIndex < 0)
+      {
+        return (current, directEnabled);
+      }
+
+      var chosen = ChosenMode(selectedIndex, current);
+      return (chosen, fromSheetCam ? directEnabled : chosen != CommonCuttingMode.None);
+    }
 
     private static string FormatThickness(double thicknessMm, bool inch)
     {
@@ -244,7 +276,15 @@ namespace DeepNestSharp.Ui.Views
       this.part.MirrorQuantity = this.mirroredUpDown.Value ?? this.part.MirrorQuantity;
       this.part.Spacing = System.Math.Max(0, this.spacingUpDown.Value ?? 0);
 
-      this.part.CommonCutting = ChosenMode(this.commonCuttingCombo.SelectedIndex, this.part.CommonCutting);
+      var commonCutting = ChosenCommonCutting(
+        this.commonCuttingCombo.SelectedIndex,
+        this.commonCuttingSelectionChanged,
+        this.part.CommonCutting,
+        this.part.DirectCommonCuttingEnabled,
+        !string.IsNullOrWhiteSpace(this.part.NestSourcePath),
+        this.part.SupportsCommonCutting);
+      this.part.CommonCutting = commonCutting.Mode;
+      this.part.DirectCommonCuttingEnabled = commonCutting.DirectEnabled;
 
       int rotations = this.rotationSelector.Rotations;
       this.part.Rotations = rotations;

@@ -1,5 +1,6 @@
 namespace DeepNestSharp.CiTests
 {
+  using System;
   using System.Collections.Generic;
   using DeepNestLib;
   using DeepNestLib.Placement;
@@ -67,7 +68,129 @@ namespace DeepNestSharp.CiTests
       DxfViewer.SelectPlacements(master, new Dictionary<int, int> { { 7, 1 } }).Should().BeEmpty("no part on this sheet comes from source 7");
     }
 
-    private static ISheetPlacement FullSheet()
+    [Fact]
+    public void ASyntheticRemainderKeepsTheTemplatesExportRequirement()
+    {
+      var master = FullSheet(requiresMergedLines: true);
+      var taken = DxfViewer.SelectPlacements(master, new Dictionary<int, int> { { 0, 1 } });
+
+      var remainder = DxfViewer.CreateSyntheticSheet(master, taken);
+
+      remainder.RequiresMergedLines.Should().BeTrue(
+        "a condensed production plan must not turn a shared edge back into two cuts");
+    }
+
+    [Fact]
+    public void ACommonLineRequirementFollowsOnlyTheRelationshipsWhoseTwoPartsRemain()
+    {
+      const double gap = 0.01;
+      const double tolerance = 0.0001;
+      var placements = new List<IPartPlacement>
+      {
+        Square(0, 0, 1),
+        Square(10 + gap, 0, 2),
+        Square(30, 0, 3),
+      };
+      CommonEdge edge = CommonLineGeometryResolver.CreateCommonEdge(
+        placements[0],
+        1,
+        placements[1],
+        3,
+        gap,
+        tolerance);
+      var master = new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        placements,
+        0,
+        requiresMergedLines: false,
+        commonEdges: new[] { edge },
+        commonLineGap: gap,
+        geometryTolerance: tolerance);
+
+      SheetPlacement pair = DxfViewer.CreateSyntheticSheet(master, placements.GetRange(0, 2));
+      pair.CommonEdges.Should().ContainSingle();
+      pair.RequiresMergedLines.Should().BeTrue();
+      pair.CommonLineGap.Should().Be(gap);
+      pair.GeometryTolerance.Should().Be(tolerance);
+
+      Action split = () => DxfViewer.CreateSyntheticSheet(master, placements.GetRange(0, 1));
+      split.Should().Throw<InvalidOperationException>(
+        "a production-plan representative must never strand one endpoint at the reduced gap");
+    }
+
+    [Fact]
+    public void ProductionPlanSelectionTreatsACommonLineChainAsAtomic()
+    {
+      const double gap = 0.01;
+      const double tolerance = 0.0001;
+      var placements = new List<IPartPlacement>
+      {
+        Square(0, 0, 1),
+        Square(10 + gap, 0, 2),
+        Square(20 + (2 * gap), 0, 3),
+      };
+      var edges = new[]
+      {
+        CommonLineGeometryResolver.CreateCommonEdge(placements[0], 1, placements[1], 3, gap, tolerance),
+        CommonLineGeometryResolver.CreateCommonEdge(placements[1], 1, placements[2], 3, gap, tolerance),
+      };
+      var master = new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        placements,
+        0,
+        requiresMergedLines: false,
+        commonEdges: edges,
+        commonLineGap: gap,
+        geometryTolerance: tolerance);
+
+      DxfViewer.SelectPlacements(master, new Dictionary<int, int> { { 0, 2 } }).Should().BeEmpty(
+        "taking A-B out of A-B-C would fracture the export graph, so the plan must fall back to real sheets");
+      DxfViewer.SelectPlacements(master, new Dictionary<int, int> { { 0, 3 } }).Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void LayoutSignatureIncludesCommonLineContractButNormalizesGlobalPlacementIds()
+    {
+      const double gap = 0.01;
+      const double tolerance = 0.0001;
+      SheetPlacement CommonSheet(int firstId)
+      {
+        var placements = new List<IPartPlacement>
+        {
+          Square(0, 0, firstId),
+          Square(10 + gap, 0, firstId + 1),
+        };
+        CommonEdge edge = CommonLineGeometryResolver.CreateCommonEdge(
+          placements[0], 1, placements[1], 3, gap, tolerance);
+        return new SheetPlacement(
+          PlacementTypeEnum.Gravity,
+          Sheet.NewSheet(1, 100, 50),
+          placements,
+          0,
+          requiresMergedLines: false,
+          commonEdges: new[] { edge },
+          commonLineGap: gap,
+          geometryTolerance: tolerance);
+      }
+
+      SheetPlacement first = CommonSheet(10);
+      SheetPlacement cloneWithGlobalIds = CommonSheet(110);
+      var normal = new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        first.PartPlacements,
+        0,
+        requiresMergedLines: false);
+
+      DxfViewer.Signature(first).Should().Be(DxfViewer.Signature(cloneWithGlobalIds),
+        "CommonEdge endpoints are layout-local even though persisted placement IDs are job-global");
+      DxfViewer.Signature(normal).Should().NotBe(DxfViewer.Signature(first),
+        "equal nominal positions do not make normal and common-line export contracts interchangeable");
+    }
+
+    private static ISheetPlacement FullSheet(bool requiresMergedLines = false)
     {
       var placements = new List<IPartPlacement>
       {
@@ -76,7 +199,12 @@ namespace DeepNestSharp.CiTests
         Square(40, 0, 3),
       };
 
-      return new SheetPlacement(PlacementTypeEnum.Gravity, Sheet.NewSheet(1, 100, 50), placements, 0);
+      return new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        placements,
+        0,
+        requiresMergedLines);
     }
 
     private static IPartPlacement Square(double x, double y, int id)

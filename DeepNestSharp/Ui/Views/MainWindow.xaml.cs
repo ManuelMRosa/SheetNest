@@ -34,10 +34,7 @@ namespace DeepNestSharp.Ui.Views
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
 
-    // What counts as a shared edge on THIS machine. Null = the shipped starting values. Per user and
-    // not per project: it is a calibration, and opening someone else's job must not overwrite it.
-    private DeepNestLib.NestProject.CommonCuttingTolerances commonCuttingTolerances;
-    private DeepNestSharp.RasterNest.NestEffort nestEffort = DeepNestSharp.RasterNest.NestEffort.Normal; // how hard the nester searches (SessionState)
+    private DeepNestSharp.RasterNest.NestEffort nestEffort = DeepNestSharp.RasterNest.NestEffortDefaults.Default; // how hard the nester searches (SessionState)
     private bool preferRectOffcut; // cut the last sheet's leftover off as a rectangular offcut (SessionState)
     private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
     private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
@@ -102,12 +99,6 @@ namespace DeepNestSharp.Ui.Views
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-      // Start ready: ensure a project exists so the operator can load parts/sheets immediately.
-      if (ViewModel.ActiveDocument == null && ViewModel.CreateNestProjectCommand.CanExecute(null))
-      {
-        ViewModel.CreateNestProjectCommand.Execute(null);
-      }
-
       // Sensible defaults: always use all cores; drop the removed "Squeeze" arrangement.
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
       cfg.UseParallel = true;
@@ -170,6 +161,10 @@ namespace DeepNestSharp.Ui.Views
           this.unitsMm = session.UnitsMm.Value;
         }
 
+        // SessionState is the per-user fallback for a new job. Once a .dnest is opened its Config
+        // replaces this value, because the gap is geometry that must travel with the job.
+        cfg.CommonLineGapInches = session.EffectiveCommonLineGapInches;
+
         if (session.SheetPresets != null)
         {
           this.userSheetPresets = session.SheetPresets
@@ -190,12 +185,7 @@ namespace DeepNestSharp.Ui.Views
           session.AutosaveEnabled ?? true,
           session.AutosaveMinutes >= 1 && session.AutosaveMinutes <= 60 ? session.AutosaveMinutes : 5);
 
-        this.commonCuttingTolerances = session.CommonCutting;
-
-        if (session.NestEffort >= 0 && session.NestEffort <= (int)DeepNestSharp.RasterNest.NestEffort.Best)
-        {
-          this.nestEffort = (DeepNestSharp.RasterNest.NestEffort)session.NestEffort;
-        }
+        this.nestEffort = DeepNestSharp.RasterNest.NestEffortDefaults.FromPersisted(session.NestEffort);
 
         // Global default rotations (plain in-memory config property — resets to 4 without this).
         if (session.DefaultRotations > 0)
@@ -230,6 +220,14 @@ namespace DeepNestSharp.Ui.Views
         this.offcutMaxX = session.OffcutMaxX;
         this.offcutMaxY = session.OffcutMaxY;
         this.offcutEdgeOverlap = session.OffcutEdgeOverlap;
+      }
+
+      // Create the initial document only AFTER restoring the session. ProjectInfo snapshots the
+      // geometry-affecting common-line gap at construction time; creating it earlier made a session
+      // value such as 0.015" drive the first nest while Save/Autosave still wrote the old 0.010".
+      if (ViewModel.ActiveDocument == null && ViewModel.CreateNestProjectCommand.CanExecute(null))
+      {
+        ViewModel.CreateNestProjectCommand.Execute(null);
       }
 
       // The config normalization above — and the initial WPF binding pass, which runs AFTER Loaded
@@ -474,8 +472,14 @@ namespace DeepNestSharp.Ui.Views
     private void OnAdvancedSettings(object sender, RoutedEventArgs e)
     {
       var cfg = ViewModel.SvgNestConfigViewModel.SvgNestConfig;
+      double previousCommonLineGapInches = cfg.CommonLineGapInches;
       var dialog = new AdvancedSettingsWindow(
-        cfg, this.autosaveEnabled, this.autosaveMinutes, this.unitsMm, this.commonCuttingTolerances, this.nestEffort)
+        cfg,
+        this.autosaveEnabled,
+        this.autosaveMinutes,
+        this.unitsMm,
+        commonLineGapInches: cfg.CommonLineGapInches,
+        effort: this.nestEffort)
       {
         Owner = this,
       };
@@ -485,6 +489,16 @@ namespace DeepNestSharp.Ui.Views
       }
 
       this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
+      cfg.CommonLineGapInches = dialog.CommonLineGapInches;
+      if (System.Math.Abs(previousCommonLineGapInches - cfg.CommonLineGapInches) > 1e-12
+          && ViewModel.ActiveDocument is NestProjectViewModel project)
+      {
+        // Unlike machine/search preferences, this value changes placed geometry and therefore belongs
+        // in the .dnest. Mark the job so Save/Autosave actually writes the new value.
+        project.ProjectInfo.CommonLineGapInches = cfg.CommonLineGapInches;
+        project.IsDirty = true;
+      }
+
       this.unitsMm = dialog.UnitsMm;
       this.ApplyUnits();
 
@@ -496,8 +510,7 @@ namespace DeepNestSharp.Ui.Views
       session.DefaultRotations = cfg.Rotations;
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
-      this.commonCuttingTolerances = dialog.CommonCutting;
-      session.CommonCutting = this.commonCuttingTolerances;
+      session.CommonLineGapInches = cfg.CommonLineGapInches;
       this.nestEffort = dialog.Effort;
       session.NestEffort = (int)this.nestEffort;
       session.Save();
@@ -576,6 +589,12 @@ namespace DeepNestSharp.Ui.Views
         return;
       }
 
+      // ProjectInfo keeps this geometry-affecting value per document while the runtime config is shared.
+      // Reapply the active tab's snapshot before nesting/export/UI consumers can observe another tab's gap.
+      ViewModel.SvgNestConfigViewModel.SvgNestConfig.CommonLineGapInches =
+        doc.ProjectInfo.CommonLineGapInches;
+      this.ApplyUnits();
+
       // Recent Projects: record opened files now, and saved-for-the-first-time files when their
       // FilePath appears (Save As raises PropertyChanged). Subscription is made idempotent.
       if (!string.IsNullOrWhiteSpace(doc.FilePath))
@@ -624,6 +643,13 @@ namespace DeepNestSharp.Ui.Views
             .Where(o => !string.IsNullOrWhiteSpace(o.Path))
             .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(o => o.EffectiveCommonCutting)), System.StringComparer.OrdinalIgnoreCase);
+          this.dxfViewer.PartCommonCuttingDomains = doc.ProjectInfo.DetailLoadInfos
+            .Where(o => !string.IsNullOrWhiteSpace(o.Path))
+            .GroupBy(o => o.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+              g => g.Key,
+              g => g.Select(CommonCuttingDomainOf).FirstOrDefault(d => !string.IsNullOrEmpty(d)) ?? string.Empty,
+              System.StringComparer.OrdinalIgnoreCase);
 
           // And this project's own tooling, the same way a fresh nest hands it over. Without it the
           // restored nest kept whatever the last job left behind: its lead-ins drawn over these parts, and
@@ -790,24 +816,24 @@ namespace DeepNestSharp.Ui.Views
       // the autosave snapshot must not trigger a bogus recovery prompt on the next start.
       Autosave.Clear();
 
-      // Only the sheet edge margin persists across sessions. Sheet stock is deliberately NOT part of
-      // the session anymore — the app starts empty and each saved .dnest project carries its own
-      // stock (with its embedded nest result, whose Clear Result returns the sheets it consumed).
-      new SessionState
-      {
-        SheetEdgeMargin = System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
-        Sheets = new List<SessionSheet>(),
-        UnfoldKFactor = DeepNestLib.IO.StepUnfoldService.KFactor,
-        UnfoldKFactorStandard = DeepNestLib.IO.StepUnfoldService.KFactorStandard,
-        FreeCadCmdPath = DeepNestLib.IO.StepUnfoldService.FreeCadCmdPathOverride,
-        UnfoldUnitInch = DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
-        UnitsMm = this.unitsMm,
-        RecentProjects = SessionState.Load()?.RecentProjects ?? new List<string>(), // preserve the MRU
-        SheetPresets = this.userSheetPresets.Select(p => new SessionSheet { Width = p.W, Height = p.H }).ToList(),
-        AutosaveEnabled = this.autosaveEnabled,
-        AutosaveMinutes = this.autosaveMinutes,
-        DefaultRotations = ViewModel.SvgNestConfigViewModel.SvgNestConfig.Rotations,
-      }.Save();
+      // Sheet stock is deliberately NOT part of the session anymore — the app starts empty and each
+      // saved .dnest project carries its own stock. Update the existing session instead of replacing it:
+      // replacing it used to erase every preference not named here, including NestEffort.
+      var session = SessionState.Load() ?? new SessionState();
+      session.CaptureApplicationClose(
+        System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
+        DeepNestLib.IO.StepUnfoldService.KFactor,
+        DeepNestLib.IO.StepUnfoldService.KFactorStandard,
+        DeepNestLib.IO.StepUnfoldService.FreeCadCmdPathOverride,
+        DeepNestLib.IO.StepUnfoldService.UnfoldUnitInch,
+        this.unitsMm,
+        this.userSheetPresets.Select(p => new SessionSheet { Width = p.W, Height = p.H }),
+        this.autosaveEnabled,
+        this.autosaveMinutes,
+        ViewModel.SvgNestConfigViewModel.SvgNestConfig.Rotations,
+        this.nestEffort,
+        ViewModel.SvgNestConfigViewModel.SvgNestConfig.CommonLineGapInches);
+      session.Save();
     }
 
     /// <summary>Reflects the drawing units (in/mm) in every unit-labelled UI element.</summary>
@@ -822,6 +848,8 @@ namespace DeepNestSharp.Ui.Views
       if (this.dxfViewer != null)
       {
         this.dxfViewer.UnitsMm = this.unitsMm;
+        this.dxfViewer.CommonLineGap = ViewModel.SvgNestConfigViewModel.SvgNestConfig.CommonLineGapInches
+          * (this.unitsMm ? CommonLineDefaults.InchesToMillimeters : 1.0);
       }
     }
 
@@ -1405,6 +1433,8 @@ namespace DeepNestSharp.Ui.Views
           tooling.TryGetValue(o.Path, out var tool);
 
           var cc = o.EffectiveCommonCutting;
+          string commonCuttingDomain = CommonCuttingDomainOf(o);
+          bool directCommonCutting = RequiresMergedLinesForDirectCommonCutting(o);
           double kerf = tool.Kerf;
           var populations = new List<RasterPartInfo>
           {
@@ -1416,6 +1446,9 @@ namespace DeepNestSharp.Ui.Views
               Priority = o.Priority,                         // higher nests first
               Spacing = o.Spacing,                           // kept to whoever it cannot share a cut with; -1 = job default
               Cc = cc,
+              CommonCuttingDomain = commonCuttingDomain,
+              RequiresMergedLines = directCommonCutting,
+              ValidateEntryLead = !string.IsNullOrWhiteSpace(o.NestSourcePath),
               ToolPaths = tool.Paths,
               Kerf = kerf,
             },
@@ -1432,6 +1465,9 @@ namespace DeepNestSharp.Ui.Views
               Priority = o.Priority,
               Spacing = o.Spacing,
               Cc = cc,
+              CommonCuttingDomain = commonCuttingDomain,
+              RequiresMergedLines = directCommonCutting,
+              ValidateEntryLead = !string.IsNullOrWhiteSpace(o.NestSourcePath),
               Mirrored = true,
               ToolPaths = tool.Paths,
               Kerf = kerf,
@@ -1518,7 +1554,21 @@ namespace DeepNestSharp.Ui.Views
           // effort setting, in iterations, so two machines agree on the nest and only the clock differs. What
           // survives here is the scale for the watchdog that kills a hung engine process.
           // Common cutting rides along on each part's own mode; there is no job-wide flag to keep in step.
-          var r = SparrowNestService.Nest(parts, sheetStock, rotations, spacing, margin, 5, sparrowExe, out string err, token, nestProgress, this.commonCuttingTolerances, this.nestEffort);
+          double unitScale = this.unitsMm ? CommonLineDefaults.InchesToMillimeters : 1.0;
+          var r = SparrowNestService.Nest(
+            parts,
+            sheetStock,
+            rotations,
+            spacing,
+            margin,
+            5,
+            sparrowExe,
+            out string err,
+            token,
+            nestProgress,
+            geometryTolerance: CommonLineDefaults.DefaultGeometryToleranceInches * unitScale,
+            commonLineGap: config.CommonLineGapInches * unitScale,
+            effort: this.nestEffort);
           return (r, err);
         });
 
@@ -1560,6 +1610,12 @@ namespace DeepNestSharp.Ui.Views
           this.dxfViewer.PartCommonCutting = parts
             .GroupBy(p => p.Path, System.StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => MostPermissiveCc(g.Select(p => p.Cc)), System.StringComparer.OrdinalIgnoreCase);
+          this.dxfViewer.PartCommonCuttingDomains = parts
+            .GroupBy(p => p.Path, System.StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+              g => g.Key,
+              g => g.Select(p => p.CommonCuttingDomain).FirstOrDefault(d => !string.IsNullOrEmpty(d)) ?? string.Empty,
+              System.StringComparer.OrdinalIgnoreCase);
 
           // Draw the lead-ins/outs the engine just reserved room for, so the gaps it left make sense, and
           // the cut itself as a band of the real kerf width. Null clears any tooling from a previous nest.
@@ -1641,17 +1697,36 @@ namespace DeepNestSharp.Ui.Views
         // otherwise (error) clear the status text.
         if (nestSucceeded)
         {
+          CommonLineFallbackNotice[] commonLineFallbacks;
+          lock (SparrowNestService.DiagCommonLineFallbacks)
+          {
+            commonLineFallbacks = SparrowNestService.DiagCommonLineFallbacks.ToArray();
+          }
+
           // Say what common cutting actually managed. Giving a group up used to be completely silent,
           // so a job could come out with no shared cuts on it and look exactly like a job that never
           // had any to make.
-          string seams = SparrowNestService.DiagSeamsSnapped > 0 || SparrowNestService.DiagSeamsGivenUp > 0
+          string seams = SparrowNestService.DiagSeamsSnapped > 0
+              || SparrowNestService.DiagSeamsGivenUp > 0
+              || commonLineFallbacks.Length > 0
             ? FormattableString.Invariant($"  ·  {SparrowNestService.DiagSeamsSnapped} shared cuts")
               + (SparrowNestService.DiagSeamsGivenUp > 0
-                ? FormattableString.Invariant($", {SparrowNestService.DiagSeamsGivenUp} given up (a cut would have reached a neighbour)")
+                ? FormattableString.Invariant($", {SparrowNestService.DiagSeamsGivenUp} given up")
+                : string.Empty)
+              + (commonLineFallbacks.Length > 0
+                ? FormattableString.Invariant($", {commonLineFallbacks.Select(notice => notice.Drawing).Distinct(StringComparer.OrdinalIgnoreCase).Count()} drawing(s) kept at normal gap")
                 : string.Empty)
             : string.Empty;
 
           this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}{seams}");
+
+          if (commonLineFallbacks.Length > 0)
+          {
+            ViewModel.MessageService.DisplayMessageBox(
+              CommonLineFallbackMessage(commonLineFallbacks),
+              "Common line",
+              DeepNestLib.MessageBoxIcon.Warning);
+          }
 
           // A welded chain is cut as ONE path, so it needs one lead that starts outside a part. A chain
           // made only of copies set up WITHOUT a lead has no way in and cannot be run, and until now
@@ -2057,10 +2132,52 @@ namespace DeepNestSharp.Ui.Views
       return best;
     }
 
+    /// <summary>
+    /// Direct DXF/STEP common-line shares an exact contour; SheetCam shares an already-offset toolpath.
+    /// Keep those contracts apart, and keep separate SheetCam jobs apart from one another.
+    /// </summary>
+    internal static string CommonCuttingDomainOf(IDetailLoadInfo part)
+    {
+      if (part == null || part.EffectiveCommonCutting == CommonCuttingMode.None)
+      {
+        return string.Empty;
+      }
+
+      if (!string.IsNullOrWhiteSpace(part.NestSourcePath))
+      {
+        string source = part.NestSourcePath.Trim();
+        try
+        {
+          source = System.IO.Path.GetFullPath(source);
+        }
+        catch (System.Exception)
+        {
+          // Keep an old/missing path's persisted spelling. It still forms a private SheetCam domain
+          // and, importantly, never falls through into the direct-output contract.
+        }
+
+        return "sheetcam:" + source;
+      }
+
+      return part.DirectCommonCuttingEnabled ? "direct" : string.Empty;
+    }
+
+    /// <summary>
+    /// A direct common-cutting source makes its layout authoritative for DXF line merging. SheetCam
+    /// writes back to its owning job instead, and unsupported direct formats must never force an exporter
+    /// that cannot represent the shared edge once.
+    /// </summary>
+    internal static bool RequiresMergedLinesForDirectCommonCutting(IDetailLoadInfo part)
+      => part != null
+        && part.SupportsCommonCutting
+        && string.IsNullOrWhiteSpace(part.NestSourcePath)
+        && part.DirectCommonCuttingEnabled
+        && part.EffectiveCommonCutting != CommonCuttingMode.None;
+
     /// <summary>True when the job is common-line: SheetCam signals it with PartSpacing="0" — the parts
     /// share the cut and end up a single kerf apart, not a part gap.</summary>
     private static bool IsCommonLineJob(DeepNestLib.IO.SheetCamNestFile nest)
-      => nest.PartSpacing * nest.SettingsToDrawingUnits(false) <= 0;
+      => nest != null && nest.HasPartSpacing && nest.PartSpacing <= 0;
 
     /// <summary>
     /// The mode to import a SheetCam job as. Unrestricted, never Same part: the file says the JOB shares
@@ -2235,6 +2352,24 @@ namespace DeepNestSharp.Ui.Views
       return text.ToString();
     }
 
+    /// <summary>Formats the per-drawing reason a requested direct common line retained normal spacing.</summary>
+    internal static string CommonLineFallbackMessage(IEnumerable<CommonLineFallbackNotice> notices)
+    {
+      var rows = (notices ?? Enumerable.Empty<CommonLineFallbackNotice>())
+        .Where(notice => notice != null)
+        .GroupBy(notice => notice.Drawing, StringComparer.OrdinalIgnoreCase)
+        .Select(group => $"    {group.Key} — {string.Join("; ", group.Select(notice => notice.Reason).Distinct(StringComparer.Ordinal))}")
+        .ToArray();
+      if (rows.Length == 0)
+      {
+        return string.Empty;
+      }
+
+      return "Common-line cutting was skipped for:\n\n"
+        + string.Join("\n", rows)
+        + "\n\nThose parts kept the normal part gap.";
+    }
+
     /// <summary>Reports what came in and what was adopted from the job.</summary>
     private string BuildNestImportSummary(DeepNestLib.IO.SheetCamNestFile nest, int partCount)
     {
@@ -2245,9 +2380,15 @@ namespace DeepNestSharp.Ui.Views
       text.AppendLine($"Imported {partCount} part(s), {nest.Parts.Sum(p => p.Quantity)} piece(s) in total.");
       text.AppendLine();
 
-      // PartSpacing="0" is SheetCam's common-line flag, not a zero gap; a stated value is the part gap.
+      // PartSpacing="0" is SheetCam's common-line flag, not a zero gap; a stated positive value is the
+      // part gap. Missing/invalid is deliberately neither: keep this app's spacing and common-line off.
       double edge = ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing;
-      if (nest.PartSpacing * scale > 0)
+      if (!nest.HasPartSpacing)
+      {
+        text.AppendLine(FormattableString.Invariant(
+          $"Part spacing was not declared correctly; keeping the current spacing and common-line off. Edge margin {edge:0.###} {units}."));
+      }
+      else if (nest.PartSpacing * scale > 0)
       {
         text.AppendLine(FormattableString.Invariant(
           $"Part spacing {nest.PartSpacing * scale:0.###} {units} taken from the job; edge margin {edge:0.###} {units}."));
@@ -2424,6 +2565,21 @@ namespace DeepNestSharp.Ui.Views
         return false;
       }
 
+      // A SheetCam .nest return file can carry placements, but it cannot carry the resolved cluster
+      // boundary and single internal seam that Common Line V1 generated. Writing positions alone would
+      // make SheetCam see the two original outside contours again, silently restoring a duplicate cut.
+      // The layered DXF exporter is the explicit SheetCam contract for these sheets.
+      if (HasResolvedCommonLineGeometry(selected.UsedSheets))
+      {
+        ViewModel.MessageService.DisplayMessageBox(
+          "This result contains SheetNest-resolved common-line geometry, which a SheetCam .nest file " +
+          "cannot represent safely.\n\nUse Export DXF instead. In SheetCam, cut 01_CUT_INNER first, " +
+          "02_COMMON_LINE on-path/no-offset second, and 03_CUT_OUTER last.",
+          "Export SheetCam Nest",
+          DeepNestLib.MessageBoxIcon.Stop);
+        return false;
+      }
+
       // Map each part's temp DXF back to the <Part> it came from. Matching on the path rather than on
       // IPartPlacement.Source keeps this independent of the order OnNest happened to build its list in.
       var doc = ViewModel.ActiveDocument as NestProjectViewModel;
@@ -2548,6 +2704,9 @@ namespace DeepNestSharp.Ui.Views
         return false;
       }
     }
+
+    internal static bool HasResolvedCommonLineGeometry(IEnumerable<ISheetPlacement> sheets)
+      => sheets != null && sheets.Any(sheet => sheet?.CommonEdges != null && sheet.CommonEdges.Count > 0);
 
     /// <summary>
     /// The sheets are the project's, not the file's (import leaves the sheet list alone), so a nest run on

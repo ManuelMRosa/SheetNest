@@ -87,12 +87,14 @@
             <TextBlock Text="in the drawing's units" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="{StaticResource Brush.TextMuted}" />
           </StackPanel>
 
-          <!-- Common cutting (only for parts imported from a SheetCam .nest, which is where the kerf it
-               needs is measured from). Collapsed by default, shown by the constructor. -->
+          <!-- SheetCam parts bring their mode from the job. A direct DXF/STEP part starts safely off and
+               becomes eligible only after the operator explicitly changes this selector. -->
           <StackPanel x:Name="commonCuttingGroup" Visibility="Collapsed">
             <TextBlock Text="Common cutting:" Margin="0,14,0,4" />
             <ComboBox x:Name="commonCuttingCombo" Width="200" HorizontalAlignment="Left"
-                      ToolTip="Who this part may share a cut edge with. Sharing nests the two TOUCHING so the shared edge is cut once instead of twice. Part spacing still applies to everything it may not share with. The laser program must support common-line cuts." />
+                      ToolTip="Who this part may share a cut edge with. Direct DXF/STEP full edges stay at the configured Common Line Gap and export as a cluster perimeter plus one midpoint common cut; SheetCam keeps its separate measured-kerf toolpath route within the same job. Part spacing still applies everywhere else. Changing this choice explicitly enables common cutting for a direct part." />
+            <TextBlock x:Name="commonCuttingHint" Visibility="Collapsed" Margin="0,4,0,0" FontSize="10"
+                       Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" />
           </StackPanel>
 
           <TextBlock Text="Priority:" Margin="0,14,0,4" />

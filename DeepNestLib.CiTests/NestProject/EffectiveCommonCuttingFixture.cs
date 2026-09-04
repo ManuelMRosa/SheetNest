@@ -6,20 +6,20 @@ namespace DeepNestLib.CiTests.NestProject
   using Xunit;
 
   /// <summary>
-  /// Common cutting needs a kerf, and the kerf is measured off the leads of a SheetCam nest file, so a
-  /// part that did not come from one has nothing to share. These say the part answers that for itself
-  /// instead of every caller having to remember to ask where it came from.
+  /// SheetCam common cutting uses its measured kerf; explicitly confirmed direct DXF/STEP common cutting
+  /// uses exact contour contact and merged DXF lines. These say the part answers which contract is active
+  /// instead of every caller having to reconstruct that choice.
   /// </summary>
   public class EffectiveCommonCuttingFixture
   {
     [Theory]
     [InlineData(CommonCuttingMode.Unrestricted)]
     [InlineData(CommonCuttingMode.SamePart)]
-    public void APartThatDidNotComeFromANestSharesNothing(CommonCuttingMode stored)
+    public void AnUnconfirmedDirectPartSharesNothing(CommonCuttingMode stored)
     {
       var sut = new DetailLoadInfo { Path = "a.dxf", CommonCutting = stored };
 
-      sut.NestSourcePath.Should().BeEmpty("a plain DXF is what this is about");
+      sut.NestSourcePath.Should().BeEmpty("a direct DXF is what this is about");
       sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None);
     }
 
@@ -34,6 +34,40 @@ namespace DeepNestLib.CiTests.NestProject
 
       sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None);
       sut.CommonCutting.Should().Be(CommonCuttingMode.Unrestricted, "the file said so and we have no business changing it");
+    }
+
+    /// <summary>A direct part becomes eligible only after the new per-part confirmation is persisted.</summary>
+    [Theory]
+    [InlineData(CommonCuttingMode.Unrestricted)]
+    [InlineData(CommonCuttingMode.SamePart)]
+    public void AConfirmedDirectPartUsesItsStoredMode(CommonCuttingMode stored)
+    {
+      var sut = new DetailLoadInfo
+      {
+        Path = "a.dxf",
+        CommonCutting = stored,
+        DirectCommonCuttingEnabled = true,
+      };
+
+      sut.EffectiveCommonCutting.Should().Be(stored);
+    }
+
+    [Theory]
+    [InlineData("part.svg")]
+    [InlineData("part.dnpoly")]
+    [InlineData("")]
+    public void AConfirmedUnsupportedDirectFormatStillSharesNothing(string path)
+    {
+      var sut = new DetailLoadInfo
+      {
+        Path = path,
+        CommonCutting = CommonCuttingMode.Unrestricted,
+        DirectCommonCuttingEnabled = true,
+      };
+
+      sut.SupportsCommonCutting.Should().BeFalse();
+      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None,
+        "only DXF export can collapse a direct shared contour into one cut entity");
     }
 
     /// <summary>
@@ -55,6 +89,20 @@ namespace DeepNestLib.CiTests.NestProject
       };
 
       sut.EffectiveCommonCutting.Should().Be(stored);
+    }
+
+    [Fact]
+    public void SheetCamProvenanceKeepsItsContractRegardlessOfTheMaterializedFileExtension()
+    {
+      var sut = new DetailLoadInfo
+      {
+        Path = "materialized.svg",
+        NestSourcePath = @"C:\Jobs\job.nest",
+        CommonCutting = CommonCuttingMode.Unrestricted,
+      };
+
+      sut.SupportsCommonCutting.Should().BeTrue();
+      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.Unrestricted);
     }
 
     /// <summary>

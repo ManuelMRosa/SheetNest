@@ -4,6 +4,12 @@
   {
     ISvgNestConfig Config { get; }
 
+    /// <summary>
+    /// Gets or sets this document's canonical common-line gap in inches. The application config is
+    /// process-wide, so geometry-affecting project values must also have a per-document snapshot.
+    /// </summary>
+    double CommonLineGapInches { get; set; }
+
     IList<IDetailLoadInfo, DetailLoadInfo> DetailLoadInfos { get; }
 
     IList<ISheetLoadInfo, SheetLoadInfo> SheetLoadInfos { get; }

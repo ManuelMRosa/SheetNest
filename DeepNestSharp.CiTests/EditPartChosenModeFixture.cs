@@ -6,21 +6,19 @@ namespace DeepNestSharp.CiTests
   using Xunit;
 
   /// <summary>
-  /// Common cutting is only offered for parts that came from a SheetCam nest file, so on everything else
-  /// the combo is never filled in. What OK then writes back has to be nothing at all.
+  /// The selector is shown only where the output contract can represent one shared cut. Its initial
+  /// effective value is not itself a user choice; direct DXFs opt in only when the operator changes it.
   /// </summary>
   public class EditPartChosenModeFixture
   {
     /// <summary>
-    /// The one that matters. An empty ComboBox reads SelectedIndex -1; clamping that into range lands on
-    /// None, so a dialog that never offered the setting would erase it on the way out, on exactly the
-    /// parts whose owner has no control left to put it back with.
+    /// Invalid/empty selection still preserves the raw value rather than erasing project data.
     /// </summary>
     [Theory]
     [InlineData(CommonCuttingMode.Unrestricted)]
     [InlineData(CommonCuttingMode.SamePart)]
     [InlineData(CommonCuttingMode.None)]
-    public void AComboThatWasNeverShownChangesNothing(CommonCuttingMode current)
+    public void AnInvalidOrEmptySelectionChangesNothing(CommonCuttingMode current)
     {
       EditPartWindow.ChosenMode(-1, current).Should().Be(current);
     }
@@ -32,6 +30,89 @@ namespace DeepNestSharp.CiTests
     public void AShownComboSaysWhatWasPicked(int selectedIndex, CommonCuttingMode expected)
     {
       EditPartWindow.ChosenMode(selectedIndex, CommonCuttingMode.SamePart).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(CommonCuttingMode.Unrestricted)]
+    [InlineData(CommonCuttingMode.SamePart)]
+    public void OkWithoutChangingAnUnconfirmedLegacySelectorPreservesItsRawMode(CommonCuttingMode raw)
+    {
+      EditPartWindow.ChosenCommonCutting(0, false, raw, false, false)
+        .Should().Be((raw, false));
+    }
+
+    [Theory]
+    [InlineData(1, CommonCuttingMode.Unrestricted)]
+    [InlineData(2, CommonCuttingMode.SamePart)]
+    public void ChoosingANonNoneModeConfirmsADirectPart(int selectedIndex, CommonCuttingMode expected)
+    {
+      EditPartWindow.ChosenCommonCutting(selectedIndex, true, CommonCuttingMode.None, false, false)
+        .Should().Be((expected, true));
+    }
+
+    [Fact]
+    public void ChoosingNoneDisablesADirectPart()
+    {
+      EditPartWindow.ChosenCommonCutting(0, true, CommonCuttingMode.SamePart, true, false)
+        .Should().Be((CommonCuttingMode.None, false));
+    }
+
+    [Fact]
+    public void SheetCamChangesItsModeWithoutNeedingADirectConfirmation()
+    {
+      EditPartWindow.ChosenCommonCutting(2, true, CommonCuttingMode.Unrestricted, false, true)
+        .Should().Be((CommonCuttingMode.SamePart, false));
+    }
+
+    [Theory]
+    [InlineData(CommonCuttingMode.None)]
+    [InlineData(CommonCuttingMode.Unrestricted)]
+    [InlineData(CommonCuttingMode.SamePart)]
+    public void OkWithoutChangingASheetCamSelectorPreservesItsRawMode(CommonCuttingMode raw)
+    {
+      EditPartWindow.ChosenCommonCutting((int)raw, false, raw, false, true)
+        .Should().Be((raw, false));
+    }
+
+    [Fact]
+    public void DirectSvgDoesNotShowTheSelectorOrAcceptAForcedChoice()
+    {
+      var svg = new DetailLoadInfo
+      {
+        Path = "part.svg",
+        CommonCutting = CommonCuttingMode.None,
+      };
+
+      EditPartWindow.ShowsCommonCuttingSelector(svg).Should().BeFalse();
+      EditPartWindow.ChosenCommonCutting(
+          1,
+          selectionChanged: true,
+          CommonCuttingMode.None,
+          directEnabled: false,
+          fromSheetCam: false,
+          supportsCommonCutting: svg.SupportsCommonCutting)
+        .Should().Be((CommonCuttingMode.None, false));
+
+      EditPartWindow.ChosenCommonCutting(
+          -1,
+          selectionChanged: false,
+          CommonCuttingMode.Unrestricted,
+          directEnabled: true,
+          fromSheetCam: false,
+          supportsCommonCutting: svg.SupportsCommonCutting)
+        .Should().Be((CommonCuttingMode.Unrestricted, true),
+          "an invisible control must not rewrite raw project data; the model still keeps it ineffective");
+    }
+
+    [Fact]
+    public void DirectDxfAndSheetCamStillShowTheSelector()
+    {
+      EditPartWindow.ShowsCommonCuttingSelector(new DetailLoadInfo { Path = "part.DXF" }).Should().BeTrue();
+      EditPartWindow.ShowsCommonCuttingSelector(new DetailLoadInfo
+      {
+        Path = "materialized.svg",
+        NestSourcePath = @"C:\Jobs\job.nest",
+      }).Should().BeTrue();
     }
   }
 }

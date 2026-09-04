@@ -54,16 +54,31 @@
     CommonCuttingMode CommonCutting { get; set; }
 
     /// <summary>
+    /// Gets or sets whether the operator explicitly enabled common cutting for a direct DXF/STEP part.
+    /// False keeps an unconfirmed mode from an older project inactive. SheetCam parts are enabled by their
+    /// provenance and do not require this flag.
+    /// </summary>
+    bool DirectCommonCuttingEnabled { get; set; }
+
+    /// <summary>
+    /// Gets whether this part has a supported common-cutting contract: SheetCam provenance, or a direct
+    /// DXF contour. Direct SVG and other formats fail closed because their exporters cannot collapse a
+    /// shared edge into one cut entity.
+    /// </summary>
+    bool SupportsCommonCutting { get; }
+
+    /// <summary>
     /// Gets who this part may share a cut edge with once the part's origin is taken into account:
-    /// <see cref="CommonCuttingMode.None"/> for anything that did not come from a SheetCam nest file,
-    /// whatever <see cref="CommonCutting"/> says.
+    /// the stored <see cref="CommonCutting"/> mode for a SheetCam part or an explicitly enabled direct
+    /// DXF/STEP part; otherwise <see cref="CommonCuttingMode.None"/>.
     /// </summary>
     CommonCuttingMode EffectiveCommonCutting { get; }
 
     /// <summary>
     /// Gets or sets common cutting as a plain on/off. True for any mode but
     /// <see cref="CommonCuttingMode.None"/>; setting it true means
-    /// <see cref="CommonCuttingMode.Unrestricted"/>.
+    /// <see cref="CommonCuttingMode.Unrestricted"/>. Assigning it on a direct DXF/STEP also sets the
+    /// explicit direct confirmation to the same value.
     /// </summary>
     bool CommonLine { get; set; }
 

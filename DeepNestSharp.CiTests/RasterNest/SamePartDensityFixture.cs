@@ -148,8 +148,8 @@ namespace DeepNestSharp.CiTests.RasterNest
           for (int j = i + 1; j < pls.Count; j++)
           {
             bool mayShare = DeepNestSharp.Ui.UserControls.DxfViewer.MayShare(
-              mode, pls[i].Part.Name, pls[i].IsMirrored,
-              mode, pls[j].Part.Name, pls[j].IsMirrored);
+              mode, pls[i].Part.Name, pls[i].IsMirrored, "direct",
+              mode, pls[j].Part.Name, pls[j].IsMirrored, "direct");
 
             double clearance = DeepNestSharp.Ui.UserControls.DxfViewer.ClearanceFor(spacing, spacing, mayShare);
 
@@ -180,7 +180,7 @@ namespace DeepNestSharp.CiTests.RasterNest
             && det.TryConvertToNfp(0, out INfp nfp) && nfp.Points.Length > 2)
         {
           maxExtent = Math.Max(maxExtent, Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY));
-          parts.Add(new RasterPartInfo { Path = path, Quantity = 40, Rotations = 4, Cc = cc });
+          parts.Add(new RasterPartInfo { Path = path, Quantity = 40, Rotations = 4, Cc = cc, CommonCuttingDomain = "direct" });
         }
       }
 
@@ -247,7 +247,7 @@ namespace DeepNestSharp.CiTests.RasterNest
             && det.TryConvertToNfp(0, out INfp nfp) && nfp.Points.Length > 2)
         {
           maxExtent = Math.Max(maxExtent, Math.Max(nfp.MaxX - nfp.MinX, nfp.MaxY - nfp.MinY));
-          parts.Add(new RasterPartInfo { Path = path, Quantity = 40, Rotations = rotations, Cc = cc });
+          parts.Add(new RasterPartInfo { Path = path, Quantity = 40, Rotations = rotations, Cc = cc, CommonCuttingDomain = "direct" });
         }
       }
 

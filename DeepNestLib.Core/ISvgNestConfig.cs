@@ -6,6 +6,12 @@
   public interface ISvgNestConfig : ITopNestResultsConfig, IPlacementConfig
   {
     /// <summary>
+    /// Gets or sets the physical gap used by intentional common-line placements, stored canonically
+    /// in inches regardless of the drawing's active units.
+    /// </summary>
+    double CommonLineGapInches { get; set; }
+
+    /// <summary>
     /// Gets or sets whether to clip the simplified polygon used in nesting by the hull.
     /// This often improves the fit to the original part but may slightly increase the number
     /// of points in the simplification and accordingly may marginally slow the nest.

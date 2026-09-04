@@ -7,6 +7,8 @@
   {
     internal static ISvgNestConfig Default => new TestSvgNestConfig();
 
+    public double CommonLineGapInches { get; set; } = CommonLineDefaults.DefaultGapInches;
+
     public double ClipperScale { get; set; } = 10000000;
 
     public double CurveTolerance { get; set; } = 0.72D;

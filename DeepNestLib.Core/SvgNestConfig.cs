@@ -128,6 +128,17 @@ namespace DeepNestLib
     /// <inheritdoc />
     public double Scale { get; set; } = 25;
 
+    private double commonLineGapInches = CommonLineDefaults.DefaultGapInches;
+
+    /// <inheritdoc />
+    public double CommonLineGapInches
+    {
+      get => this.commonLineGapInches;
+      set => this.commonLineGapInches = IsValidCommonLineGap(value)
+        ? value
+        : CommonLineDefaults.DefaultGapInches;
+    }
+
     /// <inheritdoc />
     public double ClipperScale { get; set; } = 10000000;
 
@@ -635,5 +646,10 @@ namespace DeepNestLib
     {
       return SvgNestConfigJsonConverter.FromJson(json);
     }
+
+    private static bool IsValidCommonLineGap(double value)
+      => !double.IsNaN(value)
+        && !double.IsInfinity(value)
+        && value > CommonLineDefaults.DefaultGeometryToleranceInches;
   }
 }

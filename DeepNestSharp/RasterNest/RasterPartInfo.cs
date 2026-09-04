@@ -9,6 +9,15 @@ namespace DeepNestSharp.RasterNest
     public int Priority = 5;    // 1-10, LOWER nests first (1 = highest); 5 = normal
     public double Spacing = -1; // per-part gap to the neighbours it may NOT share a cut with (in); -1 = job default
     public DeepNestLib.NestProject.CommonCuttingMode Cc; // who it may share a cut edge with; None = nobody
+    // Common-cutting contracts are deliberately isolated. Direct DXF/STEP uses one shared domain;
+    // SheetCam uses the source .nest path, so an already-offset SheetCam toolpath can never be welded
+    // to an exact direct-export contour (or to a different SheetCam job) merely because both modes allow it.
+    public string CommonCuttingDomain = string.Empty;
+    // Opts a nominal DXF/STEP contour into V1 resolved output: indexed edges stay at the configured gap,
+    // then export as a cluster perimeter plus one midpoint COMMON_LINE. False keeps SheetCam on its
+    // separate measured-kerf .nest return path.
+    public bool RequiresMergedLines;
+    public bool ValidateEntryLead;   // SheetCam tooling: warn when a cut chain has no exterior entry lead
     public bool Mirrored;       // nest this population X-flipped; its placements carry IsMirrored for the exporter
 
     // Tooling, when the part came from a SheetCam .nest — that file describes a part that is already

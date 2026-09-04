@@ -83,6 +83,14 @@
 
     public double MergedLength => ((ISheetPlacement)this.Item).MergedLength;
 
+    public bool RequiresMergedLines => this.sheetPlacement?.RequiresMergedLines ?? false;
+
+    public IReadOnlyList<CommonEdge> CommonEdges => this.sheetPlacement?.CommonEdges;
+
+    public double CommonLineGap => this.sheetPlacement?.CommonLineGap ?? 0;
+
+    public double GeometryTolerance => this.sheetPlacement?.GeometryTolerance ?? 0;
+
     public double MinX => this.sheetPlacement?.MinX ?? 0;
 
     public double MinY => this.sheetPlacement?.MinY ?? 0;

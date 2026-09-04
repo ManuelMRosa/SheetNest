@@ -10,6 +10,7 @@
   using System.Windows.Media;
   using System.Windows.Threading;
   using DeepNestLib;
+  using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
 
   /// <summary>
@@ -131,16 +132,29 @@
 
     /// <summary>Effective per-part spacing (inches) keyed by the part's source DXF path — set by the
     /// window right before a nest result is shown, so manual edits enforce the same clearances the
-    /// nester used: two parts must stay (spacingA + spacingB)/2 apart; common-line parts (0) may touch.</summary>
+    /// nester used: two parts stay (spacingA + spacingB)/2 apart everywhere outside a valid recorded
+    /// edge, while SheetCam retains its separate measured-kerf contract.</summary>
     public IDictionary<string, double> PartSpacings { get; set; }
 
     /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
     public double DefaultPartSpacing { get; set; }
 
+    /// <summary>
+    /// Active common-line separation in drawing units. The sheet's recorded value remains authoritative
+    /// for an existing nest; this runtime value lets manual-placement helpers use the same physical setting
+    /// before a result carries first-class <see cref="CommonEdge"/> metadata.
+    /// </summary>
+    public double CommonLineGap { get; set; } = CommonLineDefaults.DefaultGapInches;
+
     /// <summary>Common cutting mode per part file (keyed by <c>Part.Name</c>, i.e. its path), set by the
     /// window alongside <see cref="PartSpacings"/>. Absent = None. Without it, hand editing would demand
-    /// full clearance between two parts the nester deliberately placed touching, and mark them red.</summary>
+    /// full clearance between two SheetCam toolpaths deliberately seated one kerf apart.</summary>
     internal IReadOnlyDictionary<string, DeepNestLib.NestProject.CommonCuttingMode> PartCommonCutting { get; set; }
+
+    /// <summary>Common-cutting contract per part file. Only parts with the same non-empty domain may
+    /// share a cut: direct geometry and pre-toolpathed SheetCam jobs use different contracts, and two
+    /// independent SheetCam jobs must not be joined merely because both allow common cutting.</summary>
+    internal IReadOnlyDictionary<string, string> PartCommonCuttingDomains { get; set; }
 
     /// <summary>How far every part must stay from the sheet edge (drawing units) — the same margin the
     /// nester was given, so editing by hand cannot break what the job asked for. Set by the window.</summary>
@@ -429,7 +443,13 @@
           if (rem > 0)
           {
             var take = new Dictionary<int, int> { { src, rem } };
-            var remSheet = new SheetPlacement(densest.Sheet.PlacementType, densest.Sheet.Sheet, SelectPlacements(densest.Sheet, take), 0, SvgNest.Config.ClipperScale);
+            List<IPartPlacement> selected = SelectPlacements(densest.Sheet, take);
+            if (!SelectionMatches(selected, take))
+            {
+              return false; // a common-line component cannot be split to manufacture this remainder
+            }
+
+            var remSheet = CreateSyntheticSheet(densest.Sheet, selected);
             this.groups.Add(new SheetGroup { Representative = remSheet, Count = 1, Name = "Remainder sheet" });
           }
 
@@ -491,7 +511,13 @@
         string key = CompKey(take);
         if (!remGroups.TryGetValue(key, out var g))
         {
-          var sheet = new SheetPlacement(fit.Sheet.PlacementType, fit.Sheet.Sheet, SelectPlacements(fit.Sheet, take), 0, SvgNest.Config.ClipperScale);
+          List<IPartPlacement> selected = SelectPlacements(fit.Sheet, take);
+          if (!SelectionMatches(selected, take))
+          {
+            return false; // retain the real engine sheets rather than fracture a common-line cluster
+          }
+
+          var sheet = CreateSyntheticSheet(fit.Sheet, selected);
           g = new SheetGroup { Representative = sheet, Count = 0, Name = "Remainder sheet" };
           remGroups[key] = g;
           this.groups.Add(g);
@@ -505,6 +531,44 @@
       }
 
       return this.groups.Count > 0;
+    }
+
+    /// <summary>
+    /// Builds a production-plan representative from a real layout without losing export requirements
+    /// attached to that layout.
+    /// </summary>
+    internal static SheetPlacement CreateSyntheticSheet(
+      ISheetPlacement template,
+      IReadOnlyList<IPartPlacement> placements)
+    {
+      var keptIds = new HashSet<int>((placements ?? Array.Empty<IPartPlacement>()).Select(p => p.Id));
+      if ((template.CommonEdges ?? Array.Empty<CommonEdge>())
+        .Any(edge => edge == null || keptIds.Contains(edge.PartAId) != keptIds.Contains(edge.PartBId)))
+      {
+        throw new InvalidOperationException("A production-plan sheet cannot split a common-line component.");
+      }
+
+      var keptEdges = (template.CommonEdges ?? Array.Empty<CommonEdge>())
+        .Where(e => e != null && keptIds.Contains(e.PartAId) && keptIds.Contains(e.PartBId))
+        .ToList();
+
+      // A legacy placement may carry only RequiresMergedLines, and that old export contract must still
+      // survive a production-plan clone. A V1 placement is different: its requirement belongs to concrete
+      // CommonEdge records. If a remainder omits either endpoint, do not leave the reduced sheet forcing
+      // the old duplicate-line merger with no intentional relationship behind it.
+      bool legacyMergeRequirement = template.RequiresMergedLines
+        && (template.CommonEdges == null || template.CommonEdges.Count == 0);
+
+      return new SheetPlacement(
+        template.PlacementType,
+        template.Sheet,
+        placements,
+        0,
+        SvgNest.Config.ClipperScale,
+        legacyMergeRequirement,
+        commonEdges: keptEdges,
+        commonLineGap: template.CommonLineGap,
+        geometryTolerance: template.GeometryTolerance);
     }
 
     private static int MaxCopies(Dictionary<int, int> comp, Dictionary<int, int> remaining)
@@ -562,29 +626,169 @@
     {
       var need = new Dictionary<int, int>(take);
       var list = new List<IPartPlacement>();
+      var adjacency = new Dictionary<int, HashSet<int>>();
+      foreach (CommonEdge edge in master.CommonEdges ?? Array.Empty<CommonEdge>())
+      {
+        if (edge == null)
+        {
+          continue;
+        }
+
+        if (!adjacency.TryGetValue(edge.PartAId, out HashSet<int> a))
+        {
+          adjacency[edge.PartAId] = a = new HashSet<int>();
+        }
+
+        if (!adjacency.TryGetValue(edge.PartBId, out HashSet<int> b))
+        {
+          adjacency[edge.PartBId] = b = new HashSet<int>();
+        }
+
+        a.Add(edge.PartBId);
+        b.Add(edge.PartAId);
+      }
+
+      var handled = new HashSet<IPartPlacement>();
       foreach (var pp in master.PartPlacements)
       {
-        if (need.TryGetValue(pp.Source, out int n) && n > 0)
+        if (!handled.Add(pp))
         {
-          list.Add(PlacementSnapshot.Of(pp).ToPlacement());
-          need[pp.Source] = n - 1;
+          continue;
+        }
+
+        if (!adjacency.ContainsKey(pp.Id))
+        {
+          if (need.TryGetValue(pp.Source, out int remaining) && remaining > 0)
+          {
+            list.Add(PlacementSnapshot.Of(pp).ToPlacement());
+            need[pp.Source] = remaining - 1;
+          }
+
+          continue;
+        }
+
+        var memberIds = new HashSet<int> { pp.Id };
+        var pending = new Queue<int>();
+        pending.Enqueue(pp.Id);
+        while (pending.Count > 0)
+        {
+          int id = pending.Dequeue();
+          if (!adjacency.TryGetValue(id, out HashSet<int> neighbours))
+          {
+            continue;
+          }
+
+          foreach (int neighbour in neighbours)
+          {
+            if (memberIds.Add(neighbour))
+            {
+              pending.Enqueue(neighbour);
+            }
+          }
+        }
+
+        List<IPartPlacement> component = master.PartPlacements
+          .Where(candidate => memberIds.Contains(candidate.Id))
+          .ToList();
+        foreach (IPartPlacement member in component)
+        {
+          handled.Add(member);
+        }
+        var required = component
+          .GroupBy(candidate => candidate.Source)
+          .ToDictionary(g => g.Key, g => g.Count());
+        bool fits = required.All(kv => need.TryGetValue(kv.Key, out int remaining) && remaining >= kv.Value);
+        if (!fits)
+        {
+          continue; // an intentional graph is indivisible in the production plan
+        }
+
+        foreach (IPartPlacement member in component)
+        {
+          list.Add(PlacementSnapshot.Of(member).ToPlacement());
+        }
+
+        foreach (var kv in required)
+        {
+          need[kv.Key] -= kv.Value;
         }
       }
 
       return list;
     }
 
-    private static string Signature(ISheetPlacement sp)
+    private static bool SelectionMatches(IReadOnlyList<IPartPlacement> selected, IReadOnlyDictionary<int, int> requested)
     {
-      var items = sp.PartPlacements
-        .Select(p => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{p.Source}:{Math.Round(p.X, 1)}:{Math.Round(p.Y, 1)}:{Math.Round(p.Rotation, 1)}"))
-        .OrderBy(s => s, StringComparer.Ordinal);
+      Dictionary<int, int> actual = selected
+        .GroupBy(p => p.Source)
+        .ToDictionary(g => g.Key, g => g.Count());
+      return requested.All(kv => actual.TryGetValue(kv.Key, out int count) && count == kv.Value)
+        && actual.All(kv => requested.TryGetValue(kv.Key, out int count) && count == kv.Value);
+    }
+
+    internal static string Signature(ISheetPlacement sp)
+    {
+      var ordered = sp.PartPlacements
+        .Select((p, originalIndex) => new
+        {
+          Placement = p,
+          OriginalIndex = originalIndex,
+          Key = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{p.Source}:{Math.Round(p.X, 1)}:{Math.Round(p.Y, 1)}:{Math.Round(p.Rotation, 1)}:{p.IsMirrored}"),
+        })
+        .OrderBy(x => x.Key, StringComparer.Ordinal)
+        .ThenBy(x => x.OriginalIndex)
+        .ToList();
+      var items = ordered.Select(x => x.Key);
+      var localById = ordered
+        .Select((x, localIndex) => new { x.Placement.Id, LocalIndex = localIndex })
+        .GroupBy(x => x.Id)
+        .ToDictionary(g => g.Key, g => g.First().LocalIndex);
+
+      string PointKey(CommonLinePoint p)
+        => p == null
+          ? "null"
+          : string.Create(CultureInfo.InvariantCulture, $"{Math.Round(p.X, 6)}:{Math.Round(p.Y, 6)}");
+
+      var edges = (sp.CommonEdges ?? Array.Empty<CommonEdge>())
+        .Select(edge =>
+        {
+          if (edge == null)
+          {
+            return "null";
+          }
+
+          int a = localById.TryGetValue(edge.PartAId, out int ai) ? ai : -1;
+          int b = localById.TryGetValue(edge.PartBId, out int bi) ? bi : -1;
+          int ea = edge.EdgeAIndex;
+          int eb = edge.EdgeBIndex;
+          if (a > b || (a == b && ea > eb))
+          {
+            (a, b) = (b, a);
+            (ea, eb) = (eb, ea);
+          }
+
+          string start = PointKey(edge.Start);
+          string end = PointKey(edge.End);
+          if (string.CompareOrdinal(start, end) > 0)
+          {
+            (start, end) = (end, start);
+          }
+
+          return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{a}:{ea}-{b}:{eb}@{start}-{end}:{Math.Round(edge.Gap, 8)}");
+        })
+        .OrderBy(x => x, StringComparer.Ordinal);
 
       // Sheet size is part of the layout identity: with mixed stock, the same corner-packed parts on
-      // a 120x60 and on a 60x60 are DIFFERENT cuts and must not group as one.
+      // a 120x60 and on a 60x60 are DIFFERENT cuts and must not group as one. The common-line contract is
+      // identity too: grouping a normal outline sheet under a cluster representative would export the
+      // wrong layers, even when every nominal placement happens to be equal.
       return string.Create(
-        System.Globalization.CultureInfo.InvariantCulture,
-        $"{sp.Sheet.WidthCalculated}x{sp.Sheet.HeightCalculated}#{string.Join("|", items)}");
+        CultureInfo.InvariantCulture,
+        $"{sp.Sheet.WidthCalculated}x{sp.Sheet.HeightCalculated}#merge={sp.RequiresMergedLines}:gap={Math.Round(sp.CommonLineGap, 8)}:tol={Math.Round(sp.GeometryTolerance, 8)}#edges={string.Join("|", edges)}#parts={string.Join("|", items)}");
     }
 
     /// <summary>Material utilization of ONE sheet layout: net part area on it / its sheet area (%).</summary>
@@ -1816,6 +2020,13 @@
         return;
       }
 
+      if (!this.CanManuallyEdit(pp))
+      {
+        this.UpdatePartInfo(measureGap: true, force: true);
+        this.ShowCommonLineEditLock();
+        return;
+      }
+
       bool unreadable = false;
 
       if (WasEdited(this.partAngle.Text, pp.Rotation, AngleFormat))
@@ -1945,6 +2156,12 @@
         if (hit != null)
         {
           this.SelectPart(hit);
+          if (!this.CanManuallyEdit(hit))
+          {
+            this.ShowCommonLineEditLock();
+            return;
+          }
+
           this.isDraggingPart = true;
           this.dragInvalid = false;
           this.dragStartCanvas = pt;
@@ -2173,6 +2390,12 @@
         return;
       }
 
+      if (!this.CanManuallyEdit(pp))
+      {
+        this.ShowCommonLineEditLock();
+        return;
+      }
+
       var sp = group.Representative;
       int index = -1;
       for (int i = 0; i < sp.PartPlacements.Count; i++)
@@ -2233,6 +2456,12 @@
       var group = this.CurrentGroup();
       if (pp == null || group == null)
       {
+        return;
+      }
+
+      if (!this.CanManuallyEdit(pp))
+      {
+        this.ShowCommonLineEditLock();
         return;
       }
 
@@ -2332,31 +2561,274 @@
       return true;
     }
 
-    /// <summary>
-    /// True when the two parts are closer than their required clearance: (spacingA + spacingB) / 2,
-    /// the same rule the nester enforces. Common-line parts (spacing 0) may touch — only real overlap
-    /// fails. Tested as: A's outline grown by the clearance intersects B.
-    /// </summary>
+    /// <summary>True when this pair violates its ordinary clearance anywhere except the exact geometry
+    /// authorised by a still-valid persisted common-edge record.</summary>
     private bool TooClose(IPartPlacement a, IPartPlacement b)
-      => RasterNest.PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, this.ClearanceBetween(a, b), this.SliverBetween(a, b));
+    {
+      if (this.TryLegacySheetCamClearance(a, b, out double legacyClearance))
+      {
+        return RasterNest.PlacementCollision.TooClose(
+          a.PlacedPart,
+          b.PlacedPart,
+          legacyClearance,
+          this.SliverBetween(a, b));
+      }
 
-    /// <summary>The clearance this pair must keep: (spacingA + spacingB) / 2, or the common-line gap when
-    /// the two are allowed to share a cut (they may touch, only real overlap fails). Which of the two it is
-    /// depends on WHO the pair is, exactly as it does in the nester: a Same-part item touches its own kind
-    /// and keeps its distance from everything else.</summary>
+      var sheet = this.CurrentGroup()?.Representative;
+      var settings = this.CommonLineSettings(sheet);
+      return RasterNest.CommonEdgeClearance.TooClose(
+        a,
+        b,
+        this.NormalClearanceBetween(a, b),
+        this.SliverBetween(a, b),
+        ValidRecordedEdges(sheet, settings.Gap, settings.Tolerance, a, b),
+        settings.Gap,
+        settings.Tolerance);
+    }
+
+    private double NormalClearanceBetween(IPartPlacement a, IPartPlacement b)
+      => ClearanceFor(this.SpacingOf(a), this.SpacingOf(b), intentionalCommonEdge: false);
+
+    private double AcceptanceClearanceBetween(IPartPlacement a, IPartPlacement b)
+      => this.TryLegacySheetCamClearance(a, b, out double clearance)
+        ? clearance
+        : this.NormalClearanceBetween(a, b);
+
+    /// <summary>The scalar clearance used by drag-cache and seating helpers: ordinary mean spacing,
+    /// configured gap for an exact persisted V1 edge, or measured kerf for a compatible SheetCam pair.</summary>
     private double ClearanceBetween(IPartPlacement a, IPartPlacement b)
-      => ClearanceFor(this.SpacingOf(a), this.SpacingOf(b), this.MayShare(a, b));
+    {
+      bool intentionalCommonEdge = this.HasValidRecordedCommonEdge(a, b, out double gap);
+      if (intentionalCommonEdge)
+      {
+        return ClearanceFor(this.SpacingOf(a), this.SpacingOf(b), true, gap);
+      }
+
+      return this.TryLegacySheetCamClearance(a, b, out double legacyClearance)
+        ? legacyClearance
+        : this.NormalClearanceBetween(a, b);
+    }
+
+    private bool TryLegacySheetCamClearance(IPartPlacement a, IPartPlacement b, out double clearance)
+      => TryLegacySheetCamClearance(
+        this.CcOf(a),
+        a?.Part?.Name,
+        a?.IsMirrored ?? false,
+        this.CommonCuttingDomainOf(a),
+        this.KerfOf(a),
+        this.CcOf(b),
+        b?.Part?.Name,
+        b?.IsMirrored ?? false,
+        this.CommonCuttingDomainOf(b),
+        this.KerfOf(b),
+        out clearance);
+
+    internal static bool TryLegacySheetCamClearance(
+      CommonCuttingMode ccA,
+      string pathA,
+      bool mirroredA,
+      string domainA,
+      double kerfA,
+      CommonCuttingMode ccB,
+      string pathB,
+      bool mirroredB,
+      string domainB,
+      double kerfB,
+      out double clearance)
+    {
+      bool sameIdentity = string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase)
+        && mirroredA == mirroredB;
+      return RasterNest.CommonCuttingCompatibility.TryLegacySheetCamClearance(
+        domainA,
+        ccA,
+        0,
+        kerfA,
+        domainB,
+        ccB,
+        sameIdentity ? 0 : 1,
+        kerfB,
+        out clearance);
+    }
 
     /// <summary>The clearance rule itself, over plain numbers so it can be tested without a control.</summary>
-    internal static double ClearanceFor(double spacingA, double spacingB, bool mayShare)
+    internal static double ClearanceFor(
+      double spacingA,
+      double spacingB,
+      bool intentionalCommonEdge,
+      double commonLineGap = CommonLineDefaults.DefaultGapInches)
     {
-      if (mayShare)
+      if (intentionalCommonEdge)
       {
-        return RasterNest.RasterCompact.CommonLineGap;
+        return Math.Max(0, commonLineGap);
       }
 
       double clearance = (spacingA + spacingB) / 2.0;
-      return clearance <= 0 ? RasterNest.RasterCompact.CommonLineGap : clearance;
+      return Math.Max(0, clearance);
+    }
+
+    /// <summary>
+    /// A common-cutting mode only makes a pair eligible. The reduced clearance belongs exclusively to
+    /// the explicit <see cref="CommonEdge"/> that the nester created, and it remains active only while
+    /// that exact pair of indexed outside edges still validates. This prevents a manual move from making
+    /// an unrelated nearby edge common merely because both source rows allow common cutting.
+    /// </summary>
+    private bool HasValidRecordedCommonEdge(IPartPlacement a, IPartPlacement b, out double gap)
+    {
+      gap = 0;
+      var sheet = this.CurrentGroup()?.Representative;
+      if (sheet?.CommonEdges == null || a == null || b == null)
+      {
+        return false;
+      }
+
+      var settings = this.CommonLineSettings(sheet);
+      foreach (var edge in sheet.CommonEdges)
+      {
+        IPartPlacement first;
+        IPartPlacement second;
+        int firstEdge;
+        int secondEdge;
+        if (edge.PartAId == a.Id && edge.PartBId == b.Id)
+        {
+          first = a;
+          second = b;
+          firstEdge = edge.EdgeAIndex;
+          secondEdge = edge.EdgeBIndex;
+        }
+        else if (edge.PartAId == b.Id && edge.PartBId == a.Id)
+        {
+          first = b;
+          second = a;
+          firstEdge = edge.EdgeAIndex;
+          secondEdge = edge.EdgeBIndex;
+        }
+        else
+        {
+          continue;
+        }
+
+        double expectedGap = settings.Gap;
+        if (Math.Abs(edge.Gap - expectedGap) > settings.Tolerance)
+        {
+          continue;
+        }
+
+        if (CommonLineGeometryResolver.TryCreateCommonEdge(
+          first,
+          firstEdge,
+          second,
+          secondEdge,
+          expectedGap,
+          settings.Tolerance,
+          out CommonEdge rebuilt)
+          && SameUndirectedRecord(edge, rebuilt, settings.Tolerance))
+        {
+          gap = expectedGap;
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    private (double Gap, double Tolerance) CommonLineSettings(ISheetPlacement sheet)
+    {
+      double scale = this.UnitsMm ? CommonLineDefaults.InchesToMillimeters : 1.0;
+      double gap = sheet?.CommonLineGap > 0
+        ? sheet.CommonLineGap
+        : CommonLineDefaults.DefaultGapInches * scale;
+      double tolerance = sheet?.GeometryTolerance > 0
+        ? sheet.GeometryTolerance
+        : CommonLineDefaults.DefaultGeometryToleranceInches * scale;
+      return (gap, tolerance);
+    }
+
+    internal static IReadOnlyList<RasterNest.CommonEdgeClearance.EdgeReference> ValidRecordedEdges(
+      ISheetPlacement sheet,
+      double commonLineGap,
+      double geometryTolerance,
+      params IPartPlacement[] replacements)
+    {
+      var result = new List<RasterNest.CommonEdgeClearance.EdgeReference>();
+      if (sheet?.CommonEdges == null || sheet.PartPlacements == null)
+      {
+        return result;
+      }
+
+      var byId = sheet.PartPlacements
+        .GroupBy(p => p.Id)
+        .ToDictionary(g => g.Key, g => g.First());
+      foreach (IPartPlacement replacement in replacements ?? Array.Empty<IPartPlacement>())
+      {
+        if (replacement != null)
+        {
+          byId[replacement.Id] = replacement;
+        }
+      }
+
+      foreach (CommonEdge edge in sheet.CommonEdges)
+      {
+        if (edge == null
+          || !byId.TryGetValue(edge.PartAId, out IPartPlacement partA)
+          || !byId.TryGetValue(edge.PartBId, out IPartPlacement partB)
+          || Math.Abs(edge.Gap - commonLineGap) > geometryTolerance
+          || !CommonLineGeometryResolver.TryCreateCommonEdge(
+            partA,
+            edge.EdgeAIndex,
+            partB,
+            edge.EdgeBIndex,
+            commonLineGap,
+            geometryTolerance,
+            out CommonEdge rebuilt)
+          || !SameUndirectedRecord(edge, rebuilt, geometryTolerance))
+        {
+          continue;
+        }
+
+        result.Add(new RasterNest.CommonEdgeClearance.EdgeReference(
+          partA,
+          edge.EdgeAIndex,
+          partB,
+          edge.EdgeBIndex));
+      }
+
+      return result;
+    }
+
+    internal static bool SameUndirectedRecord(CommonEdge persisted, CommonEdge rebuilt, double tolerance)
+    {
+      if (persisted?.Start == null || persisted.End == null || rebuilt?.Start == null || rebuilt.End == null
+        || Math.Abs(persisted.Gap - rebuilt.Gap) > tolerance)
+      {
+        return false;
+      }
+
+      bool SamePoint(CommonLinePoint x, CommonLinePoint y)
+        => Math.Abs(x.X - y.X) <= tolerance && Math.Abs(x.Y - y.Y) <= tolerance;
+
+      return SamePoint(persisted.Start, rebuilt.Start) && SamePoint(persisted.End, rebuilt.End)
+        || SamePoint(persisted.Start, rebuilt.End) && SamePoint(persisted.End, rebuilt.Start);
+    }
+
+    /// <summary>
+    /// Common-line placements are a rigid export cluster. Moving one member would invalidate every edge
+    /// incident to it, so manual edit leaves the whole cluster untouched rather than trying to mutate a
+    /// safety-critical graph piecemeal.
+    /// </summary>
+    internal static bool CanManuallyEdit(int placementId, IReadOnlyList<CommonEdge> commonEdges)
+      => commonEdges == null
+        || !commonEdges.Any(edge => edge != null && (edge.PartAId == placementId || edge.PartBId == placementId));
+
+    private bool CanManuallyEdit(IPartPlacement placement)
+      => placement != null
+        && CanManuallyEdit(placement.Id, this.CurrentGroup()?.Representative?.CommonEdges);
+
+    private void ShowCommonLineEditLock()
+    {
+      if (this.hintText != null)
+      {
+        this.hintText.Text = "common-line cluster parts are locked  ·  re-nest to change their position";
+      }
     }
 
     /// <summary>
@@ -2365,24 +2837,30 @@
     /// from a test without standing up a WPF control.
     /// </summary>
     internal static bool MayShare(
-      DeepNestLib.NestProject.CommonCuttingMode ccA, string pathA, bool mirroredA,
-      DeepNestLib.NestProject.CommonCuttingMode ccB, string pathB, bool mirroredB)
+      DeepNestLib.NestProject.CommonCuttingMode ccA,
+      string pathA,
+      bool mirroredA,
+      string domainA,
+      DeepNestLib.NestProject.CommonCuttingMode ccB,
+      string pathB,
+      bool mirroredB,
+      string domainB)
     {
-      if (ccA == DeepNestLib.NestProject.CommonCuttingMode.None || ccB == DeepNestLib.NestProject.CommonCuttingMode.None)
-      {
-        return false;
-      }
-
-      if (ccA == DeepNestLib.NestProject.CommonCuttingMode.SamePart || ccB == DeepNestLib.NestProject.CommonCuttingMode.SamePart)
-      {
-        return string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase) && mirroredA == mirroredB;
-      }
-
-      return true;
+      bool sameIdentity = string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase)
+        && mirroredA == mirroredB;
+      return RasterNest.CommonCuttingCompatibility.MayShare(
+        domainA,
+        ccA,
+        0,
+        domainB,
+        ccB,
+        sameIdentity ? 0 : 1);
     }
 
     private bool MayShare(IPartPlacement a, IPartPlacement b)
-      => MayShare(this.CcOf(a), a?.Part?.Name, a?.IsMirrored ?? false, this.CcOf(b), b?.Part?.Name, b?.IsMirrored ?? false);
+      => MayShare(
+        this.CcOf(a), a?.Part?.Name, a?.IsMirrored ?? false, this.CommonCuttingDomainOf(a),
+        this.CcOf(b), b?.Part?.Name, b?.IsMirrored ?? false, this.CommonCuttingDomainOf(b));
 
     private DeepNestLib.NestProject.CommonCuttingMode CcOf(IPartPlacement pp)
     {
@@ -2390,6 +2868,16 @@
       return key != null && this.PartCommonCutting != null && this.PartCommonCutting.TryGetValue(key, out var cc)
         ? cc
         : DeepNestLib.NestProject.CommonCuttingMode.None;
+    }
+
+    private string CommonCuttingDomainOf(IPartPlacement pp)
+    {
+      string key = pp?.Part?.Name;
+      return key != null
+          && this.PartCommonCuttingDomains != null
+          && this.PartCommonCuttingDomains.TryGetValue(key, out string domain)
+        ? domain
+        : string.Empty;
     }
 
     /// <summary>
@@ -2758,9 +3246,8 @@
       return false;
     }
 
-    /// <summary>The two offsets along one axis that seat the part against a neighbour — before it or after
-    /// it — at exactly the clearance the pair owes. With a common-line pair the clearance is 0, so the two
-    /// edges land EXACTLY on top of each other and the exporter emits the shared edge as a single cut.</summary>
+    /// <summary>The two offsets along one axis that seat the part before or after a neighbour at exactly
+    /// the scalar clearance supplied by the active normal or SheetCam editing contract.</summary>
     internal static (double Before, double After) EdgeAlignOffsets(
       double partMin, double partMax, double otherMin, double otherMax, double clearance)
       => (otherMin - clearance - partMax, otherMax + clearance - partMin);
@@ -2897,6 +3384,12 @@
         return;
       }
 
+      if (!this.CanManuallyEdit(pp))
+      {
+        this.ShowCommonLineEditLock();
+        return;
+      }
+
       double x = pp.X;
       double y = pp.Y;
       bool ValidAtOffset(double ox, double oy)
@@ -2958,6 +3451,12 @@
       var pp = this.selectedPp;
       if (pp == null)
       {
+        return;
+      }
+
+      if (!this.CanManuallyEdit(pp))
+      {
+        this.ShowCommonLineEditLock();
         return;
       }
 
@@ -3328,13 +3827,70 @@
         return null;
       }
 
-      return RasterNest.PlacementAcceptance.FindUnfit(
+      var settings = this.CommonLineSettings(sheet);
+      IReadOnlyList<RasterNest.CommonEdgeClearance.EdgeReference> validEdges = ValidRecordedEdges(
+        sheet,
+        settings.Gap,
+        settings.Tolerance);
+      var unfit = RasterNest.CommonEdgeClearance.FindUnfit(
         sheet.PartPlacements.ToList(),
         sheet.Sheet.WidthCalculated,
         sheet.Sheet.HeightCalculated,
         this.SheetEdgeMargin,
-        this.ClearanceBetween,
-        this.SliverBetween);
+        this.AcceptanceClearanceBetween,
+        this.SliverBetween,
+        validEdges,
+        settings.Gap,
+        settings.Tolerance);
+
+      // Invalid metadata is itself unfit-to-cut. Silently dropping a stale record here would reinterpret
+      // the same tight geometry as an ordinary pair and, in a roomy edge case, could let a corrupted
+      // cluster through to a representative/export that no longer matches its saved seam.
+      int validRecordCount = validEdges.Count;
+      if (validRecordCount == (sheet.CommonEdges?.Count ?? 0) && validRecordCount > 0)
+      {
+        try
+        {
+          _ = CommonLineGeometryResolver.Resolve(sheet);
+        }
+        catch (CommonLineValidationException)
+        {
+          validRecordCount = -1; // mark the whole referenced graph below
+        }
+      }
+
+      MarkInvalidCommonEdgeRecords(sheet, validRecordCount, unfit);
+
+      return unfit;
+    }
+
+    internal static void MarkInvalidCommonEdgeRecords(
+      ISheetPlacement sheet,
+      int validRecordCount,
+      RasterNest.PlacementAcceptance.Unfit unfit)
+    {
+      int recordedCount = sheet?.CommonEdges?.Count ?? 0;
+      if (sheet?.PartPlacements == null || unfit == null || validRecordCount == recordedCount)
+      {
+        return;
+      }
+
+      var referencedIds = new HashSet<int>((sheet.CommonEdges ?? Array.Empty<CommonEdge>())
+        .Where(edge => edge != null)
+        .SelectMany(edge => new[] { edge.PartAId, edge.PartBId }));
+      List<IPartPlacement> affected = (referencedIds.Count > 0
+        ? sheet.PartPlacements.Where(p => referencedIds.Contains(p.Id))
+        : sheet.PartPlacements).ToList();
+      if (affected.Count == 0)
+      {
+        affected.AddRange(sheet.PartPlacements); // every recorded endpoint is missing: the sheet is corrupt
+      }
+
+      foreach (IPartPlacement placement in affected)
+      {
+        unfit.Overlapping.Add(placement);
+        unfit.All.Add(placement);
+      }
     }
 
     /// <summary>

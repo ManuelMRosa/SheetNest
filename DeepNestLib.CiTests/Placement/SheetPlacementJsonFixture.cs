@@ -68,6 +68,41 @@
     }
 
     [Fact]
+    public void RequiredLineMergingSurvivesJsonRoundTrip()
+    {
+      var expected = new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        new List<IPartPlacement>(),
+        0,
+        new TestSvgNestConfig().ClipperScale,
+        requiresMergedLines: true);
+
+      string json = expected.ToJson();
+      var actual = SheetPlacement.FromJson(json);
+
+      json.Should().Contain("\"RequiresMergedLines\":true");
+      actual.RequiresMergedLines.Should().BeTrue();
+    }
+
+    [Fact]
+    public void PlacementJsonFromBeforeRequiredLineMergingDefaultsToFalse()
+    {
+      var legacy = new SheetPlacement(
+        PlacementTypeEnum.Gravity,
+        Sheet.NewSheet(1, 100, 50),
+        new List<IPartPlacement>(),
+        0,
+        new TestSvgNestConfig().ClipperScale);
+
+      string json = legacy.ToJson();
+      var actual = SheetPlacement.FromJson(json);
+
+      json.Should().NotContain("RequiresMergedLines", "ordinary and legacy layouts keep the old JSON shape");
+      actual.RequiresMergedLines.Should().BeFalse();
+    }
+
+    [Fact]
     public void SheetJsonConverterCannotConvertSheet()
     {
       var sut = new SheetJsonConverter();

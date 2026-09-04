@@ -78,12 +78,12 @@ namespace DeepNestSharp.CiTests.RasterNest
     {
       var kerf = new Dictionary<int, double>();
       var tooling = new Dictionary<int, INfp>();
-      var cc = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>();
+      var cc = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>();
       for (int i = 0; i < outlines.Length; i++)
       {
         kerf[i] = Kerf;
         tooling[i] = SparrowNestService.ToolingFootprint(new NoFitPolygon(outlines[i]), null, Kerf, 0);
-        cc[i] = (CommonCuttingMode.Unrestricted, i);
+        cc[i] = (CommonCuttingMode.Unrestricted, i, "sheetcam:test");
       }
 
       SparrowNestService.SnapCommonLineEdges(all, kerf, tooling, cc);

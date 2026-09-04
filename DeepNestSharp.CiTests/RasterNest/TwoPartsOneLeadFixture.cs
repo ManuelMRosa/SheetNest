@@ -190,14 +190,16 @@ namespace DeepNestSharp.CiTests.RasterNest
         parts.Add(new RasterPartInfo
         {
           Path = written.DxfPath, Quantity = leadedCopies, Rotations = 4, Spacing = 0.25,
-          Cc = cc, Kerf = kerf, ToolPaths = withLead, ShareGroup = shareGroup,
+          Cc = cc, CommonCuttingDomain = "sheetcam:" + nestPath, ValidateEntryLead = true,
+          Kerf = kerf, ToolPaths = withLead, ShareGroup = shareGroup,
         });
       }
 
       parts.Add(new RasterPartInfo
       {
         Path = leadless, Quantity = Math.Max(1, part.Quantity - leadedCopies), Rotations = 4, Spacing = 0.25,
-        Cc = cc, Kerf = kerf, ToolPaths = interiorOnly.Count == 0 ? null : interiorOnly,
+        Cc = cc, CommonCuttingDomain = "sheetcam:" + nestPath, ValidateEntryLead = true,
+        Kerf = kerf, ToolPaths = interiorOnly.Count == 0 ? null : interiorOnly,
         ShareGroup = shareGroup,
       });
 

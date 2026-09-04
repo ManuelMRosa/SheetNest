@@ -3,16 +3,23 @@ namespace DeepNestLib.NestProject
   using System;
   using System.IO;
   using System.Text.Json;
+  using System.Text.Json.Nodes;
   using System.Text.Json.Serialization;
+  using DeepNestLib.Placement;
   using Light.GuardClauses;
 
   public class ProjectInfo : IProjectInfo
   {
     public const string FileDialogFilter = "DeepNest Projects (*.dnest)|*.dnest|Json (*.json)|*.json|All files (*.*)|*.*";
     private ISvgNestConfig config;
+    private double commonLineGapInches = CommonLineDefaults.DefaultGapInches;
     private WrappableList<ISheetLoadInfo, SheetLoadInfo> wrappableSheetLoadInfos;
 
-    public ProjectInfo(ISvgNestConfig config) => this.config = config;
+    public ProjectInfo(ISvgNestConfig config)
+    {
+      this.config = config;
+      this.CommonLineGapInches = config?.CommonLineGapInches ?? CommonLineDefaults.DefaultGapInches;
+    }
 
     [JsonInclude]
     public IList<IDetailLoadInfo, DetailLoadInfo> DetailLoadInfos { get; private set; } = new WrappableList<IDetailLoadInfo, DetailLoadInfo>();
@@ -60,6 +67,21 @@ namespace DeepNestLib.NestProject
       }
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// This is deliberately not a second JSON field. <see cref="ToJson"/> writes the snapshot into
+    /// Config.CommonLineGapInches, preserving the existing project format while keeping concurrently
+    /// open documents independent from the shared runtime config.
+    /// </remarks>
+    [JsonIgnore]
+    public double CommonLineGapInches
+    {
+      get => this.commonLineGapInches;
+      set => this.commonLineGapInches = IsValidCommonLineGap(value)
+        ? value
+        : CommonLineDefaults.DefaultGapInches;
+    }
+
     public static ProjectInfo FromJson(ISvgNestConfig config, string json)
     {
       try
@@ -75,6 +97,8 @@ namespace DeepNestLib.NestProject
           var result = JsonSerializer.Deserialize<ProjectInfo>(json, options);
           var deserialized = result.config;
           result.config = config;
+          result.CommonLineGapInches = deserialized?.CommonLineGapInches
+            ?? CommonLineDefaults.DefaultGapInches;
           if (deserialized != null)
           {
             // The job's settings, applied and not adopted. Without the scope every project open wrote the
@@ -104,6 +128,7 @@ namespace DeepNestLib.NestProject
     public void Load(ProjectInfo source)
     {
       this.LastNestResultJson = source.LastNestResultJson;
+      this.CommonLineGapInches = source.CommonLineGapInches;
       this.DetailLoadInfos.Clear();
       foreach (var p in source.DetailLoadInfos)
       {
@@ -140,7 +165,19 @@ namespace DeepNestLib.NestProject
       options.Converters.Add(new SheetLoadInfoJsonConverter());
       options.WriteIndented = true;
       options.Converters.Add(new SvgNestConfigJsonConverter());
-      return JsonSerializer.Serialize(this, options);
+      string json = JsonSerializer.Serialize(this, options);
+
+      // Config is a process-wide instance shared by all tabs. Patch only this job-owned value in the
+      // serialized tree instead of temporarily mutating that live instance (a nest may be running on
+      // another thread while autosave serializes a document).
+      JsonObject root = JsonNode.Parse(json)?.AsObject();
+      if (root?[nameof(Config)] is JsonObject serializedConfig)
+      {
+        serializedConfig[nameof(ISvgNestConfig.CommonLineGapInches)] = this.CommonLineGapInches;
+        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+      }
+
+      return json;
     }
 
     public static ProjectInfo LoadFromFile(ISvgNestConfig config, string fileName)
@@ -164,5 +201,10 @@ namespace DeepNestLib.NestProject
         outputFile.WriteLine(this.ToJson());
       }
     }
+
+    private static bool IsValidCommonLineGap(double value)
+      => !double.IsNaN(value)
+        && !double.IsInfinity(value)
+        && value > CommonLineDefaults.DefaultGeometryToleranceInches;
   }
 }

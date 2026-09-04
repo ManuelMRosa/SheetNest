@@ -43,8 +43,13 @@ namespace DeepNestLib.IO
     /// <summary>Unit the <see cref="PartSpacing"/> and <see cref="EdgeSpacing"/> values are given in ("in" / "mm").</summary>
     public string Units { get; private set; } = "in";
 
-    /// <summary>Gap between parts, in <see cref="Units"/>.</summary>
-    public double PartSpacing { get; private set; }
+    /// <summary>Gap between parts, in <see cref="Units"/>. <see cref="double.NaN"/> when the file did
+    /// not contain a valid non-negative value; that deliberately fails closed instead of turning an
+    /// incomplete file into a common-line job.</summary>
+    public double PartSpacing { get; private set; } = double.NaN;
+
+    /// <summary>Whether the file explicitly contained a valid non-negative <c>PartSpacing</c>.</summary>
+    public bool HasPartSpacing { get; private set; }
 
     /// <summary>Gap between parts and the sheet edge, in <see cref="Units"/>.</summary>
     public double EdgeSpacing { get; private set; }
@@ -126,7 +131,12 @@ namespace DeepNestLib.IO
       if (settings != null)
       {
         result.Units = (string)settings.Attribute("Units") ?? "in";
-        result.PartSpacing = ReadDouble(settings.Attribute("PartSpacing"));
+        if (TryReadDouble(settings.Attribute("PartSpacing"), out double partSpacing) && partSpacing >= 0)
+        {
+          result.PartSpacing = partSpacing;
+          result.HasPartSpacing = true;
+        }
+
         result.EdgeSpacing = ReadDouble(settings.Attribute("EdgeSpacing"));
       }
 
@@ -336,9 +346,16 @@ namespace DeepNestLib.IO
 
     private static double ReadDouble(XAttribute attribute)
     {
-      return attribute != null && double.TryParse(attribute.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
-        ? value
-        : 0d;
+      return TryReadDouble(attribute, out double value) ? value : 0d;
+    }
+
+    private static bool TryReadDouble(XAttribute attribute, out double value)
+    {
+      value = 0;
+      return attribute != null
+        && double.TryParse(attribute.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+        && !double.IsNaN(value)
+        && !double.IsInfinity(value);
     }
 
     /// <summary>Shortest round-trippable form, invariant culture — the style SheetCam itself writes.</summary>

@@ -36,7 +36,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         Square(120, CommonCuttingMode.None, 0.5),
       };
 
-      RasterCompact.Compact(items, 200, 200, 0.5);
+      CompactSelectedCompatibleEdges(items, 200, 200, 0.5);
 
       Gap(items[0], items[1]).Should().BeLessThan(1e-3,
         "two parts that may share a cut still close to contact");
@@ -58,7 +58,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         Square(60, CommonCuttingMode.Unrestricted, 0.5),
       };
 
-      RasterCompact.Compact(items, 200, 200, 0.5);
+      CompactSelectedCompatibleEdges(items, 200, 200, 0.5);
 
       Gap(items[0], items[1]).Should().BeLessThan(1e-3);
     }
@@ -90,10 +90,11 @@ namespace DeepNestSharp.CiTests.RasterNest
           Y = y,
           Spacing = 0.25,                            // its real spacing now, no longer forced to 0
           Cc = CommonCuttingMode.Unrestricted,
+          CommonCuttingDomain = "direct",
         });
       }
 
-      RasterCompact.Compact(items, 120, 60, 0);
+      CompactSelectedCompatibleEdges(items, 120, 60, 0);
       return items;
     }
 
@@ -168,7 +169,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         Square(120, CommonCuttingMode.SamePart, Spacing, shareKey: 0),
       };
 
-      RasterCompact.Compact(items, 400, 60, 0.5);
+      CompactSelectedCompatibleEdges(items, 400, 60, 0.5);
 
       Gap(items[1], items[2]).Should().BeLessThan(1e-3, "the same drawing still welds to a shared cut");
       Gap(items[0], items[1]).Should().BeGreaterThan(Spacing - 1e-3,
@@ -210,10 +211,11 @@ namespace DeepNestSharp.CiTests.RasterNest
           Spacing = 0.25,
           Cc = CommonCuttingMode.SamePart,
           ShareKey = 7,
+          CommonCuttingDomain = "direct",
         });
       }
 
-      RasterCompact.Compact(items, 200, 100, 0.5);
+      CompactSelectedCompatibleEdges(items, 200, 100, 0.5);
 
       // Each seam on its own. A total, or the row's extent, lets one open seam hide behind an overlap.
       var left = items.Select(it => it.X).OrderBy(x => x).ToArray();
@@ -258,11 +260,12 @@ namespace DeepNestSharp.CiTests.RasterNest
             Spacing = 0.25,
             Cc = CommonCuttingMode.SamePart,
             ShareKey = 7,
+            CommonCuttingDomain = "direct",
           });
         }
       }
 
-      RasterCompact.Compact(items, 200, 100, 0.5);
+      CompactSelectedCompatibleEdges(items, 200, 100, 0.5);
 
       var rows = items.GroupBy(it => Math.Round(it.Y, 3)).OrderBy(g => g.Key).ToArray();
       rows.Should().HaveCount(2, "the upper row settles onto the lower, it is not reflowed beside it");
@@ -296,7 +299,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         Square(120, CommonCuttingMode.SamePart, 0.5, 7),
       };
 
-      RasterCompact.Compact(items, 200, 200, 0.5);
+      CompactSelectedCompatibleEdges(items, 200, 200, 0.5);
 
       Gap(items[1], items[2]).Should().BeLessThan(1e-5, "the pair that may share a cut closes to contact");
       Gap(items[0], items[1]).Should().BeGreaterThan(0.5 - 1e-5,
@@ -310,7 +313,36 @@ namespace DeepNestSharp.CiTests.RasterNest
         new SvgPoint(0, 0), new SvgPoint(20, 0), new SvgPoint(20, 20), new SvgPoint(0, 20),
       });
 
-      return new CompactItem { Poly = outline, X = x, Y = 1, Spacing = spacing, Cc = cc, ShareKey = shareKey };
+      return new CompactItem { Poly = outline, X = x, Y = 1, Spacing = spacing, Cc = cc, ShareKey = shareKey, CommonCuttingDomain = "direct" };
+    }
+
+    /// <summary>The old fixtures intentionally exercise the common-edge compaction path. Compatibility
+    /// is no longer enough on its own, so select those concrete pairs explicitly before invoking it.</summary>
+    private static void CompactSelectedCompatibleEdges(
+      IList<CompactItem> items,
+      double sheetW,
+      double sheetH,
+      double margin)
+    {
+      for (int i = 0; i < items.Count; i++)
+      {
+        items[i].PlacementId = i;
+        items[i].CommonEdgePeers = new HashSet<int>();
+      }
+
+      for (int i = 0; i < items.Count; i++)
+      {
+        for (int j = i + 1; j < items.Count; j++)
+        {
+          if (RasterCompact.MayShare(items[i], items[j]))
+          {
+            items[i].CommonEdgePeers.Add(j);
+            items[j].CommonEdgePeers.Add(i);
+          }
+        }
+      }
+
+      RasterCompact.Compact(items, sheetW, sheetH, margin);
     }
 
     /// <summary>Shortest distance between two 20-wide square outlines at their compacted positions.</summary>

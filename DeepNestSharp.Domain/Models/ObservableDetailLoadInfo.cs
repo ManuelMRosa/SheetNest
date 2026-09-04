@@ -71,7 +71,11 @@
     public string Path
     {
       get => detailLoadInfo.Path;
-      set => SetProperty(nameof(Path), () => detailLoadInfo.Path, v => detailLoadInfo.Path = v, value);
+      set
+      {
+        SetProperty(nameof(Path), () => detailLoadInfo.Path, v => detailLoadInfo.Path = v, value);
+        NotifyCommonCuttingCapabilityChanged();
+      }
     }
 
     public int Quantity
@@ -145,22 +149,74 @@
     public double Spacing
     {
       get => detailLoadInfo.Spacing;
-      set => SetProperty(nameof(Spacing), () => detailLoadInfo.Spacing, v => detailLoadInfo.Spacing = v, value);
+      set
+      {
+        SetProperty(nameof(Spacing), () => detailLoadInfo.Spacing, v => detailLoadInfo.Spacing = v, value);
+        OnPropertyChanged(nameof(NestingLabel));
+      }
     }
 
     public CommonCuttingMode CommonCutting
     {
       get => detailLoadInfo.CommonCutting;
-      set => SetProperty(nameof(CommonCutting), () => detailLoadInfo.CommonCutting, v => detailLoadInfo.CommonCutting = v, value);
+      set
+      {
+        SetProperty(nameof(CommonCutting), () => detailLoadInfo.CommonCutting, v => detailLoadInfo.CommonCutting = v, value);
+        NotifyEffectiveCommonCuttingChanged();
+      }
     }
 
-    /// <summary>The mode with this part's origin taken into account; None for anything not from a nest file.</summary>
+    /// <summary>The mode with SheetCam provenance or direct-DXF/STEP confirmation taken into account.</summary>
     public CommonCuttingMode EffectiveCommonCutting => detailLoadInfo.EffectiveCommonCutting;
+
+    public bool DirectCommonCuttingEnabled
+    {
+      get => detailLoadInfo.DirectCommonCuttingEnabled;
+      set
+      {
+        SetProperty(
+          nameof(DirectCommonCuttingEnabled),
+          () => detailLoadInfo.DirectCommonCuttingEnabled,
+          v => detailLoadInfo.DirectCommonCuttingEnabled = v,
+          value);
+        NotifyEffectiveCommonCuttingChanged();
+      }
+    }
+
+    public bool SupportsCommonCutting => detailLoadInfo.SupportsCommonCutting;
 
     public bool CommonLine
     {
       get => detailLoadInfo.CommonLine;
-      set => SetProperty(nameof(CommonLine), () => detailLoadInfo.CommonLine, v => detailLoadInfo.CommonLine = v, value);
+      set
+      {
+        var targetMode = value ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None;
+        bool modeChanged = detailLoadInfo.CommonCutting != targetMode;
+        bool directConfirmationChanged = string.IsNullOrEmpty(detailLoadInfo.NestSourcePath)
+          && detailLoadInfo.DirectCommonCuttingEnabled != value;
+        if (!modeChanged && !directConfirmationChanged)
+        {
+          return;
+        }
+
+        detailLoadInfo.CommonLine = value;
+        OnPropertyChanged(nameof(CommonLine));
+        OnPropertyChanged(nameof(CommonCutting));
+        OnPropertyChanged(nameof(DirectCommonCuttingEnabled));
+        NotifyEffectiveCommonCuttingChanged();
+      }
+    }
+
+    private void NotifyEffectiveCommonCuttingChanged()
+    {
+      OnPropertyChanged(nameof(EffectiveCommonCutting));
+      OnPropertyChanged(nameof(NestingLabel));
+    }
+
+    private void NotifyCommonCuttingCapabilityChanged()
+    {
+      OnPropertyChanged(nameof(SupportsCommonCutting));
+      NotifyEffectiveCommonCuttingChanged();
     }
 
     /// <summary>The colour this part is drawn in (0xRRGGBB), or -1 to take the one for its place in the list.</summary>
@@ -195,8 +251,8 @@
       {
         // Both matter now: the mode says who this part may share a cut with, the spacing says what it
         // keeps to everyone else. Showing only one of them hides half the setting. The EFFECTIVE mode,
-        // or a plain DXF carrying the setting from an older project would announce a shared cut that
-        // nothing is going to make.
+        // so a direct DXF/STEP only advertises common line after the operator confirms it, while an
+        // unconfirmed legacy value stays quiet.
         string cc = detailLoadInfo.EffectiveCommonCutting switch
         {
           CommonCuttingMode.Unrestricted => "common line · ",
@@ -296,7 +352,11 @@
     public string NestSourcePath
     {
       get => detailLoadInfo.NestSourcePath;
-      set => SetProperty(nameof(NestSourcePath), () => detailLoadInfo.NestSourcePath, v => detailLoadInfo.NestSourcePath = v, value);
+      set
+      {
+        SetProperty(nameof(NestSourcePath), () => detailLoadInfo.NestSourcePath, v => detailLoadInfo.NestSourcePath = v, value);
+        NotifyCommonCuttingCapabilityChanged();
+      }
     }
 
     public string NestPartName

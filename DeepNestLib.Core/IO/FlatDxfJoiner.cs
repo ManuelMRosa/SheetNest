@@ -43,7 +43,20 @@ namespace DeepNestLib.IO
     /// crossings) so a cut contour can never be mis-chained.
     /// </summary>
     public static bool JoinEntities(IList<DxfEntity> entities)
+      => JoinEntities(entities, Tolerance);
+
+    /// <summary>
+    /// Rewrites closed LINE/ARC chains using a caller-supplied tolerance in the drawing's active
+    /// units. Common-line export uses this overload so 0.0001 in and 0.00254 mm remain physically
+    /// identical instead of treating the imperial constant as millimetres.
+    /// </summary>
+    public static bool JoinEntities(IList<DxfEntity> entities, double tolerance)
     {
+      if (!double.IsFinite(tolerance) || tolerance <= 0D)
+      {
+        throw new ArgumentOutOfRangeException(nameof(tolerance));
+      }
+
       // Segments we can chain: lines and arcs. Everything else stays as-is.
       var segments = new List<Segment>();
       foreach (var ent in entities)
@@ -69,7 +82,7 @@ namespace DeepNestLib.IO
         }
       }
 
-      if (segments.Count < 2 || HasAmbiguousJunction(segments))
+      if (segments.Count < 2 || HasAmbiguousJunction(segments, tolerance))
       {
         return false;
       }
@@ -100,14 +113,14 @@ namespace DeepNestLib.IO
               continue;
             }
 
-            if (Coincide(s.Start, current))
+            if (Coincide(s.Start, current, tolerance))
             {
               next = s;
               reversed = false;
               break;
             }
 
-            if (Coincide(s.End, current))
+            if (Coincide(s.End, current, tolerance))
             {
               next = s;
               reversed = true;
@@ -128,7 +141,7 @@ namespace DeepNestLib.IO
 
         // Only a closed multi-segment loop becomes a polyline; anything else keeps its
         // original entities (never degrade a cut file we cannot prove closed).
-        if (chain.Count >= 2 && Coincide(current, first))
+        if (chain.Count >= 2 && Coincide(current, first, tolerance))
         {
           var poly = new DxfLwPolyline(chain.Select(v => new DxfLwPolylineVertex { X = v.Vertex.X, Y = v.Vertex.Y, Bulge = v.Bulge }))
           {
@@ -160,7 +173,7 @@ namespace DeepNestLib.IO
     }
 
     /// <summary>True when any junction joins 3+ segment ends — chaining there would be a guess.</summary>
-    private static bool HasAmbiguousJunction(List<Segment> segments)
+    private static bool HasAmbiguousJunction(List<Segment> segments, double tolerance)
     {
       var ends = new List<DxfPoint>(segments.Count * 2);
       foreach (var s in segments)
@@ -174,7 +187,7 @@ namespace DeepNestLib.IO
         int matches = 0;
         for (int j = 0; j < ends.Count; j++)
         {
-          if (i != j && Coincide(ends[i], ends[j]))
+          if (i != j && Coincide(ends[i], ends[j], tolerance))
           {
             matches++;
             if (matches >= 2)
@@ -188,8 +201,8 @@ namespace DeepNestLib.IO
       return false;
     }
 
-    private static bool Coincide(DxfPoint a, DxfPoint b)
-      => Math.Abs(a.X - b.X) <= Tolerance && Math.Abs(a.Y - b.Y) <= Tolerance;
+    private static bool Coincide(DxfPoint a, DxfPoint b, double tolerance)
+      => Math.Abs(a.X - b.X) <= tolerance && Math.Abs(a.Y - b.Y) <= tolerance;
 
     private sealed class Segment
     {

@@ -125,10 +125,10 @@ namespace DeepNestSharp.CiTests.RasterNest
           { 0, SparrowNestService.ToolingFootprint(new NoFitPolygon(aPts), null, Kerf, 0) },
           { 1, SparrowNestService.ToolingFootprint(new NoFitPolygon(bPts), null, Kerf, 0) },
         },
-        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>
         {
-          { 0, (CommonCuttingMode.Unrestricted, 0) },
-          { 1, (CommonCuttingMode.Unrestricted, 1) },
+          { 0, (CommonCuttingMode.Unrestricted, 0, "sheetcam:test") },
+          { 1, (CommonCuttingMode.Unrestricted, 1, "sheetcam:test") },
         },
         tol);
 

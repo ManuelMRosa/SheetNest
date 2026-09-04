@@ -22,17 +22,47 @@
     private double clipperScale;
 
     [JsonConstructor]
-    public SheetPlacement(PlacementTypeEnum placementType, ISheet sheet, IReadOnlyList<IPartPlacement> partPlacements, double mergedLength)
-      : this(placementType, sheet, partPlacements, mergedLength, new TestSvgNestConfig().ClipperScale)
+    public SheetPlacement(
+      PlacementTypeEnum placementType,
+      ISheet sheet,
+      IReadOnlyList<IPartPlacement> partPlacements,
+      double mergedLength,
+      bool requiresMergedLines = false,
+      IReadOnlyList<CommonEdge> commonEdges = null,
+      double commonLineGap = 0D,
+      double geometryTolerance = 0D)
+      : this(
+          placementType,
+          sheet,
+          partPlacements,
+          mergedLength,
+          new TestSvgNestConfig().ClipperScale,
+          requiresMergedLines,
+          commonEdges,
+          commonLineGap,
+          geometryTolerance)
     {
     }
 
-    public SheetPlacement(PlacementTypeEnum placementType, ISheet sheet, IReadOnlyList<IPartPlacement> partPlacements, double mergedLength, double clipperScale)
+    public SheetPlacement(
+      PlacementTypeEnum placementType,
+      ISheet sheet,
+      IReadOnlyList<IPartPlacement> partPlacements,
+      double mergedLength,
+      double clipperScale,
+      bool requiresMergedLines = false,
+      IReadOnlyList<CommonEdge> commonEdges = null,
+      double commonLineGap = 0D,
+      double geometryTolerance = 0D)
     {
       this.PlacementType = placementType;
       this.Sheet = sheet;
       this.PartPlacements = partPlacements;
       this.MergedLength = mergedLength;
+      this.CommonEdges = commonEdges != null && commonEdges.Count > 0 ? commonEdges : null;
+      this.CommonLineGap = this.CommonEdges == null ? 0D : commonLineGap;
+      this.GeometryTolerance = this.CommonEdges == null ? 0D : geometryTolerance;
+      this.RequiresMergedLines = requiresMergedLines || this.CommonEdges != null;
       this.clipperScale = clipperScale;
       this.Fitness = new OriginalFitnessSheet(this);
     }
@@ -134,6 +164,26 @@
 
     public double MergedLength { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether this layout contains shared cut edges that must be merged on
+    /// export. False is omitted so sheet placements written before this metadata existed and new ordinary
+    /// layouts have the same JSON shape.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RequiresMergedLines { get; }
+
+    /// <inheritdoc />
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<CommonEdge> CommonEdges { get; }
+
+    /// <inheritdoc />
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double CommonLineGap { get; }
+
+    /// <inheritdoc />
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double GeometryTolerance { get; }
+
     [JsonIgnore]
     public IEnumerable<NoFitPolygon> PolygonsForExport
     {
@@ -154,7 +204,7 @@
 
     public async Task ExportDxf(Stream stream, bool mergeLines, bool differentiateChildren)
     {
-      await new DxfExporter().Export(stream, this, mergeLines, differentiateChildren);
+      await new DxfExporter().Export(stream, this, mergeLines || this.RequiresMergedLines, differentiateChildren);
     }
 
     public static SheetPlacement LoadFromFile(string fileName)

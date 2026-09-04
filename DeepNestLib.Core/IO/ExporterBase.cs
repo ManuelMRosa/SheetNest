@@ -8,7 +8,7 @@
   {
     public abstract string SaveFileDialogFilter { get; }
 
-    public async Task Export(string path, ISheetPlacement sheetPlacement, bool doMergeLines, bool differentiateChildren, IReadOnlyCollection<OffcutLine> offcutLines = null)
+    public virtual async Task Export(string path, ISheetPlacement sheetPlacement, bool doMergeLines, bool differentiateChildren, IReadOnlyCollection<OffcutLine> offcutLines = null)
     {
       await Export(
         path,

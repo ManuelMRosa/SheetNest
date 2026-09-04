@@ -375,6 +375,7 @@ namespace DeepNestSharp.CiTests.RasterNest
             Rotations = 4,
             Spacing = Kerf,
             Cc = CommonCuttingMode.Unrestricted,
+            CommonCuttingDomain = "sheetcam:test",
             Kerf = Kerf,
             ToolPaths = paths,
           },
@@ -520,6 +521,7 @@ namespace DeepNestSharp.CiTests.RasterNest
           Rotations = 4,
           Spacing = spacing,
           Cc = cc,
+          CommonCuttingDomain = "sheetcam:test",
           Kerf = kerf,
           ToolPaths = LeadsFor(w.Part, mode, Scale),
         }).ToList();
@@ -856,6 +858,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         Rotations = 4,
         Spacing = spacing,
         Cc = cc,
+        CommonCuttingDomain = "sheetcam:test",
         Kerf = kerf,
         ToolPaths = toolPaths,
       };
@@ -934,6 +937,7 @@ namespace DeepNestSharp.CiTests.RasterNest
           Rotations = 4,
           Spacing = spacing,
           Cc = cc,
+          CommonCuttingDomain = "sheetcam:test",
           Kerf = kerf,
           ToolPaths = LeadsFor(w.Part, mode, Scale),
         }).ToList();

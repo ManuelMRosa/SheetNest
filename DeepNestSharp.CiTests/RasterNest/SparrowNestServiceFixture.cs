@@ -80,10 +80,11 @@ namespace DeepNestSharp.CiTests.RasterNest
       // slide them right together.
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = tooling, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
-        new CompactItem { Poly = tooling, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
+        new CompactItem { Poly = tooling, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted, CommonCuttingDomain = "direct" },
+        new CompactItem { Poly = tooling, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted, CommonCuttingDomain = "direct" },
       };
 
+      SelectPair(items);
       RasterCompact.Compact(items, 200, 200, 0.5);
 
       OutlineGap(items[0], items[1], 20)
@@ -116,10 +117,11 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = withLead, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },   // lead points right, toward B
-        new CompactItem { Poly = plain, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
+        new CompactItem { Poly = withLead, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted, CommonCuttingDomain = "direct" },   // lead points right, toward B
+        new CompactItem { Poly = plain, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted, CommonCuttingDomain = "direct" },
       };
 
+      SelectPair(items);
       RasterCompact.Compact(items, 400, 200, 0.5);
 
       // Gap between the two 20-wide square outlines. Compaction slides B left until B's left edge meets A's
@@ -145,10 +147,11 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       var items = new List<CompactItem>
       {
-        new CompactItem { Poly = outline, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
-        new CompactItem { Poly = outline, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted },
+        new CompactItem { Poly = outline, X = 1, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted, CommonCuttingDomain = "direct" },
+        new CompactItem { Poly = outline, X = 60, Y = 1, Spacing = 0, Cc = CommonCuttingMode.Unrestricted, CommonCuttingDomain = "direct" },
       };
 
+      SelectPair(items);
       RasterCompact.Compact(items, 200, 200, 0.5);
 
       OutlineGap(items[0], items[1], 20).Should().BeLessThan(1e-3, "no tooling means the outlines themselves touch");
@@ -160,6 +163,14 @@ namespace DeepNestSharp.CiTests.RasterNest
       double gapX = Math.Max(0, Math.Max(a.X - (b.X + side), b.X - (a.X + side)));
       double gapY = Math.Max(0, Math.Max(a.Y - (b.Y + side), b.Y - (a.Y + side)));
       return gapX > 0 && gapY > 0 ? Math.Sqrt((gapX * gapX) + (gapY * gapY)) : Math.Max(gapX, gapY);
+    }
+
+    private static void SelectPair(IList<CompactItem> items)
+    {
+      items[0].PlacementId = 0;
+      items[1].PlacementId = 1;
+      items[0].CommonEdgePeers = new HashSet<int> { 1 };
+      items[1].CommonEdgePeers = new HashSet<int> { 0 };
     }
 
     /// <summary>
@@ -245,10 +256,10 @@ namespace DeepNestSharp.CiTests.RasterNest
       var a = new PartPlacement(Bar()) { X = 1, Y = 1, Rotation = 0, Source = 0 };
       var b = new PartPlacement(Bar()) { X = 3.35, Y = 1.2, Rotation = 0, Source = 1 };
 
-      var cc = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+      var cc = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>
       {
-        { 0, (CommonCuttingMode.SamePart, 0) },
-        { 1, (CommonCuttingMode.SamePart, bShareKey) },
+        { 0, (CommonCuttingMode.SamePart, 0, "sheetcam:test") },
+        { 1, (CommonCuttingMode.SamePart, bShareKey, "sheetcam:test") },
       };
 
       SparrowNestService.SnapCommonLineEdges(
@@ -289,10 +300,10 @@ namespace DeepNestSharp.CiTests.RasterNest
         new List<IPartPlacement> { a, b },
         new Dictionary<int, double> { { 0, kerf }, { 1, kerf } },
         new Dictionary<int, INfp> { { 0, tooling }, { 1, tooling } },
-        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>
         {
-          { 0, (CommonCuttingMode.SamePart, 0) },
-          { 1, (CommonCuttingMode.SamePart, 1) }, // LoadAll keys the mirrored population separately
+          { 0, (CommonCuttingMode.SamePart, 0, "sheetcam:test") },
+          { 1, (CommonCuttingMode.SamePart, 1, "sheetcam:test") }, // LoadAll keys the mirrored population separately
         });
 
       b.X.Should().Be(3.35);
@@ -300,8 +311,8 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     /// <summary>One entry per source, all sharing the same key.</summary>
-    private static Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> Share(int source, CommonCuttingMode cc, int shareKey)
-      => new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> { { source, (cc, shareKey) } };
+    private static Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)> Share(int source, CommonCuttingMode cc, int shareKey)
+      => new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)> { { source, (cc, shareKey, "sheetcam:test") } };
 
     /// <summary>Plain DXF parts carry no tooling, and must keep nesting exactly as they did before.</summary>
     [Fact]
@@ -503,6 +514,7 @@ namespace DeepNestSharp.CiTests.RasterNest
             Path = path,
             Quantity = 3,
             Cc = i == 1 ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None,
+            CommonCuttingDomain = i == 1 ? "direct" : string.Empty,
           });
         }
       }
@@ -855,9 +867,12 @@ namespace DeepNestSharp.CiTests.RasterNest
       // A one-off, non-final sheet stays at the base.
       SparrowNestService.TriesFor(1, false).Should().Be(baseTries);
 
-      // The final/tail sheet (replicas 1) is boosted to at least 8 so it lands consistently, not 2-3.
-      SparrowNestService.TriesFor(1, true).Should().Be(8, "the single tail sheet is cheap to optimize well");
+      // Fast is the product default: its one-off tail still gets twice its two-race base.
+      SparrowNestService.TriesFor(1, true).Should().Be(4, "even Fast gives the tail more than its base search");
       SparrowNestService.TriesFor(1, true).Should().BeGreaterThanOrEqualTo(baseTries);
+
+      // Normal retains the wider floor used when the operator deliberately asks for more search.
+      SparrowNestService.TriesFor(1, true, NestEffort.Normal).Should().Be(8);
 
       // A heavily-replicated body stays at the 16 cap whether or not it's final.
       SparrowNestService.TriesFor(30, false).Should().Be(16);
@@ -865,7 +880,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
-    public void Test2StripPacks26InTheChosenOrientationConsistently()
+    public void ChamferedTest2ApproximationPacks26InTheChosenOrientationConsistently()
     {
       string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
@@ -878,10 +893,11 @@ namespace DeepNestSharp.CiTests.RasterNest
       Directory.CreateDirectory(dir);
       try
       {
-        // The exact test2.dxf outer contour: a 7×36 strip with chamfered corners. In a 120×60 sheet it packs
-        // 26 with common line (spacing 0) + 0/90 (a row of 17 upright + 3×3 laid flat above). The sheet is
+        // A straight-edged approximation of test2.dxf's 7×36 outer envelope. It omits the real file's
+        // four bulged corners and five holes, so this covers packing density/orientation rather than direct
+        // common-line geometry. In a 120×60 sheet it packs 26 with spacing 0 + 0/90. The sheet is
         // packed in the CHOSEN orientation — 120 wide × 60 tall — and must NOT be auto-rotated to 60×120.
-        string strip = WritePoly(dir, "test2strip",
+        string strip = WritePoly(dir, "test2strip-chamfered",
           new[] { (7.0, 35.0), (7.0, 1.0), (6.0, 0.0), (1.0, 0.0), (0.0, 1.0), (0.0, 35.0), (1.0, 36.0), (6.0, 36.0) });
 
         // Quantity must exceed the ~1.3-sheet batch cap (~37) so a full sheet is fed a full batch (a pool of
@@ -889,7 +905,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         var parts = new List<RasterPartInfo> { new RasterPartInfo { Path = strip, Quantity = 60 } };
         var stock = new List<(int, int, int)> { (120, 60, 3) };
 
-        // rotations 1002 = "0°+90°", spacing 0 = common line, margin 0 = edge-to-edge.
+        // rotations 1002 = "0°+90°", spacing 0 and margin 0 = edge-to-edge packing.
         (int[] Counts, INestResult Result) Run()
         {
           var r = SparrowNestService.Nest(parts, stock, 1002, 0.0, 0.0, 5, exe, out string err);

@@ -96,6 +96,7 @@
       // Clearances and rotation: the geometry the parts were placed to.
       target.Spacing = source.Spacing;
       target.SheetSpacing = source.SheetSpacing;
+      target.CommonLineGapInches = source.CommonLineGapInches;
       target.Rotations = source.Rotations;
       target.StrictAngles = source.StrictAngles;
 

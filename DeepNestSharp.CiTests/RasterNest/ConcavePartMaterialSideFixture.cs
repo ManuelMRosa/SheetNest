@@ -62,10 +62,10 @@ namespace DeepNestSharp.CiTests.RasterNest
           { 0, SparrowNestService.ToolingFootprint(new NoFitPolygon(bracket), null, Kerf, 0) },
           { 1, SparrowNestService.ToolingFootprint(new NoFitPolygon(bar), null, Kerf, 0) },
         },
-        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>
         {
-          { 0, (CommonCuttingMode.Unrestricted, 0) },
-          { 1, (CommonCuttingMode.Unrestricted, 1) },
+          { 0, (CommonCuttingMode.Unrestricted, 0, "sheetcam:test") },
+          { 1, (CommonCuttingMode.Unrestricted, 1, "sheetcam:test") },
         });
 
       (b.PlacedPart.MinX - 4).Should().BeApproximately(Kerf, 1e-6,
@@ -99,10 +99,10 @@ namespace DeepNestSharp.CiTests.RasterNest
           { 0, SparrowNestService.ToolingFootprint(new NoFitPolygon(left), null, Kerf, 0) },
           { 1, SparrowNestService.ToolingFootprint(new NoFitPolygon(right), null, Kerf, 0) },
         },
-        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>
         {
-          { 0, (CommonCuttingMode.Unrestricted, 0) },
-          { 1, (CommonCuttingMode.Unrestricted, 1) },
+          { 0, (CommonCuttingMode.Unrestricted, 0, "sheetcam:test") },
+          { 1, (CommonCuttingMode.Unrestricted, 1, "sheetcam:test") },
         });
 
       (b.PlacedPart.MinX - 3).Should().BeApproximately(Kerf, 1e-6);

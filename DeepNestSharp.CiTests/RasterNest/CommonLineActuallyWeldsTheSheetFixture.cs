@@ -65,6 +65,8 @@ namespace DeepNestSharp.CiTests.RasterNest
         Rotations = 4,
         Spacing = 0.25,
         Cc = CommonCuttingMode.Unrestricted,
+        CommonCuttingDomain = "sheetcam:" + nestPath,
+        ValidateEntryLead = true,
         Kerf = kerf,
         ToolPaths = w.Part.ToolPaths
           .Select(p => (IReadOnlyList<SvgPoint>)p.Select(v => new SvgPoint(v.X * Scale, v.Y * Scale)).ToList())

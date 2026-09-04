@@ -24,6 +24,14 @@
       set => SetProperty(nameof(ClipperScale), () => svgNestConfig.ClipperScale, v => svgNestConfig.ClipperScale = v, value);
     }
 
+    /// <inheritdoc />
+    [Browsable(false)]
+    public double CommonLineGapInches
+    {
+      get => svgNestConfig.CommonLineGapInches;
+      set => SetProperty(nameof(CommonLineGapInches), () => svgNestConfig.CommonLineGapInches, v => svgNestConfig.CommonLineGapInches = v, value);
+    }
+
     [Description("Gets or sets whether to clip the simplified polygon used in nesting by the hull. " +
       "This often improves the fit to the original part but may slightly increase the number " +
       "of points in the simplification and accordingly may marginally slow the nest. " +
@@ -105,7 +113,7 @@
       set => SetProperty(nameof(LastNestFilePath), () => svgNestConfig.LastNestFilePath, v => svgNestConfig.LastNestFilePath = v, value);
     }
 
-    [Description("Merge coaligned and coincident lines when exporting to Dxf so they'll only get cut once (no effect if you're exporting Svg, and ofc Spacing setting needs to be 0).")]
+    [Description("Merge collinear coincident lines when exporting DXF so they are cut once. Direct common-line layouts always enable this for safety.")]
     /// <inheritdoc />
     [Category("File Settings")]
     public bool MergeLines

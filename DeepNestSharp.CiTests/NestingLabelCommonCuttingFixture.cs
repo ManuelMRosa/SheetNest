@@ -21,7 +21,59 @@ namespace DeepNestSharp.CiTests
         CommonCutting = CommonCuttingMode.Unrestricted, // as a 1.1.7 project would bring it back
       });
 
-      sut.NestingLabel.Should().NotContain("common line", "nothing is going to share a cut on a part with no kerf");
+      sut.NestingLabel.Should().NotContain("common line", "the saved legacy mode has not been confirmed for direct cutting");
+    }
+
+    [Theory]
+    [InlineData(CommonCuttingMode.Unrestricted, "common line · ")]
+    [InlineData(CommonCuttingMode.SamePart, "common line (same part) · ")]
+    public void AConfirmedDirectPartSaysWhatItShares(CommonCuttingMode stored, string expected)
+    {
+      var sut = new ObservableDetailLoadInfo(new DetailLoadInfo
+      {
+        Path = "a.dxf",
+        CommonCutting = stored,
+        DirectCommonCuttingEnabled = true,
+      });
+
+      sut.NestingLabel.Should().StartWith(expected);
+    }
+
+    [Fact]
+    public void AConfirmedDirectSvgStillReportsNoCommonLineThroughTheWrapper()
+    {
+      var sut = new ObservableDetailLoadInfo(new DetailLoadInfo
+      {
+        Path = "a.svg",
+        CommonCutting = CommonCuttingMode.Unrestricted,
+        DirectCommonCuttingEnabled = true,
+      });
+
+      sut.SupportsCommonCutting.Should().BeFalse();
+      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None);
+      sut.NestingLabel.Should().NotContain("common line");
+    }
+
+    [Fact]
+    public void TheObservableBoolCompatibilityApiCanConfirmAndDisableALegacyDirectMode()
+    {
+      var sut = new ObservableDetailLoadInfo(new DetailLoadInfo
+      {
+        Path = "a.dxf",
+        CommonCutting = CommonCuttingMode.Unrestricted,
+      });
+
+      sut.CommonLine = true;
+
+      sut.DirectCommonCuttingEnabled.Should().BeTrue();
+      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.Unrestricted);
+      sut.NestingLabel.Should().Contain("common line");
+
+      sut.CommonLine = false;
+
+      sut.DirectCommonCuttingEnabled.Should().BeFalse();
+      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None);
+      sut.NestingLabel.Should().NotContain("common line");
     }
 
     [Theory]
@@ -41,9 +93,9 @@ namespace DeepNestSharp.CiTests
     }
 
     /// <summary>
-    /// The whole feature now hangs off this one field, and this is the only place that ever fills it in.
-    /// Drop it and every shared cut in a SheetCam job quietly stops happening, with nothing on screen to
-    /// say why — so say out loud that the import still marks its parts.
+    /// The SheetCam contract hangs off this provenance field, and this is the only place that fills it in.
+    /// Drop it and every measured-kerf shared cut in a SheetCam job quietly becomes a direct, unconfirmed
+    /// part instead, so say out loud that the import still marks its parts.
     /// </summary>
     [Fact]
     public void ImportingANestMarksItsPartsAsComingFromOne()

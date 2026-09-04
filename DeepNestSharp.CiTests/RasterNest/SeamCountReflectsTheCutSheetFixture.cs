@@ -60,6 +60,7 @@ namespace DeepNestSharp.CiTests.RasterNest
           Rotations = 4,
           Spacing = 0.2,
           Cc = CommonCuttingMode.Unrestricted,
+          CommonCuttingDomain = "sheetcam:test",
           Kerf = 0.2,
         },
       };

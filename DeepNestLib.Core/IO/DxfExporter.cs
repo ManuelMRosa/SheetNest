@@ -12,10 +12,48 @@
 
   public class DxfExporter : ExporterBase, IExport
   {
+    public const string CutInnerLayer = "01_CUT_INNER";
+    public const string CommonLineLayer = "02_COMMON_LINE";
+    public const string CutOuterLayer = "03_CUT_OUTER";
+    public const string OffcutLayer = "04_OFFCUT";
+
     public override string SaveFileDialogFilter => "Dxf files (*.dxf)|*.dxf";
+
+    public override async Task Export(
+      string path,
+      ISheetPlacement sheetPlacement,
+      bool doMergeLines,
+      bool differentiateChildren,
+      IReadOnlyCollection<OffcutLine> offcutLines = null)
+    {
+      if (sheetPlacement.CommonEdges == null || sheetPlacement.CommonEdges.Count == 0)
+      {
+        await base.Export(path, sheetPlacement, doMergeLines, differentiateChildren, offcutLines).ConfigureAwait(false);
+        return;
+      }
+
+      DxfFile dxf = GenerateCommonLineDxfFile(sheetPlacement, differentiateChildren, offcutLines);
+      if (dxf.Entities.Count == 0)
+      {
+        return;
+      }
+
+      await Task.Run(() => dxf.Save(path, true)).ConfigureAwait(false);
+    }
 
     public async Task Export(Stream stream, ISheetPlacement sheetPlacement, bool doMergeLines, bool differentiateChildren)
     {
+      if (sheetPlacement.CommonEdges != null && sheetPlacement.CommonEdges.Count > 0)
+      {
+        DxfFile dxf = GenerateCommonLineDxfFile(sheetPlacement, differentiateChildren);
+        if (dxf.Entities.Count > 0)
+        {
+          await Task.Run(() => dxf.Save(stream, true)).ConfigureAwait(false);
+        }
+
+        return;
+      }
+
       await Export(stream, sheetPlacement.PolygonsForExport, sheetPlacement.Sheet, doMergeLines, differentiateChildren);
     }
 
@@ -228,11 +266,15 @@
             DxfEllipse dxfEllipse = (DxfEllipse)entity;
             dxfEllipse.Center = TransformLocation(mirror, rotationAngle, dxfEllipse.Center);
             dxfEllipse.Center += offset;
-            if (mirror)
-            {
-              var ma = dxfEllipse.MajorAxis;
-              dxfEllipse.MajorAxis = new DxfVector(-ma.X, ma.Y, ma.Z); // reflect the major-axis direction
-            }
+            DxfVector majorAxis = dxfEllipse.MajorAxis;
+            DxfPoint transformedMajorAxis = TransformLocation(
+              mirror,
+              rotationAngle,
+              new DxfPoint(majorAxis.X, majorAxis.Y, majorAxis.Z));
+            dxfEllipse.MajorAxis = new DxfVector(
+              transformedMajorAxis.X,
+              transformedMajorAxis.Y,
+              transformedMajorAxis.Z);
 
             result.Add(dxfEllipse);
             break;
@@ -460,6 +502,578 @@
         }
 
         yield return entity;
+      }
+    }
+
+    private static DxfFile GenerateCommonLineDxfFile(
+      ISheetPlacement sheetPlacement,
+      bool differentiateChildren,
+      IReadOnlyCollection<OffcutLine> offcutLines = null)
+    {
+      CommonLineGeometryResult geometry = CommonLineGeometryResolver.Resolve(sheetPlacement);
+      var clusteredPartIds = new HashSet<int>(geometry.Clusters.SelectMany(cluster => cluster.PartIds));
+      DxfFile dxf = GenerateEmptyDxfFile();
+      AddCommonLineLayers(dxf);
+
+      // Preserve original DXF primitives for ordinary parts and all holes. Only the outside contour of
+      // a cluster member is suppressed; it is replaced by the one closed cluster boundary below.
+      foreach (IPartPlacement placement in sheetPlacement.PartPlacements)
+      {
+        bool clustered = clusteredPartIds.Contains(placement.Id);
+        foreach ((bool IsChild, List<DxfEntity> Entities) contour in LoadPlacedContours(placement))
+        {
+          if (clustered && !contour.IsChild)
+          {
+            EnsureClusterOuterSourceIsSupported(contour.Entities, placement.Id);
+            continue;
+          }
+
+          string layer = contour.IsChild ? CutInnerLayer : CutOuterLayer;
+          List<DxfEntity> closed = EnsureClosedContour(
+            contour.Entities,
+            layer,
+            sheetPlacement.GeometryTolerance);
+          if (differentiateChildren && contour.IsChild)
+          {
+            foreach (DxfEntity entity in closed)
+            {
+              entity.Color = DxfColorHelpers.GetClosestDefaultIndexColor(255, 0, 0);
+            }
+          }
+
+          foreach (DxfEntity entity in closed)
+          {
+            dxf.Entities.Add(entity);
+          }
+        }
+      }
+
+      foreach (CommonLineCluster cluster in geometry.Clusters)
+      {
+        foreach (CommonLinePath boundary in cluster.OuterBoundaries)
+        {
+          if (!boundary.IsClosed || boundary.Points.Count < 3)
+          {
+            throw new CommonLineValidationException("CUT_OUTER contains an open or degenerate cluster contour.");
+          }
+
+          var polyline = new DxfLwPolyline(boundary.Points.Select((point, index) => new DxfLwPolylineVertex
+          {
+            X = Snap(point.X),
+            Y = Snap(point.Y),
+            Bulge = boundary.Bulges[index],
+          }))
+          {
+            IsClosed = true,
+            Layer = CutOuterLayer,
+          };
+          dxf.Entities.Add(polyline);
+        }
+
+        foreach (CommonLineSegment segment in cluster.CommonLines)
+        {
+          double dx = segment.End.X - segment.Start.X;
+          double dy = segment.End.Y - segment.Start.Y;
+          if (Math.Sqrt((dx * dx) + (dy * dy)) <= sheetPlacement.GeometryTolerance)
+          {
+            throw new CommonLineValidationException("COMMON_LINE contains a zero-length or tiny segment.");
+          }
+
+          dxf.Entities.Add(new DxfLine(
+            new DxfPoint(Snap(segment.Start.X), Snap(segment.Start.Y), 0D),
+            new DxfPoint(Snap(segment.End.X), Snap(segment.End.Y), 0D))
+          {
+            Layer = CommonLineLayer,
+          });
+        }
+      }
+
+      if (offcutLines != null)
+      {
+        foreach (OffcutLine offcut in offcutLines)
+        {
+          dxf.Entities.Add(new DxfLine(
+            new DxfPoint(offcut.X1, offcut.Y1, 0D),
+            new DxfPoint(offcut.X2, offcut.Y2, 0D))
+          {
+            Layer = OffcutLayer,
+          });
+        }
+      }
+
+      ValidateCommonLineDxf(dxf, sheetPlacement.GeometryTolerance);
+
+      return dxf;
+    }
+
+    /// <summary>
+    /// The resolver supports exact curved cluster boundaries only when the outside source is one closed
+    /// planar LWPOLYLINE. Keep this independent export-side guard so a future resolver regression cannot
+    /// suppress an ARC/SPLINE/multi-entity outer and silently replace it with chords.
+    /// </summary>
+    private static void EnsureClusterOuterSourceIsSupported(
+      IReadOnlyCollection<DxfEntity> entities,
+      int partId)
+    {
+      bool HasLightweightBulge(DxfLwPolyline polyline)
+        => polyline.Vertices.Any(vertex => vertex.Bulge != 0D);
+
+      bool HasPolylineBulge(DxfPolyline polyline)
+        => polyline.Vertices.Any(vertex => vertex.Bulge != 0D);
+
+      bool curved = entities.Any(entity => entity is DxfArc
+        || entity is DxfCircle
+        || entity is DxfEllipse
+        || entity is DxfSpline
+        || (entity is DxfLwPolyline lightweight && HasLightweightBulge(lightweight))
+        || (entity is DxfPolyline polyline && HasPolylineBulge(polyline)));
+      bool supportedCurved = entities.Count == 1
+        && entities.Single() is DxfLwPolyline supported
+        && supported.IsClosed;
+      if (curved && !supportedCurved)
+      {
+        throw new CommonLineValidationException(
+          $"Part {partId} has curved outside source geometry in a format the common-line cluster cannot preserve without distortion.");
+      }
+    }
+
+    private static IEnumerable<(bool IsChild, List<DxfEntity> Entities)> LoadPlacedContours(
+      IPartPlacement placement)
+    {
+      RawDetail<DxfEntity> detail;
+      string source = placement.Part.Name;
+      try
+      {
+#if NCRUNCH
+        if (placement.Part.IsExact && !new FileInfo(source).Exists)
+        {
+          detail = DxfParser.ConvertDxfToRawDetail("generated.dxf", placement.Part.ToDxfFile().Entities.ToArray());
+        }
+        else
+#endif
+        {
+          if (string.IsNullOrWhiteSpace(source) || !source.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase))
+          {
+            throw new FileNotFoundException();
+          }
+
+          detail = DxfParser.ConvertDxfToRawDetail(source, DxfFile.Load(source).Entities.ToArray());
+        }
+      }
+      catch
+      {
+        throw new FileNotFoundException($"The file {source} could not be loaded for validated common-line export.");
+      }
+
+      // SheetPlacement coordinates are local to their sheet. Sheet.Id is identity metadata, not a
+      // horizontal page index; applying Width * Id here shifts source contours away from the resolved
+      // cluster geometry whenever an application assigns a non-zero/non-contiguous sheet id.
+      var offset = new DxfPoint(placement.X, placement.Y, 0D);
+      foreach (ILocalContour contour in detail.Outers)
+      {
+        if (contour is not LocalContour<DxfEntity> cast)
+        {
+          throw new CommonLineValidationException("A DXF contour could not be reconstructed for common-line export.");
+        }
+
+        List<DxfEntity> transformed = OffsetToNest(
+          cast.Entities.ToList(),
+          offset,
+          placement.Rotation,
+          placement.IsMirrored);
+        yield return (cast.IsChild, SnapToGrid(transformed).ToList());
+      }
+    }
+
+    private static List<DxfEntity> EnsureClosedContour(
+      List<DxfEntity> entities,
+      string layer,
+      double geometryTolerance)
+    {
+      if (entities == null || entities.Count == 0)
+      {
+        throw new CommonLineValidationException($"{layer} contains an empty contour.");
+      }
+
+      if (entities.Count == 1)
+      {
+        if (entities[0] is DxfLwPolyline lightweight)
+        {
+          ClosePolyline(lightweight, geometryTolerance);
+        }
+        else if (entities[0] is DxfPolyline polyline)
+        {
+          ClosePolyline(polyline, geometryTolerance);
+        }
+        else if (entities[0] is DxfSpline spline
+          && !spline.IsClosed
+          && SplineDeclaresClosed(spline, geometryTolerance))
+        {
+          // Some CAD writers repeat the endpoint but omit bit 1 of the SPLINE flags. The source curve
+          // is geometrically closed; set the DXF flag so SheetCam receives an explicitly closed contour.
+          spline.IsClosed = true;
+        }
+      }
+
+      if (entities.Count != 1 || !IsClosedCutEntity(entities[0], geometryTolerance))
+      {
+        try
+        {
+          FlatDxfJoiner.JoinEntities(entities, geometryTolerance);
+        }
+        catch
+        {
+          throw new CommonLineValidationException($"{layer} could not be rebuilt as a closed contour.");
+        }
+      }
+
+      if (entities.Count != 1 || !IsClosedCutEntity(entities[0], geometryTolerance))
+      {
+        throw new CommonLineValidationException($"{layer} contains geometry that is not completely closed.");
+      }
+
+      entities[0].Layer = layer;
+      return entities;
+    }
+
+    private static void ClosePolyline(DxfLwPolyline polyline, double geometryTolerance)
+    {
+      if (polyline.IsClosed)
+      {
+        return;
+      }
+
+      if (polyline.Vertices.Count > 3
+        && Coincide(
+          new DxfPoint(polyline.Vertices[0].X, polyline.Vertices[0].Y, 0D),
+          new DxfPoint(polyline.Vertices[^1].X, polyline.Vertices[^1].Y, 0D),
+          geometryTolerance))
+      {
+        polyline.Vertices.RemoveAt(polyline.Vertices.Count - 1);
+        polyline.IsClosed = true;
+      }
+    }
+
+    private static void ClosePolyline(DxfPolyline polyline, double geometryTolerance)
+    {
+      if (polyline.IsClosed)
+      {
+        return;
+      }
+
+      if (polyline.Vertices.Count > 3
+        && Coincide(polyline.Vertices[0].Location, polyline.Vertices[^1].Location, geometryTolerance))
+      {
+        polyline.Vertices.RemoveAt(polyline.Vertices.Count - 1);
+        polyline.IsClosed = true;
+      }
+    }
+
+    private static bool IsClosedCutEntity(DxfEntity entity, double geometryTolerance)
+      => (entity is DxfCircle circle && circle.Radius > geometryTolerance)
+        || (entity is DxfEllipse ellipse && IsFullUsableEllipse(ellipse, geometryTolerance))
+        || (entity is DxfSpline spline
+          && SplineDeclaresClosed(spline, geometryTolerance)
+          && TrySampleSpline(spline, geometryTolerance, out _))
+        || (entity is DxfLwPolyline lightweight && lightweight.IsClosed && lightweight.Vertices.Count >= 3)
+        || (entity is DxfPolyline polyline && polyline.IsClosed && polyline.Vertices.Count >= 3);
+
+    private static bool IsFullUsableEllipse(DxfEllipse ellipse, double tolerance)
+    {
+      double major = Math.Sqrt(
+        (ellipse.MajorAxis.X * ellipse.MajorAxis.X)
+        + (ellipse.MajorAxis.Y * ellipse.MajorAxis.Y));
+      double minor = major * Math.Abs(ellipse.MinorAxisRatio);
+      double sweep = Math.Abs(ellipse.EndParameter - ellipse.StartParameter);
+      double angularTolerance = Math.Max(1e-10, tolerance / Math.Max(major, tolerance));
+      return double.IsFinite(major)
+        && double.IsFinite(minor)
+        && major > tolerance
+        && minor > tolerance
+        && double.IsFinite(sweep)
+        && Math.Abs(sweep - (2D * Math.PI)) <= angularTolerance;
+    }
+
+    private static bool SplineDeclaresClosed(DxfSpline spline, double tolerance)
+    {
+      if (spline.IsClosed || spline.IsPeriodic)
+      {
+        return true;
+      }
+
+      if (spline.FitPoints.Count >= 2
+        && Coincide(spline.FitPoints[0], spline.FitPoints[^1], tolerance))
+      {
+        return true;
+      }
+
+      return spline.ControlPoints.Count >= 2
+        && Coincide(
+          spline.ControlPoints[0].Point,
+          spline.ControlPoints[^1].Point,
+          tolerance);
+    }
+
+    private static bool TrySampleSpline(
+      DxfSpline spline,
+      double tolerance,
+      out List<DxfPoint> points)
+    {
+      points = new List<DxfPoint>();
+      try
+      {
+        RawDetail<DxfEntity> sampled = DxfParser.ConvertDxfToRawDetail(
+          "common-line-validation.dxf",
+          new DxfEntity[] { spline });
+        ILocalContour contour = sampled.Outers.SingleOrDefault();
+        if (contour == null)
+        {
+          return false;
+        }
+
+        points.AddRange(contour.Points.Select(point => new DxfPoint(point.X, point.Y, 0D)));
+        if (points.Count > 1 && Coincide(points[0], points[^1], tolerance))
+        {
+          points.RemoveAt(points.Count - 1);
+        }
+
+        return points.Count >= 3;
+      }
+      catch
+      {
+        points.Clear();
+        return false;
+      }
+    }
+
+    private static bool Coincide(DxfPoint a, DxfPoint b, double geometryTolerance)
+      => Math.Abs(a.X - b.X) <= geometryTolerance
+        && Math.Abs(a.Y - b.Y) <= geometryTolerance;
+
+    private static void ValidateCommonLineDxf(DxfFile dxf, double geometryTolerance)
+    {
+      foreach (DxfEntity entity in dxf.Entities)
+      {
+        if (entity.Layer == CutInnerLayer || entity.Layer == CutOuterLayer)
+        {
+          if (!IsClosedCutEntity(entity, geometryTolerance))
+          {
+            throw new CommonLineValidationException($"{entity.Layer} contains an open entity.");
+          }
+
+          if (entity.Layer == CutOuterLayer
+            && IsSelfIntersectingCutOuter(entity, geometryTolerance))
+          {
+            throw new CommonLineValidationException("CUT_OUTER contains a self-intersecting contour.");
+          }
+        }
+        else if (entity.Layer == CommonLineLayer)
+        {
+          if (entity is not DxfLine line)
+          {
+            throw new CommonLineValidationException("COMMON_LINE contains a non-LINE entity.");
+          }
+
+          double dx = line.P2.X - line.P1.X;
+          double dy = line.P2.Y - line.P1.Y;
+          if (Math.Sqrt((dx * dx) + (dy * dy)) <= geometryTolerance)
+          {
+            throw new CommonLineValidationException("COMMON_LINE contains a zero-length or tiny entity.");
+          }
+        }
+      }
+    }
+
+    private static bool IsSelfIntersectingCutOuter(DxfEntity entity, double tolerance)
+    {
+      List<(DxfPoint Start, DxfPoint End, double Bulge)> segments;
+      if (entity is DxfLwPolyline lightweight)
+      {
+        segments = Enumerable.Range(0, lightweight.Vertices.Count)
+          .Select(i =>
+          {
+            DxfLwPolylineVertex start = lightweight.Vertices[i];
+            DxfLwPolylineVertex end = lightweight.Vertices[(i + 1) % lightweight.Vertices.Count];
+            return (
+              new DxfPoint(start.X, start.Y, 0D),
+              new DxfPoint(end.X, end.Y, 0D),
+              start.Bulge);
+          })
+          .ToList();
+      }
+      else if (entity is DxfPolyline polyline)
+      {
+        segments = Enumerable.Range(0, polyline.Vertices.Count)
+          .Select(i =>
+          {
+            DxfVertex start = polyline.Vertices[i];
+            DxfVertex end = polyline.Vertices[(i + 1) % polyline.Vertices.Count];
+            return (start.Location, end.Location, start.Bulge);
+          })
+          .ToList();
+      }
+      else if (entity is DxfSpline spline
+        && TrySampleSpline(spline, tolerance, out List<DxfPoint> splinePoints))
+      {
+        segments = Enumerable.Range(0, splinePoints.Count)
+          .Select(i => (
+            splinePoints[i],
+            splinePoints[(i + 1) % splinePoints.Count],
+            0D))
+          .ToList();
+      }
+      else
+      {
+        // A usable full ellipse and circle are inherently simple; unsupported/invalid entities have
+        // already failed IsClosedCutEntity before this method is reached.
+        return false;
+      }
+
+      double effectiveTolerance = Math.Max(0D, tolerance);
+      var sampled = new List<List<(DxfPoint Start, DxfPoint End)>>(segments.Count);
+      foreach ((DxfPoint Start, DxfPoint End, double Bulge) segment in segments)
+      {
+        if (CutDistance(segment.Start, segment.End) <= effectiveTolerance)
+        {
+          return true;
+        }
+
+        sampled.Add(SampleCutSegment(segment.Start, segment.End, segment.Bulge, effectiveTolerance));
+      }
+
+      for (int i = 0; i < sampled.Count; i++)
+      {
+        int iNext = (i + 1) % sampled.Count;
+        for (int j = i + 1; j < sampled.Count; j++)
+        {
+          int jNext = (j + 1) % sampled.Count;
+          if (iNext == j || jNext == i)
+          {
+            continue; // neighbouring source segments intentionally meet at their shared vertex
+          }
+
+          if (sampled[i].Any(first => sampled[j].Any(second =>
+            CutSegmentsConflict(first.Start, first.End, second.Start, second.End, effectiveTolerance))))
+          {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    private static List<(DxfPoint Start, DxfPoint End)> SampleCutSegment(
+      DxfPoint start,
+      DxfPoint end,
+      double bulge,
+      double tolerance)
+    {
+      if (Math.Abs(bulge) < 1e-12)
+      {
+        return new List<(DxfPoint, DxfPoint)> { (start, end) };
+      }
+
+      double theta = 4D * Math.Atan(bulge);
+      double dx = end.X - start.X;
+      double dy = end.Y - start.Y;
+      double chord = Math.Sqrt((dx * dx) + (dy * dy));
+      double sinHalf = Math.Sin(theta / 2D);
+      if (chord <= tolerance || Math.Abs(sinHalf) < 1e-12)
+      {
+        return new List<(DxfPoint, DxfPoint)> { (start, end) };
+      }
+
+      double signedRadius = chord / (2D * sinHalf);
+      double radius = Math.Abs(signedRadius);
+      double midX = (start.X + end.X) / 2D;
+      double midY = (start.Y + end.Y) / 2D;
+      double apothem = signedRadius * Math.Cos(theta / 2D);
+      double centerX = midX + (apothem * (-dy / chord));
+      double centerY = midY + (apothem * (dx / chord));
+      double firstAngle = Math.Atan2(start.Y - centerY, start.X - centerX);
+
+      // Match the parser's practical 1..6 degree tessellation while using the active tolerance to
+      // tighten ordinary-sized arcs. This keeps validation bounded for very large-radius CAD geometry.
+      double chordTolerance = Math.Max(1e-9, tolerance);
+      double cosHalf = 1D - (chordTolerance / radius);
+      cosHalf = Math.Max(-1D, Math.Min(1D, cosHalf));
+      double step = 2D * Math.Acos(cosHalf);
+      step = Math.Max(Math.PI / 180D, Math.Min(Math.PI / 30D, step));
+      int count = Math.Max(1, (int)Math.Ceiling(Math.Abs(theta) / step));
+
+      var result = new List<(DxfPoint Start, DxfPoint End)>(count);
+      DxfPoint prior = start;
+      for (int i = 1; i <= count; i++)
+      {
+        double angle = firstAngle + ((theta * i) / count);
+        DxfPoint next = i == count
+          ? end
+          : new DxfPoint(
+            centerX + (radius * Math.Cos(angle)),
+            centerY + (radius * Math.Sin(angle)),
+            0D);
+        result.Add((prior, next));
+        prior = next;
+      }
+
+      return result;
+    }
+
+    private static bool CutSegmentsConflict(
+      DxfPoint a,
+      DxfPoint b,
+      DxfPoint c,
+      DxfPoint d,
+      double tolerance)
+    {
+      double abC = CutCross(a, b, c);
+      double abD = CutCross(a, b, d);
+      double cdA = CutCross(c, d, a);
+      double cdB = CutCross(c, d, b);
+      double scale = Math.Max(1D, Math.Max(CutDistance(a, b), CutDistance(c, d)));
+      double epsilon = tolerance * scale;
+      if (((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon))
+        && ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon)))
+      {
+        return true;
+      }
+
+      return (Math.Abs(abC) <= epsilon && CutPointOnSegment(c, a, b, tolerance))
+        || (Math.Abs(abD) <= epsilon && CutPointOnSegment(d, a, b, tolerance))
+        || (Math.Abs(cdA) <= epsilon && CutPointOnSegment(a, c, d, tolerance))
+        || (Math.Abs(cdB) <= epsilon && CutPointOnSegment(b, c, d, tolerance));
+    }
+
+    private static bool CutPointOnSegment(DxfPoint point, DxfPoint start, DxfPoint end, double tolerance)
+      => point.X >= Math.Min(start.X, end.X) - tolerance
+        && point.X <= Math.Max(start.X, end.X) + tolerance
+        && point.Y >= Math.Min(start.Y, end.Y) - tolerance
+        && point.Y <= Math.Max(start.Y, end.Y) + tolerance;
+
+    private static double CutCross(DxfPoint a, DxfPoint b, DxfPoint point)
+      => ((b.X - a.X) * (point.Y - a.Y)) - ((b.Y - a.Y) * (point.X - a.X));
+
+    private static double CutDistance(DxfPoint a, DxfPoint b)
+    {
+      double dx = b.X - a.X;
+      double dy = b.Y - a.Y;
+      return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static void AddCommonLineLayers(DxfFile dxf)
+    {
+      AddLayer(dxf, CutInnerLayer, DxfColorHelpers.GetClosestDefaultIndexColor(255, 0, 0));
+      AddLayer(dxf, CommonLineLayer, DxfColorHelpers.GetClosestDefaultIndexColor(0, 255, 0));
+      AddLayer(dxf, CutOuterLayer, DxfColorHelpers.GetClosestDefaultIndexColor(0, 0, 255));
+      AddLayer(dxf, OffcutLayer, DxfColorHelpers.GetClosestDefaultIndexColor(255, 255, 0));
+    }
+
+    private static void AddLayer(DxfFile dxf, string name, DxfColor color)
+    {
+      if (!dxf.Layers.Any(layer => string.Equals(layer.Name, name, StringComparison.Ordinal)))
+      {
+        dxf.Layers.Add(new DxfLayer(name, color));
       }
     }
 

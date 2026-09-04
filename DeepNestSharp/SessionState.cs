@@ -43,10 +43,29 @@ namespace DeepNestSharp
     /// <summary>Drawing units are millimeters (true) vs inches (false); null = default (inches).</summary>
     public bool? UnitsMm { get; set; }
 
+    /// <summary>
+    /// Physical gap requested between common-line parts, always stored in inches regardless of the
+    /// drawing units selected in the UI. Null or an invalid value means the shipped default.
+    /// </summary>
+    public double? CommonLineGapInches { get; set; }
+
+    /// <summary>The valid common-line gap represented by this session.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public double EffectiveCommonLineGapInches
+    {
+      get
+      {
+        double? value = this.CommonLineGapInches;
+        return value.HasValue && IsValidCommonLineGap(value.Value)
+          ? value.Value
+          : DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches;
+      }
+    }
+
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
 
-    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = default (normal).
+    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = default (fast).
     /// Kept per user and not in the project, because it is a preference about this operator's own time.</summary>
     public int NestEffort { get; set; } = -1;
 
@@ -77,16 +96,44 @@ namespace DeepNestSharp
     public double OffcutEdgeOverlap { get; set; } = -1;
 
     /// <summary>
-    /// How close to parallel, how long and how far apart two faces have to be to be cut as one.
-    /// Null = the shipped defaults.
+    /// Records the values owned by the running application when it closes. Called on an already-loaded
+    /// session so preferences written by their own dialogs (including offcuts) survive.
     /// </summary>
-    /// <remarks>
-    /// Here, and NOT in the nest config, on purpose. Opening a project runs a full copy of the saved
-    /// config over the live one, so a calibration would be silently replaced by whatever was in force
-    /// on the machine that saved that job. These are properties of the machine in this shop, they are
-    /// not properties of the job, and they must survive opening someone else's file.
-    /// </remarks>
-    public DeepNestLib.NestProject.CommonCuttingTolerances? CommonCutting { get; set; }
+    internal void CaptureApplicationClose(
+      double sheetEdgeMargin,
+      double unfoldKFactor,
+      string? unfoldKFactorStandard,
+      string? freeCadCmdPath,
+      bool unfoldUnitInch,
+      bool unitsMm,
+      IEnumerable<SessionSheet> sheetPresets,
+      bool autosaveEnabled,
+      int autosaveMinutes,
+      int defaultRotations,
+      RasterNest.NestEffort nestEffort,
+      double commonLineGapInches)
+    {
+      this.SheetEdgeMargin = sheetEdgeMargin;
+      this.Sheets = new List<SessionSheet>();
+      this.UnfoldKFactor = unfoldKFactor;
+      this.UnfoldKFactorStandard = unfoldKFactorStandard;
+      this.FreeCadCmdPath = freeCadCmdPath;
+      this.UnfoldUnitInch = unfoldUnitInch;
+      this.UnitsMm = unitsMm;
+      this.SheetPresets = new List<SessionSheet>(sheetPresets ?? Array.Empty<SessionSheet>());
+      this.AutosaveEnabled = autosaveEnabled;
+      this.AutosaveMinutes = autosaveMinutes;
+      this.DefaultRotations = defaultRotations;
+      this.NestEffort = (int)nestEffort;
+      this.CommonLineGapInches = IsValidCommonLineGap(commonLineGapInches)
+        ? commonLineGapInches
+        : DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches;
+    }
+
+    private static bool IsValidCommonLineGap(double value)
+      => value > DeepNestLib.Placement.CommonLineDefaults.DefaultGeometryToleranceInches
+        && !double.IsNaN(value)
+        && !double.IsInfinity(value);
 
     private static string FilePath => Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SheetNest", "session.json");

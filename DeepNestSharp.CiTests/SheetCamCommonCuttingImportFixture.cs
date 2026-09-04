@@ -16,6 +16,9 @@ namespace DeepNestSharp.CiTests
     [Theory]
     [InlineData("0", CommonCuttingMode.Unrestricted)]
     [InlineData("0.25", CommonCuttingMode.None)]
+    [InlineData(null, CommonCuttingMode.None)]
+    [InlineData("not-a-number", CommonCuttingMode.None)]
+    [InlineData("-1", CommonCuttingMode.None)]
     public void AZeroPartSpacingJobImportsAsUnrestricted(string partSpacing, CommonCuttingMode expected)
     {
       // Never Same part: the file does not say that, and inventing it would refuse seams between different
@@ -23,13 +26,15 @@ namespace DeepNestSharp.CiTests
       var nest = Load(partSpacing);
       nest.Should().NotBeNull();
       MainWindow.CommonCuttingOf(nest).Should().Be(expected);
+      nest.HasPartSpacing.Should().Be(partSpacing == "0" || partSpacing == "0.25");
     }
 
     private static SheetCamNestFile Load(string partSpacing)
     {
+      string spacingAttribute = partSpacing == null ? string.Empty : $" PartSpacing=\"{partSpacing}\"";
       string xml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <NestingData ID=""SheetCam01"" Version=""1.0"">
-  <Settings Units=""in"" PartSpacing=""{partSpacing}"" EdgeSpacing=""0.25"" />
+  <Settings Units=""in""{spacingAttribute} EdgeSpacing=""0.25"" />
   <Sheets>
     <Sheet Name=""Sheet"" Quantity=""1"">
       <External>

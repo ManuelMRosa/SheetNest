@@ -56,6 +56,14 @@
     internal static int DiagSeamsGivenUp;
 
     /// <summary>
+    /// Per-drawing reasons why direct common-line relationships on the kept result fell back to normal
+    /// spacing. Candidate searches run concurrently, so only <see cref="PackOneSheet"/>'s winner is added.
+    /// </summary>
+    internal static readonly List<CommonLineFallbackNotice> DiagCommonLineFallbacks = new List<CommonLineFallbackNotice>();
+
+    private const double DirectSeamTolerance = 2.5e-6; // compaction/export coordinates are quantised to 1e-6
+
+    /// <summary>
     /// Drawings that came out of the last nest in a group with NO way into it. Every part welded into a
     /// chain is cut as one path, so the chain needs ONE lead that starts outside a part; a part welded to
     /// nobody needs its own. A group with neither cannot be cut at all.
@@ -81,14 +89,15 @@
       public double EffSpacing;   // NOMINAL spacing: what this part keeps to anything it cannot share a cut with
       public CommonCuttingMode Cc; // who it may share a cut edge with; None = nobody
       public int ShareKey;    // identity for SamePart: same drawing AND same hand
+      public string CommonCuttingDomain = string.Empty; // direct contract, or the owning SheetCam .nest; never cross domains
+      public bool RequiresMergedLines;   // direct nominal contour opts into resolved cluster/midpoint DXF output
+      public bool ValidateEntryLead;     // only SheetCam tooling needs the no-entry diagnostic
 
-      // What to grow by where only ONE polygon per part can be handed over: the engine's input and the
-      // hole filler. Zero when this part may share with EVERY other part in the job (then a tight pack is
-      // exactly right and nothing is lost), otherwise the full nominal spacing, because those two callers
-      // cannot express a clearance that depends on which neighbour it is. Compaction can, and uses
-      // EffSpacing with MayShare instead.
+      // What to grow by where only ONE polygon per part can be handed over: always the full nominal
+      // spacing. Those callers cannot express a clearance that depends on a concrete selected edge, so
+      // compatibility alone must not create a tight layout.
       public double FitSpacing;
-      public double Kerf;     // cut width (drawing units) — the exact gap common-line neighbours snap to
+      public double Kerf;     // SheetCam cut width (drawing units) — its legacy toolpaths snap one kerf apart
       public int Qty;
       public bool Mirrored;   // this population is X-flipped — placements carry IsMirrored for the exporter
       public int Priority;    // 1-10, LOWER nests first (1 = highest); decides which parts fill earlier sheets
@@ -99,6 +108,42 @@
 
       /// <summary>Drawing name, for saying WHICH parts a warning is about.</summary>
       public string Drawing;
+    }
+
+    /// <summary>
+    /// One full outside-edge relationship deliberately created by the direct common-line planner.
+    /// References are kept until the final sheet ids exist; accidental contacts are never promoted into
+    /// records by scanning the finished sheet.
+    /// </summary>
+    internal sealed class CommonEdgeIntent
+    {
+      public CommonEdgeIntent(IPartPlacement partA, int edgeAIndex, IPartPlacement partB, int edgeBIndex)
+      {
+        this.PartA = partA;
+        this.EdgeAIndex = edgeAIndex;
+        this.PartB = partB;
+        this.EdgeBIndex = edgeBIndex;
+      }
+
+      public IPartPlacement PartA { get; }
+
+      public int EdgeAIndex { get; }
+
+      public IPartPlacement PartB { get; }
+
+      public int EdgeBIndex { get; }
+    }
+
+    /// <summary>Result of creating rigid direct common-line clusters on one candidate layout.</summary>
+    internal sealed class DirectCommonLineSnapResult
+    {
+      public List<CommonEdgeIntent> Edges { get; } = new List<CommonEdgeIntent>();
+
+      public List<CommonLineFallbackNotice> Fallbacks { get; } = new List<CommonLineFallbackNotice>();
+
+      public int[] Groups { get; set; } = Array.Empty<int>();
+
+      public int GivenUp { get; set; }
     }
 
     /// <summary>Single-sheet convenience (used by tests): one sheet of the given size.</summary>
@@ -113,8 +158,24 @@
       string sparrowExePath,
       out string error,
       CancellationToken cancel = default,
-      NestEffort effort = NestEffort.Normal)
-      => Nest(parts, new[] { ((int)Math.Round(sheetWin), (int)Math.Round(sheetHin), 1) }, rotations, spacing, margin, timeLimitSec, sparrowExePath, out error, cancel, null, null, effort);
+      NestEffort effort = NestEffortDefaults.Default,
+      double commonLineGap = CommonLineDefaults.DefaultGapInches,
+      double geometryTolerance = CommonLineDefaults.DefaultGeometryToleranceInches)
+      => Nest(
+        parts,
+        new[] { ((int)Math.Round(sheetWin), (int)Math.Round(sheetHin), 1) },
+        rotations,
+        spacing,
+        margin,
+        timeLimitSec,
+        sparrowExePath,
+        out error,
+        cancel,
+        null,
+        null,
+        effort,
+        commonLineGap,
+        geometryTolerance);
 
     /// <summary>Multi-sheet nest: fills sheets from <paramref name="stock"/> until the pool is empty or
     /// the stock is exhausted; whatever cannot fit is returned as unplaced.
@@ -134,7 +195,9 @@
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
       CommonCuttingTolerances tolerances = null,
-      NestEffort effort = NestEffort.Normal)
+      NestEffort effort = NestEffortDefaults.Default,
+      double commonLineGap = CommonLineDefaults.DefaultGapInches,
+      double geometryTolerance = CommonLineDefaults.DefaultGeometryToleranceInches)
       => Nest(
         parts,
         stock?.Select(s => (s.Win, s.Hin, s.Qty, false)).ToList(),
@@ -147,7 +210,9 @@
         cancel,
         progress,
         tolerances,
-        effort);
+        effort,
+        commonLineGap,
+        geometryTolerance);
 
     /// <summary>The same nest with stock that may declare a size UNLIMITED: one the job can keep taking
     /// sheets of until every part is placed, so its quantity is not a stock level and is ignored.</summary>
@@ -163,7 +228,9 @@
       CancellationToken cancel = default,
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
       CommonCuttingTolerances tolerances = null,
-      NestEffort effort = NestEffort.Normal)
+      NestEffort effort = NestEffortDefaults.Default,
+      double commonLineGap = CommonLineDefaults.DefaultGapInches,
+      double geometryTolerance = CommonLineDefaults.DefaultGeometryToleranceInches)
     {
       error = null;
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
@@ -199,6 +266,11 @@
       DiagDeferred = 0;
       DiagSeamsSnapped = 0;
       DiagSeamsGivenUp = 0;
+      lock (DiagCommonLineFallbacks)
+      {
+        DiagCommonLineFallbacks.Clear();
+      }
+
       lock (DiagNoEntry)
       {
         DiagNoEntry.Clear();
@@ -212,7 +284,26 @@
         return null;
       }
 
-      return RunNestBody(loaded, sizes, margin, perSheetBudgetSec, sparrowExePath, cancel, progress, tolerances, effort, out error);
+      commonLineGap = double.IsFinite(commonLineGap) && commonLineGap > 0
+        ? commonLineGap
+        : CommonLineDefaults.DefaultGapInches;
+      geometryTolerance = double.IsFinite(geometryTolerance) && geometryTolerance > 0
+        ? geometryTolerance
+        : CommonLineDefaults.DefaultGeometryToleranceInches;
+
+      return RunNestBody(
+        loaded,
+        sizes,
+        margin,
+        perSheetBudgetSec,
+        sparrowExePath,
+        cancel,
+        progress,
+        tolerances,
+        effort,
+        commonLineGap,
+        geometryTolerance,
+        out error);
     }
 
     /// <summary>One size of stock and how much of it is left. An unlimited size never runs down, so its
@@ -250,14 +341,18 @@
       System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
       CommonCuttingTolerances tolerances,
       NestEffort effort,
+      double commonLineGap,
+      double geometryTolerance,
       out string error)
     {
       error = null;
       var loadedById = loaded.ToDictionary(l => l.Source);
+      var toolingById = loaded.ToDictionary(l => l.Source, l => l.Tooling);
       var pool = loaded.ToDictionary(l => l.Source, l => l.Qty);
       int totalParts = pool.Values.Sum();
 
       var sheetLayouts = new List<List<IPartPlacement>>();
+      var sheetCommonEdges = new List<List<CommonEdgeIntent>>();
       string firstPackError = null;
       var sheetSizes = new List<(int W, int H)>();
 
@@ -283,7 +378,9 @@
         double bestUtilization = -1;
         int bestSeamsSnapped = 0;
         int bestSeamsGivenUp = 0;
+        List<CommonEdgeIntent> bestCommonEdges = null;
         IReadOnlyList<string> bestStranded = Array.Empty<string>();
+        IReadOnlyList<CommonLineFallbackNotice> bestCommonLineFallbacks = Array.Empty<CommonLineFallbackNotice>();
 
         foreach (var size in sizes)
         {
@@ -321,7 +418,23 @@
           // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
           int hardTimeoutSec = WatchdogSeconds(perSheetBudgetSec, effort);
 
-          var (placements, placedBySrc, packW, packH, seamsSnapped, seamsGivenUp, stranded) = PackOneSheet(loaded, batchQty, w, h, margin, budget, SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out string perr);
+          var (placements, placedBySrc, packW, packH, seamsSnapped, seamsGivenUp, commonEdges, stranded, commonLineFallbacks) = PackOneSheet(
+            loaded,
+            batchQty,
+            w,
+            h,
+            margin,
+            budget,
+            SearchWorkers(effort),
+            hardTimeoutSec,
+            tries,
+            sparrowExePath,
+            cancel,
+            onDensity,
+            tolerances,
+            commonLineGap,
+            geometryTolerance,
+            out string perr);
           firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
@@ -357,8 +470,23 @@
           // back uncut is worth more seconds than any of them.
           if (placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
           {
-            var (retryPl, retryBy, retryW, retryH, retrySeamsSnapped, retrySeamsGivenUp, retryStranded) = PackOneSheet(
-              loaded, batchQty, w, h, margin, LastChanceBudget(effort), SearchWorkers(effort), hardTimeoutSec, tries, sparrowExePath, cancel, onDensity, tolerances, out _);
+            var (retryPl, retryBy, retryW, retryH, retrySeamsSnapped, retrySeamsGivenUp, retryCommonEdges, retryStranded, retryCommonLineFallbacks) = PackOneSheet(
+              loaded,
+              batchQty,
+              w,
+              h,
+              margin,
+              LastChanceBudget(effort),
+              SearchWorkers(effort),
+              hardTimeoutSec,
+              tries,
+              sparrowExePath,
+              cancel,
+              onDensity,
+              tolerances,
+              commonLineGap,
+              geometryTolerance,
+              out _);
 
             if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
                 && retryBy.Values.Sum() > placedBySrc.Values.Sum())
@@ -369,7 +497,9 @@
               packH = retryH;
               seamsSnapped = retrySeamsSnapped;
               seamsGivenUp = retrySeamsGivenUp;
+              commonEdges = retryCommonEdges;
               stranded = retryStranded;
+              commonLineFallbacks = retryCommonLineFallbacks;
             }
           }
 
@@ -393,7 +523,9 @@
             bestH = packH;
             bestSeamsSnapped = seamsSnapped;
             bestSeamsGivenUp = seamsGivenUp;
+            bestCommonEdges = commonEdges;
             bestStranded = stranded;
+            bestCommonLineFallbacks = commonLineFallbacks;
           }
         }
 
@@ -407,7 +539,7 @@
 
         // Only the size/attempt that was actually kept ever gets cut — every other stock size tried for
         // this sheet, and the first attempt when the last-chance retry beat it, are thrown away just like
-        // a losing search candidate, and their seam counts go with them.
+        // a losing search candidate, and their SheetCam seam counts go with them.
         System.Threading.Interlocked.Add(ref DiagSeamsSnapped, bestSeamsSnapped);
         System.Threading.Interlocked.Add(ref DiagSeamsGivenUp, bestSeamsGivenUp);
         lock (DiagNoEntry)
@@ -421,10 +553,32 @@
           }
         }
 
+        lock (DiagCommonLineFallbacks)
+        {
+          foreach (CommonLineFallbackNotice notice in bestCommonLineFallbacks ?? Array.Empty<CommonLineFallbackNotice>())
+          {
+            if (!DiagCommonLineFallbacks.Any(existing =>
+              string.Equals(existing.Drawing, notice.Drawing, StringComparison.OrdinalIgnoreCase)
+              && string.Equals(existing.Reason, notice.Reason, StringComparison.Ordinal)))
+            {
+              DiagCommonLineFallbacks.Add(notice);
+            }
+          }
+        }
+
         // The sheet is judged by the rule that decides whether it may be cut, before it is handed over.
         // Whatever fails goes back in the pool and lands on the next sheet, so no layout ever leaves here
         // that the app would paint red. See DeferUnfit for why this is not the same as trusting the pack.
-        int deferred = DeferUnfit(bestPlacements, bestPlacedBySrc, loadedById, bestW, bestH, margin);
+        int deferred = DeferUnfit(
+          bestPlacements,
+          bestPlacedBySrc,
+          loadedById,
+          bestCommonEdges,
+          bestW,
+          bestH,
+          margin,
+          commonLineGap,
+          geometryTolerance);
         if (bestPlacements.Count == 0)
         {
           break; // nothing on this sheet survived the check, so another sheet of it would fare no better
@@ -436,6 +590,7 @@
         }
 
         sheetLayouts.Add(bestPlacements);
+        sheetCommonEdges.Add(bestCommonEdges ?? new List<CommonEdgeIntent>());
         sheetSizes.Add((bestW, bestH));
         Deduct(pool, bestPlacedBySrc);
         bestSize.TakeOne();
@@ -444,7 +599,9 @@
         // sheets, clone this layout instead of re-nesting (uniform jobs → 1 run + replicate).
         while (bestSize.HasStock && PoolContains(pool, bestPlacedBySrc))
         {
-          sheetLayouts.Add(ClonePlacements(bestPlacements));
+          var clone = ClonePlacements(bestPlacements, bestCommonEdges);
+          sheetLayouts.Add(clone.Placements);
+          sheetCommonEdges.Add(clone.CommonEdges);
           sheetSizes.Add((bestW, bestH));
           Deduct(pool, bestPlacedBySrc);
           bestSize.TakeOne();
@@ -468,6 +625,44 @@
       FillHoles(sheetLayouts, pool, loadedById, cancel);
       DiagHolesMs = diagHoles.ElapsedMilliseconds;
 
+      // Cloning and hole filling are intentionally incapable of moving a cluster, but the persisted
+      // metadata is safety-critical: prove that assumption on the exact final layouts before ids/export.
+      for (int sheetIndex = 0; sheetIndex < sheetLayouts.Count; sheetIndex++)
+      {
+        for (int placementIndex = 0; placementIndex < sheetLayouts[sheetIndex].Count; placementIndex++)
+        {
+          if (sheetLayouts[sheetIndex][placementIndex] is PartPlacement placement)
+          {
+            placement.Id = placementIndex;
+          }
+        }
+
+        bool edgesValid = sheetCommonEdges[sheetIndex].All(edge => CommonLineGeometryResolver.TryCreateCommonEdge(
+          edge.PartA,
+          edge.EdgeAIndex,
+          edge.PartB,
+          edge.EdgeBIndex,
+          commonLineGap,
+          geometryTolerance,
+          out _));
+        if (!edgesValid
+            || (sheetCommonEdges[sheetIndex].Count > 0
+              && !ToolingClearsEveryone(sheetLayouts[sheetIndex], toolingById, null))
+            || !FinalLayoutIsValid(
+              sheetLayouts[sheetIndex],
+              sheetCommonEdges[sheetIndex],
+              loadedById,
+              sheetSizes[sheetIndex].W,
+              sheetSizes[sheetIndex].H,
+              margin,
+              commonLineGap,
+              geometryTolerance))
+        {
+          error = "A common-line cluster did not survive final sheet validation.";
+          return null;
+        }
+      }
+
       var collection = new SheetPlacementCollection();
       int id = 0;
       for (int i = 0; i < sheetLayouts.Count; i++)
@@ -477,8 +672,55 @@
           ((PartPlacement)pp).Id = id++;
         }
 
+        var commonEdges = new List<CommonEdge>();
+        foreach (CommonEdgeIntent intent in sheetCommonEdges[i])
+        {
+          if (!sheetLayouts[i].Contains(intent.PartA)
+              || !sheetLayouts[i].Contains(intent.PartB)
+              || !CommonLineGeometryResolver.TryCreateCommonEdge(
+                intent.PartA,
+                intent.EdgeAIndex,
+                intent.PartB,
+                intent.EdgeBIndex,
+                commonLineGap,
+                geometryTolerance,
+                out CommonEdge commonEdge))
+          {
+            error = "A common-line cluster changed after final placement and was rejected.";
+            return null;
+          }
+
+          commonEdges.Add(commonEdge);
+        }
+
+        // Intent count is the seam count. A physical scan here would silently promote accidental contacts
+        // made by compaction or hole filling into cuts that the planner never selected.
+        System.Threading.Interlocked.Add(ref DiagSeamsSnapped, commonEdges.Count);
+
         var sheet = Sheet.NewSheet(i + 1, sheetSizes[i].W, sheetSizes[i].H);
-        collection.Add(new SheetPlacement(PlacementTypeEnum.BoundingBox, sheet, sheetLayouts[i], 0, SvgNest.Config.ClipperScale));
+        var sheetPlacement = new SheetPlacement(
+          placementType: PlacementTypeEnum.BoundingBox,
+          sheet: sheet,
+          partPlacements: sheetLayouts[i],
+          mergedLength: 0,
+          clipperScale: SvgNest.Config.ClipperScale,
+          // CommonEdges makes the constructor opt into merged cluster output. Merely enabling the
+          // feature on a source is not enough when this sheet produced no valid seam.
+          requiresMergedLines: false,
+          commonEdges: commonEdges,
+          commonLineGap: commonLineGap,
+          geometryTolerance: geometryTolerance);
+        try
+        {
+          _ = CommonLineGeometryResolver.Resolve(sheetPlacement);
+        }
+        catch (CommonLineValidationException ex)
+        {
+          error = "A common-line cluster failed final topology validation: " + ex.Message;
+          return null;
+        }
+
+        collection.Add(sheetPlacement);
       }
 
       var unplaced = new List<INfp>();
@@ -494,25 +736,6 @@
       return new NestResult(placedTotal + unplaced.Count, collection, unplaced, PlacementTypeEnum.BoundingBox, 0, 0);
     }
 
-    /// <summary>
-    /// True when these two parts are allowed to share a cut edge. The stricter mode wins, so a Same-part
-    /// part shares only with its own drawing and its own hand however permissive the other side is.
-    /// </summary>
-    private static bool PartsMayShare(RasterPartInfo a, RasterPartInfo b)
-    {
-      if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
-      {
-        return false;
-      }
-
-      if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
-      {
-        return string.Equals(a.Path, b.Path, StringComparison.OrdinalIgnoreCase) && a.Mirrored == b.Mirrored;
-      }
-
-      return true;
-    }
-
     /// <summary>Loads each part's contour once (arcs tessellated by the app pipeline) and pre-computes its
     /// spacing-dilated shell + allowed orientations. Holes (INfp.Children) are not yet forwarded.</summary>
     private static List<Loaded> LoadAll(IReadOnlyList<RasterPartInfo> parts, int rotations, double spacing, out string error)
@@ -522,18 +745,22 @@
       var loaded = new List<Loaded>();
       int source = 0;
 
-      // The engine takes ONE polygon per part and has no notion of a clearance that depends on which
-      // neighbour it is, so the shell we grow it by has to answer for every neighbour at once. Grow by
-      // nothing only when every part in the job may share a cut with every other, which is when a tight
-      // pack is exactly right; otherwise carry the full spacing and let compaction reclaim the contact
-      // between the pairs that really do share. When they all share this is byte-for-byte what the old
-      // job-wide common-line flag did.
-      bool everyPartShares = parts.Count > 0 && parts.All(a => a != null && parts.All(b => b == null || PartsMayShare(a, b)));
-
       // "The same part" means the same DRAWING, not the same row: the list may legitimately hold one file
       // twice (once common-cut, once spaced), and two rows of the same file are still the same part on the
       // sheet. A MIRRORED population is a different part, though � its shared edges are the other hand's.
-      var shareKeys = new Dictionary<(string Path, bool Mirrored), int>();
+      // The comparer is case-insensitive because drawing paths and SheetCam job paths are Windows identities.
+      var shareKeys = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      var shareKeyByPart = new Dictionary<RasterPartInfo, int>();
+      foreach (var part in parts.Where(p => p != null))
+      {
+        string identity = (part.Mirrored ? "mirrored\0" : "regular\0") + (part.ShareGroup ?? part.Path ?? string.Empty);
+        if (!shareKeys.TryGetValue(identity, out int key))
+        {
+          shareKeys[identity] = key = shareKeys.Count;
+        }
+
+        shareKeyByPart[part] = key;
+      }
 
       foreach (var part in parts)
       {
@@ -567,35 +794,31 @@
 
           int code = part.Rotations > 0 ? part.Rotations : rotations;
 
-          // Common-line needs straight H/V edges for the snap to line up neighbours. Fine/continuous
-          // rotation (45° steps, free 15°) would leave edges at odd angles the snap can't use, so drop it
-          // to 4-way. Decide by the ANGLES, not the code number: the special codes 1001/1002/1003 are
+          // The new nominal-contour common-line planner is deliberately quarter-turn only. Decide by the
+          // ANGLES, not the code number: the special codes 1001/1002/1003 are
           // numerically >= 1000 but are already axis-aligned (90-only, 0/90, 90/270) and must be kept — an
           // earlier `code >= 8` test wrongly turned 0/90 into 4-way, adding 180/270.
           // PER PART, not per job: clipping every part because ONE of them is common-cut would quietly
           // take free rotation away from parts that never asked for it, and cost density for nothing.
           //
-          // 45 degree steps rather than 90 now that a seam can run at any angle: two copies at 45 present
-          // each other real parallel faces, so the seam finder can use them. Continuous rotation is still
-          // clipped, and deliberately: at 37.1 and 142.9 two copies almost never face each other, so the
-          // seams stop happening AND the bias toward tidy aligned layouts goes with them. Measured on a
-          // single-drawing job: 16 placed whether the part is allowed 2, 4, 8 or free rotations.
-          if (part.Cc != CommonCuttingMode.None && RotationCodes.PermittedSet(code).Any(a => a % 45 != 0))
-          {
-            code = 8;
-          }
+          // V1 common-line clusters are deliberately quarter-turn only. The geometry contract records
+          // complete exterior edges, and keeping the four cardinal orientations makes the candidate
+          // constraints deterministic (including rows, columns and 2x2 cycles). This is per part: an
+          // ordinary neighbour keeps every orientation it asked for.
+          // SheetCam's measured-kerf legacy snap remains angle-independent, so do not take oblique
+          // orientations away from a .nest source merely because it is eligible for that older route.
+          code = CommonLineRotationCode(code, part.RequiresMergedLines);
 
           double effSpacing = part.Spacing >= 0 ? part.Spacing : Math.Max(0, spacing);
-          double fitSpacing = everyPartShares ? 0 : effSpacing;
+          // The native packer cannot express a pair-specific clearance, so it ALWAYS receives the normal
+          // spacing shell. Only the explicit direct planner may later pull one selected full edge down to
+          // CommonLineGap; compatibility by itself never removes a halo from the baseline layout.
+          double fitSpacing = effSpacing;
 
           // The file path is what "the same part" means, unless the caller says otherwise. It says
           // otherwise for the one-lead-per-chain pair: the same drawing under two SheetCam names is two
           // files, and keyed by path Same part would refuse to weld them.
-          var shareOf = (Path: part.ShareGroup ?? part.Path ?? string.Empty, part.Mirrored);
-          if (!shareKeys.TryGetValue(shareOf, out int shareKey))
-          {
-            shareKeys[shareOf] = shareKey = shareKeys.Count;
-          }
+          int shareKey = shareKeyByPart[part];
 
           // Mirroring is baked into the geometry above, so the tooling has to follow it.
           var toolPaths = part.ToolPaths;
@@ -620,6 +843,9 @@
             FitSpacing = fitSpacing,
             Cc = part.Cc,
             ShareKey = shareKey,
+            CommonCuttingDomain = part.CommonCuttingDomain,
+            RequiresMergedLines = part.RequiresMergedLines,
+            ValidateEntryLead = part.ValidateEntryLead,
             Kerf = Math.Max(0, part.Kerf),
             Qty = part.Quantity,
             Mirrored = part.Mirrored,
@@ -633,6 +859,14 @@
 
       return loaded;
     }
+
+    /// <summary>V1 direct cluster geometry is quarter-turn only. SheetCam's legacy measured-kerf snap
+    /// supports oblique faces and therefore retains the complete orientation set it was given.</summary>
+    internal static int CommonLineRotationCode(int code, bool requiresMergedLines)
+      => requiresMergedLines
+        && RotationCodes.PermittedSet(code).Any(angle => Math.Abs(((angle % 90) + 90) % 90) > 1e-9)
+          ? 4
+          : code;
 
     /// <summary>Picks a batch from the pool up to ~1.3× the sheet area (extra choice for sparrow), keeping
     /// source variety for mixed jobs. Always returns at least one part so an oversize part gets a try.</summary>
@@ -714,14 +948,14 @@
     /// that discards this result (the last-chance retry, when the first attempt placed more) must not
     /// add it either.
     /// </summary>
-    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, out string error)
+    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<string> Stranded, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks) PackOneSheet(
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, CommonCuttingTolerances tolerances, double commonLineGap, double geometryTolerance, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
       if (batch.Count == 0)
       {
-        return (null, null, sheetW, sheetH, 0, 0, Array.Empty<string>());
+        return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<string>(), Array.Empty<CommonLineFallbackNotice>());
       }
 
       // Live-density progress reports the best seen across all tries so the bar climbs with the winner.
@@ -762,7 +996,7 @@
         // much of the sheet is left in one piece. It is the metric the operator sees; sparrow's density
         // is measured on its own strip BEFORE the compaction, so the two can disagree.
         bool longAxisIsX = sheetW >= sheetH;
-        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded)>();
+        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<string> Stranded, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks)>();
         int bestIndex = -1, launched = 0;
         string firstTryError = null;
         int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
@@ -772,6 +1006,8 @@
           int waveSize = Math.Min(waveTries, tries - launched);
           var wPl = new List<IPartPlacement>[waveSize];
           var wBy = new Dictionary<int, int>[waveSize];
+          var wEdges = new List<CommonEdgeIntent>[waveSize];
+          var wFallbacks = new IReadOnlyList<CommonLineFallbackNotice>[waveSize];
           var wSt = new (int Count, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded)?[waveSize];
           int startSeed = launched + 1;
           var options = new ParallelOptions { MaxDegreeOfParallelism = maxConc };
@@ -797,10 +1033,21 @@
             }
 
             var diagMap = System.Diagnostics.Stopwatch.StartNew();
-            var (pl, by, seamsSnapped, seamsGivenUp, stranded) = MapAndCompact(outJson, batch, sheetW, sheetH, margin, tolerances, cancel);
+            var (pl, by, seamsSnapped, seamsGivenUp, commonEdges, stranded, commonLineFallbacks) = MapAndCompact(
+              outJson,
+              batch,
+              sheetW,
+              sheetH,
+              margin,
+              tolerances,
+              commonLineGap,
+              geometryTolerance,
+              cancel);
             System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
+            wEdges[j] = commonEdges;
+            wFallbacks[j] = commonLineFallbacks;
             wSt[j] = (pl.Count, ParseDensity(outJson), seed, seamsSnapped, seamsGivenUp, stranded);
           });
 
@@ -812,7 +1059,7 @@
             if (wSt[j].HasValue)
             {
               var (ex, ey) = Extent(wPl[j]);
-              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wSt[j].Value.Stranded));
+              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wEdges[j], wSt[j].Value.Stranded, wFallbacks[j]));
               lock (DiagCandidates)
               {
                 DiagCandidates.Add(FormattableString.Invariant(
@@ -840,7 +1087,7 @@
         if (cancel.IsCancellationRequested)
         {
           error = "Cancelled.";
-          return (null, null, sheetW, sheetH, 0, 0, Array.Empty<string>());
+          return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<string>(), Array.Empty<CommonLineFallbackNotice>());
         }
 
         if (winners.Count == 0)
@@ -848,12 +1095,12 @@
           error = firstTryError == null
             ? "The nesting engine produced no solution."
             : "The nesting engine produced no solution: " + firstTryError;
-          return (null, null, sheetW, sheetH, 0, 0, Array.Empty<string>());
+          return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<string>(), Array.Empty<CommonLineFallbackNotice>());
         }
 
         int bi = PickBest(winners.Select(w => (w.Count, w.Extent, w.Density, w.Seed)).ToList());
         var sel = winners[bi];
-        return (sel.Pl, sel.By, sheetW, sheetH, sel.SeamsSnapped, sel.SeamsGivenUp, sel.Stranded);
+        return (sel.Pl, sel.By, sheetW, sheetH, sel.SeamsSnapped, sel.SeamsGivenUp, sel.CommonEdges, sel.Stranded, sel.CommonLineFallbacks);
       }
       finally
       {
@@ -869,15 +1116,18 @@
 
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
     /// and splits off anything past the sheet edge (not placed).</summary>
-    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int SeamsSnapped, int SeamsGivenUp, IReadOnlyList<string> Stranded) MapAndCompact(
-      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CommonCuttingTolerances tolerances, CancellationToken cancel)
+    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<string> Stranded, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks) MapAndCompact(
+      string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, CommonCuttingTolerances tolerances, double commonLineGap, double geometryTolerance, CancellationToken cancel)
     {
       using var doc = JsonDocument.Parse(outputJson);
       var placed = doc.RootElement.GetProperty("solution").GetProperty("layout").GetProperty("placed_items");
       var spacingById = batch.ToDictionary(l => l.Source, l => l.EffSpacing);
       var kerfById = batch.ToDictionary(l => l.Source, l => l.Kerf);
       var toolingById = batch.ToDictionary(l => l.Source, l => l.Tooling);
-      var ccById = batch.ToDictionary(l => l.Source, l => (l.Cc, l.ShareKey));
+      var ccById = batch.ToDictionary(l => l.Source, l => (l.Cc, l.ShareKey, l.CommonCuttingDomain));
+      var directRulesById = batch.ToDictionary(
+        l => l.Source,
+        l => (l.Cc, l.ShareKey, l.CommonCuttingDomain, l.RequiresMergedLines, l.EffSpacing));
 
       var all = new List<IPartPlacement>();
       foreach (var pi in placed.EnumerateArray())
@@ -899,7 +1149,7 @@
 
       if (all.Count == 0)
       {
-        return (new List<IPartPlacement>(), new Dictionary<int, int>(), 0, 0, Array.Empty<string>());
+        return (new List<IPartPlacement>(), new Dictionary<int, int>(), 0, 0, new List<CommonEdgeIntent>(), Array.Empty<string>(), Array.Empty<CommonLineFallbackNotice>());
       }
 
       // Pre-anchor min → margin so compaction starts on-sheet, then gravity-compact to the corner.
@@ -911,11 +1161,8 @@
         pp.Y += margin - minY;
       }
 
-      // Compact against the TOOLING footprint, not the bare outline. Compaction slides parts together
-      // until their polygons are `spacing` apart — with common-line that is exact contact, which on a
-      // toolpathed part would drive the kerf and the lead-ins into the neighbour, undoing the clearance
-      // sparrow just respected. Feeding it the footprint makes "exact contact" mean the outlines sit one
-      // kerf apart: the shared cut edge, with neither part losing material.
+      // Baseline compaction always keeps normal spacing. Compatibility alone is not a selected common
+      // edge and therefore cannot collapse a pair's halo.
       var compactItems = all.Select(pp => new CompactItem
       {
         Poly = toolingById.TryGetValue(pp.Source, out var tooling) && tooling != null
@@ -926,6 +1173,7 @@
         Spacing = spacingById.TryGetValue(pp.Source, out double sp) ? sp : 0,
         Cc = ccById.TryGetValue(pp.Source, out var cc) ? cc.Cc : CommonCuttingMode.None,
         ShareKey = ccById.TryGetValue(pp.Source, out var sk) ? sk.ShareKey : 0,
+        CommonCuttingDomain = ccById.TryGetValue(pp.Source, out var domain) ? domain.CommonCuttingDomain : string.Empty,
       }).ToList();
       RasterCompact.Compact(compactItems, sheetWin, sheetHin, margin, cancel: cancel);
       for (int k = 0; k < all.Count; k++)
@@ -934,50 +1182,133 @@
         all[k].Y = compactItems[k].Y;
       }
 
-      // Common-line: nudge near-parallel neighbour edges onto exactly one kerf apart and aligned, so the
-      // post processor recognises the shared cut and cuts it once. Best-effort per part (all-or-nothing):
-      // a part only moves if the shift keeps every part's tooling clear of every other.
+      double[] baselineX = all.Select(p => p.X).ToArray();
+      double[] baselineY = all.Select(p => p.Y).ToArray();
+      DirectCommonLineSnapResult direct = SnapDirectCommonLineEdges(
+        all,
+        directRulesById,
+        sheetWin,
+        sheetHin,
+        margin,
+        commonLineGap,
+        geometryTolerance);
+
+      // Once an intentional graph exists, compact each connected component as one rigid body. Internal
+      // edges keep CommonLineGap while every external pair still sees its ordinary EffSpacing.
+      if (direct.Edges.Count > 0)
+      {
+        for (int k = 0; k < compactItems.Count; k++)
+        {
+          compactItems[k].X = all[k].X;
+          compactItems[k].Y = all[k].Y;
+          compactItems[k].PlacementId = k;
+          compactItems[k].CommonEdgePeers = new HashSet<int>();
+        }
+
+        foreach (CommonEdgeIntent edge in direct.Edges)
+        {
+          int a = all.IndexOf(edge.PartA);
+          int b = all.IndexOf(edge.PartB);
+          if (a >= 0 && b >= 0)
+          {
+            compactItems[a].CommonEdgePeers.Add(b);
+            compactItems[b].CommonEdgePeers.Add(a);
+          }
+        }
+
+        RasterCompact.Compact(
+          compactItems,
+          sheetWin,
+          sheetHin,
+          margin,
+          groups: direct.Groups,
+          cancel: cancel,
+          commonLineGap: commonLineGap);
+        for (int k = 0; k < all.Count; k++)
+        {
+          all[k].X = compactItems[k].X;
+          all[k].Y = compactItems[k].Y;
+        }
+
+        bool recordsStillValid = direct.Edges.All(edge => CommonLineGeometryResolver.TryCreateCommonEdge(
+          edge.PartA,
+          edge.EdgeAIndex,
+          edge.PartB,
+          edge.EdgeBIndex,
+          commonLineGap,
+          geometryTolerance,
+          out _));
+        bool toolingStillValid = ToolingClearsEveryone(all, toolingById, null);
+        bool layoutStillValid = DirectLayoutIsValid(
+          all,
+          direct.Edges,
+          directRulesById,
+          sheetWin,
+          sheetHin,
+          margin,
+          commonLineGap,
+          geometryTolerance);
+        bool topologyStillValid = CommonLineTopologyIsValid(
+          all,
+          direct.Edges,
+          sheetWin,
+          sheetHin,
+          commonLineGap,
+          geometryTolerance,
+          out string topologyFailure);
+        if (!recordsStillValid
+            || !toolingStillValid
+            || !layoutStillValid
+            || !topologyStillValid)
+        {
+          if (!topologyStillValid)
+          {
+            AddCommonLineFallback(
+              direct,
+              direct.Edges.SelectMany(edge => new[] { edge.PartA, edge.PartB }),
+              topologyFailure);
+          }
+
+          // Never keep a tight pair after losing its record. Restore the ordinary-spacing baseline for
+          // the whole direct pass; this candidate remains safe even though it gives up the optimisation.
+          for (int k = 0; k < all.Count; k++)
+          {
+            all[k].X = baselineX[k];
+            all[k].Y = baselineY[k];
+          }
+
+          direct.GivenUp++;
+          direct.Edges.Clear();
+          Array.Clear(direct.Groups, 0, direct.Groups.Length);
+        }
+      }
+
+      // SheetCam legacy path: nudge near-parallel toolpathed neighbours to one measured kerf apart. Direct
+      // nominal contours have already been handled by V1 above and are excluded from this pass.
       //
       // Calls the CORE directly, not SnapCommonLineEdges: this runs once per racing candidate (every
       // seed in the wave), and only one candidate is ever kept, so counting every one of them would
       // report seams that were never actually cut. The counts are threaded back through the return
       // tuple and PackOneSheet adds only the WINNING candidate's numbers to the running totals.
-      int seamsSnapped = 0, seamsGivenUp = 0;
+      int seamsSnapped = 0, seamsGivenUp = direct.GivenUp;
       List<List<int>> chains = null;
       if (batch.Any(l => l.Cc != CommonCuttingMode.None))
       {
-        (seamsSnapped, seamsGivenUp, chains) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tolerances);
+        var directMembers = new HashSet<IPartPlacement>(direct.Edges.SelectMany(e => new[] { e.PartA, e.PartB }));
+        var legacy = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tolerances, directMembers);
+        seamsSnapped = legacy.Snapped;
+        seamsGivenUp += legacy.GivenUp;
+        chains = legacy.Chains;
       }
+
+      chains = MergeCommonLineChains(all, chains, direct.Edges);
 
       // Which drawings end up in a group with no way into it. Everything welded into one chain is cut as
       // a single path, so the chain needs ONE lead that starts outside a part; a part left on its own
       // needs its own. Either way, a group with no entry lead cannot be cut at all, and that used to
       // reach the operator in silence.
-      var entryById = batch.ToDictionary(l => l.Source, l => (l.HasEntryLead, l.Drawing));
-      var stranded = new List<string>();
-      var inAChain = new HashSet<int>();
-      foreach (var chain in chains ?? Enumerable.Empty<List<int>>())
-      {
-        foreach (int i in chain)
-        {
-          inAChain.Add(i);
-        }
-
-        if (!chain.Any(i => entryById.TryGetValue(all[i].Source, out var e) && e.HasEntryLead))
-        {
-          stranded.AddRange(chain
-            .Select(i => entryById.TryGetValue(all[i].Source, out var e) ? e.Drawing : null)
-            .Where(d => d != null));
-        }
-      }
-
-      for (int i = 0; i < all.Count; i++)
-      {
-        if (!inAChain.Contains(i) && entryById.TryGetValue(all[i].Source, out var e) && !e.HasEntryLead)
-        {
-          stranded.Add(e.Drawing); // welded to nobody and no entry of its own
-        }
-      }
+      var entryById = batch.ToDictionary(l => l.Source, l => (l.HasEntryLead, l.ValidateEntryLead, l.Drawing));
+      var stranded = FindNoEntryDrawings(all, chains, entryById);
 
       const double tol = 1e-3;
       var placements = new List<IPartPlacement>();
@@ -995,7 +1326,876 @@
         placedBySource[pp.Source] = placedBySource.TryGetValue(pp.Source, out int n) ? n + 1 : 1;
       }
 
-      return (placements, placedBySource, seamsSnapped, seamsGivenUp, stranded.Distinct().ToList());
+      RemoveOrphanedCommonLineGroups(placements, direct.Edges, placedBySource);
+
+      return (placements, placedBySource, seamsSnapped, seamsGivenUp, direct.Edges, stranded, direct.Fallbacks);
+    }
+
+    /// <summary>
+    /// Culling one endpoint invalidates its whole rigid cluster. Remove every surviving member too, so a
+    /// part is never left at CommonLineGap after the relationship that authorises that gap disappeared.
+    /// </summary>
+    private static void RemoveOrphanedCommonLineGroups(
+      List<IPartPlacement> placements,
+      List<CommonEdgeIntent> intents,
+      Dictionary<int, int> placedBySource)
+    {
+      if (intents == null || intents.Count == 0)
+      {
+        return;
+      }
+
+      var present = new HashSet<IPartPlacement>(placements);
+      var invalid = new HashSet<IPartPlacement>();
+      foreach (CommonEdgeIntent edge in intents)
+      {
+        if (!present.Contains(edge.PartA) || !present.Contains(edge.PartB))
+        {
+          invalid.Add(edge.PartA);
+          invalid.Add(edge.PartB);
+        }
+      }
+
+      bool grew;
+      do
+      {
+        grew = false;
+        foreach (CommonEdgeIntent edge in intents)
+        {
+          if (invalid.Contains(edge.PartA) || invalid.Contains(edge.PartB))
+          {
+            grew |= invalid.Add(edge.PartA);
+            grew |= invalid.Add(edge.PartB);
+          }
+        }
+      }
+      while (grew);
+
+      if (invalid.Count == 0)
+      {
+        return;
+      }
+
+      foreach (IPartPlacement placement in placements.Where(invalid.Contains).ToList())
+      {
+        placements.Remove(placement);
+        if (placedBySource.TryGetValue(placement.Source, out int count))
+        {
+          if (count <= 1)
+          {
+            placedBySource.Remove(placement.Source);
+          }
+          else
+          {
+            placedBySource[placement.Source] = count - 1;
+          }
+        }
+
+        System.Threading.Interlocked.Increment(ref DiagCulled);
+      }
+
+      intents.RemoveAll(e => invalid.Contains(e.PartA) || invalid.Contains(e.PartB));
+    }
+
+    private static List<List<int>> MergeCommonLineChains(
+      IReadOnlyList<IPartPlacement> placements,
+      IEnumerable<List<int>> legacyChains,
+      IReadOnlyList<CommonEdgeIntent> intents)
+    {
+      int PlacementIndex(IPartPlacement candidate)
+      {
+        for (int i = 0; i < placements.Count; i++)
+        {
+          if (ReferenceEquals(placements[i], candidate))
+          {
+            return i;
+          }
+        }
+
+        return -1;
+      }
+
+      var result = (legacyChains ?? Enumerable.Empty<List<int>>())
+        .Where(c => c != null && c.Count > 0)
+        .Select(c => c.ToList())
+        .ToList();
+      var seen = new HashSet<IPartPlacement>();
+      foreach (CommonEdgeIntent edge in intents ?? Array.Empty<CommonEdgeIntent>())
+      {
+        if (seen.Contains(edge.PartA))
+        {
+          continue;
+        }
+
+        HashSet<IPartPlacement> component = CommonEdgeComponent(edge.PartA, intents);
+        foreach (IPartPlacement member in component)
+        {
+          seen.Add(member);
+        }
+
+        result.Add(component
+          .Select(PlacementIndex)
+          .Where(i => i >= 0)
+          .Distinct()
+          .ToList());
+      }
+
+      return result;
+    }
+
+    /// <summary>
+    /// Reports only sources whose caller opted into entry-lead validation. Native DXF/STEP has no
+    /// imported tooling contract, so an empty ToolPaths list there is not evidence of an uncuttable
+    /// part. SheetCam opts in and keeps the existing one-entry-per-connected-chain rule.
+    /// </summary>
+    internal static IReadOnlyList<string> FindNoEntryDrawings(
+      IReadOnlyList<IPartPlacement> placements,
+      IEnumerable<List<int>> chains,
+      IReadOnlyDictionary<int, (bool HasEntryLead, bool ValidateEntryLead, string Drawing)> entryById)
+    {
+      var stranded = new List<string>();
+      if (placements == null || entryById == null)
+      {
+        return stranded;
+      }
+
+      var inAChain = new HashSet<int>();
+      foreach (var rawChain in chains ?? Enumerable.Empty<List<int>>())
+      {
+        var chain = (rawChain ?? new List<int>())
+          .Where(i => i >= 0 && i < placements.Count)
+          .Distinct()
+          .ToList();
+        foreach (int i in chain)
+        {
+          inAChain.Add(i);
+        }
+
+        bool validate = chain.Any(i => entryById.TryGetValue(placements[i].Source, out var e) && e.ValidateEntryLead);
+        bool hasEntry = chain.Any(i => entryById.TryGetValue(placements[i].Source, out var e) && e.HasEntryLead);
+        if (validate && !hasEntry)
+        {
+          stranded.AddRange(chain
+            .Select(i => entryById.TryGetValue(placements[i].Source, out var e) && e.ValidateEntryLead ? e.Drawing : null)
+            .Where(d => !string.IsNullOrWhiteSpace(d)));
+        }
+      }
+
+      for (int i = 0; i < placements.Count; i++)
+      {
+        if (!inAChain.Contains(i)
+          && entryById.TryGetValue(placements[i].Source, out var e)
+          && e.ValidateEntryLead
+          && !e.HasEntryLead
+          && !string.IsNullOrWhiteSpace(e.Drawing))
+        {
+          stranded.Add(e.Drawing);
+        }
+      }
+
+      return stranded.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Counts physical direct-export seams after compaction/final acceptance. A seam is one unordered
+    /// compatible placement pair with a positive-length coincident overlap between real straight edges.
+    /// Pair counting avoids duplicates from split collinear segments; point contacts and tessellated arc
+    /// chords are deliberately excluded. SheetCam kerf seams are counted by the snap pass instead.
+    /// </summary>
+    internal static int CountDirectCommonLineSeams(
+      IReadOnlyList<IPartPlacement> placements,
+      IReadOnlyDictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines)> commonCuttingById)
+    {
+      if (placements == null || commonCuttingById == null || placements.Count < 2)
+      {
+        return 0;
+      }
+
+      var absolute = placements.Select(p => p?.PlacedPart).ToArray();
+      var bounds = absolute.Select(p => p == null
+        ? default
+        : (MinX: p.MinX, MinY: p.MinY, MaxX: p.MaxX, MaxY: p.MaxY)).ToArray();
+      int seams = 0;
+      for (int i = 0; i < placements.Count; i++)
+      {
+        if (absolute[i] == null || !commonCuttingById.TryGetValue(placements[i].Source, out var first))
+        {
+          continue;
+        }
+
+        for (int j = i + 1; j < placements.Count; j++)
+        {
+          if (absolute[j] == null || !commonCuttingById.TryGetValue(placements[j].Source, out var second))
+          {
+            continue;
+          }
+
+          if ((!first.RequiresMergedLines && !second.RequiresMergedLines)
+            || !CommonCuttingCompatibility.MayShare(
+              first.CommonCuttingDomain,
+              first.Cc,
+              first.ShareKey,
+              second.CommonCuttingDomain,
+              second.Cc,
+              second.ShareKey))
+          {
+            continue;
+          }
+
+          if (bounds[i].MaxX < bounds[j].MinX - DirectSeamTolerance
+            || bounds[j].MaxX < bounds[i].MinX - DirectSeamTolerance
+            || bounds[i].MaxY < bounds[j].MinY - DirectSeamTolerance
+            || bounds[j].MaxY < bounds[i].MinY - DirectSeamTolerance)
+          {
+            continue; // most sheet pairs are nowhere near one another; avoid their edge cross-product
+          }
+
+          if (HasCoincidentStraightOverlap(absolute[i], absolute[j]))
+          {
+            seams++;
+          }
+        }
+      }
+
+      return seams;
+    }
+
+    private readonly struct DirectEdge
+    {
+      public DirectEdge(
+        int part,
+        int index,
+        double ax,
+        double ay,
+        double bx,
+        double by,
+        double ux,
+        double uy,
+        double nx,
+        double ny,
+        double length)
+      {
+        this.Part = part;
+        this.Index = index;
+        this.Ax = ax;
+        this.Ay = ay;
+        this.Bx = bx;
+        this.By = by;
+        this.Ux = ux;
+        this.Uy = uy;
+        this.Nx = nx;
+        this.Ny = ny;
+        this.Length = length;
+      }
+
+      public int Part { get; }
+      public int Index { get; }
+      public double Ax { get; }
+      public double Ay { get; }
+      public double Bx { get; }
+      public double By { get; }
+      public double Ux { get; }
+      public double Uy { get; }
+      public double Nx { get; }
+      public double Ny { get; }
+      public double Length { get; }
+    }
+
+    private readonly struct DirectCandidate
+    {
+      public DirectCandidate(int a, int b, int edgeA, int edgeB, double dx, double dy, double quality)
+      {
+        this.A = a;
+        this.B = b;
+        this.EdgeA = edgeA;
+        this.EdgeB = edgeB;
+        this.Dx = dx;
+        this.Dy = dy;
+        this.Quality = quality;
+      }
+
+      public int A { get; }
+      public int B { get; }
+      public int EdgeA { get; }
+      public int EdgeB { get; }
+      public double Dx { get; }
+      public double Dy { get; }
+      public double Quality { get; }
+    }
+
+    /// <summary>
+    /// Creates V1 direct common-line clusters deliberately: quarter-turn placements, complete straight
+    /// outside edges of equal length, and an explicit positive gap. A spanning forest supplies consistent
+    /// rigid offsets; after it is applied every additional preselected edge that validates (including the
+    /// fourth edge of a 2x2 grid) is recorded as well. No final-layout contact scan is used.
+    /// </summary>
+    internal static DirectCommonLineSnapResult SnapDirectCommonLineEdges(
+      List<IPartPlacement> all,
+      IReadOnlyDictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> rulesBySource,
+      double sheetW,
+      double sheetH,
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
+    {
+      var result = new DirectCommonLineSnapResult { Groups = new int[all?.Count ?? 0] };
+      if (all == null || all.Count < 2 || rulesBySource == null
+          || !double.IsFinite(commonLineGap) || commonLineGap <= 0
+          || !double.IsFinite(geometryTolerance) || geometryTolerance <= 0
+          || commonLineGap <= geometryTolerance)
+      {
+        return result;
+      }
+
+      int n = all.Count;
+      for (int i = 0; i < n; i++)
+      {
+        // The core factory refuses duplicate ids. Candidate ids are local and are replaced with the final
+        // result-wide ids immediately before SheetPlacement is built.
+        if (all[i] is PartPlacement concrete)
+        {
+          concrete.Id = i;
+        }
+      }
+
+      bool IsQuarterTurn(IPartPlacement p)
+      {
+        double angle = ((p.Rotation % 90.0) + 90.0) % 90.0;
+        const double AngularEpsilonDegrees = 1e-7;
+        return angle <= AngularEpsilonDegrees || Math.Abs(90.0 - angle) <= AngularEpsilonDegrees;
+      }
+
+      bool MayShare(int a, int b)
+      {
+        if (!rulesBySource.TryGetValue(all[a].Source, out var ra)
+            || !rulesBySource.TryGetValue(all[b].Source, out var rb)
+            || !ra.RequiresMergedLines
+            || !rb.RequiresMergedLines)
+        {
+          return false;
+        }
+
+        return CommonCuttingCompatibility.MayShare(
+          ra.CommonCuttingDomain,
+          ra.Cc,
+          ra.ShareKey,
+          rb.CommonCuttingDomain,
+          rb.Cc,
+          rb.ShareKey);
+      }
+
+      var edgesByPart = new List<DirectEdge>[n];
+      for (int i = 0; i < n; i++)
+      {
+        edgesByPart[i] = new List<DirectEdge>();
+        if (!IsQuarterTurn(all[i])
+            || !rulesBySource.TryGetValue(all[i].Source, out var rule)
+            || rule.Cc == CommonCuttingMode.None
+            || !rule.RequiresMergedLines
+            || string.IsNullOrWhiteSpace(rule.CommonCuttingDomain))
+        {
+          continue;
+        }
+
+        SvgPoint[] points = all[i].Part?.Points;
+        if (points == null || points.Length < 3)
+        {
+          continue;
+        }
+
+        int count = points.Length;
+        if (count > 1 && Distance(points[0].X, points[0].Y, points[count - 1].X, points[count - 1].Y) <= geometryTolerance)
+        {
+          count--;
+        }
+
+        bool[] curved = (all[i].Part as NoFitPolygon)?.GetCurvedSegments();
+        double winding = SignedArea(points) >= 0 ? 1.0 : -1.0;
+        for (int edgeIndex = 0; edgeIndex < count; edgeIndex++)
+        {
+          if (curved != null && edgeIndex < curved.Length && curved[edgeIndex])
+          {
+            continue;
+          }
+
+          SvgPoint a = points[edgeIndex];
+          SvgPoint b = points[(edgeIndex + 1) % count];
+          double dx = b.X - a.X;
+          double dy = b.Y - a.Y;
+          double length = Math.Sqrt((dx * dx) + (dy * dy));
+          if (length <= geometryTolerance)
+          {
+            continue;
+          }
+
+          double ux = dx / length;
+          double uy = dy / length;
+          edgesByPart[i].Add(new DirectEdge(
+            i,
+            edgeIndex,
+            a.X + all[i].X,
+            a.Y + all[i].Y,
+            b.X + all[i].X,
+            b.Y + all[i].Y,
+            ux,
+            uy,
+            winding * uy,
+            winding * -ux,
+            length));
+        }
+      }
+
+      var candidates = new List<DirectCandidate>();
+      for (int a = 0; a < n; a++)
+      {
+        for (int b = a + 1; b < n; b++)
+        {
+          if (!MayShare(a, b))
+          {
+            continue;
+          }
+
+          double spacingA = rulesBySource.TryGetValue(all[a].Source, out var ra) ? Math.Max(0, ra.Spacing) : 0;
+          double spacingB = rulesBySource.TryGetValue(all[b].Source, out var rb) ? Math.Max(0, rb.Spacing) : 0;
+          double travelLimit = (3.0 * Math.Max(commonLineGap, (spacingA + spacingB) / 2.0)) + (8.0 * geometryTolerance);
+          foreach (DirectEdge ea in edgesByPart[a])
+          {
+            foreach (DirectEdge eb in edgesByPart[b])
+            {
+              if (Math.Abs(ea.Length - eb.Length) > geometryTolerance
+                  || Math.Abs((ea.Ux * eb.Uy) - (ea.Uy * eb.Ux)) > geometryTolerance / Math.Max(ea.Length, geometryTolerance)
+                  || (ea.Nx * eb.Nx) + (ea.Ny * eb.Ny) > -1.0 + 1e-8)
+              {
+                continue;
+              }
+
+              double currentSeparation = ((((eb.Ax + eb.Bx) / 2.0) - ((ea.Ax + ea.Bx) / 2.0)) * ea.Nx)
+                + ((((eb.Ay + eb.By) / 2.0) - ((ea.Ay + ea.By) / 2.0)) * ea.Ny);
+              if (currentSeparation <= 0)
+              {
+                continue;
+              }
+
+              double direct = Distance(ea.Ax, ea.Ay, eb.Ax, eb.Ay) + Distance(ea.Bx, ea.By, eb.Bx, eb.By);
+              double reverse = Distance(ea.Ax, ea.Ay, eb.Bx, eb.By) + Distance(ea.Bx, ea.By, eb.Ax, eb.Ay);
+              double bsx = reverse < direct ? eb.Bx : eb.Ax;
+              double bsy = reverse < direct ? eb.By : eb.Ay;
+              double bex = reverse < direct ? eb.Ax : eb.Bx;
+              double bey = reverse < direct ? eb.Ay : eb.By;
+
+              double shiftX = ea.Ax + (ea.Nx * commonLineGap) - bsx;
+              double shiftY = ea.Ay + (ea.Ny * commonLineGap) - bsy;
+              double endError = Distance(
+                bex + shiftX,
+                bey + shiftY,
+                ea.Bx + (ea.Nx * commonLineGap),
+                ea.By + (ea.Ny * commonLineGap));
+              double travel = Math.Sqrt((shiftX * shiftX) + (shiftY * shiftY));
+              if (endError > geometryTolerance || travel > travelLimit)
+              {
+                continue;
+              }
+
+              candidates.Add(new DirectCandidate(a, b, ea.Index, eb.Index, shiftX, shiftY, ea.Length - travel));
+            }
+          }
+        }
+      }
+
+      candidates.Sort((x, y) => y.Quality.CompareTo(x.Quality));
+      if (candidates.Count == 0)
+      {
+        return result;
+      }
+
+      var parent = Enumerable.Range(0, n).ToArray();
+      int Find(int x) => parent[x] == x ? x : parent[x] = Find(parent[x]);
+      var usedTreeEnds = new HashSet<(int Part, int Edge)>();
+      var tree = new List<DirectCandidate>();
+      foreach (DirectCandidate candidate in candidates)
+      {
+        int rootA = Find(candidate.A);
+        int rootB = Find(candidate.B);
+        if (rootA == rootB
+            || usedTreeEnds.Contains((candidate.A, candidate.EdgeA))
+            || usedTreeEnds.Contains((candidate.B, candidate.EdgeB)))
+        {
+          continue;
+        }
+
+        parent[rootB] = rootA;
+        usedTreeEnds.Add((candidate.A, candidate.EdgeA));
+        usedTreeEnds.Add((candidate.B, candidate.EdgeB));
+        tree.Add(candidate);
+      }
+
+      if (tree.Count == 0)
+      {
+        return result;
+      }
+
+      var adjacency = new Dictionary<int, List<(int Other, double Dx, double Dy)>>();
+      void Link(int a, int b, double dx, double dy)
+      {
+        (adjacency.TryGetValue(a, out var fromA) ? fromA : adjacency[a] = new List<(int, double, double)>()).Add((b, dx, dy));
+        (adjacency.TryGetValue(b, out var fromB) ? fromB : adjacency[b] = new List<(int, double, double)>()).Add((a, -dx, -dy));
+      }
+
+      foreach (DirectCandidate edge in tree)
+      {
+        Link(edge.A, edge.B, edge.Dx, edge.Dy);
+      }
+
+      double[] originalX = all.Select(p => p.X).ToArray();
+      double[] originalY = all.Select(p => p.Y).ToArray();
+      var visited = new bool[n];
+      int nextGroup = 1;
+      foreach (int start in adjacency.Keys.OrderBy(i => i))
+      {
+        if (visited[start])
+        {
+          continue;
+        }
+
+        var members = new List<int>();
+        var offsets = new Dictionary<int, (double X, double Y)> { [start] = (0, 0) };
+        var queue = new Queue<int>();
+        queue.Enqueue(start);
+        visited[start] = true;
+        while (queue.Count > 0)
+        {
+          int current = queue.Dequeue();
+          members.Add(current);
+          foreach (var link in adjacency[current])
+          {
+            if (visited[link.Other])
+            {
+              continue;
+            }
+
+            offsets[link.Other] = (offsets[current].X + link.Dx, offsets[current].Y + link.Dy);
+            visited[link.Other] = true;
+            queue.Enqueue(link.Other);
+          }
+        }
+
+        foreach (int member in members)
+        {
+          all[member].X = originalX[member] + offsets[member].X;
+          all[member].Y = originalY[member] + offsets[member].Y;
+        }
+
+        var memberSet = new HashSet<int>(members);
+        var groupEdges = new List<CommonEdgeIntent>();
+        var usedEnds = new HashSet<(int Part, int Edge)>();
+        bool valid = true;
+
+        // The forest edges are mandatory: without one of them the offsets no longer describe this group.
+        foreach (DirectCandidate edge in tree.Where(e => memberSet.Contains(e.A) && memberSet.Contains(e.B)))
+        {
+          if (!CommonLineGeometryResolver.TryCreateCommonEdge(
+                all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB, commonLineGap, geometryTolerance, out _))
+          {
+            valid = false;
+            break;
+          }
+
+          usedEnds.Add((edge.A, edge.EdgeA));
+          usedEnds.Add((edge.B, edge.EdgeB));
+          groupEdges.Add(new CommonEdgeIntent(all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB));
+        }
+
+        // Record every additional relation the original candidate set intentionally proposed and the
+        // final rigid offsets satisfy. This is how a closed 2x2 grid keeps its fourth (cycle) edge.
+        if (valid)
+        {
+          foreach (DirectCandidate edge in candidates.Where(e => memberSet.Contains(e.A) && memberSet.Contains(e.B)))
+          {
+            if (usedEnds.Contains((edge.A, edge.EdgeA))
+                || usedEnds.Contains((edge.B, edge.EdgeB))
+                || groupEdges.Any(x => (ReferenceEquals(x.PartA, all[edge.A]) && ReferenceEquals(x.PartB, all[edge.B]))
+                  || (ReferenceEquals(x.PartA, all[edge.B]) && ReferenceEquals(x.PartB, all[edge.A]))))
+            {
+              continue;
+            }
+
+            if (CommonLineGeometryResolver.TryCreateCommonEdge(
+                  all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB, commonLineGap, geometryTolerance, out _))
+            {
+              usedEnds.Add((edge.A, edge.EdgeA));
+              usedEnds.Add((edge.B, edge.EdgeB));
+              groupEdges.Add(new CommonEdgeIntent(all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB));
+            }
+          }
+        }
+
+        var tentative = result.Edges.Concat(groupEdges).ToList();
+        bool edgeGeometryValid = valid;
+        bool layoutValid = edgeGeometryValid
+          && DirectLayoutIsValid(all, tentative, rulesBySource, sheetW, sheetH, margin, commonLineGap, geometryTolerance);
+        string topologyFailure = null;
+        bool topologyValid = edgeGeometryValid
+          && CommonLineTopologyIsValid(
+            all,
+            tentative,
+            sheetW,
+            sheetH,
+            commonLineGap,
+            geometryTolerance,
+            out topologyFailure);
+        valid = edgeGeometryValid && layoutValid && topologyValid;
+        if (!valid)
+        {
+          if (!edgeGeometryValid)
+          {
+            AddCommonLineFallback(result, members.Select(member => all[member]), CommonLineFallbackNotice.TopologyReason);
+          }
+          else if (!topologyValid)
+          {
+            AddCommonLineFallback(result, members.Select(member => all[member]), topologyFailure);
+          }
+
+          foreach (int member in members)
+          {
+            all[member].X = originalX[member];
+            all[member].Y = originalY[member];
+          }
+
+          result.GivenUp++;
+          continue;
+        }
+
+        foreach (int member in members)
+        {
+          result.Groups[member] = nextGroup;
+        }
+
+        nextGroup++;
+        result.Edges.AddRange(groupEdges);
+      }
+
+      return result;
+    }
+
+    private static bool DirectLayoutIsValid(
+      IReadOnlyList<IPartPlacement> placements,
+      IReadOnlyList<CommonEdgeIntent> intents,
+      IReadOnlyDictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> rulesBySource,
+      double sheetW,
+      double sheetH,
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
+    {
+      double NormalClearance(IPartPlacement a, IPartPlacement b)
+      {
+        double sa = rulesBySource.TryGetValue(a.Source, out var ra) ? Math.Max(0, ra.Spacing) : 0;
+        double sb = rulesBySource.TryGetValue(b.Source, out var rb) ? Math.Max(0, rb.Spacing) : 0;
+        return (sa + sb) / 2.0;
+      }
+
+      return CommonEdgeClearance.FindUnfit(
+        placements,
+        sheetW,
+        sheetH,
+        margin,
+        NormalClearance,
+        (a, b) => PlacementCollision.PlacementNoise,
+        ClearanceEdges(intents),
+        commonLineGap,
+        geometryTolerance).All.Count == 0;
+    }
+
+    /// <summary>Final sheet acceptance includes both contracts: edge-aware V1 records and SheetCam's
+    /// same-job measured-kerf clearance. It runs again after hole filling and template cloning.</summary>
+    private static bool FinalLayoutIsValid(
+      IReadOnlyList<IPartPlacement> placements,
+      IReadOnlyList<CommonEdgeIntent> intents,
+      Dictionary<int, Loaded> loadedById,
+      double sheetW,
+      double sheetH,
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
+      => CommonEdgeClearance.FindUnfit(
+        placements,
+        sheetW,
+        sheetH,
+        margin,
+        (a, b) => AcceptanceClearanceOf(a, b, loadedById),
+        (a, b) => PlacementCollision.SliverFor(KerfOf(a, loadedById), KerfOf(b, loadedById)),
+        ClearanceEdges(intents),
+        commonLineGap,
+        geometryTolerance).All.Count == 0;
+
+    private static bool CommonLineTopologyIsValid(
+      IReadOnlyList<IPartPlacement> placements,
+      IReadOnlyList<CommonEdgeIntent> intents,
+      double sheetW,
+      double sheetH,
+      double commonLineGap,
+      double geometryTolerance,
+      out string failureReason)
+    {
+      failureReason = null;
+      if (intents == null || intents.Count == 0)
+      {
+        return true;
+      }
+
+      try
+      {
+        var records = intents.Select(edge => CommonLineGeometryResolver.CreateCommonEdge(
+          edge.PartA,
+          edge.EdgeAIndex,
+          edge.PartB,
+          edge.EdgeBIndex,
+          commonLineGap,
+          geometryTolerance)).ToList();
+        var placement = new SheetPlacement(
+          placementType: PlacementTypeEnum.BoundingBox,
+          sheet: Sheet.NewSheet(0, (int)Math.Round(sheetW), (int)Math.Round(sheetH)),
+          partPlacements: placements,
+          mergedLength: 0,
+          requiresMergedLines: false,
+          commonEdges: records,
+          commonLineGap: commonLineGap,
+          geometryTolerance: geometryTolerance);
+        _ = CommonLineGeometryResolver.Resolve(placement);
+        return true;
+      }
+      catch (CommonLineValidationException ex)
+      {
+        failureReason = ex.Message;
+        return false;
+      }
+    }
+
+    private static void AddCommonLineFallback(
+      DirectCommonLineSnapResult result,
+      IEnumerable<IPartPlacement> placements,
+      string validationReason)
+    {
+      string reason = CommonLineFallbackNotice.ReasonFromValidation(validationReason);
+      IEnumerable<IPartPlacement> affected = placements?.Where(placement => placement?.Part != null)
+        ?? Enumerable.Empty<IPartPlacement>();
+      if (string.Equals(reason, CommonLineFallbackNotice.ContourFormatReason, StringComparison.Ordinal))
+      {
+        // The relationship falls back for both parts, but name the drawing whose curve caused it. That is
+        // the actionable row in Edit Part; blaming its straight-edged peer would send the operator astray.
+        affected = affected.Where(placement =>
+          (placement.Part as NoFitPolygon)?.GetCurvedSegments()?.Any(curved => curved) == true);
+      }
+
+      foreach (IPartPlacement placement in affected)
+      {
+        string source = placement.Part.Name;
+        string drawing = string.IsNullOrWhiteSpace(source)
+          ? FormattableString.Invariant($"Part {placement.Source + 1}")
+          : Path.GetFileNameWithoutExtension(source);
+        if (!result.Fallbacks.Any(existing =>
+          string.Equals(existing.Drawing, drawing, StringComparison.OrdinalIgnoreCase)
+          && string.Equals(existing.Reason, reason, StringComparison.Ordinal)))
+        {
+          result.Fallbacks.Add(new CommonLineFallbackNotice(drawing, reason));
+        }
+      }
+    }
+
+    private static double Distance(double ax, double ay, double bx, double by)
+    {
+      double dx = bx - ax;
+      double dy = by - ay;
+      return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static bool HasCoincidentStraightOverlap(INfp first, INfp second)
+    {
+      const double NormalDotTolerance = 1e-9;
+      var aPoints = first?.Points;
+      var bPoints = second?.Points;
+      if (aPoints == null || bPoints == null || aPoints.Length < 2 || bPoints.Length < 2)
+      {
+        return false;
+      }
+
+      var aCurved = (first as NoFitPolygon)?.GetCurvedSegments();
+      var bCurved = (second as NoFitPolygon)?.GetCurvedSegments();
+      double aWinding = SignedArea(aPoints) >= 0 ? 1.0 : -1.0;
+      double bWinding = SignedArea(bPoints) >= 0 ? 1.0 : -1.0;
+
+      for (int ai = 0; ai < aPoints.Length; ai++)
+      {
+        if (aCurved != null && ai < aCurved.Length && aCurved[ai])
+        {
+          continue;
+        }
+
+        var a0 = aPoints[ai];
+        var a1 = aPoints[(ai + 1) % aPoints.Length];
+        double adx = a1.X - a0.X, ady = a1.Y - a0.Y;
+        double aLength = Math.Sqrt((adx * adx) + (ady * ady));
+        if (aLength <= DirectSeamTolerance)
+        {
+          continue;
+        }
+
+        double aux = adx / aLength, auy = ady / aLength;
+        double anx = aWinding * ady / aLength, any = aWinding * -adx / aLength;
+        for (int bi = 0; bi < bPoints.Length; bi++)
+        {
+          if (bCurved != null && bi < bCurved.Length && bCurved[bi])
+          {
+            continue;
+          }
+
+          var b0 = bPoints[bi];
+          var b1 = bPoints[(bi + 1) % bPoints.Length];
+          double bdx = b1.X - b0.X, bdy = b1.Y - b0.Y;
+          double bLength = Math.Sqrt((bdx * bdx) + (bdy * bdy));
+          if (bLength <= DirectSeamTolerance)
+          {
+            continue;
+          }
+
+          double bnx = bWinding * bdy / bLength, bny = bWinding * -bdx / bLength;
+          if ((anx * bnx) + (any * bny) > -1.0 + NormalDotTolerance)
+          {
+            continue; // not the two outward faces of adjacent material
+          }
+
+          double b0Distance = ((b0.X - a0.X) * anx) + ((b0.Y - a0.Y) * any);
+          double b1Distance = ((b1.X - a0.X) * anx) + ((b1.Y - a0.Y) * any);
+          if (Math.Abs(b0Distance) > DirectSeamTolerance || Math.Abs(b1Distance) > DirectSeamTolerance)
+          {
+            continue; // parallel perhaps, but not the same cut line
+          }
+
+          double b0Along = ((b0.X - a0.X) * aux) + ((b0.Y - a0.Y) * auy);
+          double b1Along = ((b1.X - a0.X) * aux) + ((b1.Y - a0.Y) * auy);
+          double overlap = Math.Min(aLength, Math.Max(b0Along, b1Along))
+            - Math.Max(0, Math.Min(b0Along, b1Along));
+          if (overlap > DirectSeamTolerance)
+          {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    private static double SignedArea(SvgPoint[] pts)
+    {
+      double sum = 0;
+      for (int i = 0; i < pts.Length; i++)
+      {
+        var p = pts[i];
+        var q = pts[(i + 1) % pts.Length];
+        sum += (p.X * q.Y) - (q.X * p.Y);
+      }
+
+      return sum;
     }
 
     /// <summary>Twice-signed area of a ring: positive when the ring is wound counter-clockwise.</summary>
@@ -1090,7 +2290,7 @@
       List<IPartPlacement> all,
       Dictionary<int, double> kerfById,
       Dictionary<int, INfp> toolingById,
-      Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById,
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)> ccById,
       CommonCuttingTolerances tol = null)
     {
       var (snapped, givenUp, _) = SnapCommonLineEdgesCore(all, kerfById, toolingById, ccById, tol);
@@ -1103,8 +2303,9 @@
       List<IPartPlacement> all,
       Dictionary<int, double> kerfById,
       Dictionary<int, INfp> toolingById,
-      Dictionary<int, (CommonCuttingMode Cc, int ShareKey)> ccById,
-      CommonCuttingTolerances tol = null)
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)> ccById,
+      CommonCuttingTolerances tol = null,
+      ISet<IPartPlacement> excluded = null)
     {
       tol ??= CommonCuttingTolerances.Default;
       int n = all.Count;
@@ -1117,27 +2318,28 @@
 
       if (Enumerable.Range(0, n).All(i => KerfOf(i) <= 0))
       {
-        return (0, 0, null); // no tooling anywhere: there is no kerf to snap onto (compaction already closed these)
+        return (0, 0, null); // the direct planner owns configured gaps/records; legacy has no kerf work
       }
 
       bool MayShare(int ia, int ib)
       {
+        if ((excluded?.Contains(all[ia]) ?? false) || (excluded?.Contains(all[ib]) ?? false))
+        {
+          return false;
+        }
+
         if (!ccById.TryGetValue(all[ia].Source, out var a) || !ccById.TryGetValue(all[ib].Source, out var b))
         {
           return false;
         }
 
-        if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
-        {
-          return false;
-        }
-
-        if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
-        {
-          return a.ShareKey == b.ShareKey;
-        }
-
-        return true;
+        return CommonCuttingCompatibility.MayShare(
+          a.CommonCuttingDomain,
+          a.Cc,
+          a.ShareKey,
+          b.CommonCuttingDomain,
+          b.Cc,
+          b.ShareKey);
       }
 
       // Absolute geometry + axis-aligned edges per part. Edge length is filtered by the part's OWN kerf:
@@ -1572,9 +2774,12 @@
       List<IPartPlacement> placements,
       Dictionary<int, int> placedBySrc,
       Dictionary<int, Loaded> loadedById,
+      List<CommonEdgeIntent> commonEdges,
       double sheetW,
       double sheetH,
-      double margin)
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
     {
       int deferred = 0;
 
@@ -1586,13 +2791,16 @@
       int budget = (placements.Count * 2) + 8;
       while (budget-- > 0)
       {
-        var unfit = PlacementAcceptance.FindUnfit(
+        var unfit = CommonEdgeClearance.FindUnfit(
           placements,
           sheetW,
           sheetH,
           margin,
-          (a, b) => ClearanceOf(a, b, loadedById),
-          (a, b) => PlacementCollision.SliverFor(KerfOf(a, loadedById), KerfOf(b, loadedById)));
+          (a, b) => AcceptanceClearanceOf(a, b, loadedById),
+          (a, b) => PlacementCollision.SliverFor(KerfOf(a, loadedById), KerfOf(b, loadedById)),
+          ClearanceEdges(commonEdges),
+          commonLineGap,
+          geometryTolerance);
 
         if (unfit.All.Count == 0)
         {
@@ -1616,25 +2824,34 @@
         // Try to MOVE it before giving it up. What is usually wrong is a hair: measured at a hundredth of
         // a millimetre inside a nine millimetre clearance, and giving back a whole part for that would
         // spend a sheet to buy nothing. Only when it genuinely has nowhere to go does it go back.
-        if (TryNudgeClear(placements, victim, loadedById, sheetW, sheetH, margin))
+        var component = CommonEdgeComponent(victim, commonEdges);
+        if (component.Count == 1
+            && TryNudgeClear(placements, victim, loadedById, commonEdges, sheetW, sheetH, margin, commonLineGap, geometryTolerance))
         {
           continue;
         }
 
-        placements.Remove(victim);
-        if (placedBySrc.TryGetValue(victim.Source, out int n))
+        // A recorded cluster is rigid. Moving or dropping only one member would invalidate the record and
+        // leave its mate at the reduced gap, so the entire connected component goes back to the pool.
+        foreach (IPartPlacement member in component)
         {
-          if (n <= 1)
+          placements.Remove(member);
+          if (placedBySrc.TryGetValue(member.Source, out int n))
           {
-            placedBySrc.Remove(victim.Source);
+            if (n <= 1)
+            {
+              placedBySrc.Remove(member.Source);
+            }
+            else
+            {
+              placedBySrc[member.Source] = n - 1;
+            }
           }
-          else
-          {
-            placedBySrc[victim.Source] = n - 1;
-          }
+
+          deferred++;
         }
 
-        deferred++;
+        commonEdges?.RemoveAll(e => component.Contains(e.PartA) || component.Contains(e.PartB));
       }
 
       return deferred;
@@ -1652,13 +2869,16 @@
       List<IPartPlacement> placements,
       IPartPlacement victim,
       Dictionary<int, Loaded> loadedById,
+      List<CommonEdgeIntent> commonEdges,
       double sheetW,
       double sheetH,
-      double margin)
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
     {
       double clearance = placements
         .Where(p => !ReferenceEquals(p, victim))
-        .Select(p => ClearanceOf(victim, p, loadedById))
+        .Select(p => AcceptanceClearanceOf(victim, p, loadedById))
         .DefaultIfEmpty(0)
         .Max();
       if (clearance <= 0)
@@ -1676,7 +2896,7 @@
         {
           victim.X = x0 + dx;
           victim.Y = y0 + dy;
-          if (IsClearWhereItStands(placements, victim, loadedById, sheetW, sheetH, margin))
+          if (IsClearWhereItStands(placements, victim, loadedById, commonEdges, sheetW, sheetH, margin, commonLineGap, geometryTolerance))
           {
             return true;
           }
@@ -1693,9 +2913,12 @@
       List<IPartPlacement> placements,
       IPartPlacement victim,
       Dictionary<int, Loaded> loadedById,
+      List<CommonEdgeIntent> commonEdges,
       double sheetW,
       double sheetH,
-      double margin)
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
     {
       if (PlacementAcceptance.IsOutsideUsableArea(victim, sheetW, sheetH, margin))
       {
@@ -1709,9 +2932,16 @@
           continue;
         }
 
-        double need = ClearanceOf(victim, other, loadedById);
+        double need = AcceptanceClearanceOf(victim, other, loadedById);
         double sliver = PlacementCollision.SliverFor(KerfOf(victim, loadedById), KerfOf(other, loadedById));
-        if (PlacementCollision.TooClose(victim.PlacedPart, other.PlacedPart, need, sliver))
+        if (CommonEdgeClearance.TooClose(
+          victim,
+          other,
+          need,
+          sliver,
+          ClearanceEdges(commonEdges),
+          commonLineGap,
+          geometryTolerance))
         {
           return false;
         }
@@ -1720,29 +2950,92 @@
       return true;
     }
 
-    /// <summary>The clearance this pair must keep, by the same rule the app judges it with: nothing when
-    /// they may share a cut, otherwise the mean of what each asked for.</summary>
-    private static double ClearanceOf(IPartPlacement a, IPartPlacement b, Dictionary<int, Loaded> loadedById)
+    /// <summary>The ordinary clearance outside V1 records, preserving SheetCam's separate legacy rule:
+    /// compatible toolpaths from the same .nest job sit one measured kerf apart.</summary>
+    private static double AcceptanceClearanceOf(
+      IPartPlacement a,
+      IPartPlacement b,
+      Dictionary<int, Loaded> loadedById)
     {
       if (!loadedById.TryGetValue(a.Source, out var la) || !loadedById.TryGetValue(b.Source, out var lb))
       {
         return 0;
       }
 
-      // The same three lines as RasterCompact.MayShare and the viewer's: the stricter of the two modes
-      // wins, and Same part means the same drawing in the same hand.
-      bool mayShare = la.Cc != CommonCuttingMode.None && lb.Cc != CommonCuttingMode.None
-        && (la.Cc != CommonCuttingMode.SamePart && lb.Cc != CommonCuttingMode.SamePart
-            ? true
-            : la.ShareKey == lb.ShareKey);
-      if (mayShare)
+      return AcceptanceClearanceFor(
+        la.EffSpacing,
+        la.CommonCuttingDomain,
+        la.Cc,
+        la.ShareKey,
+        la.Kerf,
+        lb.EffSpacing,
+        lb.CommonCuttingDomain,
+        lb.Cc,
+        lb.ShareKey,
+        lb.Kerf);
+    }
+
+    internal static double AcceptanceClearanceFor(
+      double firstSpacing,
+      string firstDomain,
+      CommonCuttingMode firstMode,
+      int firstShareKey,
+      double firstKerf,
+      double secondSpacing,
+      string secondDomain,
+      CommonCuttingMode secondMode,
+      int secondShareKey,
+      double secondKerf)
+    {
+      if (CommonCuttingCompatibility.TryLegacySheetCamClearance(
+        firstDomain,
+        firstMode,
+        firstShareKey,
+        firstKerf,
+        secondDomain,
+        secondMode,
+        secondShareKey,
+        secondKerf,
+        out double measuredKerf))
       {
-        return RasterCompact.CommonLineGap;
+        return measuredKerf;
       }
 
-      double c = (Math.Max(0, la.EffSpacing) + Math.Max(0, lb.EffSpacing)) / 2.0;
-      return c <= 0 ? RasterCompact.CommonLineGap : c;
+      return (Math.Max(0, firstSpacing) + Math.Max(0, secondSpacing)) / 2.0;
     }
+
+    private static HashSet<IPartPlacement> CommonEdgeComponent(
+      IPartPlacement seed,
+      IReadOnlyList<CommonEdgeIntent> commonEdges)
+    {
+      var component = new HashSet<IPartPlacement> { seed };
+      bool grew;
+      do
+      {
+        grew = false;
+        foreach (CommonEdgeIntent edge in commonEdges ?? Array.Empty<CommonEdgeIntent>())
+        {
+          if (component.Contains(edge.PartA) || component.Contains(edge.PartB))
+          {
+            grew |= component.Add(edge.PartA);
+            grew |= component.Add(edge.PartB);
+          }
+        }
+      }
+      while (grew);
+
+      return component;
+    }
+
+    private static IReadOnlyList<CommonEdgeClearance.EdgeReference> ClearanceEdges(
+      IReadOnlyList<CommonEdgeIntent> commonEdges)
+      => (commonEdges ?? Array.Empty<CommonEdgeIntent>())
+        .Select(edge => new CommonEdgeClearance.EdgeReference(
+          edge.PartA,
+          edge.EdgeAIndex,
+          edge.PartB,
+          edge.EdgeBIndex))
+        .ToList();
 
     private static double KerfOf(IPartPlacement p, Dictionary<int, Loaded> loadedById)
       => loadedById.TryGetValue(p.Source, out var l) ? Math.Max(0, l.Kerf) : 0;
@@ -1773,15 +3066,30 @@
       return counts.Count > 0;
     }
 
-    private static List<IPartPlacement> ClonePlacements(List<IPartPlacement> src)
+    private static (List<IPartPlacement> Placements, List<CommonEdgeIntent> CommonEdges) ClonePlacements(
+      List<IPartPlacement> src,
+      IReadOnlyList<CommonEdgeIntent> commonEdges)
     {
       var clone = new List<IPartPlacement>(src.Count);
+      var map = new Dictionary<IPartPlacement, IPartPlacement>();
       foreach (var pp in src)
       {
-        clone.Add(new PartPlacement(pp.Part) { X = pp.X, Y = pp.Y, Rotation = pp.Rotation, Source = pp.Source, IsMirrored = pp.IsMirrored });
+        var copy = new PartPlacement(pp.Part) { X = pp.X, Y = pp.Y, Rotation = pp.Rotation, Source = pp.Source, IsMirrored = pp.IsMirrored };
+        clone.Add(copy);
+        map[pp] = copy;
       }
 
-      return clone;
+      var clonedEdges = new List<CommonEdgeIntent>();
+      foreach (CommonEdgeIntent edge in commonEdges ?? Array.Empty<CommonEdgeIntent>())
+      {
+        if (map.TryGetValue(edge.PartA, out IPartPlacement partA)
+            && map.TryGetValue(edge.PartB, out IPartPlacement partB))
+        {
+          clonedEdges.Add(new CommonEdgeIntent(partA, edge.EdgeAIndex, partB, edge.EdgeBIndex));
+        }
+      }
+
+      return (clone, clonedEdges);
     }
 
     /// <summary>
@@ -2331,13 +3639,13 @@
     /// tries (up to 16) because that cost is amortized over all the clones and drives the layout to a
     /// denser result — a search is one draw from a wide spread (measured: 30 to 40 parts on the same
     /// sheet across seeds), so racing more of them is what raises the floor.</summary>
-    internal static int TriesForReplicas(int replicas, NestEffort effort = NestEffort.Normal)
+    internal static int TriesForReplicas(int replicas, NestEffort effort = NestEffortDefaults.Default)
       => Math.Clamp(replicas, NestTries(effort), 16);
 
     /// <summary>Best-of-K for a sheet: scales with its clone count (<see cref="TriesForReplicas"/>), and the
     /// single final/tail sheet gets at least 8 tries so that leftover partial sheet lands consistently too
     /// (it doesn't amortize over clones, but it's only one sheet so the extra tries are cheap).</summary>
-    internal static int TriesFor(int replicas, bool isFinalSheet, NestEffort effort = NestEffort.Normal)
+    internal static int TriesFor(int replicas, bool isFinalSheet, NestEffort effort = NestEffortDefaults.Default)
     {
       int t = TriesForReplicas(replicas, effort);
       return isFinalSheet ? Math.Max(t, RaceFloor(effort)) : t;

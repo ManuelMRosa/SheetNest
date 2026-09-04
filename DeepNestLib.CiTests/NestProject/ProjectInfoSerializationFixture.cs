@@ -2,6 +2,7 @@
 {
   using System.Text.Json.Nodes;
   using DeepNestLib.NestProject;
+  using DeepNestLib.Placement;
   using FluentAssertions;
   using Xunit;
 
@@ -20,6 +21,83 @@
       actual.Should().BeEquivalentTo(sut);
     }
 
+    [Theory]
+    [InlineData(0.010)]
+    [InlineData(0.015)]
+    [InlineData(0.020)]
+    public void ShouldRoundTripTheProjectsCanonicalCommonLineGap(double gapInches)
+    {
+      var savedConfig = new SvgNestConfig { CommonLineGapInches = gapInches };
+      var sut = new ProjectInfo(savedConfig);
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 1));
+
+      string json = sut.ToJson();
+      var activeConfig = new SvgNestConfig { CommonLineGapInches = 0.123 };
+      ProjectInfo actual = ProjectInfo.FromJson(activeConfig, json);
+
+      json.Should().Contain(nameof(ISvgNestConfig.CommonLineGapInches));
+      actual.Config.Should().BeSameAs(activeConfig);
+      actual.Config.CommonLineGapInches.Should().BeApproximately(gapInches, 1e-12);
+      actual.CommonLineGapInches.Should().BeApproximately(gapInches, 1e-12);
+    }
+
+    [Fact]
+    public void ConcurrentlyOpenProjectsKeepIndependentCommonLineGapsWhenSwitchedAndSaved()
+    {
+      string jsonA = new ProjectInfo(new SvgNestConfig { CommonLineGapInches = 0.010 }).ToJson();
+      string jsonB = new ProjectInfo(new SvgNestConfig { CommonLineGapInches = 0.020 }).ToJson();
+      var runtime = new SvgNestConfig { CommonLineGapInches = 0.123 };
+
+      ProjectInfo projectA = ProjectInfo.FromJson(runtime, jsonA);
+      ProjectInfo projectB = ProjectInfo.FromJson(runtime, jsonB);
+      runtime.CommonLineGapInches.Should().BeApproximately(0.020, 1e-12);
+
+      // MainWindow_ActiveDocumentChanged performs this assignment when the operator returns to A.
+      runtime.CommonLineGapInches = projectA.CommonLineGapInches;
+      runtime.CommonLineGapInches.Should().BeApproximately(0.010, 1e-12);
+      projectB.CommonLineGapInches.Should().BeApproximately(0.020, 1e-12);
+
+      // Saving either document must use its snapshot, regardless of which value the global config holds.
+      runtime.CommonLineGapInches = 0.333;
+      ProjectInfo.FromJson(new SvgNestConfig(), projectA.ToJson()).CommonLineGapInches
+        .Should().BeApproximately(0.010, 1e-12);
+      ProjectInfo.FromJson(new SvgNestConfig(), projectB.ToJson()).CommonLineGapInches
+        .Should().BeApproximately(0.020, 1e-12);
+    }
+
+    [Fact]
+    public void ProjectSavedBeforeCommonLineGapUsesTheCanonicalDefault()
+    {
+      var sut = new ProjectInfo(new SvgNestConfig { CommonLineGapInches = 0.015 });
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 1));
+      var tree = JsonNode.Parse(sut.ToJson());
+      var savedConfig = tree[nameof(ProjectInfo.Config)].AsObject();
+      savedConfig.Remove(nameof(ISvgNestConfig.CommonLineGapInches)).Should().BeTrue();
+
+      var activeConfig = new SvgNestConfig { CommonLineGapInches = 0.020 };
+      ProjectInfo actual = ProjectInfo.FromJson(activeConfig, tree.ToJsonString());
+
+      actual.SheetLoadInfos.Should().ContainSingle();
+      actual.Config.CommonLineGapInches.Should().Be(CommonLineDefaults.DefaultGapInches);
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-0.010)]
+    public void InvalidSavedCommonLineGapUsesTheCanonicalDefault(double invalidGap)
+    {
+      var sut = new ProjectInfo(new SvgNestConfig());
+      sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 1));
+      var tree = JsonNode.Parse(sut.ToJson());
+      tree[nameof(ProjectInfo.Config)][nameof(ISvgNestConfig.CommonLineGapInches)] = invalidGap;
+
+      var activeConfig = new SvgNestConfig { CommonLineGapInches = 0.020 };
+      ProjectInfo actual = ProjectInfo.FromJson(activeConfig, tree.ToJsonString());
+
+      actual.SheetLoadInfos.Should().ContainSingle();
+      actual.Config.CommonLineGapInches.Should().Be(CommonLineDefaults.DefaultGapInches);
+    }
+
     /// <summary>
     /// The part-level round-trip is tested on its own, but the path the app actually takes runs through
     /// DetailLoadInfoJsonConverter and WrappableListJsonConverter. A mode that survives one and not the
@@ -31,13 +109,20 @@
       var config = SvgNest.Config;
       var sut = new ProjectInfo(config);
       sut.SheetLoadInfos.Add(new SheetLoadInfo(120, 60, 1));
-      sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "a.dxf", CommonCutting = CommonCuttingMode.SamePart });
+      sut.DetailLoadInfos.Add(new DetailLoadInfo
+      {
+        Path = "a.dxf",
+        CommonCutting = CommonCuttingMode.SamePart,
+        DirectCommonCuttingEnabled = true,
+      });
       sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "b.dxf", CommonCutting = CommonCuttingMode.Unrestricted });
       sut.DetailLoadInfos.Add(new DetailLoadInfo { Path = "c.dxf", CommonCutting = CommonCuttingMode.None });
 
       ProjectInfo actual = ProjectInfo.FromJson(config, sut.ToJson());
 
       actual.DetailLoadInfos[0].CommonCutting.Should().Be(CommonCuttingMode.SamePart);
+      actual.DetailLoadInfos[0].DirectCommonCuttingEnabled.Should().BeTrue();
+      actual.DetailLoadInfos[0].EffectiveCommonCutting.Should().Be(CommonCuttingMode.SamePart);
       actual.DetailLoadInfos[1].CommonCutting.Should().Be(CommonCuttingMode.Unrestricted);
       actual.DetailLoadInfos[2].CommonCutting.Should().Be(CommonCuttingMode.None);
     }

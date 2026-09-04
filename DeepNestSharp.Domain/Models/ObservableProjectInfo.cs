@@ -72,6 +72,22 @@
       }
     }
 
+    /// <inheritdoc />
+    public double CommonLineGapInches
+    {
+      get => this.wrappedProjectInfo.CommonLineGapInches;
+      set
+      {
+        if (Math.Abs(this.wrappedProjectInfo.CommonLineGapInches - value) <= 1e-12)
+        {
+          return;
+        }
+
+        this.wrappedProjectInfo.CommonLineGapInches = value;
+        OnPropertyChanged(nameof(CommonLineGapInches));
+      }
+    }
+
     public string LastNestResultJson
     {
       get => wrappedProjectInfo.LastNestResultJson;

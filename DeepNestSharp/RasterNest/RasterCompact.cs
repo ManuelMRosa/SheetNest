@@ -16,6 +16,14 @@
     public double Spacing;  // this part's NOMINAL spacing (in) — what it keeps to anything it cannot share a cut with
     public CommonCuttingMode Cc;  // who it may share a cut edge with; None = nobody
     public int ShareKey;    // identity for SamePart: same drawing AND same hand. Only compared, never ordered
+    public string CommonCuttingDomain = string.Empty; // direct, or the owning SheetCam job; empty means sharing is forbidden
+
+    // Common-line clearance is an EXPLICIT relationship between two concrete placements. Compatibility
+    // only says that a pair MAY be offered; it must never make every compatible neighbour collapse from
+    // normal spacing by itself. The planner fills these two fields only after a full straight edge has
+    // been selected and validated.
+    public int PlacementId = -1;
+    public ISet<int> CommonEdgePeers;
   }
 
   /// <summary>
@@ -51,10 +59,9 @@
     private const double BackoffPerClearance = 0.003;
 
     /// <summary>
-    /// Gap between common-line parts: ZERO — true common-line cutting means the shared edge is
-    /// COINCIDENT so the DXF export (MergeLines) emits it as ONE cut line. The old 0.003" "CAM-safe"
-    /// mini-gap produced two cuts three thou apart (sliver + double heat) — the opposite of what the
-    /// shop wants. Exact touch is safe engine-side: overlap tests are AREA-based (edge contact = 0).
+    /// Legacy fallback for direct callers that do not supply an explicit gap. Production V1 always passes
+    /// the job's positive CommonLineGap; keeping this default preserves the old compaction API for tests
+    /// and callers that use it only for ordinary spacing.
     /// </summary>
     internal const double CommonLineGap = 0.0;
 
@@ -66,9 +73,8 @@
     internal const double MixedPairFloor = 0.0015;
 
     /// <summary>
-    /// True when these two placements are allowed to share a cut edge, so the pair closes to CONTACT
-    /// instead of to a clearance. The stricter of the two modes wins: a Same-part item shares only with
-    /// its own kind no matter who is looking at it, which is what "Same part" means everywhere else.
+    /// True when these two source rules are compatible. This is only an eligibility check: a concrete
+    /// common edge still has to be deliberately recorded in <see cref="CompactItem.CommonEdgePeers"/>.
     /// </summary>
     /// <remarks>
     /// This replaced a `Spacing &lt;= 0` test on both sides. That test conflated two different things —
@@ -77,26 +83,27 @@
     /// three 20" squares: a neighbour that asked for 0.5" got 0.2536".
     /// </remarks>
     internal static bool MayShare(CompactItem a, CompactItem b)
-    {
-      if (a.Cc == CommonCuttingMode.None || b.Cc == CommonCuttingMode.None)
-      {
-        return false;
-      }
-
-      if (a.Cc == CommonCuttingMode.SamePart || b.Cc == CommonCuttingMode.SamePart)
-      {
-        return a.ShareKey == b.ShareKey;
-      }
-
-      return true;
-    }
+      => CommonCuttingCompatibility.MayShare(
+        a.CommonCuttingDomain,
+        a.Cc,
+        a.ShareKey,
+        b.CommonCuttingDomain,
+        b.Cc,
+        b.ShareKey);
 
     /// <summary>
     /// Compact one sheet's placements in place (mutates item X/Y). Every part slides toward the pack
     /// corner; clearances are preserved exactly â€” each pair keeps (spacingA + spacingB)/2 via
-    /// half-inflated shells, and common-line pairs close to EXACT contact (shared cut edge).
+    /// half-inflated shells, and explicit common-edge pairs keep <paramref name="commonLineGap"/>.
     /// </summary>
-    public static void Compact(IList<CompactItem> items, double sheetW, double sheetH, double margin, int[] groups = null, System.Threading.CancellationToken cancel = default)
+    public static void Compact(
+      IList<CompactItem> items,
+      double sheetW,
+      double sheetH,
+      double margin,
+      int[] groups = null,
+      System.Threading.CancellationToken cancel = default,
+      double commonLineGap = CommonLineGap)
     {
       if (items == null || items.Count < 1)
       {
@@ -139,14 +146,17 @@
       }
 
       // Clearance is PER PAIR: spacing pairs need (sA+sB)/2 â€” expressed by half-inflated shells â€” and
-      // pairs that may SHARE a cut close to EXACT contact (CommonLineGap = 0: the shared edge exports as
-      // one cut). The CC shell must NOT leak into shared-vs-spaced pairs (the raster already placed those
+      // explicitly recorded common-edge pairs keep the configured gap. The CC shell must NOT leak into
+      // shared-vs-spaced pairs (the raster already placed those
       // at exactly s/2, and inflating would make every one look violated), hence TWO shells per item.
       // Which shell a pair is judged by is MayShare's call, not the spacing's: a common-cut part still
       // carries its full spacing for everyone it cannot share with.
       var pathsRaw = items.Select(ToPaths).ToArray();
       var pathsHalf = items.Select(it => it.Spacing > 0 ? Inflate(ToPaths(it), it.Spacing / 2.0) : ToPaths(it)).ToArray();
-      var pathsCC = items.Select(it => it.Cc != CommonCuttingMode.None ? Inflate(ToPaths(it), CommonLineGap / 2.0) : null).ToArray();
+      commonLineGap = Math.Max(0, commonLineGap);
+      var pathsCC = items.Select(it => it.CommonEdgePeers != null && it.CommonEdgePeers.Count > 0
+        ? Inflate(ToPaths(it), commonLineGap / 2.0)
+        : null).ToArray();
       // Box pre-filter for every pair test below, so it has to be the OUTER of an item's two shells or a
       // pair gets skipped before it is ever measured. pathsHalf always contains pathsCC (raw, inflated by
       // nothing). This used to read `pathsCC[i] ?? pathsHalf[i]` and was harmless only because a
@@ -184,7 +194,7 @@
         return true;
       }
 
-      bool BothCC(int i, int j) => MayShare(items[i], items[j]);
+      bool BothCC(int i, int j) => SharesCommonEdge(items[i], items[j]);
 
       bool ValidOffset(int i, double ox, double oy)
       {
@@ -260,8 +270,8 @@
           : movable.OrderBy(i => items[i].X + items[i].Poly.MinX).ThenBy(i => items[i].Y + items[i].Poly.MinY))
         .ToArray();
 
-      // SEPARATION pre-pass: the raster can place CC parts literally touching (gap 0), and a touching
-      // CC pair may be sandwiched against exactly-spaced neighbours — so violations are resolved as an
+      // SEPARATION pre-pass: an explicit pair may start inside its configured gap and be sandwiched
+      // against exactly-spaced neighbours — so violations are resolved as an
       // iterative PAIR relaxation: each violating pair pushes its outer member the minimum distance
       // along the dominant axis between their centres (sliding along a shared edge separates nothing),
       // and follow-up iterations cascade the shove through the chain. Spaced parts may shift outward a
@@ -528,8 +538,8 @@
 
       // WELD PASS: the slide's binary search + backoff leaves every contact ~0.001-0.002" short.
       // For common-line parts that residue defeats the feature — the shared edge must be EXACTLY
-      // coincident for the DXF export (MergeLines) to emit it as one cut — so close each CC part the
-      // last fraction precisely, by geometry: the exact directional gap to the nearest constraint
+      // at its configured gap for deterministic export — so close each explicit pair the last fraction
+      // precisely, by geometry: the exact directional gap to the nearest constraint
       // (sheet margin, a CC neighbour's raw outline, or a spaced neighbour's clearance shell).
       // Residues CASCADE down a contact chain (each weld moves the wall the next part rests on —
       // measured 0.005" on the 5th part of a row), hence pack order, a cap generous enough for long
@@ -561,7 +571,7 @@
         foreach (int i in weldOrder)
         {
           cancel.ThrowIfCancellationRequested();
-          if (items[i].Cc == CommonCuttingMode.None || processed[i])
+          if (items[i].CommonEdgePeers == null || items[i].CommonEdgePeers.Count == 0 || processed[i])
           {
             continue;
           }
@@ -578,7 +588,7 @@
           for (int pass = 0; pass < 2; pass++)
           {
             bool alongX = growX == (pass == 0);
-            long gap = DirectionalGapExact(i, alongX, weldMaxInt, marginInt, items, pathsRaw, pathsHalf, memberSets);
+            long gap = DirectionalGapExact(i, alongX, weldMaxInt, marginInt, items, pathsRaw, pathsHalf, pathsCC, memberSets);
             if (gap > 0 && gap <= weldMaxInt)
             {
               double g = gap / Scale;
@@ -608,7 +618,7 @@
     /// <summary>
     /// Exact directional clearance (integer Clipper units) from item <paramref name="i"/>'s raw
     /// outline to the nearest constraint when sliding toward the pack corner along one axis:
-    /// the sheet margin, a common-line neighbour's RAW outline (contact allowed), or a spaced
+    /// the sheet margin, an explicit common-line neighbour's configured-gap shell, or a spaced
     /// neighbour's half-inflated clearance shell. Vertex-vs-edge ray casting both ways — exact,
     /// no search. Returns long.MaxValue when nothing constrains within range.
     /// </summary>
@@ -620,6 +630,7 @@
       IList<CompactItem> items,
       List<List<IntPoint>>[] pathsRaw,
       List<List<IntPoint>>[] pathsHalf,
+      List<List<IntPoint>>[] pathsCC,
       int[][] memberSets = null)
     {
       // Work in a rotated frame where the slide is always -X: U = slide axis, V = the other.
@@ -651,6 +662,7 @@
       // where EVERY part could touch every other. Reported as parts turning red on a Same part nest.
       var mineRaw = Mine(pathsRaw);
       var mineHalf = Mine(pathsHalf);
+      var mineCommon = Mine(pathsCC);
 
       (long MinU, long MaxU, long MinV, long MaxV) FrameBounds(List<List<IntPoint>> paths)
       {
@@ -716,10 +728,11 @@
 
         // Both sides of the pair, or neither: shell against shell for a pair that must keep a clearance,
         // outline against outline for one that may share the cut.
-        bool share = MayShare(items[i], items[j]);
-        var theirs = share ? pathsRaw[j] : pathsHalf[j];
-        var mine = share ? mineRaw : mineHalf;
-        var (myMinU, myMaxU, myMinV, myMaxV) = share ? rawBox : halfBox;
+        bool share = SharesCommonEdge(items[i], items[j]);
+        var theirs = share ? pathsCC[j] : pathsHalf[j];
+        var mine = share ? mineCommon : mineHalf;
+        var commonBox = share ? FrameBounds(mineCommon) : default;
+        var (myMinU, myMaxU, myMinV, myMaxV) = share ? commonBox : halfBox;
 
         // BBox pre-filter (essential: without it an 800-part common-line job timed out — this scan
         // is O(vertsA x vertsB) per pair). The constraint can only bite if it overlaps my V-range
@@ -848,7 +861,7 @@
     /// inches of clearance. Used to vet tight-packed (halo-0) layouts after compaction: a chain born
     /// touching can jam mid-separation, and the separation pre-pass caps pushes at RAW contact — so
     /// a common-line part can end up ~0.0005" from a SPACED neighbour that asked for real spacing.
-    /// CC-CC pairs are exempt: exact contact is the GOAL there (the shared edge exports as one cut).
+    /// Explicit common-edge pairs are exempt because their separate configured gap is enforced elsewhere.
     /// </summary>
     internal static bool CommonLineGapsOk(IList<CompactItem> items, double floor)
     {
@@ -862,9 +875,9 @@
         var padded = new IntRect(bi.left - pad, bi.top - pad, bi.right + pad, bi.bottom + pad);
         for (int j = i + 1; j < items.Count; j++)
         {
-          if (MayShare(items[i], items[j]))
+          if (SharesCommonEdge(items[i], items[j]))
           {
-            continue; // shared-cut pair — exact contact is intended
+            continue; // explicit shared-cut pair — its configured gap is enforced elsewhere
           }
 
           if (!BoxesTouch(padded, rawBounds[j]))
@@ -884,12 +897,18 @@
 
     /// <summary>
     /// Exact-geometry acceptance gate for REFILL insertions: the candidate must keep every pair's
-    /// required clearance against ALL placed parts â€” (spacingA + spacingB)/2, or exact contact for a
-    /// common-line pair â€” and its real contour must stay inside the sheet margin. The raster scan
+    /// required clearance against ALL placed parts â€” (spacingA + spacingB)/2, or the configured gap for
+    /// an explicit common-line pair â€” and its real contour must stay inside the sheet margin. The raster scan
     /// that proposed the position is conservative, so this should always pass; it is the safety net
     /// that guarantees a refill insertion can never violate what the compacted layout promised.
     /// </summary>
-    internal static bool CandidateClear(IList<CompactItem> items, CompactItem cand, double sheetW, double sheetH, double margin)
+    internal static bool CandidateClear(
+      IList<CompactItem> items,
+      CompactItem cand,
+      double sheetW,
+      double sheetH,
+      double margin,
+      double commonLineGap = CommonLineGap)
     {
       const double Eps = 0.0005; // do not reject the raster's own integer-pixel clearance over noise
 
@@ -903,8 +922,8 @@
       var grownByFloor = new Dictionary<double, List<List<IntPoint>>>();
       foreach (var it in items)
       {
-        double req = MayShare(cand, it)
-          ? CommonLineGap
+        double req = SharesCommonEdge(cand, it)
+          ? Math.Max(0, commonLineGap)
           : (Math.Max(0, cand.Spacing) + Math.Max(0, it.Spacing)) / 2.0;
         double floor = Math.Max(0, req - Eps);
 
@@ -931,6 +950,22 @@
 
       return true;
     }
+
+    /// <summary>
+    /// Whether these concrete placements own a planned, reciprocal common edge. The compatibility mode
+    /// remains a safety gate, but is deliberately insufficient on its own: ordinary/baseline layouts keep
+    /// their full spacing even when both source rows permit common cutting.
+    /// </summary>
+    internal static bool SharesCommonEdge(CompactItem a, CompactItem b)
+      => a != null
+        && b != null
+        && a.PlacementId >= 0
+        && b.PlacementId >= 0
+        && a.CommonEdgePeers != null
+        && b.CommonEdgePeers != null
+        && a.CommonEdgePeers.Contains(b.PlacementId)
+        && b.CommonEdgePeers.Contains(a.PlacementId)
+        && MayShare(a, b);
 
     /// <summary>
     /// Grow the OUTER contour by <paramref name="inches"/> (round join = uniform Euclidean clearance,

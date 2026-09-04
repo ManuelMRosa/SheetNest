@@ -354,7 +354,12 @@
           var filePath = fileIoService.GetSaveFilePath(exporter.SaveFileDialogFilter);
           if (!string.IsNullOrWhiteSpace(filePath))
           {
-            await exporter.Export(filePath, sheetPlacement, SvgNest.Config.MergeLines, SvgNest.Config.DifferentiateChildren, offcutLines);
+            await exporter.Export(
+              filePath,
+              sheetPlacement,
+              MergeLinesForExport(SvgNest.Config.MergeLines, sheetPlacement),
+              SvgNest.Config.DifferentiateChildren,
+              offcutLines);
           }
         }
       }
@@ -363,6 +368,14 @@
         MessageService.DisplayMessageBox(ex.Message, "Error Saving", MessageBoxIcon.Exclamation);
       }
     }
+
+    /// <summary>
+    /// A layout known to contain shared edges is authoritative for its own export. The application
+    /// preference may opt ordinary layouts into merging, but turning it off must not duplicate a cut that
+    /// this particular nest deliberately shares.
+    /// </summary>
+    internal static bool MergeLinesForExport(bool configuredMergeLines, ISheetPlacement sheetPlacement)
+      => configuredMergeLines || (sheetPlacement?.RequiresMergedLines ?? false);
 
     /// <summary>
     /// Saves the document; returns true when the file was actually written (false = the user
@@ -412,10 +425,10 @@
       }
 
       File.WriteAllText(fileToSave.FilePath, fileToSave.TextContent);
-      if (ActiveDocument != null)
-      {
-        ActiveDocument.IsDirty = false;
-      }
+      // Save can be invoked while closing a background tab. Clearing ActiveDocument here marked an
+      // entirely different project clean (and disabled its autosave) while leaving the file just written
+      // dirty. The saved document is the only state this operation may acknowledge.
+      fileToSave.IsDirty = false;
 
       return true;
     }

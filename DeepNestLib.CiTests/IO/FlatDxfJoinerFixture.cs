@@ -3,6 +3,7 @@ namespace DeepNestLib.CiTests.IO
   using System.IO;
   using System.Linq;
   using DeepNestLib.IO;
+  using DeepNestLib.Placement;
   using FluentAssertions;
   using IxMilia.Dxf;
   using IxMilia.Dxf.Entities;
@@ -104,6 +105,29 @@ namespace DeepNestLib.CiTests.IO
       poly.IsClosed.Should().BeTrue();
       poly.Color.Should().Be(red);
       poly.Layer.Should().Be("HOLES");
+    }
+
+    [Fact]
+    public void JoinEntities_UsesCallerSuppliedMetricGeometryTolerance()
+    {
+      const double endpointGapMillimeters = 0.001D;
+      var entities = new System.Collections.Generic.List<DxfEntity>
+      {
+        new DxfLine(new DxfPoint(0D, 0D, 0D), new DxfPoint(10D, 0D, 0D)),
+        new DxfLine(new DxfPoint(10D + endpointGapMillimeters, 0D, 0D), new DxfPoint(10D, 5D, 0D)),
+        new DxfLine(new DxfPoint(10D, 5D + endpointGapMillimeters, 0D), new DxfPoint(0D, 5D, 0D)),
+        new DxfLine(new DxfPoint(0D, 5D - endpointGapMillimeters, 0D), new DxfPoint(0D, endpointGapMillimeters, 0D)),
+      };
+
+      FlatDxfJoiner.JoinEntities(entities).Should().BeFalse(
+        "the legacy 0.0001 drawing-unit tolerance is too small for this metric contour");
+      FlatDxfJoiner.JoinEntities(
+        entities,
+        CommonLineDefaults.DefaultGeometryToleranceMillimeters).Should().BeTrue();
+
+      entities.Should().ContainSingle();
+      entities.Single().Should().BeOfType<DxfLwPolyline>()
+        .Which.IsClosed.Should().BeTrue();
     }
 
     [Fact]

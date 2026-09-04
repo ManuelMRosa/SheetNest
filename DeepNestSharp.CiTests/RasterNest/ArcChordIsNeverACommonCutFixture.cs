@@ -82,14 +82,26 @@ namespace DeepNestSharp.CiTests.RasterNest
           { 0, SparrowNestService.ToolingFootprint(arcPart, null, Kerf, 0) },
           { 1, SparrowNestService.ToolingFootprint(new NoFitPolygon(bar), null, Kerf, 0) },
         },
-        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>
         {
-          { 0, (CommonCuttingMode.Unrestricted, 0) },
-          { 1, (CommonCuttingMode.Unrestricted, 1) },
+          { 0, (CommonCuttingMode.Unrestricted, 0, "direct") },
+          { 1, (CommonCuttingMode.Unrestricted, 1, "direct") },
         });
 
       b0.Y.Should().Be(0, "a chord is not a face, so there is nothing here to share a cut with");
       b0.X.Should().Be(0);
+
+      // Direct output counts already-coincident contours instead of running the kerf snap. Put the bar
+      // exactly on that same chord: it must still not report a seam, because MergeLines may never turn a
+      // tessellated approximation of an arc into a physical common cut.
+      b0.Y = chordY - barBottom;
+      SparrowNestService.CountDirectCommonLineSeams(
+        new List<IPartPlacement> { a0, b0 },
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines)>
+        {
+          { 0, (CommonCuttingMode.Unrestricted, 0, "direct", true) },
+          { 1, (CommonCuttingMode.Unrestricted, 1, "direct", true) },
+        }).Should().Be(0, "a tessellated arc chord is not a direct common-line seam either");
     }
 
     /// <summary>
@@ -120,10 +132,10 @@ namespace DeepNestSharp.CiTests.RasterNest
           { 0, SparrowNestService.ToolingFootprint(arcPart, null, Kerf, 0) },
           { 1, SparrowNestService.ToolingFootprint(new NoFitPolygon(bar), null, Kerf, 0) },
         },
-        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey)>
+        new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>
         {
-          { 0, (CommonCuttingMode.Unrestricted, 0) },
-          { 1, (CommonCuttingMode.Unrestricted, 1) },
+          { 0, (CommonCuttingMode.Unrestricted, 0, "direct") },
+          { 1, (CommonCuttingMode.Unrestricted, 1, "direct") },
         });
 
       (b0.PlacedPart.MinX - sideX).Should().BeApproximately(Kerf, 1e-6,
