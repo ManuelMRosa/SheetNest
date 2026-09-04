@@ -66,6 +66,47 @@ namespace DeepNestSharp.CiTests.RasterNest
       result.Fallbacks.Should().BeEmpty("legacy SheetCam common cutting does not use the direct cluster contract");
     }
 
+    [Fact]
+    public void InvalidLongClusterDoesNotHideALaterValidRelationship()
+    {
+      const double normalGap = 0.30;
+      INfp curved = ArcTopped("curved-outline.dxf");
+      INfp rectangle = Rectangle(5, 4);
+      var curvedA = new PartPlacement(curved) { Source = 0, X = 12, Y = 2 };
+      var curvedB = new PartPlacement(curved)
+      {
+        Source = 1,
+        X = curvedA.MaxX + normalGap - curved.MinX,
+        Y = 2,
+      };
+      var straightA = new PartPlacement(rectangle) { Source = 2, X = 60, Y = 2 };
+      var straightB = new PartPlacement(rectangle) { Source = 3, X = 65 + normalGap, Y = 2 };
+      var all = new List<IPartPlacement> { curvedA, curvedB, straightA, straightB };
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> rules =
+        DirectRules(normalGap);
+      rules[2] = (CommonCuttingMode.Unrestricted, 2, "direct", true, normalGap);
+      rules[3] = (CommonCuttingMode.Unrestricted, 3, "direct", true, normalGap);
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        all,
+        rules,
+        100,
+        40,
+        0,
+        0.01,
+        0.0001);
+
+      result.Edges.Should().ContainSingle(edge =>
+        (ReferenceEquals(edge.PartA, straightA) && ReferenceEquals(edge.PartB, straightB))
+        || (ReferenceEquals(edge.PartA, straightB) && ReferenceEquals(edge.PartB, straightA)));
+      result.Fallbacks.Should().ContainSingle(notice =>
+        notice.Drawing == "curved-outline"
+        && notice.Reason == CommonLineFallbackNotice.ContourFormatReason);
+      straightB.MinX.Should().BeApproximately(straightA.MaxX + 0.01, 1e-8);
+      curvedB.MinX.Should().BeApproximately(curvedA.MaxX + normalGap, 1e-8,
+        "the rejected curved pair must return to its ordinary clearance");
+    }
+
     private static Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> DirectRules(double spacing)
       => new Dictionary<int, (CommonCuttingMode, int, string, bool, double)>
       {
@@ -89,5 +130,14 @@ namespace DeepNestSharp.CiTests.RasterNest
       result.Name = name;
       return result;
     }
+
+    private static INfp Rectangle(double width, double height)
+      => new NoFitPolygon(new[]
+      {
+        new SvgPoint(0, 0),
+        new SvgPoint(width, 0),
+        new SvgPoint(width, height),
+        new SvgPoint(0, height),
+      });
   }
 }

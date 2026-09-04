@@ -146,6 +146,27 @@
       public int GivenUp { get; set; }
     }
 
+    /// <summary>
+    /// Source geometry and discrete orientations available to the direct common-line planner. The
+    /// placement itself owns one current pose; this profile lets the planner also try its 180-degree
+    /// opposite without inferring permissions from geometry or silently broadening the user's choices.
+    /// </summary>
+    internal sealed class DirectOrientationProfile
+    {
+      public DirectOrientationProfile(INfp nfp, IEnumerable<int> angles, INfp tooling = null)
+      {
+        this.Nfp = nfp;
+        this.Angles = (angles ?? Enumerable.Empty<int>()).ToArray();
+        this.Tooling = tooling;
+      }
+
+      public INfp Nfp { get; }
+
+      public IReadOnlyList<int> Angles { get; }
+
+      public INfp Tooling { get; }
+    }
+
     /// <summary>Single-sheet convenience (used by tests): one sheet of the given size.</summary>
     internal static INestResult Nest(
       IReadOnlyList<RasterPartInfo> parts,
@@ -1128,6 +1149,9 @@
       var directRulesById = batch.ToDictionary(
         l => l.Source,
         l => (l.Cc, l.ShareKey, l.CommonCuttingDomain, l.RequiresMergedLines, l.EffSpacing));
+      var directOrientationProfilesById = batch.ToDictionary(
+        l => l.Source,
+        l => new DirectOrientationProfile(l.Nfp, l.Angles, l.Tooling));
 
       var all = new List<IPartPlacement>();
       foreach (var pi in placed.EnumerateArray())
@@ -1182,11 +1206,14 @@
         all[k].Y = compactItems[k].Y;
       }
 
-      double[] baselineX = all.Select(p => p.X).ToArray();
-      double[] baselineY = all.Select(p => p.Y).ToArray();
+      IPartPlacement[] baselinePlacements = all.ToArray();
+      double[] baselineX = baselinePlacements.Select(p => p.X).ToArray();
+      double[] baselineY = baselinePlacements.Select(p => p.Y).ToArray();
+      double[] baselineRotation = baselinePlacements.Select(p => p.Rotation).ToArray();
       DirectCommonLineSnapResult direct = SnapDirectCommonLineEdges(
         all,
         directRulesById,
+        directOrientationProfilesById,
         sheetWin,
         sheetHin,
         margin,
@@ -1201,6 +1228,9 @@
         {
           compactItems[k].X = all[k].X;
           compactItems[k].Y = all[k].Y;
+          compactItems[k].Poly = toolingById.TryGetValue(all[k].Source, out var tooling) && tooling != null
+            ? tooling.Rotate(all[k].Rotation)
+            : all[k].Part;
           compactItems[k].PlacementId = k;
           compactItems[k].CommonEdgePeers = new HashSet<int>();
         }
@@ -1273,8 +1303,16 @@
           // the whole direct pass; this candidate remains safe even though it gives up the optimisation.
           for (int k = 0; k < all.Count; k++)
           {
-            all[k].X = baselineX[k];
-            all[k].Y = baselineY[k];
+            IPartPlacement original = baselinePlacements[k];
+            original.X = baselineX[k];
+            original.Y = baselineY[k];
+            original.Rotation = baselineRotation[k];
+            all[k] = original;
+            compactItems[k].X = baselineX[k];
+            compactItems[k].Y = baselineY[k];
+            compactItems[k].Poly = toolingById.TryGetValue(original.Source, out var tooling) && tooling != null
+              ? tooling.Rotate(baselineRotation[k])
+              : original.Part;
           }
 
           direct.GivenUp++;
@@ -1560,10 +1598,38 @@
       return seams;
     }
 
+    private sealed class DirectPlacementOption
+    {
+      public DirectPlacementOption(int part, int pose, INfp poly, double rotation, double x, double y)
+      {
+        this.Part = part;
+        this.Pose = pose;
+        this.Poly = poly;
+        this.Rotation = rotation;
+        this.X = x;
+        this.Y = y;
+      }
+
+      public int Part { get; }
+
+      public int Pose { get; }
+
+      public INfp Poly { get; }
+
+      public double Rotation { get; }
+
+      public double X { get; }
+
+      public double Y { get; }
+
+      public List<DirectEdge> Edges { get; } = new List<DirectEdge>();
+    }
+
     private readonly struct DirectEdge
     {
       public DirectEdge(
         int part,
+        int pose,
         int index,
         double ax,
         double ay,
@@ -1576,6 +1642,7 @@
         double length)
       {
         this.Part = part;
+        this.Pose = pose;
         this.Index = index;
         this.Ax = ax;
         this.Ay = ay;
@@ -1589,49 +1656,120 @@
       }
 
       public int Part { get; }
+
+      public int Pose { get; }
+
       public int Index { get; }
+
       public double Ax { get; }
+
       public double Ay { get; }
+
       public double Bx { get; }
+
       public double By { get; }
+
       public double Ux { get; }
+
       public double Uy { get; }
+
       public double Nx { get; }
+
       public double Ny { get; }
+
       public double Length { get; }
     }
 
     private readonly struct DirectCandidate
     {
-      public DirectCandidate(int a, int b, int edgeA, int edgeB, double dx, double dy, double quality)
+      public DirectCandidate(
+        int a,
+        int b,
+        int poseA,
+        int poseB,
+        int edgeA,
+        int edgeB,
+        double dx,
+        double dy,
+        double length,
+        double travel)
       {
         this.A = a;
         this.B = b;
+        this.PoseA = poseA;
+        this.PoseB = poseB;
         this.EdgeA = edgeA;
         this.EdgeB = edgeB;
         this.Dx = dx;
         this.Dy = dy;
-        this.Quality = quality;
+        this.Length = length;
+        this.Travel = travel;
       }
 
       public int A { get; }
+
       public int B { get; }
+
+      public int PoseA { get; }
+
+      public int PoseB { get; }
+
       public int EdgeA { get; }
+
       public int EdgeB { get; }
+
       public double Dx { get; }
+
       public double Dy { get; }
-      public double Quality { get; }
+
+      public double Length { get; }
+
+      public double Travel { get; }
+
+      public int PoseChanges => (this.PoseA == 0 ? 0 : 1) + (this.PoseB == 0 ? 0 : 1);
+    }
+
+    private enum DirectPlanFailure
+    {
+      None,
+      EdgeGeometry,
+      Layout,
+      Topology,
+      Tooling,
     }
 
     /// <summary>
-    /// Creates V1 direct common-line clusters deliberately: quarter-turn placements, complete straight
-    /// outside edges of equal length, and an explicit positive gap. A spanning forest supplies consistent
-    /// rigid offsets; after it is applied every additional preselected edge that validates (including the
-    /// fourth edge of a 2x2 grid) is recorded as well. No final-layout contact scan is used.
+    /// Creates direct common-line clusters from the placements exactly as supplied. This overload keeps
+    /// the original translation-only contract for tests and callers that do not own source orientations.
     /// </summary>
     internal static DirectCommonLineSnapResult SnapDirectCommonLineEdges(
       List<IPartPlacement> all,
       IReadOnlyDictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> rulesBySource,
+      double sheetW,
+      double sheetH,
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
+      => SnapDirectCommonLineEdges(
+        all,
+        rulesBySource,
+        null,
+        sheetW,
+        sheetH,
+        margin,
+        commonLineGap,
+        geometryTolerance);
+
+    /// <summary>
+    /// Creates direct common-line clusters deliberately from complete, straight outside edges. Each
+    /// placement contributes its current pose and, only when explicitly present in its source profile,
+    /// its current + 180-degree pose. A part receives at most one pose in the selected forest. Candidates
+    /// are tried longest-seam first and rejected candidates are rolled back before the next is considered.
+    /// </summary>
+    internal static DirectCommonLineSnapResult SnapDirectCommonLineEdges(
+      List<IPartPlacement> all,
+      IReadOnlyDictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> rulesBySource,
+      IReadOnlyDictionary<int, DirectOrientationProfile> orientationProfilesBySource,
       double sheetW,
       double sheetH,
       double margin,
@@ -1647,6 +1785,7 @@
         return result;
       }
 
+      const double AngularEpsilonDegrees = 1e-7;
       int n = all.Count;
       for (int i = 0; i < n; i++)
       {
@@ -1658,17 +1797,33 @@
         }
       }
 
-      bool IsQuarterTurn(IPartPlacement p)
+      IPartPlacement[] originalPlacements = all.ToArray();
+      double[] originalX = originalPlacements.Select(p => p.X).ToArray();
+      double[] originalY = originalPlacements.Select(p => p.Y).ToArray();
+      double[] originalRotation = originalPlacements.Select(p => p.Rotation).ToArray();
+
+      double NormalizeAngle(double angle)
       {
-        double angle = ((p.Rotation % 90.0) + 90.0) % 90.0;
-        const double AngularEpsilonDegrees = 1e-7;
+        double normalized = angle % 360.0;
+        return normalized < 0 ? normalized + 360.0 : normalized;
+      }
+
+      double AngleDistance(double first, double second)
+      {
+        double difference = Math.Abs(NormalizeAngle(first) - NormalizeAngle(second));
+        return Math.Min(difference, 360.0 - difference);
+      }
+
+      bool IsQuarterTurn(double rotation)
+      {
+        double angle = NormalizeAngle(rotation) % 90.0;
         return angle <= AngularEpsilonDegrees || Math.Abs(90.0 - angle) <= AngularEpsilonDegrees;
       }
 
       bool MayShare(int a, int b)
       {
-        if (!rulesBySource.TryGetValue(all[a].Source, out var ra)
-            || !rulesBySource.TryGetValue(all[b].Source, out var rb)
+        if (!rulesBySource.TryGetValue(originalPlacements[a].Source, out var ra)
+            || !rulesBySource.TryGetValue(originalPlacements[b].Source, out var rb)
             || !ra.RequiresMergedLines
             || !rb.RequiresMergedLines)
         {
@@ -1684,12 +1839,28 @@
           rb.ShareKey);
       }
 
-      var edgesByPart = new List<DirectEdge>[n];
+      void RestoreOriginalPlacements()
+      {
+        for (int i = 0; i < n; i++)
+        {
+          IPartPlacement original = originalPlacements[i];
+          original.X = originalX[i];
+          original.Y = originalY[i];
+          original.Rotation = originalRotation[i];
+          all[i] = original;
+        }
+      }
+
+      var optionsByPart = new List<DirectPlacementOption>[n];
       for (int i = 0; i < n; i++)
       {
-        edgesByPart[i] = new List<DirectEdge>();
-        if (!IsQuarterTurn(all[i])
-            || !rulesBySource.TryGetValue(all[i].Source, out var rule)
+        IPartPlacement placement = originalPlacements[i];
+        optionsByPart[i] = new List<DirectPlacementOption>
+        {
+          new DirectPlacementOption(i, 0, placement.Part, originalRotation[i], originalX[i], originalY[i]),
+        };
+
+        if (!rulesBySource.TryGetValue(placement.Source, out var rule)
             || rule.Cc == CommonCuttingMode.None
             || !rule.RequiresMergedLines
             || string.IsNullOrWhiteSpace(rule.CommonCuttingDomain))
@@ -1697,51 +1868,86 @@
           continue;
         }
 
-        SvgPoint[] points = all[i].Part?.Points;
-        if (points == null || points.Length < 3)
+        if (orientationProfilesBySource != null
+            && orientationProfilesBySource.TryGetValue(placement.Source, out DirectOrientationProfile profile)
+            && profile?.Nfp != null
+            && profile.Angles != null)
         {
-          continue;
+          double oppositeRotation = NormalizeAngle(originalRotation[i] + 180.0);
+          bool permitted = profile.Angles.Any(angle => AngleDistance(angle, oppositeRotation) <= AngularEpsilonDegrees);
+          if (permitted)
+          {
+            INfp opposite = oppositeRotation <= AngularEpsilonDegrees
+              ? profile.Nfp
+              : profile.Nfp.Rotate(oppositeRotation);
+            double centreX = (placement.MinX + placement.MaxX) / 2.0;
+            double centreY = (placement.MinY + placement.MaxY) / 2.0;
+            double oppositeX = centreX - ((opposite.MinX + opposite.MaxX) / 2.0);
+            double oppositeY = centreY - ((opposite.MinY + opposite.MaxY) / 2.0);
+            optionsByPart[i].Add(new DirectPlacementOption(
+              i,
+              1,
+              opposite,
+              oppositeRotation,
+              oppositeX,
+              oppositeY));
+          }
         }
 
-        int count = points.Length;
-        if (count > 1 && Distance(points[0].X, points[0].Y, points[count - 1].X, points[count - 1].Y) <= geometryTolerance)
+        foreach (DirectPlacementOption option in optionsByPart[i])
         {
-          count--;
-        }
-
-        bool[] curved = (all[i].Part as NoFitPolygon)?.GetCurvedSegments();
-        double winding = SignedArea(points) >= 0 ? 1.0 : -1.0;
-        for (int edgeIndex = 0; edgeIndex < count; edgeIndex++)
-        {
-          if (curved != null && edgeIndex < curved.Length && curved[edgeIndex])
+          if (!IsQuarterTurn(option.Rotation))
           {
             continue;
           }
 
-          SvgPoint a = points[edgeIndex];
-          SvgPoint b = points[(edgeIndex + 1) % count];
-          double dx = b.X - a.X;
-          double dy = b.Y - a.Y;
-          double length = Math.Sqrt((dx * dx) + (dy * dy));
-          if (length <= geometryTolerance)
+          SvgPoint[] points = option.Poly?.Points;
+          if (points == null || points.Length < 3)
           {
             continue;
           }
 
-          double ux = dx / length;
-          double uy = dy / length;
-          edgesByPart[i].Add(new DirectEdge(
-            i,
-            edgeIndex,
-            a.X + all[i].X,
-            a.Y + all[i].Y,
-            b.X + all[i].X,
-            b.Y + all[i].Y,
-            ux,
-            uy,
-            winding * uy,
-            winding * -ux,
-            length));
+          int count = points.Length;
+          if (count > 1 && Distance(points[0].X, points[0].Y, points[count - 1].X, points[count - 1].Y) <= geometryTolerance)
+          {
+            count--;
+          }
+
+          bool[] curved = (option.Poly as NoFitPolygon)?.GetCurvedSegments();
+          double winding = SignedArea(points) >= 0 ? 1.0 : -1.0;
+          for (int edgeIndex = 0; edgeIndex < count; edgeIndex++)
+          {
+            if (curved != null && edgeIndex < curved.Length && curved[edgeIndex])
+            {
+              continue;
+            }
+
+            SvgPoint a = points[edgeIndex];
+            SvgPoint b = points[(edgeIndex + 1) % count];
+            double dx = b.X - a.X;
+            double dy = b.Y - a.Y;
+            double length = Math.Sqrt((dx * dx) + (dy * dy));
+            if (length <= geometryTolerance)
+            {
+              continue;
+            }
+
+            double ux = dx / length;
+            double uy = dy / length;
+            option.Edges.Add(new DirectEdge(
+              i,
+              option.Pose,
+              edgeIndex,
+              a.X + option.X,
+              a.Y + option.Y,
+              b.X + option.X,
+              b.Y + option.Y,
+              ux,
+              uy,
+              winding * uy,
+              winding * -ux,
+              length));
+          }
         }
       }
 
@@ -1755,225 +1961,513 @@
             continue;
           }
 
-          double spacingA = rulesBySource.TryGetValue(all[a].Source, out var ra) ? Math.Max(0, ra.Spacing) : 0;
-          double spacingB = rulesBySource.TryGetValue(all[b].Source, out var rb) ? Math.Max(0, rb.Spacing) : 0;
+          double spacingA = rulesBySource.TryGetValue(originalPlacements[a].Source, out var ra) ? Math.Max(0, ra.Spacing) : 0;
+          double spacingB = rulesBySource.TryGetValue(originalPlacements[b].Source, out var rb) ? Math.Max(0, rb.Spacing) : 0;
           double travelLimit = (3.0 * Math.Max(commonLineGap, (spacingA + spacingB) / 2.0)) + (8.0 * geometryTolerance);
-          foreach (DirectEdge ea in edgesByPart[a])
+          foreach (DirectPlacementOption optionA in optionsByPart[a])
           {
-            foreach (DirectEdge eb in edgesByPart[b])
+            foreach (DirectPlacementOption optionB in optionsByPart[b])
             {
-              if (Math.Abs(ea.Length - eb.Length) > geometryTolerance
-                  || Math.Abs((ea.Ux * eb.Uy) - (ea.Uy * eb.Ux)) > geometryTolerance / Math.Max(ea.Length, geometryTolerance)
-                  || (ea.Nx * eb.Nx) + (ea.Ny * eb.Ny) > -1.0 + 1e-8)
+              foreach (DirectEdge ea in optionA.Edges)
               {
-                continue;
+                foreach (DirectEdge eb in optionB.Edges)
+                {
+                  if (Math.Abs(ea.Length - eb.Length) > geometryTolerance
+                      || Math.Abs((ea.Ux * eb.Uy) - (ea.Uy * eb.Ux)) > geometryTolerance / Math.Max(ea.Length, geometryTolerance)
+                      || (ea.Nx * eb.Nx) + (ea.Ny * eb.Ny) > -1.0 + 1e-8)
+                  {
+                    continue;
+                  }
+
+                  double currentSeparation = ((((eb.Ax + eb.Bx) / 2.0) - ((ea.Ax + ea.Bx) / 2.0)) * ea.Nx)
+                    + ((((eb.Ay + eb.By) / 2.0) - ((ea.Ay + ea.By) / 2.0)) * ea.Ny);
+                  if (currentSeparation <= 0)
+                  {
+                    continue;
+                  }
+
+                  double direct = Distance(ea.Ax, ea.Ay, eb.Ax, eb.Ay) + Distance(ea.Bx, ea.By, eb.Bx, eb.By);
+                  double reverse = Distance(ea.Ax, ea.Ay, eb.Bx, eb.By) + Distance(ea.Bx, ea.By, eb.Ax, eb.Ay);
+                  double bsx = reverse < direct ? eb.Bx : eb.Ax;
+                  double bsy = reverse < direct ? eb.By : eb.Ay;
+                  double bex = reverse < direct ? eb.Ax : eb.Bx;
+                  double bey = reverse < direct ? eb.Ay : eb.By;
+
+                  double shiftX = ea.Ax + (ea.Nx * commonLineGap) - bsx;
+                  double shiftY = ea.Ay + (ea.Ny * commonLineGap) - bsy;
+                  double endError = Distance(
+                    bex + shiftX,
+                    bey + shiftY,
+                    ea.Bx + (ea.Nx * commonLineGap),
+                    ea.By + (ea.Ny * commonLineGap));
+                  double travel = Math.Sqrt((shiftX * shiftX) + (shiftY * shiftY));
+                  if (endError > geometryTolerance || travel > travelLimit)
+                  {
+                    continue;
+                  }
+
+                  candidates.Add(new DirectCandidate(
+                    a,
+                    b,
+                    ea.Pose,
+                    eb.Pose,
+                    ea.Index,
+                    eb.Index,
+                    shiftX,
+                    shiftY,
+                    ea.Length,
+                    travel));
+                }
               }
-
-              double currentSeparation = ((((eb.Ax + eb.Bx) / 2.0) - ((ea.Ax + ea.Bx) / 2.0)) * ea.Nx)
-                + ((((eb.Ay + eb.By) / 2.0) - ((ea.Ay + ea.By) / 2.0)) * ea.Ny);
-              if (currentSeparation <= 0)
-              {
-                continue;
-              }
-
-              double direct = Distance(ea.Ax, ea.Ay, eb.Ax, eb.Ay) + Distance(ea.Bx, ea.By, eb.Bx, eb.By);
-              double reverse = Distance(ea.Ax, ea.Ay, eb.Bx, eb.By) + Distance(ea.Bx, ea.By, eb.Ax, eb.Ay);
-              double bsx = reverse < direct ? eb.Bx : eb.Ax;
-              double bsy = reverse < direct ? eb.By : eb.Ay;
-              double bex = reverse < direct ? eb.Ax : eb.Bx;
-              double bey = reverse < direct ? eb.Ay : eb.By;
-
-              double shiftX = ea.Ax + (ea.Nx * commonLineGap) - bsx;
-              double shiftY = ea.Ay + (ea.Ny * commonLineGap) - bsy;
-              double endError = Distance(
-                bex + shiftX,
-                bey + shiftY,
-                ea.Bx + (ea.Nx * commonLineGap),
-                ea.By + (ea.Ny * commonLineGap));
-              double travel = Math.Sqrt((shiftX * shiftX) + (shiftY * shiftY));
-              if (endError > geometryTolerance || travel > travelLimit)
-              {
-                continue;
-              }
-
-              candidates.Add(new DirectCandidate(a, b, ea.Index, eb.Index, shiftX, shiftY, ea.Length - travel));
             }
           }
         }
       }
 
-      candidates.Sort((x, y) => y.Quality.CompareTo(x.Quality));
+      candidates.Sort((x, y) =>
+      {
+        int order = y.Length.CompareTo(x.Length);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.Travel.CompareTo(y.Travel);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.PoseChanges.CompareTo(y.PoseChanges);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.A.CompareTo(y.A);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.B.CompareTo(y.B);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.PoseA.CompareTo(y.PoseA);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.PoseB.CompareTo(y.PoseB);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.EdgeA.CompareTo(y.EdgeA);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.EdgeB.CompareTo(y.EdgeB);
+        if (order != 0)
+        {
+          return order;
+        }
+
+        order = x.Dx.CompareTo(y.Dx);
+        return order != 0 ? order : x.Dy.CompareTo(y.Dy);
+      });
       if (candidates.Count == 0)
       {
         return result;
       }
 
+      bool hasExtendedTooling = orientationProfilesBySource?.Any(item =>
+        item.Value?.Tooling != null && !ReferenceEquals(item.Value.Tooling, item.Value.Nfp)) == true;
+      Dictionary<int, INfp> toolingBySource = hasExtendedTooling
+        ? orientationProfilesBySource
+          .Where(item => item.Value != null)
+          .ToDictionary(item => item.Key, item => item.Value.Tooling)
+        : null;
+
+      bool TryApplyPlan(
+        IReadOnlyList<DirectCandidate> plan,
+        bool validateTopology,
+        out List<CommonEdgeIntent> intents,
+        out int[] groups,
+        out DirectPlanFailure failure,
+        out string failureReason)
+      {
+        RestoreOriginalPlacements();
+        intents = new List<CommonEdgeIntent>();
+        groups = new int[n];
+        failure = DirectPlanFailure.None;
+        failureReason = null;
+        if (plan.Count == 0)
+        {
+          return true;
+        }
+
+        var poses = Enumerable.Repeat(-1, n).ToArray();
+        foreach (DirectCandidate edge in plan)
+        {
+          if ((poses[edge.A] >= 0 && poses[edge.A] != edge.PoseA)
+              || (poses[edge.B] >= 0 && poses[edge.B] != edge.PoseB))
+          {
+            failure = DirectPlanFailure.EdgeGeometry;
+            return false;
+          }
+
+          poses[edge.A] = edge.PoseA;
+          poses[edge.B] = edge.PoseB;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+          if (poses[i] <= 0)
+          {
+            continue;
+          }
+
+          DirectPlacementOption option = optionsByPart[i][poses[i]];
+          IPartPlacement original = originalPlacements[i];
+          all[i] = new PartPlacement(option.Poly)
+          {
+            Id = original.Id,
+            IsDragging = original.IsDragging,
+            IsMirrored = original.IsMirrored,
+            Rotation = option.Rotation,
+            Source = original.Source,
+            X = option.X,
+            Y = option.Y,
+          };
+        }
+
+        var adjacency = new Dictionary<int, List<(int Other, double Dx, double Dy)>>();
+        void Link(int a, int b, double dx, double dy)
+        {
+          (adjacency.TryGetValue(a, out var fromA) ? fromA : adjacency[a] = new List<(int, double, double)>()).Add((b, dx, dy));
+          (adjacency.TryGetValue(b, out var fromB) ? fromB : adjacency[b] = new List<(int, double, double)>()).Add((a, -dx, -dy));
+        }
+
+        foreach (DirectCandidate edge in plan)
+        {
+          Link(edge.A, edge.B, edge.Dx, edge.Dy);
+        }
+
+        var visited = new bool[n];
+        int nextGroup = 1;
+        foreach (int start in adjacency.Keys.OrderBy(index => index))
+        {
+          if (visited[start])
+          {
+            continue;
+          }
+
+          var offsets = new Dictionary<int, (double X, double Y)> { [start] = (0, 0) };
+          var queue = new Queue<int>();
+          queue.Enqueue(start);
+          visited[start] = true;
+          while (queue.Count > 0)
+          {
+            int current = queue.Dequeue();
+            DirectPlacementOption option = optionsByPart[current][poses[current]];
+            all[current].X = option.X + offsets[current].X;
+            all[current].Y = option.Y + offsets[current].Y;
+            groups[current] = nextGroup;
+            foreach (var link in adjacency[current])
+            {
+              if (visited[link.Other])
+              {
+                continue;
+              }
+
+              offsets[link.Other] = (offsets[current].X + link.Dx, offsets[current].Y + link.Dy);
+              visited[link.Other] = true;
+              queue.Enqueue(link.Other);
+            }
+          }
+
+          nextGroup++;
+        }
+
+        var usedEnds = new HashSet<(int Part, int Edge)>();
+        foreach (DirectCandidate edge in plan)
+        {
+          if (!CommonLineGeometryResolver.TryCreateCommonEdge(
+                all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB, commonLineGap, geometryTolerance, out _))
+          {
+            failure = DirectPlanFailure.EdgeGeometry;
+            failureReason = CommonLineFallbackNotice.TopologyReason;
+            return false;
+          }
+
+          usedEnds.Add((edge.A, edge.EdgeA));
+          usedEnds.Add((edge.B, edge.EdgeB));
+          intents.Add(new CommonEdgeIntent(all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB));
+        }
+
+        // A tree can pull a cycle's last two faces to CommonLineGap as a side effect (the fourth edge of
+        // a 2x2 grid). Record every such deliberately proposed full edge before clearance validation, so
+        // no tight contact is ever present without the CommonEdge that authorises it.
+        foreach (DirectCandidate edge in candidates)
+        {
+          if (groups[edge.A] <= 0
+              || groups[edge.A] != groups[edge.B]
+              || poses[edge.A] != edge.PoseA
+              || poses[edge.B] != edge.PoseB
+              || usedEnds.Contains((edge.A, edge.EdgeA))
+              || usedEnds.Contains((edge.B, edge.EdgeB))
+              || intents.Any(intent =>
+                (ReferenceEquals(intent.PartA, all[edge.A]) && ReferenceEquals(intent.PartB, all[edge.B]))
+                || (ReferenceEquals(intent.PartA, all[edge.B]) && ReferenceEquals(intent.PartB, all[edge.A]))))
+          {
+            continue;
+          }
+
+          if (CommonLineGeometryResolver.TryCreateCommonEdge(
+                all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB, commonLineGap, geometryTolerance, out _))
+          {
+            usedEnds.Add((edge.A, edge.EdgeA));
+            usedEnds.Add((edge.B, edge.EdgeB));
+            intents.Add(new CommonEdgeIntent(all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB));
+          }
+        }
+
+        bool layoutValid = DirectLayoutIsValid(
+          all,
+          intents,
+          rulesBySource,
+          sheetW,
+          sheetH,
+          margin,
+          commonLineGap,
+          geometryTolerance);
+        if (!layoutValid)
+        {
+          failure = DirectPlanFailure.Layout;
+          return false;
+        }
+
+        if (validateTopology)
+        {
+          bool topologyValid = CommonLineTopologyIsValid(
+                all,
+                intents,
+                sheetW,
+                sheetH,
+                commonLineGap,
+                geometryTolerance,
+                out failureReason);
+          if (!topologyValid)
+          {
+            failure = DirectPlanFailure.Topology;
+            return false;
+          }
+        }
+
+        bool toolingValid = toolingBySource == null || ToolingClearsEveryone(all, toolingBySource, null);
+        if (!toolingValid)
+        {
+          failure = DirectPlanFailure.Tooling;
+          return false;
+        }
+
+        return true;
+      }
+
       var parent = Enumerable.Range(0, n).ToArray();
       int Find(int x) => parent[x] == x ? x : parent[x] = Find(parent[x]);
+      var selectedPoses = Enumerable.Repeat(-1, n).ToArray();
       var usedTreeEnds = new HashSet<(int Part, int Edge)>();
+      var givenUpPairs = new HashSet<(int A, int B)>();
+      var topologyFailuresByPair = new Dictionary<(int A, int B), string>();
       var tree = new List<DirectCandidate>();
-      foreach (DirectCandidate candidate in candidates)
+
+      void ResetForestState()
+      {
+        usedTreeEnds.Clear();
+        Array.Fill(selectedPoses, -1);
+        for (int i = 0; i < parent.Length; i++)
+        {
+          parent[i] = i;
+        }
+      }
+
+      bool TryAddToForest(DirectCandidate candidate)
       {
         int rootA = Find(candidate.A);
         int rootB = Find(candidate.B);
         if (rootA == rootB
             || usedTreeEnds.Contains((candidate.A, candidate.EdgeA))
-            || usedTreeEnds.Contains((candidate.B, candidate.EdgeB)))
+            || usedTreeEnds.Contains((candidate.B, candidate.EdgeB))
+            || (selectedPoses[candidate.A] >= 0 && selectedPoses[candidate.A] != candidate.PoseA)
+            || (selectedPoses[candidate.B] >= 0 && selectedPoses[candidate.B] != candidate.PoseB))
         {
-          continue;
+          return false;
         }
 
         parent[rootB] = rootA;
+        selectedPoses[candidate.A] = candidate.PoseA;
+        selectedPoses[candidate.B] = candidate.PoseB;
         usedTreeEnds.Add((candidate.A, candidate.EdgeA));
         usedTreeEnds.Add((candidate.B, candidate.EdgeB));
         tree.Add(candidate);
+        return true;
       }
 
-      if (tree.Count == 0)
+      void PublishFailures(IReadOnlyList<CommonEdgeIntent> acceptedIntents)
       {
+        var acceptedPairs = new HashSet<(int A, int B)>();
+        foreach (CommonEdgeIntent intent in acceptedIntents ?? Array.Empty<CommonEdgeIntent>())
+        {
+          int a = all.FindIndex(placement => ReferenceEquals(placement, intent.PartA));
+          int b = all.FindIndex(placement => ReferenceEquals(placement, intent.PartB));
+          if (a >= 0 && b >= 0)
+          {
+            acceptedPairs.Add(a <= b ? (a, b) : (b, a));
+          }
+        }
+
+        result.GivenUp = givenUpPairs.Count(pair => !acceptedPairs.Contains(pair));
+        foreach (var failed in topologyFailuresByPair)
+        {
+          if (!acceptedPairs.Contains(failed.Key))
+          {
+            AddCommonLineFallback(
+              result,
+              new[] { originalPlacements[failed.Key.A], originalPlacements[failed.Key.B] },
+              failed.Value);
+          }
+        }
+      }
+
+      void BuildIncrementalForest(bool validateTopology)
+      {
+        RestoreOriginalPlacements();
+        tree.Clear();
+        ResetForestState();
+        foreach (DirectCandidate candidate in candidates)
+        {
+          if (!TryAddToForest(candidate))
+          {
+            continue;
+          }
+
+          if (!TryApplyPlan(
+                tree,
+                validateTopology,
+                out _,
+                out _,
+                out DirectPlanFailure failure,
+                out string failureReason))
+          {
+            if (failure == DirectPlanFailure.EdgeGeometry || failure == DirectPlanFailure.Topology)
+            {
+              topologyFailuresByPair[(candidate.A, candidate.B)] =
+                failureReason ?? CommonLineFallbackNotice.TopologyReason;
+            }
+
+            tree.RemoveAt(tree.Count - 1);
+            DirectCandidate[] acceptedTree = tree.ToArray();
+            tree.Clear();
+            ResetForestState();
+            foreach (DirectCandidate accepted in acceptedTree)
+            {
+              _ = TryAddToForest(accepted);
+            }
+
+            _ = givenUpPairs.Add((candidate.A, candidate.B));
+          }
+        }
+      }
+
+      // The normal case is a sound candidate layout. Build its deterministic forest without repeatedly
+      // resolving the same ever-growing cluster, then validate the complete answer once. A 10x10 grid
+      // otherwise performs 99 polygon unions and full pair-clearance scans before reaching the result.
+      // If the optimistic plan is not valid, the incremental pass below retains the important recovery
+      // behaviour: reject only the offending relationship, restore every pose, and try the next one.
+      foreach (DirectCandidate candidate in candidates)
+      {
+        _ = TryAddToForest(candidate);
+      }
+
+      if (tree.Count > 0
+          && TryApplyPlan(
+            tree,
+            true,
+            out List<CommonEdgeIntent> optimisticIntents,
+            out int[] optimisticGroups,
+            out _,
+            out _))
+      {
+        result.Groups = optimisticGroups;
+        result.Edges.AddRange(optimisticIntents);
         return result;
       }
 
-      var adjacency = new Dictionary<int, List<(int Other, double Dx, double Dy)>>();
-      void Link(int a, int b, double dx, double dy)
+      // Layout and edge checks identify the candidate that physically cannot join the forest. Resolving
+      // the complete cluster boundary after every accepted prefix is quadratic work on dense jobs, so do
+      // that strict check once for the resulting plan. If it exposes a topology-only failure, rebuild with
+      // strict prefix validation to retain the planner's candidate-by-candidate recovery behaviour.
+      BuildIncrementalForest(validateTopology: false);
+
+      if (tree.Count == 0)
       {
-        (adjacency.TryGetValue(a, out var fromA) ? fromA : adjacency[a] = new List<(int, double, double)>()).Add((b, dx, dy));
-        (adjacency.TryGetValue(b, out var fromB) ? fromB : adjacency[b] = new List<(int, double, double)>()).Add((a, -dx, -dy));
+        PublishFailures(Array.Empty<CommonEdgeIntent>());
+        RestoreOriginalPlacements();
+        return result;
       }
 
-      foreach (DirectCandidate edge in tree)
+      if (TryApplyPlan(
+            tree,
+            true,
+            out List<CommonEdgeIntent> finalIntents,
+            out int[] finalGroups,
+            out _,
+            out _))
       {
-        Link(edge.A, edge.B, edge.Dx, edge.Dy);
+        PublishFailures(finalIntents);
+        result.Groups = finalGroups;
+        result.Edges.AddRange(finalIntents);
+        return result;
       }
 
-      double[] originalX = all.Select(p => p.X).ToArray();
-      double[] originalY = all.Select(p => p.Y).ToArray();
-      var visited = new bool[n];
-      int nextGroup = 1;
-      foreach (int start in adjacency.Keys.OrderBy(i => i))
+      // The fast incremental pass intentionally deferred topology. Discard its provisional diagnostics
+      // and retry strictly so a bad relationship is rejected without hiding a later valid alternative.
+      givenUpPairs.Clear();
+      topologyFailuresByPair.Clear();
+      BuildIncrementalForest(validateTopology: true);
+      if (tree.Count == 0)
       {
-        if (visited[start])
-        {
-          continue;
-        }
-
-        var members = new List<int>();
-        var offsets = new Dictionary<int, (double X, double Y)> { [start] = (0, 0) };
-        var queue = new Queue<int>();
-        queue.Enqueue(start);
-        visited[start] = true;
-        while (queue.Count > 0)
-        {
-          int current = queue.Dequeue();
-          members.Add(current);
-          foreach (var link in adjacency[current])
-          {
-            if (visited[link.Other])
-            {
-              continue;
-            }
-
-            offsets[link.Other] = (offsets[current].X + link.Dx, offsets[current].Y + link.Dy);
-            visited[link.Other] = true;
-            queue.Enqueue(link.Other);
-          }
-        }
-
-        foreach (int member in members)
-        {
-          all[member].X = originalX[member] + offsets[member].X;
-          all[member].Y = originalY[member] + offsets[member].Y;
-        }
-
-        var memberSet = new HashSet<int>(members);
-        var groupEdges = new List<CommonEdgeIntent>();
-        var usedEnds = new HashSet<(int Part, int Edge)>();
-        bool valid = true;
-
-        // The forest edges are mandatory: without one of them the offsets no longer describe this group.
-        foreach (DirectCandidate edge in tree.Where(e => memberSet.Contains(e.A) && memberSet.Contains(e.B)))
-        {
-          if (!CommonLineGeometryResolver.TryCreateCommonEdge(
-                all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB, commonLineGap, geometryTolerance, out _))
-          {
-            valid = false;
-            break;
-          }
-
-          usedEnds.Add((edge.A, edge.EdgeA));
-          usedEnds.Add((edge.B, edge.EdgeB));
-          groupEdges.Add(new CommonEdgeIntent(all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB));
-        }
-
-        // Record every additional relation the original candidate set intentionally proposed and the
-        // final rigid offsets satisfy. This is how a closed 2x2 grid keeps its fourth (cycle) edge.
-        if (valid)
-        {
-          foreach (DirectCandidate edge in candidates.Where(e => memberSet.Contains(e.A) && memberSet.Contains(e.B)))
-          {
-            if (usedEnds.Contains((edge.A, edge.EdgeA))
-                || usedEnds.Contains((edge.B, edge.EdgeB))
-                || groupEdges.Any(x => (ReferenceEquals(x.PartA, all[edge.A]) && ReferenceEquals(x.PartB, all[edge.B]))
-                  || (ReferenceEquals(x.PartA, all[edge.B]) && ReferenceEquals(x.PartB, all[edge.A]))))
-            {
-              continue;
-            }
-
-            if (CommonLineGeometryResolver.TryCreateCommonEdge(
-                  all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB, commonLineGap, geometryTolerance, out _))
-            {
-              usedEnds.Add((edge.A, edge.EdgeA));
-              usedEnds.Add((edge.B, edge.EdgeB));
-              groupEdges.Add(new CommonEdgeIntent(all[edge.A], edge.EdgeA, all[edge.B], edge.EdgeB));
-            }
-          }
-        }
-
-        var tentative = result.Edges.Concat(groupEdges).ToList();
-        bool edgeGeometryValid = valid;
-        bool layoutValid = edgeGeometryValid
-          && DirectLayoutIsValid(all, tentative, rulesBySource, sheetW, sheetH, margin, commonLineGap, geometryTolerance);
-        string topologyFailure = null;
-        bool topologyValid = edgeGeometryValid
-          && CommonLineTopologyIsValid(
-            all,
-            tentative,
-            sheetW,
-            sheetH,
-            commonLineGap,
-            geometryTolerance,
-            out topologyFailure);
-        valid = edgeGeometryValid && layoutValid && topologyValid;
-        if (!valid)
-        {
-          if (!edgeGeometryValid)
-          {
-            AddCommonLineFallback(result, members.Select(member => all[member]), CommonLineFallbackNotice.TopologyReason);
-          }
-          else if (!topologyValid)
-          {
-            AddCommonLineFallback(result, members.Select(member => all[member]), topologyFailure);
-          }
-
-          foreach (int member in members)
-          {
-            all[member].X = originalX[member];
-            all[member].Y = originalY[member];
-          }
-
-          result.GivenUp++;
-          continue;
-        }
-
-        foreach (int member in members)
-        {
-          result.Groups[member] = nextGroup;
-        }
-
-        nextGroup++;
-        result.Edges.AddRange(groupEdges);
+        PublishFailures(Array.Empty<CommonEdgeIntent>());
+        RestoreOriginalPlacements();
+        return result;
       }
 
+      if (!TryApplyPlan(
+            tree,
+            true,
+            out finalIntents,
+            out finalGroups,
+            out _,
+            out _))
+      {
+        RestoreOriginalPlacements();
+        PublishFailures(Array.Empty<CommonEdgeIntent>());
+        result.GivenUp++;
+        return result;
+      }
+
+      PublishFailures(finalIntents);
+      result.Groups = finalGroups;
+      result.Edges.AddRange(finalIntents);
       return result;
     }
 
@@ -2003,7 +2497,8 @@
         (a, b) => PlacementCollision.PlacementNoise,
         ClearanceEdges(intents),
         commonLineGap,
-        geometryTolerance).All.Count == 0;
+        geometryTolerance,
+        stopAtFirst: true).All.Count == 0;
     }
 
     /// <summary>Final sheet acceptance includes both contracts: edge-aware V1 records and SheetCam's

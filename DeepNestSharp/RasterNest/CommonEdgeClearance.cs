@@ -175,7 +175,8 @@ namespace DeepNestSharp.RasterNest
       Func<IPartPlacement, IPartPlacement, double> sliverBetween,
       IReadOnlyList<EdgeReference> commonEdges,
       double commonLineGap,
-      double geometryTolerance)
+      double geometryTolerance,
+      bool stopAtFirst = false)
     {
       var unfit = new PlacementAcceptance.Unfit();
       sliverBetween ??= (a, b) => PlacementCollision.PlacementNoise;
@@ -196,6 +197,10 @@ namespace DeepNestSharp.RasterNest
         {
           unfit.OutsideMargin.Add(a);
           unfit.All.Add(a);
+          if (stopAtFirst)
+          {
+            return unfit;
+          }
         }
 
         for (int j = i + 1; j < placements.Count; j++)
@@ -220,6 +225,10 @@ namespace DeepNestSharp.RasterNest
             unfit.Overlapping.Add(b);
             unfit.All.Add(a);
             unfit.All.Add(b);
+            if (stopAtFirst)
+            {
+              return unfit;
+            }
           }
         }
       }
