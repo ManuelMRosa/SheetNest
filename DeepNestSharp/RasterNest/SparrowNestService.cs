@@ -740,27 +740,34 @@
           }
         }
 
-        bool edgesValid = sheetCommonEdges[sheetIndex].All(edge => TryCreateCommonEdgeRecord(
-          edge,
-          commonLineGap,
-          geometryTolerance,
-          out _));
-        if (!edgesValid
-            || (sheetCommonEdges[sheetIndex].Count > 0
-              && !ToolingClearsEveryone(sheetLayouts[sheetIndex], toolingById, null))
-            || !FinalLayoutIsValid(
-              sheetLayouts[sheetIndex],
-              sheetCommonEdges[sheetIndex],
-              loadedById,
-              sheetSizes[sheetIndex].W,
-              sheetSizes[sheetIndex].H,
-              margin,
-              commonLineGap,
-              geometryTolerance,
-              cancel))
+        // A sheet with no recorded cluster has nothing here to prove: there is no shrunk spacing to
+        // protect, and the acceptance clearance is not the rule the rest of the sheet was built to.
+        // FillHoles above deliberately seats parts INSIDE another part's hole, granting each one
+        // FitSpacing/2 around the polygon it grows; judging those pairs by the neighbour-dependent
+        // AcceptanceClearanceOf condemns them and takes the whole nest down with them.
+        if (sheetCommonEdges[sheetIndex].Count > 0)
         {
-          error = "A common-line cluster did not survive final sheet validation.";
-          return null;
+          bool edgesValid = sheetCommonEdges[sheetIndex].All(edge => TryCreateCommonEdgeRecord(
+            edge,
+            commonLineGap,
+            geometryTolerance,
+            out _));
+          if (!edgesValid
+              || !ToolingClearsEveryone(sheetLayouts[sheetIndex], toolingById, null)
+              || !FinalLayoutIsValid(
+                sheetLayouts[sheetIndex],
+                sheetCommonEdges[sheetIndex],
+                loadedById,
+                sheetSizes[sheetIndex].W,
+                sheetSizes[sheetIndex].H,
+                margin,
+                commonLineGap,
+                geometryTolerance,
+                cancel))
+          {
+            error = "A common-line cluster did not survive final sheet validation.";
+            return null;
+          }
         }
       }
 
