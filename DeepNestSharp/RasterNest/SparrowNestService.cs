@@ -58,6 +58,14 @@
 
     internal static int DiagSeamsGivenUp;
 
+    /// <summary>Direct-plan rejection stages from the most recent nest. This is diagnostic evidence only;
+    /// it does not participate in candidate selection or acceptance.</summary>
+    internal static readonly ConcurrentQueue<string> DiagDirectFailures = new();
+
+    /// <summary>How many times a lone neighbour was walked clear of a just-welded component instead of
+    /// discarding the whole candidate. Diagnostic only; candidate searches run concurrently.</summary>
+    internal static int DiagDirectNeighborNudges;
+
     /// <summary>
     /// Per-drawing reasons why direct common-line relationships on the kept result fell back to normal
     /// spacing. Candidate searches run concurrently, so only <see cref="PackOneSheet"/>'s winner is added.
@@ -358,6 +366,10 @@
       DiagDeferred = 0;
       DiagSeamsSnapped = 0;
       DiagSeamsGivenUp = 0;
+      DiagDirectNeighborNudges = 0;
+      while (DiagDirectFailures.TryDequeue(out _))
+      {
+      }
       lock (DiagCommonLineFallbacks)
       {
         DiagCommonLineFallbacks.Clear();
@@ -1090,7 +1102,7 @@
         // much of the sheet is left in one piece. It is the metric the operator sees; sparrow's density
         // is measured on its own strip BEFORE the compaction, so the two can disagree.
         bool longAxisIsX = sheetW >= sheetH;
-        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<string> Stranded, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks)>();
+        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double SharedLength, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<string> Stranded, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks)>();
         int bestIndex = -1, launched = 0;
         string firstTryError = null;
         int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
@@ -1157,7 +1169,8 @@
             if (wSt[j].HasValue)
             {
               var (ex, ey) = Extent(wPl[j]);
-              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wEdges[j], wSt[j].Value.Stranded, wFallbacks[j]));
+              double sharedLength = CommonLineLength(wEdges[j], commonLineGap, geometryTolerance, capturedSources);
+              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, sharedLength, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wEdges[j], wSt[j].Value.Stranded, wFallbacks[j]));
               lock (DiagCandidates)
               {
                 DiagCandidates.Add(FormattableString.Invariant(
@@ -1167,13 +1180,14 @@
           }
 
           // Plateau: stop once a full wave fails to produce a better candidate than the ones already in
-          // hand, judged by the SAME ordering that will pick the winner (parts, then extent, then density).
+          // hand, judged by the SAME ordering that will pick the winner (parts, common-line length,
+          // then extent and density).
           // It used to count parts only, and parts placed is a metric that stops moving almost at once: a
           // wave that was still tightening the pack read as no progress, so the search was cut while the
           // block was still too wide, which is the whole complaint this change exists to answer.
           int waveBest = winners.Count == 0
             ? -1
-            : PickBest(winners.Select(w => (w.Count, w.Extent, w.Density, w.Seed)).ToList());
+            : PickBest(winners.Select(w => (w.Count, w.SharedLength, w.Extent, w.Density, w.Seed)).ToList());
           if (bestIndex >= 0 && waveBest == bestIndex)
           {
             break;
@@ -1196,7 +1210,7 @@
           return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<string>(), Array.Empty<CommonLineFallbackNotice>());
         }
 
-        int bi = PickBest(winners.Select(w => (w.Count, w.Extent, w.Density, w.Seed)).ToList());
+        int bi = PickBest(winners.Select(w => (w.Count, w.SharedLength, w.Extent, w.Density, w.Seed)).ToList());
         var sel = winners[bi];
         return (sel.Pl, sel.By, sheetW, sheetH, sel.SeamsSnapped, sel.SeamsGivenUp, sel.CommonEdges, sel.Stranded, sel.CommonLineFallbacks);
       }
@@ -1361,6 +1375,8 @@
           margin,
           commonLineGap,
           geometryTolerance,
+          out _,
+          out _,
           cancel,
           sourceCatalogs);
         bool topologyStillValid = CommonLineTopologyIsValid(
@@ -2245,6 +2261,24 @@
       double[] originalY = originalPlacements.Select(p => p.Y).ToArray();
       double[] originalRotation = originalPlacements.Select(p => p.Rotation).ToArray();
 
+      if (!DirectLayoutIsValid(
+            all,
+            Array.Empty<CommonEdgeIntent>(),
+            rulesBySource,
+            sheetW,
+            sheetH,
+            margin,
+            commonLineGap,
+            geometryTolerance,
+            out string baselineFailure,
+            out _,
+            cancel,
+            sourceCatalogs,
+            verdictCache))
+      {
+        RecordDirectFailure(0, DirectPlanFailure.Layout, "baseline " + baselineFailure);
+      }
+
       double NormalizeAngle(double angle)
       {
         double normalized = angle % 360.0;
@@ -2726,9 +2760,9 @@
 
       int CompareDirectCandidates(DirectCandidate x, DirectCandidate y)
       {
-        int order = Math.Abs(y.Length - x.Length) > geometryTolerance
-          ? y.Length.CompareTo(x.Length)
-          : 0;
+        // Tolerance is for geometric acceptance, not ranking: treating near values as equal here can
+        // produce a non-transitive comparison and make Sort choose candidates unpredictably.
+        int order = y.Length.CompareTo(x.Length);
         if (order != 0)
         {
           return order;
@@ -2826,20 +2860,19 @@
         (double Area, double LongAxis, double ShortAxis) left,
         (double Area, double LongAxis, double ShortAxis) right)
       {
-        double areaTolerance = geometryTolerance * Math.Max(1.0, Math.Max(sheetW, sheetH));
-        if (Math.Abs(left.Area - right.Area) > areaTolerance)
+        int order = left.Area.CompareTo(right.Area);
+        if (order != 0)
         {
-          return left.Area.CompareTo(right.Area);
+          return order;
         }
 
-        if (Math.Abs(left.LongAxis - right.LongAxis) > geometryTolerance)
+        order = left.LongAxis.CompareTo(right.LongAxis);
+        if (order != 0)
         {
-          return left.LongAxis.CompareTo(right.LongAxis);
+          return order;
         }
 
-        return Math.Abs(left.ShortAxis - right.ShortAxis) > geometryTolerance
-          ? left.ShortAxis.CompareTo(right.ShortAxis)
-          : 0;
+        return left.ShortAxis.CompareTo(right.ShortAxis);
       }
 
       var candidateFootprints = new Dictionary<DirectCandidate, (double Area, double LongAxis, double ShortAxis)>();
@@ -3360,6 +3393,11 @@
         groups = new int[n];
         failure = DirectPlanFailure.None;
         failureReason = null;
+
+        // Local functions cannot close over an out parameter (CS1628); neither is ever reassigned once
+        // set above, so an ordinary local aliasing the same array/list is a legal, always-current stand-in.
+        List<CommonEdgeIntent> intentsRef = intents;
+        int[] groupsRef = groups;
         if (plan.Count == 0)
         {
           return true;
@@ -3373,6 +3411,9 @@
               || (poses[edge.B] >= 0 && poses[edge.B] != edge.PoseB))
           {
             failure = DirectPlanFailure.EdgeGeometry;
+            RestoreOriginalPlacements();
+            intents.Clear();
+            Array.Clear(groups, 0, groups.Length);
             return false;
           }
 
@@ -3469,6 +3510,9 @@
             || minimumDy > maximumDy + geometryTolerance)
           {
             failure = DirectPlanFailure.Layout;
+            RestoreOriginalPlacements();
+            intents.Clear();
+            Array.Clear(groups, 0, groups.Length);
             return false;
           }
 
@@ -3527,6 +3571,9 @@
           {
             failure = DirectPlanFailure.EdgeGeometry;
             failureReason = CommonLineFallbackNotice.TopologyReason;
+            RestoreOriginalPlacements();
+            intents.Clear();
+            Array.Clear(groups, 0, groups.Length);
             return false;
           }
 
@@ -3582,6 +3629,48 @@
           }
         }
 
+        // A normal-clearance conflict here is Sparrow's OWN baseline placement of a part with no seam in
+        // this plan, caught out because the welded component beside it no longer occupies the footprint
+        // that placement assumed. Rejecting the whole candidate over that is exactly what left every
+        // mixed job with zero CommonEdges: walk the untouched neighbour clear first, the same bounded,
+        // fully-reverified way DeferUnfit already does for the final sheet, and only give up the
+        // candidate if no safe spot exists. A component member is never the one that moves here.
+        bool TryNudgeConflictingNeighbor(PlacementAcceptance.Unfit conflict)
+        {
+          if (conflict == null || conflict.OutsideMargin.Count > 0 || conflict.Overlapping.Count != 2)
+          {
+            return false;
+          }
+
+          IPartPlacement[] pair = conflict.Overlapping.ToArray();
+          int indexA = all.IndexOf(pair[0]);
+          int indexB = all.IndexOf(pair[1]);
+          if (indexA < 0 || indexB < 0 || (groupsRef[indexA] > 0) == (groupsRef[indexB] > 0))
+          {
+            return false;
+          }
+
+          IPartPlacement neighbor = groupsRef[indexA] > 0 ? pair[1] : pair[0];
+          bool nudged = TryNudgeClear(
+            all,
+            neighbor,
+            (a, b) => NormalClearanceBetween(a, b, rulesBySource),
+            (a, b) => PlacementCollision.PlacementNoise,
+            intentsRef,
+            sheetW,
+            sheetH,
+            margin,
+            commonLineGap,
+            geometryTolerance,
+            sourceCatalogs);
+          if (nudged)
+          {
+            Interlocked.Increment(ref DiagDirectNeighborNudges);
+          }
+
+          return nudged;
+        }
+
         reportStage("clearance");
         bool layoutValid = DirectLayoutIsValid(
           all,
@@ -3592,12 +3681,36 @@
           margin,
           commonLineGap,
           geometryTolerance,
+          out string layoutFailureReason,
+          out PlacementAcceptance.Unfit layoutConflict,
           cancel,
           sourceCatalogs,
           verdictCache);
+        if (!layoutValid && TryNudgeConflictingNeighbor(layoutConflict))
+        {
+          layoutValid = DirectLayoutIsValid(
+            all,
+            intents,
+            rulesBySource,
+            sheetW,
+            sheetH,
+            margin,
+            commonLineGap,
+            geometryTolerance,
+            out layoutFailureReason,
+            out _,
+            cancel,
+            sourceCatalogs,
+            verdictCache);
+        }
+
         if (!layoutValid)
         {
           failure = DirectPlanFailure.Layout;
+          failureReason = layoutFailureReason;
+          RestoreOriginalPlacements();
+          intents.Clear();
+          Array.Clear(groups, 0, groups.Length);
           return false;
         }
 
@@ -3617,6 +3730,9 @@
           if (!topologyValid)
           {
             failure = DirectPlanFailure.Topology;
+            RestoreOriginalPlacements();
+            intents.Clear();
+            Array.Clear(groups, 0, groups.Length);
             return false;
           }
         }
@@ -3625,32 +3741,13 @@
         if (!toolingValid)
         {
           failure = DirectPlanFailure.Tooling;
+          RestoreOriginalPlacements();
+          intents.Clear();
+          Array.Clear(groups, 0, groups.Length);
           return false;
         }
 
         return true;
-      }
-
-      int CompareFootprints(
-        (double Area, double LongAxis, double ShortAxis) left,
-        (double Area, double LongAxis, double ShortAxis) right)
-      {
-        // Density/material is the primary product goal. Scale dimensional noise into area units so
-        // sub-Clipper differences do not defeat the deterministic saved-cut tie breaker.
-        double areaTolerance = geometryTolerance * Math.Max(1.0, Math.Max(sheetW, sheetH));
-        if (Math.Abs(left.Area - right.Area) > areaTolerance)
-        {
-          return left.Area.CompareTo(right.Area);
-        }
-
-        if (Math.Abs(left.LongAxis - right.LongAxis) > geometryTolerance)
-        {
-          return left.LongAxis.CompareTo(right.LongAxis);
-        }
-
-        return Math.Abs(left.ShortAxis - right.ShortAxis) > geometryTolerance
-          ? left.ShortAxis.CompareTo(right.ShortAxis)
-          : 0;
       }
 
       (double Area, double LongAxis, double ShortAxis) ProjectedFootprint(
@@ -3747,15 +3844,13 @@
 
       int ComparePlanStates(DirectPlanState left, DirectPlanState right)
       {
-        int order = CompareFootprints(ProjectedStateFootprint(left), ProjectedStateFootprint(right));
+        int order = right.TotalLength.CompareTo(left.TotalLength);
         if (order != 0)
         {
           return order;
         }
 
-        order = Math.Abs(right.TotalLength - left.TotalLength) > geometryTolerance
-          ? right.TotalLength.CompareTo(left.TotalLength)
-          : 0;
+        order = CompareCandidateFootprints(ProjectedStateFootprint(left), ProjectedStateFootprint(right));
         if (order != 0)
         {
           return order;
@@ -3879,22 +3974,8 @@
         beam = nextBeam;
       }
 
-      (double Area, double LongAxis, double ShortAxis) Footprint()
-      {
-        double minX = all.Min(placement => placement.MinX);
-        double minY = all.Min(placement => placement.MinY);
-        double width = all.Max(placement => placement.MaxX) - minX;
-        double height = all.Max(placement => placement.MaxY) - minY;
-        return (
-          Math.Max(0, width) * Math.Max(0, height),
-          sheetW >= sheetH ? width : height,
-          sheetW >= sheetH ? height : width);
-      }
-
       projectedFootprints.Clear();
-      (double Area, double LongAxis, double ShortAxis) baselineFootprint = ProjectedFootprint(
-        Array.Empty<DirectCandidate>());
-      bool TryApplyMaterialSafePlan(
+      bool TryApplyCutFirstPlan(
         IReadOnlyList<DirectCandidate> plan,
         bool validateTopology,
         out List<CommonEdgeIntent> intents,
@@ -3913,22 +3994,11 @@
           return false;
         }
 
-        if (CompareFootprints(Footprint(), baselineFootprint) <= 0)
-        {
-          return true;
-        }
-
-        RestoreOriginalPlacements();
-        intents = new List<CommonEdgeIntent>();
-        groups = new int[n];
-        failure = DirectPlanFailure.None;
-        failureReason = "the common-line plan would increase the original material footprint";
-        return false;
+        return true;
       }
 
       reportStage("validation");
       DirectPlanState bestFinalist = null;
-      (double Area, double LongAxis, double ShortAxis) bestFootprint = default;
       foreach (DirectPlanState finalist in beam
         .Where(state => state.Plan.Count > 0)
         .OrderBy(state => state, Comparer<DirectPlanState>.Create(ComparePlanStates))
@@ -3942,31 +4012,19 @@
           out _,
           out _))
         {
-          (double Area, double LongAxis, double ShortAxis) footprint = Footprint();
-          int materialOrder = bestFinalist == null ? -1 : CompareFootprints(footprint, bestFootprint);
+          int planOrder = bestFinalist == null ? -1 : ComparePlanStates(finalist, bestFinalist);
           if (bestFinalist == null
-              || materialOrder < 0
-              || (materialOrder == 0 && ComparePlanStates(finalist, bestFinalist) < 0))
+              || planOrder < 0)
           {
             bestFinalist = finalist;
-            bestFootprint = footprint;
           }
         }
       }
 
-      if (bestFinalist != null && CompareFootprints(bestFootprint, baselineFootprint) > 0)
-      {
-        // Common-line cutting is subordinate to material utilization. A seam plan that expands the
-        // baseline nest is discarded atomically even when it would save more cutting length.
-        RestoreOriginalPlacements();
-        PublishUnsupportedCurvesOnly(Array.Empty<CommonEdgeIntent>());
-        return result;
-      }
-
-      // Validate first, rank on actual committed geometry (footprint/density before saved cut), then
-      // apply the winner once more. Losing finalists are always restored by TryApplyPlan and cannot leak.
+      // Validate first, rank on committed common-line length before footprint, then apply the winner once
+      // more. Every candidate still proves fit, clearance and topology within this same sheet.
       if (bestFinalist != null
-          && TryApplyMaterialSafePlan(
+          && TryApplyCutFirstPlan(
             bestFinalist.Plan,
             true,
             out List<CommonEdgeIntent> beamIntents,
@@ -4092,6 +4150,7 @@
                 out DirectPlanFailure failure,
                 out string failureReason))
           {
+            RecordDirectFailure(tree.Count, failure, failureReason);
             if (failure == DirectPlanFailure.EdgeGeometry || failure == DirectPlanFailure.Topology)
             {
               topologyFailuresByPair[(candidate.A, candidate.B)] =
@@ -4125,7 +4184,7 @@
       }
 
       if (tree.Count > 0
-          && TryApplyMaterialSafePlan(
+          && TryApplyCutFirstPlan(
             tree,
             true,
             out List<CommonEdgeIntent> optimisticIntents,
@@ -4152,7 +4211,7 @@
         return result;
       }
 
-      if (TryApplyMaterialSafePlan(
+      if (TryApplyCutFirstPlan(
             tree,
             true,
             out List<CommonEdgeIntent> finalIntents,
@@ -4178,7 +4237,7 @@
         return result;
       }
 
-      if (!TryApplyMaterialSafePlan(
+      if (!TryApplyCutFirstPlan(
             tree,
             true,
             out finalIntents,
@@ -4198,6 +4257,17 @@
       return result;
     }
 
+    private static void RecordDirectFailure(int planCount, DirectPlanFailure failure, string reason)
+    {
+      if (DiagDirectFailures.Count >= 64)
+      {
+        return;
+      }
+
+      DiagDirectFailures.Enqueue(FormattableString.Invariant(
+        $"direct-plan edges={planCount} failure={failure} reason={reason ?? string.Empty}"));
+    }
+
     private static bool DirectLayoutIsValid(
       IReadOnlyList<IPartPlacement> placements,
       IReadOnlyList<CommonEdgeIntent> intents,
@@ -4207,28 +4277,43 @@
       double margin,
       double commonLineGap,
       double geometryTolerance,
+      out string failureReason,
+      out PlacementAcceptance.Unfit unfit,
       CancellationToken cancel = default,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
       CommonEdgeClearance.PairVerdictCache verdictCache = null)
     {
-      double NormalClearance(IPartPlacement a, IPartPlacement b)
-      {
-        double sa = rulesBySource.TryGetValue(a.Source, out var ra) ? Math.Max(0, ra.Spacing) : 0;
-        double sb = rulesBySource.TryGetValue(b.Source, out var rb) ? Math.Max(0, rb.Spacing) : 0;
-        return (sa + sb) / 2.0;
-      }
-
-      return CommonEdgeClearance.FindUnfit(
+      unfit = CommonEdgeClearance.FindUnfit(
         placements,
         sheetW,
         sheetH,
         margin,
-        NormalClearance,
+        (a, b) => NormalClearanceBetween(a, b, rulesBySource),
         (a, b) => PlacementCollision.PlacementNoise,
         ClearanceEdges(intents),
         commonLineGap,
         geometryTolerance,
-        stopAtFirst: true, cancel: cancel, sourceCatalogs: sourceCatalogs, verdictCache: verdictCache).All.Count == 0;
+        stopAtFirst: true, cancel: cancel, sourceCatalogs: sourceCatalogs, verdictCache: verdictCache);
+      string conflicts = string.Join(", ", unfit.Overlapping.Select(
+        placement => $"source={placement.Source} at {placement.X:F3},{placement.Y:F3}"));
+      failureReason = unfit.OutsideMargin.Count > 0
+        ? $"outside sheet margin ({unfit.OutsideMargin.Count} placement(s))"
+        : unfit.Overlapping.Count > 0
+          ? $"normal clearance conflict ({conflicts})"
+          : string.Empty;
+      return unfit.All.Count == 0;
+    }
+
+    /// <summary>The direct-plan schema's own spacing contract: half of each side's configured gap. This is
+    /// distinct from <see cref="AcceptanceClearanceOf"/>, which uses the measured kerf at final acceptance.</summary>
+    private static double NormalClearanceBetween(
+      IPartPlacement a,
+      IPartPlacement b,
+      IReadOnlyDictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> rulesBySource)
+    {
+      double sa = rulesBySource.TryGetValue(a.Source, out var ra) ? Math.Max(0, ra.Spacing) : 0;
+      double sb = rulesBySource.TryGetValue(b.Source, out var rb) ? Math.Max(0, rb.Spacing) : 0;
+      return (sa + sb) / 2.0;
     }
 
     /// <summary>Final sheet acceptance includes both contracts: schema-aware recorded spans and SheetCam's
@@ -5108,7 +5193,17 @@
         // spend a sheet to buy nothing. Only when it genuinely has nowhere to go does it go back.
         var component = CommonEdgeComponent(victim, commonEdges);
         if (component.Count == 1
-            && TryNudgeClear(placements, victim, loadedById, commonEdges, sheetW, sheetH, margin, commonLineGap, geometryTolerance))
+            && TryNudgeClear(
+              placements,
+              victim,
+              (a, b) => AcceptanceClearanceOf(a, b, loadedById),
+              (a, b) => PlacementCollision.SliverFor(KerfOf(a, loadedById), KerfOf(b, loadedById)),
+              commonEdges,
+              sheetW,
+              sheetH,
+              margin,
+              commonLineGap,
+              geometryTolerance))
         {
           continue;
         }
@@ -5150,17 +5245,19 @@
     private static bool TryNudgeClear(
       List<IPartPlacement> placements,
       IPartPlacement victim,
-      Dictionary<int, Loaded> loadedById,
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
+      Func<IPartPlacement, IPartPlacement, double> sliverBetween,
       List<CommonEdgeIntent> commonEdges,
       double sheetW,
       double sheetH,
       double margin,
       double commonLineGap,
-      double geometryTolerance)
+      double geometryTolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
     {
       double clearance = placements
         .Where(p => !ReferenceEquals(p, victim))
-        .Select(p => AcceptanceClearanceOf(victim, p, loadedById))
+        .Select(p => clearanceBetween(victim, p))
         .DefaultIfEmpty(0)
         .Max();
       if (clearance <= 0)
@@ -5178,7 +5275,7 @@
         {
           victim.X = x0 + dx;
           victim.Y = y0 + dy;
-          if (IsClearWhereItStands(placements, victim, loadedById, commonEdges, sheetW, sheetH, margin, commonLineGap, geometryTolerance))
+          if (IsClearWhereItStands(placements, victim, clearanceBetween, sliverBetween, commonEdges, sheetW, sheetH, margin, commonLineGap, geometryTolerance, sourceCatalogs))
           {
             return true;
           }
@@ -5194,13 +5291,15 @@
     private static bool IsClearWhereItStands(
       List<IPartPlacement> placements,
       IPartPlacement victim,
-      Dictionary<int, Loaded> loadedById,
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
+      Func<IPartPlacement, IPartPlacement, double> sliverBetween,
       List<CommonEdgeIntent> commonEdges,
       double sheetW,
       double sheetH,
       double margin,
       double commonLineGap,
-      double geometryTolerance)
+      double geometryTolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
     {
       if (PlacementAcceptance.IsOutsideUsableArea(victim, sheetW, sheetH, margin))
       {
@@ -5214,8 +5313,8 @@
           continue;
         }
 
-        double need = AcceptanceClearanceOf(victim, other, loadedById);
-        double sliver = PlacementCollision.SliverFor(KerfOf(victim, loadedById), KerfOf(other, loadedById));
+        double need = clearanceBetween(victim, other);
+        double sliver = sliverBetween(victim, other);
         if (CommonEdgeClearance.TooClose(
           victim,
           other,
@@ -5223,7 +5322,8 @@
           sliver,
           ClearanceEdges(commonEdges),
           commonLineGap,
-          geometryTolerance))
+          geometryTolerance,
+          sourceCatalogs))
         {
           return false;
         }
@@ -5985,9 +6085,39 @@
       }
     }
 
+    private static double CommonLineLength(
+      IEnumerable<CommonEdgeIntent> intents,
+      double commonLineGap,
+      double geometryTolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs)
+    {
+      double length = 0D;
+      foreach (CommonEdgeIntent intent in intents ?? Enumerable.Empty<CommonEdgeIntent>())
+      {
+        if (!TryCreateCommonEdgeRecord(intent, commonLineGap, geometryTolerance, out CommonEdge edge, sourceCatalogs))
+        {
+          continue;
+        }
+
+        CommonCenterCurve curve = edge.CenterCurve;
+        if (curve?.GeometryKind == CommonLineGeometryKind.CircularArc)
+        {
+          length += Math.Abs(curve.SweepRadians) * curve.Radius;
+        }
+        else
+        {
+          double dx = edge.End.X - edge.Start.X;
+          double dy = edge.End.Y - edge.Start.Y;
+          length += Math.Sqrt((dx * dx) + (dy * dy));
+        }
+      }
+
+      return length;
+    }
+
     /// <summary>
-    /// Picks the best sheet candidate: most parts placed wins, then the SHORTEST extent along the sheet's
-    /// long axis, then higher strip density, then lower seed (stable, repeatable).
+    /// Picks the best sheet candidate: most parts placed wins, then the greatest valid common-line length,
+    /// then the shortest extent along the sheet's long axis, higher strip density, and lower seed.
     /// <para>
     /// Extent beats density because they are measured at different moments: density is sparrow's, taken on
     /// its own strip BEFORE the gravity compaction, while the extent is what is left after it — and the
@@ -5997,11 +6127,12 @@
     /// separated in the fifth decimal of density trade places between runs, so the same job produced a
     /// different leftover every time (reported in issue #2).
     /// </para>
-    /// Density stays as the next tie-break: it still discriminates when the extents match, which is the
-    /// normal case on a sheet packed full. Pure — unit-testable. Returns the winner's index in
+     /// Common-line length is compared only after all candidates place the same number of parts, so this
+     /// preference cannot move demand to an extra sheet. Density stays as the next tie-break when the
+     /// extents match. Pure — unit-testable. Returns the winner's index in
     /// <paramref name="cands"/>, or -1 if empty.
     /// </summary>
-    internal static int PickBest(IReadOnlyList<(int Count, double Extent, double Density, int Seed)> cands)
+    internal static int PickBest(IReadOnlyList<(int Count, double SharedLength, double Extent, double Density, int Seed)> cands)
     {
       int best = -1;
       foreach (var (c, i) in cands.Select((v, i) => (v, i)))
@@ -6016,6 +6147,16 @@
         if (c.Count != b.Count)
         {
           if (c.Count > b.Count)
+          {
+            best = i;
+          }
+
+          continue;
+        }
+
+        if (c.SharedLength != b.SharedLength)
+        {
+          if (c.SharedLength > b.SharedLength)
           {
             best = i;
           }

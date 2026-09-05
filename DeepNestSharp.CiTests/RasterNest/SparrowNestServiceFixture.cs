@@ -815,31 +815,29 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
-    public void PickBestPrefersMostPlacedThenShortestExtentThenDensityThenLowestSeed()
+    public void PickBestPrefersMostPlacedThenCommonLineLengthThenExtentThenDensityThenLowestSeed()
     {
       // Most parts placed wins even if a rival packs shorter or denser.
-      SparrowNestService.PickBest(new[] { (Count: 25, Extent: 110.0, Density: 0.93, Seed: 1), (26, 118.0, 0.90, 2), (24, 100.0, 0.95, 3) })
+      SparrowNestService.PickBest(new[] { (Count: 25, SharedLength: 40.0, Extent: 110.0, Density: 0.93, Seed: 1), (26, 0.0, 118.0, 0.90, 2), (24, 80.0, 100.0, 0.95, 3) })
         .Should().Be(1, "26 placed beats 25/24 regardless of extent or strip density");
 
-      // Tie on count → the shorter pack wins, because that is the material actually left in one piece.
-      SparrowNestService.PickBest(new[] { (26, 118.0, 0.95, 1), (26, 115.0, 0.90, 2) })
-        .Should().Be(1, "same count → the shorter extent (index 1) wins even though it is less dense");
+      // Tie on count → the longer validated common cut wins, even when it consumes more of the sheet.
+      SparrowNestService.PickBest(new[] { (26, 12.0, 115.0, 0.95, 1), (26, 20.0, 118.0, 0.90, 2) })
+        .Should().Be(1, "same count → common-line length outranks extent and strip density");
 
-      // The measured case from issue #2: ten parts placed by every candidate, the density winner leaves
-      // 2.93 more of the sheet consumed for two hundred-thousandths of density. Ranking by density picks
-      // index 1; the extent must overrule it. This is the case that made the same job vary run to run.
-      SparrowNestService.PickBest(new[] { (10, 115.790, 0.94446, 6), (10, 118.722, 0.94448, 7) })
-        .Should().Be(0, "the denser candidate wastes 2.93 of sheet length — extent decides");
+      // With equal cut saving, the shorter extent remains the material tie-breaker.
+      SparrowNestService.PickBest(new[] { (10, 15.0, 115.790, 0.94446, 6), (10, 15.0, 118.722, 0.94448, 7) })
+        .Should().Be(0, "equal common-line length leaves extent as the next criterion");
 
       // Extents apart only by float noise are a tie → density decides.
-      SparrowNestService.PickBest(new[] { (26, 115.0, 0.90, 1), (26, 115.0000001, 0.92, 2) })
+      SparrowNestService.PickBest(new[] { (26, 10.0, 115.0, 0.90, 1), (26, 10.0, 115.0000001, 0.92, 2) })
         .Should().Be(1, "extents equal within tolerance → the denser candidate wins");
 
       // Tie on count, extent and density → lowest seed wins (stable).
-      SparrowNestService.PickBest(new[] { (26, 115.0, 0.92, 5), (26, 115.0, 0.92, 2) })
+      SparrowNestService.PickBest(new[] { (26, 10.0, 115.0, 0.92, 5), (26, 10.0, 115.0, 0.92, 2) })
         .Should().Be(1, "full tie → lowest seed (index 1, seed 2)");
 
-      SparrowNestService.PickBest(System.Array.Empty<(int, double, double, int)>()).Should().Be(-1);
+      SparrowNestService.PickBest(System.Array.Empty<(int, double, double, double, int)>()).Should().Be(-1);
     }
 
     [Fact]

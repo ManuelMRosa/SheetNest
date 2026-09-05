@@ -287,7 +287,7 @@ namespace DeepNestSharp.CiTests.RasterNest
         currentFirstRotation: 17D,
         currentSecondRotation: 43D);
       // Non-common anchors hold the sheet footprint constant so this test isolates the continuous-angle
-      // derivation rather than the separate material-first finalist objective.
+      // derivation rather than the separate common-line-first finalist objective.
       placements.Add(PlaceAt(Rectangle(0.1D, 0.1D), 1, 0D, 0.5D, 0.5D));
       placements.Add(PlaceAt(Rectangle(0.1D, 0.1D), 1, 0D, 39D, 39D));
       var profiles = new Dictionary<int, SparrowNestService.DirectOrientationProfile>
@@ -322,7 +322,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
-    public void ActualMaterialFootprintWinsBeforeTheLongerSeam()
+    public void LongerCommonLineWinsBeforeTheSmallerMaterialFootprint()
     {
       INfp source = Triangle(4D, 2D);
       List<IPartPlacement> placements = FacingBasePair(
@@ -354,10 +354,10 @@ namespace DeepNestSharp.CiTests.RasterNest
       using (new AssertionScope())
       {
         placements.Select(placement => Normalize(placement.Rotation))
-          .Should().BeEquivalentTo(new[] { 90D, 270D },
-            "the smaller occupied material box outranks the four-unit oblique seam");
-        Length(record).Should().BeLessThan(4D,
-          "cut saving is deliberately the tie-breaker after actual footprint density");
+          .Should().BeEquivalentTo(new[] { 17D, 197D },
+            "the four-unit common line outranks the smaller occupied material box");
+        Length(record).Should().BeApproximately(4D, GeometryTolerance,
+          "common-line length is the primary nesting objective after all parts fit on the sheet");
       }
     }
 

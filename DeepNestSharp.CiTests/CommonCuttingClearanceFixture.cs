@@ -427,6 +427,23 @@ namespace DeepNestSharp.CiTests
           .Should().BeFalse(
             "the nesting polygon has to be the one saying there is room, or nothing here is being tested");
 
+        var catalogs = new Dictionary<string, DxfContourCatalog>(StringComparer.OrdinalIgnoreCase)
+        {
+          [Path.GetFullPath(arcedPath)] = arcedCatalog,
+          [Path.GetFullPath(plainPath)] = plainCatalog,
+        };
+        CommonEdgeClearance.TooClose(
+          arced,
+          plain,
+          clearance,
+          sliver,
+          Array.Empty<CommonEdgeClearance.EdgeReference>(),
+          gap,
+          tolerance,
+          catalogs)
+          .Should().BeTrue(
+            "a rejected common-line candidate must still keep the exact DXF boundary for Part Space");
+
         CommonEdgeClearance.TooClose(arced, plain, clearance, sliver, seams, gap, tolerance)
           .Should().BeTrue(
             "the true arc breaks the clearance, and a cluster member is measured against its exact "

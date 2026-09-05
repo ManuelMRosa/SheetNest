@@ -94,7 +94,8 @@ namespace DeepNestSharp.RasterNest
       double sliver,
       IReadOnlyList<EdgeReference> commonEdges,
       double commonLineGap,
-      double geometryTolerance)
+      double geometryTolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
     {
       if (a?.PlacedPart == null || b?.PlacedPart == null)
       {
@@ -104,12 +105,14 @@ namespace DeepNestSharp.RasterNest
       double clearance = Math.Max(0, normalClearance);
       double geometryTol = Math.Max(0, geometryTolerance);
       double numericalTol = Math.Max(PlacementCollision.PlacementNoise, geometryTol);
-      if (clearance <= 0 || commonEdges == null || commonEdges.Count == 0)
+      if (clearance <= 0)
       {
         return PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver);
       }
 
-      IReadOnlyList<EdgeReference> valid = ValidEdges(commonEdges, commonLineGap, geometryTol);
+      IReadOnlyList<EdgeReference> valid = commonEdges == null || commonEdges.Count == 0
+        ? Array.Empty<EdgeReference>()
+        : ValidEdges(commonEdges, commonLineGap, geometryTol, sourceCatalogs);
       return TooCloseWithValidEdges(
         a,
         b,
@@ -119,7 +122,8 @@ namespace DeepNestSharp.RasterNest
         commonLineGap,
         geometryTol,
         numericalTol,
-        new Dictionary<IPartPlacement, BoundaryGeometry>());
+        new Dictionary<IPartPlacement, BoundaryGeometry>(),
+        sourceCatalogs: sourceCatalogs);
     }
 
     private static bool TooCloseWithValidEdges(
@@ -133,7 +137,8 @@ namespace DeepNestSharp.RasterNest
       double numericalTol,
       IDictionary<IPartPlacement, BoundaryGeometry> boundaryCache,
       CancellationToken cancel = default,
-      PairVerdictCache verdictCache = null)
+      PairVerdictCache verdictCache = null,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
     {
       cancel.ThrowIfCancellationRequested();
       string key = verdictCache?.Key(a, b, valid, clearance, sliver, commonLineGap, geometryTol, numericalTol);
@@ -143,7 +148,7 @@ namespace DeepNestSharp.RasterNest
       }
 
       bool result = EvaluatePair(a, b, clearance, sliver, valid, commonLineGap, geometryTol,
-        numericalTol, boundaryCache, cancel);
+        numericalTol, boundaryCache, cancel, sourceCatalogs);
       if (key != null)
       {
         verdictCache.Store(key, result);
@@ -162,10 +167,12 @@ namespace DeepNestSharp.RasterNest
       double geometryTol,
       double numericalTol,
       IDictionary<IPartPlacement, BoundaryGeometry> boundaryCache,
-      CancellationToken cancel)
+      CancellationToken cancel,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs)
     {
       bool connected = AreConnected(a, b, valid);
-      bool hasExactBoundary = HasExactBoundary(a, valid) || HasExactBoundary(b, valid);
+      bool hasExactBoundary = HasExactBoundary(a, valid, sourceCatalogs)
+        || HasExactBoundary(b, valid, sourceCatalogs);
       if (!connected && !hasExactBoundary)
       {
         return PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver);
@@ -187,8 +194,8 @@ namespace DeepNestSharp.RasterNest
         return false;
       }
 
-      BoundaryGeometry aBoundary = GetBoundaryGeometry(a, valid, numericalTol, boundaryCache);
-      BoundaryGeometry bBoundary = GetBoundaryGeometry(b, valid, numericalTol, boundaryCache);
+      BoundaryGeometry aBoundary = GetBoundaryGeometry(a, valid, numericalTol, boundaryCache, sourceCatalogs);
+      BoundaryGeometry bBoundary = GetBoundaryGeometry(b, valid, numericalTol, boundaryCache, sourceCatalogs);
       if (aBoundary.Invalid || bBoundary.Invalid)
       {
         return true;
@@ -395,7 +402,8 @@ namespace DeepNestSharp.RasterNest
                 numericalTol,
                 boundaryCache,
                 cancel,
-                verdictCache)))
+                verdictCache,
+                sourceCatalogs)))
           {
             unfit.Overlapping.Add(a);
             unfit.Overlapping.Add(b);
@@ -995,13 +1003,32 @@ namespace DeepNestSharp.RasterNest
     /// </summary>
     private static DxfContourCatalog[] ExactCatalogs(
       IPartPlacement part,
-      IReadOnlyList<EdgeReference> commonEdges)
-      => (commonEdges ?? Array.Empty<EdgeReference>())
+      IReadOnlyList<EdgeReference> commonEdges,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs)
+    {
+      DxfContourCatalog[] relationshipCatalogs = (commonEdges ?? Array.Empty<EdgeReference>())
         .Select(reference => ExactCatalogFor(reference, part))
         .Where(catalog => catalog != null)
         .GroupBy(catalog => catalog.SourceName, StringComparer.OrdinalIgnoreCase)
         .Select(group => group.First())
         .ToArray();
+      if (relationshipCatalogs.Length > 0)
+      {
+        return relationshipCatalogs;
+      }
+
+      if (string.IsNullOrWhiteSpace(part?.Part?.Name)
+        || !part.Part.Name.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase)
+        || sourceCatalogs == null)
+      {
+        return Array.Empty<DxfContourCatalog>();
+      }
+
+      string source = Path.GetFullPath(part.Part.Name);
+      return sourceCatalogs.TryGetValue(source, out DxfContourCatalog catalog)
+        ? new[] { catalog }
+        : Array.Empty<DxfContourCatalog>();
+    }
 
     /// <summary>
     /// Answers the same question as the catalog lookup in <see cref="BoundarySegments"/> without
@@ -1011,9 +1038,9 @@ namespace DeepNestSharp.RasterNest
     /// </summary>
     private static bool HasExactBoundary(
       IPartPlacement part,
-      IReadOnlyList<EdgeReference> commonEdges)
-      => (commonEdges ?? Array.Empty<EdgeReference>())
-        .Any(reference => ExactCatalogFor(reference, part) != null);
+      IReadOnlyList<EdgeReference> commonEdges,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs)
+      => ExactCatalogs(part, commonEdges, sourceCatalogs).Length > 0;
 
     /// <summary>
     /// One boundary rebuild per placement. The cache is only valid while <paramref name="commonEdges"/>
@@ -1024,7 +1051,8 @@ namespace DeepNestSharp.RasterNest
       IPartPlacement part,
       IReadOnlyList<EdgeReference> commonEdges,
       double tolerance,
-      IDictionary<IPartPlacement, BoundaryGeometry> cache)
+      IDictionary<IPartPlacement, BoundaryGeometry> cache,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs)
     {
       if (cache.TryGetValue(part, out BoundaryGeometry cached))
       {
@@ -1035,6 +1063,7 @@ namespace DeepNestSharp.RasterNest
         part,
         commonEdges,
         tolerance,
+        sourceCatalogs,
         out bool exactBoundaryInvalid,
         out double approximationError);
       var geometry = new BoundaryGeometry(exactBoundaryInvalid, segments, approximationError);
@@ -1046,12 +1075,13 @@ namespace DeepNestSharp.RasterNest
       IPartPlacement part,
       IReadOnlyList<EdgeReference> commonEdges,
       double tolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs,
       out bool exactBoundaryInvalid,
       out double approximationError)
     {
       exactBoundaryInvalid = false;
       approximationError = 0D;
-      DxfContourCatalog[] exactCatalogs = ExactCatalogs(part, commonEdges);
+      DxfContourCatalog[] exactCatalogs = ExactCatalogs(part, commonEdges, sourceCatalogs);
       if (exactCatalogs.Length > 0)
       {
         if (exactCatalogs.Length != 1
@@ -2262,6 +2292,7 @@ namespace DeepNestSharp.RasterNest
     internal sealed class SegmentIndex
     {
       private readonly (int Position, double MinX, double MaxX, double MinY, double MaxY)[] entries;
+      private readonly double[] prefixMaxX;
 
       internal SegmentIndex(IReadOnlyList<BoundarySegment> segments)
       {
@@ -2272,6 +2303,13 @@ namespace DeepNestSharp.RasterNest
           MinY: Math.Min(segment.Start.Y, segment.End.Y),
           MaxY: Math.Max(segment.Start.Y, segment.End.Y)))
           .OrderBy(entry => entry.MinX).ThenBy(entry => entry.Position).ToArray();
+        this.prefixMaxX = new double[this.entries.Length];
+        double maxX = double.NegativeInfinity;
+        for (int i = 0; i < this.entries.Length; i++)
+        {
+          maxX = Math.Max(maxX, this.entries[i].MaxX);
+          this.prefixMaxX[i] = maxX;
+        }
       }
 
       internal IEnumerable<int> Query(BoundarySegment segment, double distance)
@@ -2280,8 +2318,26 @@ namespace DeepNestSharp.RasterNest
         double maxX = Math.Max(segment.Start.X, segment.End.X) + distance;
         double minY = Math.Min(segment.Start.Y, segment.End.Y) - distance;
         double maxY = Math.Max(segment.Start.Y, segment.End.Y) + distance;
-        foreach (var entry in this.entries)
+        // Entries are ordered by MinX. Prefix maxima identify the first earlier interval whose MaxX
+        // can still reach this query, avoiding a linear scan through distant segments.
+        int low = 0;
+        int high = this.prefixMaxX.Length;
+        while (low < high)
         {
+          int middle = low + ((high - low) / 2);
+          if (this.prefixMaxX[middle] < minX)
+          {
+            low = middle + 1;
+          }
+          else
+          {
+            high = middle;
+          }
+        }
+
+        for (int i = low; i < this.entries.Length; i++)
+        {
+          var entry = this.entries[i];
           if (entry.MinX > maxX)
           {
             yield break;
