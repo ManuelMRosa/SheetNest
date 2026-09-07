@@ -41,7 +41,17 @@ If you cut sheet metal, SheetNest helps you get the most parts out of every shee
 
 <p align="center">
   <img src="imgs/edit-nest.png" alt="Editing a nest by hand in SheetNest: select, drag, rotate and mirror parts" width="900"><br>
-  <em>Fine-tune by hand: select, drag, rotate, mirror, and snap parts to a shared common line.</em>
+  <em>Fine-tune by hand: select, drag, rotate, mirror, nudge, or type a coordinate to place a part exactly.</em>
+</p>
+
+<p align="center">
+  <img src="imgs/nest-report.png" alt="SheetNest PDF nest report: material required, job summary, cutting plan and part totals" width="640"><br>
+  <em>The one-click PDF report: how much material to buy, the cutting plan, and what is on each layout.</em>
+</p>
+
+<p align="center">
+  <img src="imgs/nest-report-layout.png" alt="SheetNest nest report layout page: the sheet drawn to scale with every part numbered" width="640"><br>
+  <em>Every layout drawn to scale, with each part numbered so a cut piece can be matched to its row and marked.</em>
 </p>
 
 ## License
