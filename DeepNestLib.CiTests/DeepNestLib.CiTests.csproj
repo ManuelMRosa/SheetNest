@@ -82,6 +82,8 @@
     <EmbeddedResource Include="Dxfs\20x20outer10x10hole.scad">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </EmbeddedResource>
+    <EmbeddedResource Include="Dxfs\9parts_3holes.dxf" />
+    <EmbeddedResource Include="Dxfs\issue6_3parts.dxf" />
     <EmbeddedResource Include="Dxfs\Tops_2.dxf" />
     <EmbeddedResource Include="Dxfs\Tops_2vert.dxf" />
     <EmbeddedResource Include="Placement\OverlappingPlacement\FixBothPartsFitOnASingleSheetFixtureCombinedNfp.scad" />

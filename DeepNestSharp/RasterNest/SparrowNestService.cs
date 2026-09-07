@@ -79,6 +79,12 @@
       public INfp Nfp;        // original (rendered) geometry
       public INfp Dilated;    // tooling footprint grown by FitSpacing/2 — what sparrow packs
       public int[] Angles;    // allowed orientations (discrete fallback + used by hole-filling)
+
+      // Width and height of the NOMINAL outline at each of those orientations, measured once at load.
+      // Whether a part can go on a sheet at all is asked for every stock size on every sheet of the job,
+      // and the answer never changes, so it is not worth rotating the polygon again to find it out.
+      public (double W, double H)[] AngleExtents;
+
       public bool Continuous; // "Free" rotation → send NO orientation list so sparrow rotates continuously
       public double EffSpacing;   // NOMINAL spacing: what this part keeps to anything it cannot share a cut with
       public CommonCuttingMode Cc; // who it may share a cut edge with; None = nobody
@@ -448,7 +454,7 @@
 
           int w = size.W;
           int h = size.H;
-          var batchQty = SelectBatch(pool, loadedById, w, h);
+          var batchQty = SelectBatch(pool, loadedById, sizes, w, h, margin);
 
           // Search budget, in ITERATIONS rather than seconds (see RunSparrowOnce), chosen by the operator's
           // effort setting. The wall clock a sheet takes is a consequence of the machine, not an input to the
@@ -856,6 +862,7 @@
           // The file path is what "the same part" means: two rows of the same drawing are the same part
           // on the sheet, and a mirrored population is the other hand, so a different one.
           int shareKey = shareKeyByPart[part];
+          int[] angles = RotationCodes.PermittedSet(code);
 
           loaded.Add(new Loaded
           {
@@ -866,7 +873,14 @@
 
             // The same shape without the spacing shell: compaction adds the spacing itself, so handing
             // it the dilated one would double-count.
-            Angles = RotationCodes.PermittedSet(code),
+            Angles = angles,
+            AngleExtents = angles
+              .Select(angle =>
+              {
+                INfp turned = angle == 0 ? nfp : nfp.Rotate(angle);
+                return (turned.MaxX - turned.MinX, turned.MaxY - turned.MinY);
+              })
+              .ToArray(),
             Continuous = code == 36, // only "Free" (sentinel 36) is continuous; 1001/1002/1003 are discrete sets
             EffSpacing = effSpacing,
             FitSpacing = fitSpacing,
@@ -892,9 +906,60 @@
     internal static int CommonLineRotationCode(int code, bool requiresMergedLines)
       => code;
 
+    /// <summary>Can the engine fit this part inside a strip of this height? What it has to fit is the GROWN
+    /// outline, in whichever of the part's orientations presents the smallest height.</summary>
+    private static bool FitsStrip(Loaded part, double stripHeight)
+    {
+      double shortest = double.MaxValue;
+      foreach ((double W, double H) extent in part.AngleExtents)
+      {
+        shortest = Math.Min(shortest, extent.H);
+      }
+
+      return shortest + part.FitSpacing <= stripHeight + 0.002;
+    }
+
+    /// <summary>Can this part go on a sheet of this size at all? The margin is measured against the part's
+    /// own outline, never against the spacing shell it keeps for its neighbours, which is the rule the
+    /// compactor, the acceptance check and the editor all use. For a discrete rotation set the answer is
+    /// exact: the outline has to fit the usable rectangle in one of the orientations it is allowed, so a
+    /// part refused here had no legal placement to lose. A free-rotation part is never refused, because the
+    /// orientations it may take are not a list, and the sampled ones say nothing about the angle that would
+    /// have fitted.</summary>
+    private static bool FitsOnSheet(Loaded part, int w, int h, double margin)
+    {
+      if (part.Continuous)
+      {
+        return true;
+      }
+
+      // The same slack the acceptance rule allows, so the two cannot disagree about a part that lands
+      // exactly on the margin.
+      const double Tol = 0.002;
+      double usableW = w - (2 * Math.Max(0, margin)) + Tol;
+      double usableH = h - (2 * Math.Max(0, margin)) + Tol;
+      foreach ((double W, double H) extent in part.AngleExtents)
+      {
+        if (extent.W <= usableW && extent.H <= usableH)
+        {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
     /// <summary>Picks a batch from the pool up to ~1.3× the sheet area (extra choice for sparrow), keeping
-    /// source variety for mixed jobs. Always returns at least one part so an oversize part gets a try.</summary>
-    private static Dictionary<int, int> SelectBatch(Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, int w, int h)
+    /// source variety for mixed jobs. Offers only parts that can actually go on this size of sheet, the
+    /// ones with the fewest sizes left to choose from first, and returns an empty batch when none of them
+    /// can go on it at all.</summary>
+    private static Dictionary<int, int> SelectBatch(
+      Dictionary<int, int> pool,
+      Dictionary<int, Loaded> loadedById,
+      IReadOnlyList<StockSize> sizes,
+      int w,
+      int h,
+      double margin)
     {
       // Area of parts offered to the engine for one sheet. MORE than a sheetful on purpose: the engine is a
       // strip packer, so it arranges everything it is given and we keep whatever landed inside the sheet.
@@ -908,12 +973,31 @@
       var batch = new Dictionary<int, int>();
       double acc = 0;
       int prevPriority = int.MinValue;
+      int prevHomes = int.MinValue;
+
+      // How many of the sizes STILL IN STOCK could hold each part at all. A part with two sizes left to
+      // choose from has to be offered this sheet before one with three, or the sheet it depended on gets
+      // cut with a part that had somewhere else to go and it comes back uncut: the operator's job lost two
+      // parts to a sheet size they were the only ones that fitted, with two sheets of another size left
+      // over. Without it the answer depended on which drawing happened to be imported first, which is not
+      // something the row order should decide.
+      var homesBySource = pool.ToDictionary(
+        kv => kv.Key,
+        kv => sizes.Count(size => size.HasStock && FitsOnSheet(loadedById[kv.Key], size.W, size.H, margin)));
 
       // Highest priority first (1 = highest, lower number wins) so preferred parts fill earlier
       // sheets and the leftover tail — what ends up unplaced when material runs out — is lowest priority.
-      foreach (var kv in pool.OrderBy(kv => loadedById[kv.Key].Priority).ThenBy(kv => kv.Key))
+      foreach (var kv in pool
+        .OrderBy(kv => loadedById[kv.Key].Priority)
+        .ThenBy(kv => homesBySource[kv.Key])
+        .ThenBy(kv => kv.Key))
       {
-        if (kv.Value <= 0)
+        // A part that cannot go on THIS size of sheet must not spend its area budget either. The batch
+        // used to be picked on area alone, so one part too big for the sheet in front of it filled the
+        // batch of every candidate size, all of them packed nothing, and the sheet loop stopped with
+        // parts that fit and sheets left to cut them on: the operator got seven parts back uncut when
+        // only one of them was impossible.
+        if (kv.Value <= 0 || !FitsOnSheet(loadedById[kv.Key], w, h, margin))
         {
           continue;
         }
@@ -921,8 +1005,12 @@
         // Don't let a lower-priority part share a sheet that higher-priority parts already fill: once a
         // full sheet's worth of higher-priority area is queued, stop before crossing to a lower priority.
         // Keeps priority parts off the "left over" pile even though sparrow itself is priority-blind.
+        // The same stop guards the parts with fewer sizes to choose from, and that is what RESERVES a
+        // scarce size: while a sheetful of them is waiting, the ones with somewhere else to go are not
+        // offered this sheet at all.
         int pr = loadedById[kv.Key].Priority;
-        if (pr > prevPriority && acc >= sheetArea)
+        int homes = homesBySource[kv.Key];
+        if ((pr > prevPriority || (pr == prevPriority && homes > prevHomes)) && acc >= sheetArea)
         {
           break;
         }
@@ -939,6 +1027,7 @@
         {
           batch[kv.Key] = take;
           prevPriority = pr;
+          prevHomes = homes;
         }
 
         if (acc >= cap)
@@ -947,14 +1036,11 @@
         }
       }
 
-      if (batch.Count == 0)
-      {
-        // Nothing fit the area cap — force the single highest-priority remaining part onto the sheet.
-        var first = pool.Where(k => k.Value > 0)
-          .OrderBy(k => loadedById[k.Key].Priority).ThenBy(k => k.Key).First();
-        batch[first.Key] = 1;
-      }
-
+      // An empty batch now means one thing only: nothing left in the pool can go on this size of sheet.
+      // Any part that fits is smaller than the sheet and so is always inside an area cap of one and a half
+      // sheetfuls, which is why it can never be the cap that empties the batch. This used to force the
+      // first part on anyway "so an oversize part gets a try", and that try cannot succeed: the caller
+      // skips a size that places nothing either way, and now it does so without launching the engine.
       return batch;
     }
 
@@ -1022,7 +1108,30 @@
       {
         // sparrow fills the strip height edge-to-edge; reserve the margins up front (usable height) so the
         // anchored pack doesn't poke past the far edge and get dropped as overflow.
-        double stripHeight = Math.Max(1.0, sheetH - (2 * margin));
+        //
+        // What is packed is not the part, it is the part GROWN by half its spacing on every side, and that
+        // shell is the gap between two parts, not a second sheet margin. So a part within half a spacing of
+        // filling the usable height cannot be packed at all, even though it fits the sheet by the rule
+        // everything else here measures with (RasterCompact: "the sheet margin applies to the PART, not to
+        // its clearance shell", and PlacementAcceptance.IsOutsideUsableArea, which is what the editor paints
+        // red with). An operator's thirteen parts came back with seven uncut and seven sheets untouched
+        // because parts 1/16in inside the usable height were turned away for their own neighbour clearance.
+        //
+        // Give that shell back, and the two ends land exactly on the margin: the bottom part anchors its
+        // nominal contour at margin (see MapAndCompact) and the top one finishes at sheetH - margin.
+        //
+        // Only when the batch holds a part that needs it, though, because the strip height is an input to
+        // the search and a taller one is a different nest for everybody, not just for the part that needed
+        // the room. Measured on the mixed common-line job, 30 parts on a 120x60 sheet: giving the shell back
+        // unconditionally leaves the pack flush against the margin, the direct planner then has nowhere to
+        // put a cluster, and every one of its plans is rolled back. Twenty-one shared cuts became zero, and
+        // stayed zero at five different sheet heights, so it is the flush pack and not one unlucky layout.
+        // Mixed spacings take the largest shell; a part with a smaller one can then come out a fraction
+        // proud of the margin, which DeferUnfit already judges by the real rule and holds over.
+        double usableHeight = Math.Max(1.0, sheetH - (2 * margin));
+        double edgeShell = batch.Max(l => l.FitSpacing);
+        bool needsEdgeShell = batch.Any(l => !FitsStrip(l, usableHeight) && FitsStrip(l, usableHeight + edgeShell));
+        double stripHeight = needsEdgeShell ? usableHeight + edgeShell : usableHeight;
         string inputPath = Path.Combine(workDir, "job.json");
         File.WriteAllText(inputPath, BuildJaguaJson("job", stripHeight, batch, batchQty));
 

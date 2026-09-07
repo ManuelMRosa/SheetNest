@@ -122,6 +122,7 @@
       // This is a fudge; need a better way of injecting Config; loathe to go Locator but AvalonDock's pushing that way.
       config.MustBe(mainViewModel.SvgNestConfigViewModel.SvgNestConfig);
       wrappedProjectInfo.Load(config, filePath);
+      RebuildSplitParts(wrappedProjectInfo);
 
       // The loaded data repopulated the UNDERLYING lists; drop the wrapper collections so the
       // PropertyChanged below makes bindings re-fetch fresh copies of the loaded items.
@@ -140,6 +141,33 @@
     public void Load(ProjectInfo source)
     {
       wrappedProjectInfo.Load(source);
+      RebuildSplitParts(wrappedProjectInfo);
+    }
+
+    /// <summary>
+    /// Puts back the file of any part that was split out of a drawing and whose copy has since gone.
+    /// <para>
+    /// Those copies live in a temp folder so that importing never writes into the operator's own
+    /// folders, and Windows clears temp. Without this a project saved last month would open with every
+    /// split part missing, which is a job that cannot be cut and no way to tell why. The drawing they
+    /// came from is recorded on each row, so putting them back is just splitting it again.
+    /// </para>
+    /// </summary>
+    private static void RebuildSplitParts(IProjectInfo projectInfo)
+    {
+      foreach (IDetailLoadInfo detail in projectInfo.DetailLoadInfos)
+      {
+        if (string.IsNullOrEmpty(detail.SourceDxfPath) || detail.IsExists)
+        {
+          continue;
+        }
+
+        string rebuilt = DeepNestLib.IO.DxfPartSplitter.Rebuild(detail.SourceDxfPath, detail.PartIndex);
+        if (!string.IsNullOrEmpty(rebuilt))
+        {
+          detail.Path = rebuilt;
+        }
+      }
     }
 
     public string ToJson()

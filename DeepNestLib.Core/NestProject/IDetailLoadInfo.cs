@@ -100,6 +100,12 @@
     /// <summary>Gets or sets this part's index into the unfolded flats produced from the source STEP.</summary>
     int UnfoldIndex { get; set; }
 
+    /// <summary>The drawing this part was split out of, or empty when it was imported as its own file.</summary>
+    string SourceDxfPath { get; set; }
+
+    /// <summary>Which part of <see cref="SourceDxfPath"/> this is.</summary>
+    int PartIndex { get; set; }
+
     /// <summary>Gets or sets the bend-allowance K-factor used to unfold this 3D part.</summary>
     double KFactor { get; set; }
 

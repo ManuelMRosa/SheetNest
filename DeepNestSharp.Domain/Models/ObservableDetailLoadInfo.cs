@@ -324,6 +324,18 @@
       set => SetProperty(nameof(UnfoldIndex), () => detailLoadInfo.UnfoldIndex, v => detailLoadInfo.UnfoldIndex = v, value);
     }
 
+    public string SourceDxfPath
+    {
+      get => detailLoadInfo.SourceDxfPath;
+      set => SetProperty(nameof(SourceDxfPath), () => detailLoadInfo.SourceDxfPath, v => detailLoadInfo.SourceDxfPath = v, value);
+    }
+
+    public int PartIndex
+    {
+      get => detailLoadInfo.PartIndex;
+      set => SetProperty(nameof(PartIndex), () => detailLoadInfo.PartIndex, v => detailLoadInfo.PartIndex = v, value);
+    }
+
     public double KFactor
     {
       get => detailLoadInfo.KFactor;

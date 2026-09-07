@@ -193,12 +193,59 @@
             continue;
           }
 
-          observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo() { Path = filePath });
+          AddPartRows(filePath);
         }
       }
 
       Contextualise();
       this.IsDirty = true;
+    }
+
+    /// <summary>
+    /// One row per part in the file. A drawing holding several parts becomes several rows, each its own
+    /// file, named and counted from the label drawn inside it.
+    /// </summary>
+    /// <remarks>
+    /// A drawing holding ONE part is added exactly as it always was: same path, same name, and its
+    /// label ignored. A stray note inside a part must not rename it or change its quantity for someone
+    /// who imports that file happily today; a label is there to tell parts apart inside a consolidated
+    /// drawing, which is the only case that needs telling apart.
+    /// </remarks>
+    private void AddPartRows(string filePath)
+    {
+      System.Collections.Generic.IReadOnlyList<DeepNestLib.IO.DxfPartSplitter.SplitPartFile> parts = SplitOrNothing(filePath);
+      if (parts.Count == 0)
+      {
+        observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo() { Path = filePath });
+        return;
+      }
+
+      foreach (var part in parts)
+      {
+        observableProjectInfo?.DetailLoadInfos.Add(new DetailLoadInfo()
+        {
+          Path = part.Path,
+          Quantity = part.Quantity,
+          SourceDxfPath = filePath,
+          PartIndex = part.PartIndex,
+        });
+      }
+    }
+
+    /// <summary>The parts a drawing was split into, or none at all. Splitting is a convenience: a file
+    /// that cannot be split still imports whole rather than refusing.</summary>
+    private static System.Collections.Generic.IReadOnlyList<DeepNestLib.IO.DxfPartSplitter.SplitPartFile> SplitOrNothing(string filePath)
+    {
+      try
+      {
+        return System.IO.Path.GetExtension(filePath).Equals(".dxf", StringComparison.OrdinalIgnoreCase)
+          ? DeepNestLib.IO.DxfPartSplitter.WriteParts(filePath)
+          : Array.Empty<DeepNestLib.IO.DxfPartSplitter.SplitPartFile>();
+      }
+      catch (Exception)
+      {
+        return Array.Empty<DeepNestLib.IO.DxfPartSplitter.SplitPartFile>();
+      }
     }
 
     /// <summary>Null when the file yields a shape that can be nested; otherwise why it cannot, in words an

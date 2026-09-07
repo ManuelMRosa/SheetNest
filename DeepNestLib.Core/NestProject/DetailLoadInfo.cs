@@ -153,6 +153,13 @@
 
     public int UnfoldIndex { get; set; } = 0; // index into StepUnfoldService.GetUnfoldedParts(...).Paths for THIS part
 
+    // Split-drawing provenance: when a DXF held several parts, each part became its own file and these
+    // say which drawing it came out of and which part of it this is, so the file can be rebuilt if the
+    // temp folder is cleaned. Empty SourceDxfPath = a part imported as its own file. Both persist.
+    public string SourceDxfPath { get; set; } = string.Empty;
+
+    public int PartIndex { get; set; } = 0;
+
     public double KFactor { get; set; } = 0.40;
 
     public string KFactorStandard { get; set; } = "ansi";

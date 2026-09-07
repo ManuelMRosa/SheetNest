@@ -1385,6 +1385,10 @@
 
       // Insert flow: adding a single part opens Edit Part right away. Skipped for 3D
       // imports (autoEditSingle=false) — their unfold is slow, so the part loads async in the grid.
+      //
+      // A drawing that held several parts adds several rows, so this deliberately does not fire: there
+      // is no single part to edit, and picking one of them would be a guess. The operator sees the rows
+      // and opens whichever they meant.
       var infos = doc.ProjectInfo.DetailLoadInfos;
       if (autoEditSingle && infos.Count == before + 1 && infos[infos.Count - 1] is IDetailLoadInfo added)
       {
