@@ -49,19 +49,20 @@ namespace DeepNestSharp.Reports
       // Colour rides alongside the label: they are keyed differently on purpose — a mirrored copy is its own
       // LINE (different physical part to count) but shares its original's COLOUR (the parts list has one
       // thumbnail per file, and that thumbnail is what names the colour).
-      var partTotals = layouts
-        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: Label(p), Colour: PartColors.ColourKeyFor(p), l.Count)))
-        .GroupBy(t => t.File, StringComparer.OrdinalIgnoreCase)
-        .Select(g => (File: g.Key, Colour: g.First().Colour, Qty: g.Sum(t => t.Count)))
-        .OrderByDescending(t => t.Qty)
-        .ToList();
+      var partTotals = NumberedPartTotals(layouts);
+
+      // The number is what ties a shape on the drawing back to a row here, so both tables and the
+      // drawing read it out of the same place.
+      var partNumbers = partTotals.ToDictionary(t => t.File, t => t.Number, StringComparer.OrdinalIgnoreCase);
 
       var colours = partColours
         ?? PartColors.Build(layouts.SelectMany(l => l.Sheet.PartPlacements).Select(p => p.Part?.Name));
 
       // Every part in the job is coloured, a single-type job included — the paper has to match the screen.
       bool colourCoded = colours.Count > 0;
-      double nameX = colourCoded ? 60 : 48;
+      const double numX = 48;
+      double swatchX = 76;
+      double nameX = colourCoded ? 88 : 76;
 
       var pdf = new MiniPdf();
       string stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
@@ -171,23 +172,26 @@ namespace DeepNestSharp.Reports
         c.Text(40, py, 13, bold: true, "PART TOTALS");
         py -= 20;
         c.FillRect(40, py - 5, 532, 19, 0.92, 0.92, 0.92);
+        c.Text(numX, py, 10, bold: true, "No.");
         c.Text(nameX, py, 10, bold: true, "Part");
         c.Text(520, py, 10, bold: true, "Qty");
         py -= 19;
         int totalsShown = 0;
-        foreach (var (file, colourKey, qty) in partTotals)
+        foreach (var (file, colourKey, qty, number) in partTotals)
         {
           if (py < 40)
           {
             break;
           }
 
+          // The number the operator reads off the drawing, so it leads the row.
+          c.Text(numX, py, 10, bold: true, number.ToString(CultureInfo.InvariantCulture));
           if (colourCoded && colours.TryGetValue(colourKey, out var swatch))
           {
-            c.FillRect(48, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
+            c.FillRect(swatchX, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
           }
 
-          c.Text(nameX, py, 10, bold: false, Trunc(file, 60));
+          c.Text(nameX, py, 10, bold: false, Trunc(file, 58));
           c.Text(520, py, 10, bold: false, qty.ToString("#,0", CultureInfo.InvariantCulture));
           c.Line(40, py - 5, 572, py - 5, 0.3);
           py -= 17;
@@ -248,6 +252,34 @@ namespace DeepNestSharp.Reports
           }
         }
 
+        // Part numbers, in a SECOND pass on purpose: drawn inside the loop above, a neighbour filled
+        // afterwards would paint over a number already placed. Same numbers as the tables, so a shape
+        // on the sheet can be matched to a row and marked.
+        foreach (var pp in sp.PartPlacements)
+        {
+          var poly = pp.PlacedPart;
+          if (poly?.Points == null
+            || poly.Points.Length < 3
+            || !partNumbers.TryGetValue(Label(pp), out int number))
+          {
+            continue;
+          }
+
+          string numberText = number.ToString(CultureInfo.InvariantCulture);
+          var (nx, ny, nsize) = NumberLabel(poly, numberText, ox, oy, scale);
+          bool lightInk = colourCoded && NeedsLightInk(PartColors.For(colours, pp));
+          if (lightInk)
+          {
+            c.SetFill(1, 1, 1);
+          }
+
+          c.Text(nx, ny, nsize, bold: true, numberText);
+          if (lightInk)
+          {
+            c.SetFill(0, 0, 0);
+          }
+        }
+
         // Parts on this layout (below the drawing, portrait flow). Mirrored copies list separately.
         var onSheet = sp.PartPlacements
           .GroupBy(p => Label(p), StringComparer.OrdinalIgnoreCase)
@@ -265,12 +297,19 @@ namespace DeepNestSharp.Reports
             break;
           }
 
-          if (colourCoded && colours.TryGetValue(colourKey, out var swatch))
+          // Same number as page 1 and as the drawing above it: this is the legend the operator reads
+          // while the sheet is in front of them.
+          if (partNumbers.TryGetValue(file, out int number))
           {
-            c.FillRect(40, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
+            c.Text(40, py, 10, bold: true, number.ToString(CultureInfo.InvariantCulture));
           }
 
-          c.Text(colourCoded ? 52 : 40, py, 10, bold: false, $"{qty} x  {Trunc(file, 60)}");
+          if (colourCoded && colours.TryGetValue(colourKey, out var swatch))
+          {
+            c.FillRect(62, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
+          }
+
+          c.Text(colourCoded ? 74 : 62, py, 10, bold: false, $"{qty} x  {Trunc(file, 58)}");
           py -= 15;
           listShown++;
         }
@@ -319,6 +358,93 @@ namespace DeepNestSharp.Reports
 
     /// <summary>Report label for a placement — mirrored copies count as their own line item.</summary>
     private static string Label(IPartPlacement p) => PartColors.LabelFor(p);
+
+    /// <summary>
+    /// One row per distinct part in the job, in the order the tables show them (biggest quantity
+    /// first), each carrying the number that identifies it on every sheet drawing.
+    /// <para>
+    /// The numbers are handed out ONCE over the whole job, never per page: the same part has to carry
+    /// the same number on layout 1 and on layout 4, or the operator cannot mark anything by it. A
+    /// mirrored copy is its own row and so its own number, because it is the other hand and takes a
+    /// different mark.
+    /// </para>
+    /// </summary>
+    internal static List<(string File, string Colour, int Qty, int Number)> NumberedPartTotals(
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts)
+    {
+      if (layouts == null || layouts.Count == 0)
+      {
+        return new List<(string, string, int, int)>();
+      }
+
+      return layouts
+        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: Label(p), Colour: PartColors.ColourKeyFor(p), l.Count)))
+        .GroupBy(t => t.File, StringComparer.OrdinalIgnoreCase)
+        .Select(g => (File: g.Key, Colour: g.First().Colour, Qty: g.Sum(t => t.Count)))
+        .OrderByDescending(t => t.Qty)
+        .Select((t, i) => (t.File, t.Colour, t.Qty, Number: i + 1))
+        .ToList();
+    }
+
+    /// <summary>
+    /// Where a part's number goes on the sheet drawing and how big it is, in PDF points.
+    /// <para>
+    /// The anchor is the outline's AREA CENTROID, not the middle of its bounding box: on an L or a C
+    /// the box centre lands in the notch, which is off the material and usually straight on top of
+    /// whatever is nested in there. On a convex part the two agree. A part whose middle is a large
+    /// hole still gets its number over the hole, which reads fine on paper and costs nothing.
+    /// </para>
+    /// <para>
+    /// The size follows the part, bounded at both ends: under about four points nothing survives
+    /// printing, and over twelve a big part gets a silly one. Small parts keep their number even when
+    /// it slightly overhangs, because a part with no number is a part the operator cannot mark.
+    /// </para>
+    /// </summary>
+    internal static (double X, double Y, double Size) NumberLabel(
+      INfp placed,
+      string text,
+      double ox,
+      double oy,
+      double scale)
+    {
+      (double cx, double cy) = Centroid(placed);
+      double side = Math.Min(placed.MaxX - placed.MinX, placed.MaxY - placed.MinY) * scale;
+      double size = Math.Max(4.0, Math.Min(12.0, side * 0.42));
+
+      // Helvetica advances a digit by 0.556 em and stands a cap 0.717 em tall. Text() draws from the
+      // baseline, left aligned, and this writer cannot measure a string, so centring is arithmetic.
+      double width = 0.556 * size * Math.Max(1, text?.Length ?? 1);
+      return (
+        ox + (cx * scale) - (width / 2.0),
+        oy + (cy * scale) - (0.717 * size / 2.0),
+        size);
+    }
+
+    /// <summary>Area centroid of a closed ring, falling back to the bounding-box centre for a
+    /// degenerate one, which is the only case where the area is zero and there is nothing to divide
+    /// by.</summary>
+    private static (double X, double Y) Centroid(INfp poly)
+    {
+      var pts = poly.Points;
+      double twiceArea = 0, cx = 0, cy = 0;
+      for (int i = 0; i < pts.Length; i++)
+      {
+        var p = pts[i];
+        var q = pts[(i + 1) % pts.Length];
+        double cross = (p.X * q.Y) - (q.X * p.Y);
+        twiceArea += cross;
+        cx += (p.X + q.X) * cross;
+        cy += (p.Y + q.Y) * cross;
+      }
+
+      return Math.Abs(twiceArea) < 1e-12
+        ? ((poly.MinX + poly.MaxX) / 2.0, (poly.MinY + poly.MaxY) / 2.0)
+        : (cx / (3.0 * twiceArea), cy / (3.0 * twiceArea));
+    }
+
+    /// <summary>A dark part colour needs a light number on top of it; the palette holds both.</summary>
+    private static bool NeedsLightInk((byte R, byte G, byte B) colour)
+      => ((0.299 * colour.R) + (0.587 * colour.G) + (0.114 * colour.B)) < 140.0;
 
     private static string Trunc(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "~";
 

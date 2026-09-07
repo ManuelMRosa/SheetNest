@@ -9,16 +9,17 @@ namespace DeepNestSharp.CiTests.RasterNest
   using Xunit;
 
   /// <summary>
-  /// One pair whose snap would drive a cut into a neighbour used to cost EVERY other pair on the sheet
+  /// One pair whose seam would drive a cut into a neighbour used to cost EVERY other pair on the sheet
   /// its shared cut, because the whole pass was rolled back together. The nest still came out correct,
   /// just with no common cutting anywhere and nothing saying why.
   /// </summary>
   public class GroupRollbackFixture
   {
-    private const double Kerf = 0.3;
+    private const double NormalGap = 0.3;
+    private const double CommonLineGap = 0.01;
 
     /// <summary>
-    /// Two independent pairs plus a stationary blocker.
+    /// Two independent pairs plus a blocker.
     /// <para>
     /// A1/A2 are a plain seam over on the left with nothing near them. B1/B2 want the same seam, but B2's
     /// edges start 4 higher than B1's, so closing the seam slides B2 down onto a part parked below it and
@@ -28,42 +29,47 @@ namespace DeepNestSharp.CiTests.RasterNest
     [Fact]
     public void OneInvadingGroupDoesNotCostTheOthersTheirSeam()
     {
-      var a1 = Bar(1, 1, 2, 10);
-      var a2 = Bar(3.35, 1, 2, 10);
-      var b1 = Bar(20, 1, 2, 10);
-      var b2 = Bar(22.35, 5, 2, 10);      // 4 higher, so the seam drags it down
-      var blocker = Bar(22.6, 0, 1.5, 0.95);
-
       var all = new List<IPartPlacement>
       {
-        Place(a1, 0), Place(a2, 1), Place(b1, 2), Place(b2, 3), Place(blocker, 4),
+        Place(Bar(1, 1, 2, 10), 0),
+        Place(Bar(3.3, 1, 2, 10), 1),
+        Place(Bar(20, 1, 2, 10), 2),
+        Place(Bar(22.3, 5, 2, 10), 3),
+        Place(Bar(22.45, 0, 1.7, 4.85), 4),
       };
 
-      Snap(all, new[] { a1, a2, b1, b2, blocker });
+      SparrowNestService.DirectCommonLineSnapResult result = Plan(all);
 
-      (all[1].PlacedPart.MinX - all[0].PlacedPart.MaxX).Should().BeApproximately(Kerf, 1e-6,
-        "the pair that was never in trouble keeps its shared cut");
+      result.Edges.Should().NotBeEmpty("the pair that was never in trouble keeps its shared cut");
+      (all[1].PlacedPart.MinX - all[0].PlacedPart.MaxX).Should().BeApproximately(CommonLineGap, 1e-6,
+        "the untroubled pair closes to the configured gap");
       all[3].Y.Should().Be(0, "the pair whose cut would have eaten the blocker is the only one put back");
     }
 
     /// <summary>
     /// The control that stops the optimisation opening a hole: the group-by-group retry only tests pairs
     /// involving the parts that moved, so a moved part invading a part that did NOT move still has to be
-    /// caught. Here the blocker never moves and B2 runs into it.
+    /// caught. Here B2 runs into a blocker with no room to be walked clear of it.
     /// </summary>
     [Fact]
     public void AMovedPartInvadingAStationaryOneIsStillCaught()
     {
-      var b1 = Bar(20, 1, 2, 10);
-      var b2 = Bar(22.35, 5, 2, 10);
-      var blocker = Bar(22.6, 0, 1.5, 0.95);
+      var all = new List<IPartPlacement>
+      {
+        Place(Bar(20, 1, 2, 10), 0),
+        Place(Bar(22.3, 5, 2, 10), 1),
+        Place(Bar(22.45, 0, 1.7, 4.85), 2),
+        Place(Bar(20.3, 0, 1.7, 4.85), 3),
+      };
 
-      var all = new List<IPartPlacement> { Place(b1, 0), Place(b2, 1), Place(blocker, 2) };
+      SparrowNestService.DirectCommonLineSnapResult result = Plan(all);
 
-      Snap(all, new[] { b1, b2, blocker });
-
-      all[1].Y.Should().Be(0, "the snap must not close a seam by cutting into something standing still");
-      all[1].X.Should().Be(0);
+      using (new FluentAssertions.Execution.AssertionScope())
+      {
+        result.Edges.Should().BeEmpty("no seam may be closed by cutting into something standing still");
+        all[1].Y.Should().Be(0);
+        all[1].X.Should().Be(0);
+      }
     }
 
     private static SvgPoint[] Bar(double x, double y, double w, double h) => new[]
@@ -74,19 +80,24 @@ namespace DeepNestSharp.CiTests.RasterNest
     private static IPartPlacement Place(SvgPoint[] pts, int source)
       => new PartPlacement(new NoFitPolygon(pts)) { X = 0, Y = 0, Rotation = 0, Source = source };
 
-    private static void Snap(List<IPartPlacement> all, SvgPoint[][] outlines)
+    /// <summary>Every part its own share key, so nothing shares by identity accident; the geometry alone
+    /// decides, which is what these two tests are about.</summary>
+    private static SparrowNestService.DirectCommonLineSnapResult Plan(List<IPartPlacement> all)
     {
-      var kerf = new Dictionary<int, double>();
-      var tooling = new Dictionary<int, INfp>();
-      var cc = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain)>();
-      for (int i = 0; i < outlines.Length; i++)
+      var rules = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)>();
+      for (int i = 0; i < all.Count; i++)
       {
-        kerf[i] = Kerf;
-        tooling[i] = SparrowNestService.ToolingFootprint(new NoFitPolygon(outlines[i]), null, Kerf, 0);
-        cc[i] = (CommonCuttingMode.Unrestricted, i, "sheetcam:test");
+        rules[all[i].Source] = (CommonCuttingMode.Unrestricted, i, "direct", true, NormalGap);
       }
 
-      SparrowNestService.SnapCommonLineEdges(all, kerf, tooling, cc);
+      return SparrowNestService.SnapDirectCommonLineEdges(
+        all,
+        rules,
+        sheetW: 40D,
+        sheetH: 20D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: 0.0001D);
     }
   }
 }

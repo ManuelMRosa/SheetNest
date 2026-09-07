@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests.RasterNest
+﻿namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -292,12 +292,12 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
-    public void SheetCamDomainStaysOnTheLegacyMeasuredKerfRoute()
+    public void APairThatNeverAskedForMergedOutputKeepsItsNormalSpacing()
     {
       var all = Pair(Square(10), 0.30);
       var rules = Rules(0.30, all.Count);
-      rules[0] = (CommonCuttingMode.Unrestricted, 0, "sheetcam:C:\\jobs\\one.nest", false, 0.30);
-      rules[1] = (CommonCuttingMode.Unrestricted, 1, "sheetcam:C:\\jobs\\one.nest", false, 0.30);
+      rules[0] = (CommonCuttingMode.Unrestricted, 0, "other", false, 0.30);
+      rules[1] = (CommonCuttingMode.Unrestricted, 1, "other", false, 0.30);
 
       var result = SparrowNestService.SnapDirectCommonLineEdges(
         all,
@@ -309,9 +309,9 @@ namespace DeepNestSharp.CiTests.RasterNest
         0.0001);
 
       result.Edges.Should().BeEmpty(
-        "a .nest return does not encode nominal cluster boundaries or COMMON_LINE layers");
+        "an output that cannot merge two contours into one cut has no cluster boundary to record");
       (all[1].PlacedPart.MinX - all[0].PlacedPart.MaxX).Should().BeApproximately(0.30, 1e-9,
-        "the legacy measured-kerf snap, not V1, owns SheetCam movement");
+        "and nothing was moved on the strength of a seam that was never recorded");
     }
 
     [Fact]

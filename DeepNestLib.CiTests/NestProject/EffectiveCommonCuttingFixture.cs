@@ -6,9 +6,9 @@ namespace DeepNestLib.CiTests.NestProject
   using Xunit;
 
   /// <summary>
-  /// SheetCam common cutting uses its measured kerf; explicitly confirmed direct DXF/STEP common cutting
-  /// uses exact contour contact and merged DXF lines. These say the part answers which contract is active
-  /// instead of every caller having to reconstruct that choice.
+  /// Common cutting is only active on a DXF/STEP part whose mode the operator has explicitly confirmed,
+  /// and it then uses exact contour contact and merged DXF lines. These say the part answers which
+  /// contract is active instead of every caller having to reconstruct that choice.
   /// </summary>
   public class EffectiveCommonCuttingFixture
   {
@@ -19,91 +19,10 @@ namespace DeepNestLib.CiTests.NestProject
     {
       var sut = new DetailLoadInfo { Path = "a.dxf", CommonCutting = stored };
 
-      sut.NestSourcePath.Should().BeEmpty("a direct DXF is what this is about");
       sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None);
     }
 
-    /// <summary>
-    /// Declining to act on the setting is not the same as deleting it. Opening a project must not rewrite
-    /// what the user saved, so the stored value has to survive being ignored.
-    /// </summary>
-    [Fact]
-    public void IgnoringTheSettingDoesNotEraseIt()
-    {
-      var sut = new DetailLoadInfo { Path = "a.dxf", CommonCutting = CommonCuttingMode.Unrestricted };
 
-      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None);
-      sut.CommonCutting.Should().Be(CommonCuttingMode.Unrestricted, "the file said so and we have no business changing it");
-    }
-
-    /// <summary>A direct part becomes eligible only after the new per-part confirmation is persisted.</summary>
-    [Theory]
-    [InlineData(CommonCuttingMode.Unrestricted)]
-    [InlineData(CommonCuttingMode.SamePart)]
-    public void AConfirmedDirectPartUsesItsStoredMode(CommonCuttingMode stored)
-    {
-      var sut = new DetailLoadInfo
-      {
-        Path = "a.dxf",
-        CommonCutting = stored,
-        DirectCommonCuttingEnabled = true,
-      };
-
-      sut.EffectiveCommonCutting.Should().Be(stored);
-    }
-
-    [Theory]
-    [InlineData("part.svg")]
-    [InlineData("part.dnpoly")]
-    [InlineData("")]
-    public void AConfirmedUnsupportedDirectFormatStillSharesNothing(string path)
-    {
-      var sut = new DetailLoadInfo
-      {
-        Path = path,
-        CommonCutting = CommonCuttingMode.Unrestricted,
-        DirectCommonCuttingEnabled = true,
-      };
-
-      sut.SupportsCommonCutting.Should().BeFalse();
-      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.None,
-        "only DXF export can collapse a direct shared contour into one cut entity");
-    }
-
-    /// <summary>
-    /// The one that stops this becoming a blanket off switch: with a nest behind it, the part shares
-    /// exactly what it was told to.
-    /// </summary>
-    [Theory]
-    [InlineData(CommonCuttingMode.Unrestricted)]
-    [InlineData(CommonCuttingMode.SamePart)]
-    [InlineData(CommonCuttingMode.None)]
-    public void APartFromANestKeepsTheModeItWasGiven(CommonCuttingMode stored)
-    {
-      var sut = new DetailLoadInfo
-      {
-        Path = "a.dxf",
-        CommonCutting = stored,
-        NestSourcePath = @"C:\Jobs\job.nest",
-        NestPartName = "Bracket",
-      };
-
-      sut.EffectiveCommonCutting.Should().Be(stored);
-    }
-
-    [Fact]
-    public void SheetCamProvenanceKeepsItsContractRegardlessOfTheMaterializedFileExtension()
-    {
-      var sut = new DetailLoadInfo
-      {
-        Path = "materialized.svg",
-        NestSourcePath = @"C:\Jobs\job.nest",
-        CommonCutting = CommonCuttingMode.Unrestricted,
-      };
-
-      sut.SupportsCommonCutting.Should().BeTrue();
-      sut.EffectiveCommonCutting.Should().Be(CommonCuttingMode.Unrestricted);
-    }
 
     /// <summary>
     /// Where this actually bites. Before common cutting was restricted to nest jobs the setting was a

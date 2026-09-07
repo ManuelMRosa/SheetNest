@@ -34,7 +34,6 @@
 
     // Target on-screen line width in device pixels (constant at any zoom level).
     private const double StrokeScreenPx = 1.0;
-    private const double KerfBandPx = 7.0; // cut-band width in device pixels; fixed on screen so it reads at any zoom
     private const double OffcutCutPx = 4.0; // offcut cut line, same idea: it decides where the material is split
 
     // Measure snap: how close (device px) the cursor must be to a vertex to snap onto it.
@@ -54,8 +53,6 @@
     // without being looked for. Close to the part outline (#101010) on purpose - the line separates from it
     // by WEIGHT, four solid pixels against one, not by colour.
     private static readonly Brush OffcutStroke = new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x00));
-    private static readonly Brush LeadStroke = new SolidColorBrush(Color.FromRgb(0xC6, 0x28, 0x28)); // lead-in/out cut path
-    private static readonly Brush KerfBand = new SolidColorBrush(Color.FromArgb(0xE0, 0xC6, 0x28, 0x28)); // cut band (contour + leads), bold so it reads at any zoom
 
     // The directions the magnets probe. Nests are orthogonal, so a diagonal earns nothing.
     private static readonly (double X, double Y)[] Axes = { (1, 0), (-1, 0), (0, 1), (0, -1) };
@@ -77,12 +74,6 @@
     // the placements currently overlapping something (drawn red).
     private readonly List<(System.Windows.Shapes.Path Path, IPartPlacement Pp)> partPaths = new List<(System.Windows.Shapes.Path, IPartPlacement)>();
     private readonly HashSet<IPartPlacement> invalid = new HashSet<IPartPlacement>();
-
-    // The cut band and lead-ins belonging to each placement, kept per part so a part being dragged takes
-    // its cut with it. They used to go straight onto the canvas and nowhere else, and manual editing
-    // repaints only what is in partPaths, so dragging a toolpathed part left its real cut drawn where the
-    // part no longer was.
-    private readonly Dictionary<IPartPlacement, List<UIElement>> partOverlays = new Dictionary<IPartPlacement, List<UIElement>>();
 
     // The offcut cut line and its size label. Same reason: the strip's edge follows the pack, so it has to
     // be redrawn as parts move rather than only when the whole view is rebuilt.
@@ -133,7 +124,7 @@
     /// <summary>Effective per-part spacing (inches) keyed by the part's source DXF path — set by the
     /// window right before a nest result is shown, so manual edits enforce the same clearances the
     /// nester used: two parts stay (spacingA + spacingB)/2 apart everywhere outside a valid recorded
-    /// edge, while SheetCam retains its separate measured-kerf contract.</summary>
+    /// edge.</summary>
     public IDictionary<string, double> PartSpacings { get; set; }
 
     /// <summary>Fallback spacing for parts not found in <see cref="PartSpacings"/>.</summary>
@@ -145,16 +136,6 @@
     /// before a result carries first-class <see cref="CommonEdge"/> metadata.
     /// </summary>
     public double CommonLineGap { get; set; } = CommonLineDefaults.DefaultGapInches;
-
-    /// <summary>Common cutting mode per part file (keyed by <c>Part.Name</c>, i.e. its path), set by the
-    /// window alongside <see cref="PartSpacings"/>. Absent = None. Without it, hand editing would demand
-    /// full clearance between two SheetCam toolpaths deliberately seated one kerf apart.</summary>
-    internal IReadOnlyDictionary<string, DeepNestLib.NestProject.CommonCuttingMode> PartCommonCutting { get; set; }
-
-    /// <summary>Common-cutting contract per part file. Only parts with the same non-empty domain may
-    /// share a cut: direct geometry and pre-toolpathed SheetCam jobs use different contracts, and two
-    /// independent SheetCam jobs must not be joined merely because both allow common cutting.</summary>
-    internal IReadOnlyDictionary<string, string> PartCommonCuttingDomains { get; set; }
 
     /// <summary>How far every part must stay from the sheet edge (drawing units) — the same margin the
     /// nester was given, so editing by hand cannot break what the job asked for. Set by the window.</summary>
@@ -172,14 +153,6 @@
     /// the nest ran with "Prefer rectangular offcut"; null = off); computed live from the placements
     /// each render, with the same rules the DXF export uses for the separation cut lines.</summary>
     internal RasterNest.OffcutOptions OffcutOptions { get; set; }
-
-    /// <summary>Lead-in/out paths per part (keyed by <c>Part.Name</c>, i.e. its file path), in the part's
-    /// own local frame — set by the window for jobs imported from a SheetCam .nest; null = nothing to draw.</summary>
-    internal System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<DeepNestLib.SvgPoint>>> LeadPaths { get; set; }
-
-    /// <summary>Cut width (kerf) per part in drawing units (keyed by <c>Part.Name</c>) — set for jobs from a
-    /// SheetCam .nest so the cut is drawn as a band of its real width; absent/0 = draw the outline hairline.</summary>
-    internal System.Collections.Generic.IReadOnlyDictionary<string, double> KerfByPart { get; set; }
 
     /// <summary>Re-render on demand — used by the Offcut dialog so overlay changes show without
     /// re-nesting (setting <see cref="OffcutOptions"/> alone does not redraw).</summary>
@@ -849,19 +822,6 @@
         $"{sp.Sheet.WidthCalculated}x{sp.Sheet.HeightCalculated}#merge={sp.RequiresMergedLines}:gap={Math.Round(sp.CommonLineGap, 8)}:tol={Math.Round(sp.GeometryTolerance, 8)}#edges={string.Join("|", edges)}#parts={string.Join("|", items)}");
     }
 
-    /// <summary>Material utilization of ONE sheet layout: net part area on it / its sheet area (%).</summary>
-    private static double UtilizationOf(ISheetPlacement sp)
-    {
-      double sheetArea = sp?.Sheet == null ? 0 : sp.Sheet.WidthCalculated * sp.Sheet.HeightCalculated;
-      if (sheetArea <= 0)
-      {
-        return 0;
-      }
-
-      double partsArea = sp.PartPlacements.Sum(p => Math.Abs(p.Part.NetArea));
-      return partsArea / sheetArea * 100.0;
-    }
-
     private static void OnSheetIndexPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
       ((DxfViewer)d).Render();
@@ -900,7 +860,7 @@
       /// <para>A condensed production plan proposes an arrangement ("cut 24 of A, 1 of B") that the
       /// engine's own sheets do not match one for one: its remainder is assembled from copies, and its
       /// full sheet stands for N physical sheets while being only one of them. Nothing carries an edit
-      /// from there back to <c>Result.UsedSheets</c>, which is what the SheetCam writeback reads and what
+      /// from there back to <c>Result.UsedSheets</c>, which is what the export reads and what
       /// the project saves. The edit would sit on screen, go into the per-layout DXF, and be missing from
       /// the cut file and from the reopened project. Better to not offer it than to lose it quietly.</para>
       /// </summary>
@@ -912,7 +872,6 @@
       this.dragCache = null; // placements may have been replaced wholesale — never answer from stale geometry
       this.canvas.Children.Clear();
       this.partPaths.Clear();
-      this.partOverlays.Clear();
       this.offcutShapes.Clear();
       this.ClearMeasure(); // canvas was cleared; drop dangling measure-shape references
 
@@ -1016,60 +975,10 @@
       }
 
       this.DrawOffcutOverlay(sheetPlacement, idx, w, h, stroke);
-      this.DrawKerfOverlay(sheetPlacement, h, stroke);
-      this.DrawLeadsOverlay(sheetPlacement, h, stroke);
       this.BuildSnapPoints();
 
       // A selection can survive a re-render (undo, a settings change), so its panel has to catch up.
       this.UpdatePartInfo(measureGap: true);
-    }
-
-    /// <summary>
-    /// For parts that came from a SheetCam .nest, highlights the cut — the outline and every hole edge —
-    /// as a bold band. The band is a FIXED width on screen (not the real kerf, which is sub-pixel on a
-    /// full-sheet view and so invisible); the point is to see where the cut and its lead-ins run. Nothing
-    /// for plain DXF parts, so their thin outline is unchanged.
-    /// </summary>
-    private void DrawKerfOverlay(ISheetPlacement sheetPlacement, double h, double stroke)
-    {
-      if (this.KerfByPart == null || this.KerfByPart.Count == 0)
-      {
-        return;
-      }
-
-      foreach (var pp in sheetPlacement.PartPlacements)
-      {
-        this.DrawKerfFor(pp, h, stroke);
-      }
-    }
-
-    /// <summary>One part's cut band, recorded against the part so it can move with it.</summary>
-    private void DrawKerfFor(IPartPlacement pp, double h, double stroke)
-    {
-      // kerf just flags "this part came in toolpathed"; the band width is the fixed on-screen one.
-      if (this.KerfByPart == null || pp.Part?.Name == null
-        || !this.KerfByPart.TryGetValue(pp.Part.Name, out double kerf) || kerf <= 0)
-      {
-        return;
-      }
-
-      var geometry = BuildPlacedGeometry(pp, h);
-      if (geometry == null)
-      {
-        return;
-      }
-
-      // stroke is StrokeScreenPx (1) device pixel in drawing units; scale it up to the band width. The
-      // multiplier rides along in Tag so a zoom keeps the band a band (see UpdateStrokeWidths).
-      this.AddPartOverlay(pp, new System.Windows.Shapes.Path
-      {
-        Data = geometry,
-        Fill = null,
-        Stroke = KerfBand,
-        StrokeThickness = stroke * KerfBandPx,
-        StrokeLineJoin = PenLineJoin.Round,
-        Tag = KerfBandPx,
-      });
     }
 
     /// <summary>
@@ -1164,50 +1073,6 @@
       return inside;
     }
 
-    /// <summary>Puts an overlay shape on the canvas and remembers whose it is.</summary>
-    private void AddPartOverlay(IPartPlacement pp, UIElement shape)
-    {
-      this.canvas.Children.Add(shape);
-      if (!this.partOverlays.TryGetValue(pp, out var list))
-      {
-        list = new List<UIElement>();
-        this.partOverlays[pp] = list;
-      }
-
-      list.Add(shape);
-    }
-
-    /// <summary>Takes one part's overlay shapes off the canvas, e.g. before redrawing them where the part
-    /// now is, or because the placement itself is being replaced by a rotation.</summary>
-    private void DropPartOverlays(IPartPlacement pp)
-    {
-      if (pp == null || !this.partOverlays.TryGetValue(pp, out var list))
-      {
-        return;
-      }
-
-      foreach (var shape in list)
-      {
-        this.canvas.Children.Remove(shape);
-      }
-
-      this.partOverlays.Remove(pp);
-    }
-
-    /// <summary>Redraws one part's cut band and lead-ins where the part is now.</summary>
-    private void RefreshPartOverlays(IPartPlacement pp)
-    {
-      if (pp == null)
-      {
-        return;
-      }
-
-      this.DropPartOverlays(pp);
-      double stroke = this.CurrentStroke;
-      this.DrawKerfFor(pp, this.currentSheetH, stroke);
-      this.DrawLeadsFor(pp, this.currentSheetH, stroke);
-    }
-
     /// <summary>Redraws the offcut cut line, which moves when the pack it measures moves.</summary>
     private void RefreshOffcutOverlay()
     {
@@ -1227,88 +1092,6 @@
       if (group?.Representative?.Sheet != null)
       {
         this.DrawOffcutOverlay(group.Representative, 0, this.currentSheetW, this.currentSheetH, this.CurrentStroke);
-      }
-    }
-
-    /// <summary>
-    /// The lead-in/out paths of parts that came from a SheetCam .nest, drawn where they will actually be
-    /// cut. They reach outside the part outline, and the nester reserves that room — showing them is what
-    /// explains the gaps it left, and makes a lead running into a neighbour visible here instead of after
-    /// the job is back in SheetCam.
-    /// </summary>
-    private void DrawLeadsOverlay(ISheetPlacement sheetPlacement, double h, double stroke)
-    {
-      if (this.LeadPaths == null || this.LeadPaths.Count == 0)
-      {
-        return;
-      }
-
-      foreach (var pp in sheetPlacement.PartPlacements)
-      {
-        this.DrawLeadsFor(pp, h, stroke);
-      }
-    }
-
-    /// <summary>One part's leads, recorded against the part so they move with it.</summary>
-    private void DrawLeadsFor(IPartPlacement pp, double h, double stroke)
-    {
-      if (this.LeadPaths == null || pp.Part?.Name == null || !this.LeadPaths.TryGetValue(pp.Part.Name, out var paths))
-      {
-        return;
-      }
-
-      // Draw the lead as the same bold cut band as the outline when this part came in toolpathed;
-      // otherwise a thin line.
-      double kerf = 0;
-      this.KerfByPart?.TryGetValue(pp.Part.Name, out kerf);
-      bool asBand = kerf > 0;
-      var leadBrush = asBand ? KerfBand : LeadStroke;
-      double leadWidths = asBand ? KerfBandPx : 1.5;
-
-      double radians = pp.Rotation * Math.PI / 180d;
-      double cos = Math.Cos(radians);
-      double sin = Math.Sin(radians);
-
-      foreach (var path in paths)
-      {
-        if (path == null || path.Count < 2)
-        {
-          continue;
-        }
-
-        var figure = new PathFigure { IsClosed = false, IsFilled = false };
-        for (int i = 0; i < path.Count; i++)
-        {
-          // Same transform the placement applies: mirror, rotate about the part origin, then translate.
-          // The canvas is Y-down, so the sheet's Y is flipped last.
-          double lx = pp.IsMirrored ? -path[i].X : path[i].X;
-          double ly = path[i].Y;
-          double x = pp.X + ((lx * cos) - (ly * sin));
-          double y = pp.Y + ((lx * sin) + (ly * cos));
-          var point = new Point(x, h - y);
-
-          if (i == 0)
-          {
-            figure.StartPoint = point;
-          }
-          else
-          {
-            figure.Segments.Add(new LineSegment(point, true));
-          }
-        }
-
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-        this.AddPartOverlay(pp, new System.Windows.Shapes.Path
-        {
-          Data = geometry,
-          Stroke = leadBrush,
-          StrokeThickness = stroke * leadWidths,
-          StrokeStartLineCap = PenLineCap.Round,
-          StrokeEndLineCap = PenLineCap.Round,
-          StrokeLineJoin = PenLineJoin.Round,
-          Tag = leadWidths,
-        });
       }
     }
 
@@ -2328,7 +2111,6 @@
         }
       }
 
-      this.RefreshPartOverlays(this.selectedPp);
       this.RefreshOffcutOverlay();
 
       // Position live, distance to the neighbour only when it stops: measuring that exactly is a search.
@@ -2488,7 +2270,6 @@
       this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
       list[index] = replacement;
       this.invalid.Remove(pp);
-      this.DropPartOverlays(pp); // the placement itself is being replaced, so its old cut band goes with it
       for (int i = 0; i < this.partPaths.Count; i++)
       {
         if (this.partPaths[i].Pp == pp)
@@ -2560,7 +2341,6 @@
       this.PushEdit(PlacementSnapshot.Of(pp), PlacementSnapshot.Of(replacement), nudge: false);
       list[index] = replacement;
       this.invalid.Remove(pp);
-      this.DropPartOverlays(pp); // the placement itself is being replaced, so its old cut band goes with it
       for (int i = 0; i < this.partPaths.Count; i++)
       {
         if (this.partPaths[i].Pp == pp)
@@ -2623,15 +2403,6 @@
     /// authorised by a still-valid persisted common-edge record.</summary>
     private bool TooClose(IPartPlacement a, IPartPlacement b)
     {
-      if (this.TryLegacySheetCamClearance(a, b, out double legacyClearance))
-      {
-        return RasterNest.PlacementCollision.TooClose(
-          a.PlacedPart,
-          b.PlacedPart,
-          legacyClearance,
-          this.SliverBetween(a, b));
-      }
-
       var sheet = this.CurrentGroup()?.Representative;
       var settings = this.CommonLineSettings(sheet);
       return RasterNest.CommonEdgeClearance.TooClose(
@@ -2648,12 +2419,10 @@
       => ClearanceFor(this.SpacingOf(a), this.SpacingOf(b), intentionalCommonEdge: false);
 
     private double AcceptanceClearanceBetween(IPartPlacement a, IPartPlacement b)
-      => this.TryLegacySheetCamClearance(a, b, out double clearance)
-        ? clearance
-        : this.NormalClearanceBetween(a, b);
+      => this.NormalClearanceBetween(a, b);
 
     /// <summary>The scalar clearance used by drag-cache and seating helpers: ordinary mean spacing,
-    /// configured gap for an exact persisted direct edge, or measured kerf for a compatible SheetCam pair.</summary>
+    /// configured gap for an exact persisted direct edge.</summary>
     private double ClearanceBetween(IPartPlacement a, IPartPlacement b)
     {
       bool intentionalCommonEdge = this.HasValidRecordedCommonEdge(a, b, out double gap);
@@ -2662,50 +2431,7 @@
         return ClearanceFor(this.SpacingOf(a), this.SpacingOf(b), true, gap);
       }
 
-      return this.TryLegacySheetCamClearance(a, b, out double legacyClearance)
-        ? legacyClearance
-        : this.NormalClearanceBetween(a, b);
-    }
-
-    private bool TryLegacySheetCamClearance(IPartPlacement a, IPartPlacement b, out double clearance)
-      => TryLegacySheetCamClearance(
-        this.CcOf(a),
-        a?.Part?.Name,
-        a?.IsMirrored ?? false,
-        this.CommonCuttingDomainOf(a),
-        this.KerfOf(a),
-        this.CcOf(b),
-        b?.Part?.Name,
-        b?.IsMirrored ?? false,
-        this.CommonCuttingDomainOf(b),
-        this.KerfOf(b),
-        out clearance);
-
-    internal static bool TryLegacySheetCamClearance(
-      CommonCuttingMode ccA,
-      string pathA,
-      bool mirroredA,
-      string domainA,
-      double kerfA,
-      CommonCuttingMode ccB,
-      string pathB,
-      bool mirroredB,
-      string domainB,
-      double kerfB,
-      out double clearance)
-    {
-      bool sameIdentity = string.Equals(pathA, pathB, StringComparison.OrdinalIgnoreCase)
-        && mirroredA == mirroredB;
-      return RasterNest.CommonCuttingCompatibility.TryLegacySheetCamClearance(
-        domainA,
-        ccA,
-        0,
-        kerfA,
-        domainB,
-        ccB,
-        sameIdentity ? 0 : 1,
-        kerfB,
-        out clearance);
+      return this.NormalClearanceBetween(a, b);
     }
 
     /// <summary>The clearance rule itself, over plain numbers so it can be tested without a control.</summary>
@@ -3209,53 +2935,10 @@
         sameIdentity ? 0 : 1);
     }
 
-    private bool MayShare(IPartPlacement a, IPartPlacement b)
-      => MayShare(
-        this.CcOf(a), a?.Part?.Name, a?.IsMirrored ?? false, this.CommonCuttingDomainOf(a),
-        this.CcOf(b), b?.Part?.Name, b?.IsMirrored ?? false, this.CommonCuttingDomainOf(b));
-
-    private DeepNestLib.NestProject.CommonCuttingMode CcOf(IPartPlacement pp)
-    {
-      string key = pp?.Part?.Name;
-      return key != null && this.PartCommonCutting != null && this.PartCommonCutting.TryGetValue(key, out var cc)
-        ? cc
-        : DeepNestLib.NestProject.CommonCuttingMode.None;
-    }
-
-    private string CommonCuttingDomainOf(IPartPlacement pp)
-    {
-      string key = pp?.Part?.Name;
-      return key != null
-          && this.PartCommonCuttingDomains != null
-          && this.PartCommonCuttingDomains.TryGetValue(key, out string domain)
-        ? domain
-        : string.Empty;
-    }
-
-    /// <summary>
-    /// How deep this pair may bite into each other before it means anything: the width of the cut that is
-    /// about to run between them.
-    /// <para>A common-line pair shares ONE cut and that cut takes out a kerf of material, so an overlap
-    /// shallower than the kerf is not there once the sheet is cut - it was in the slot. Where a clearance
-    /// was asked for, what overlaps is the grown shells rather than the parts, so the same figure reads as
-    /// clearance the pair is short of, and a cut's width of that is nothing either. Reported as parts
-    /// turning red when two radii met: they were a THOUSANDTH of an inch into each other, on a job whose
-    /// kerf is six.</para>
-    /// <para>The kerf is known for a job that came in toolpathed from SheetCam, which is also the job whose
-    /// shared edge really does get cut once. For a plain DXF nobody has said how wide the cut is, so
-    /// nothing is forgiven beyond the noise in the numbers themselves.</para>
-    /// </summary>
+    /// <summary>How deep a pair may bite into each other before it means anything. Nobody says how
+    /// wide the cut is for a plain DXF, so nothing is forgiven beyond the noise in the numbers.</summary>
     private double SliverBetween(IPartPlacement a, IPartPlacement b)
-      => RasterNest.PlacementCollision.SliverFor(this.KerfOf(a), this.KerfOf(b));
-
-    private double KerfOf(IPartPlacement pp)
-    {
-      string key = pp?.Part?.Name;
-      return key != null && this.KerfByPart != null && this.KerfByPart.TryGetValue(key, out double kerf)
-        ? Math.Max(0, kerf)
-        : 0;
-    }
-
+      => RasterNest.PlacementCollision.SliverFor(0, 0);
     /// <summary>Precomputes the geometry that stays put while <paramref name="dragged"/> is moved, so a
     /// drag costs one Clipper intersection per touching neighbour instead of rebuilding every path and
     /// re-running a ClipperOffset on every mouse move.</summary>
@@ -3599,7 +3282,7 @@
     }
 
     /// <summary>The two offsets along one axis that seat the part before or after a neighbour at exactly
-    /// the scalar clearance supplied by the active normal or SheetCam editing contract.</summary>
+    /// the scalar clearance supplied by the active editing contract.</summary>
     internal static (double Before, double After) EdgeAlignOffsets(
       double partMin, double partMax, double otherMin, double otherMax, double clearance)
       => (otherMin - clearance - partMax, otherMax + clearance - partMin);

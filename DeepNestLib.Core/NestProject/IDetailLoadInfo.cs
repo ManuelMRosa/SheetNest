@@ -55,22 +55,21 @@
 
     /// <summary>
     /// Gets or sets whether the operator explicitly enabled common cutting for a direct DXF/STEP part.
-    /// False keeps an unconfirmed mode from an older project inactive. SheetCam parts are enabled by their
-    /// provenance and do not require this flag.
+    /// False keeps an unconfirmed mode from an older project inactive.
     /// </summary>
     bool DirectCommonCuttingEnabled { get; set; }
 
     /// <summary>
-    /// Gets whether this part has a supported common-cutting contract: SheetCam provenance, or a direct
-    /// DXF contour. Direct SVG and other formats fail closed because their exporters cannot collapse a
-    /// shared edge into one cut entity.
+    /// Gets whether this part has a supported common-cutting contract, which means a DXF contour. SVG
+    /// and other formats fail closed because their exporters cannot collapse a shared edge into one cut
+    /// entity.
     /// </summary>
     bool SupportsCommonCutting { get; }
 
     /// <summary>
     /// Gets who this part may share a cut edge with once the part's origin is taken into account:
-    /// the stored <see cref="CommonCutting"/> mode for a SheetCam part or an explicitly enabled direct
-    /// DXF/STEP part; otherwise <see cref="CommonCuttingMode.None"/>.
+    /// the stored <see cref="CommonCutting"/> mode for an explicitly enabled DXF/STEP part; otherwise
+    /// <see cref="CommonCuttingMode.None"/>.
     /// </summary>
     CommonCuttingMode EffectiveCommonCutting { get; }
 
@@ -113,16 +112,5 @@
     /// <summary>Gets or sets the detected sheet thickness (mm) of this 3D part; 0 = unknown.</summary>
     double ThicknessMm { get; set; }
 
-    /// <summary>
-    /// Gets or sets the SheetCam .nest file this part came from. Empty = not imported from a nest file.
-    /// When set, the nested arrangement can be written back into that document.
-    /// </summary>
-    string NestSourcePath { get; set; }
-
-    /// <summary>Gets or sets the name of the &lt;Part&gt; element this part came from in <see cref="NestSourcePath"/>.</summary>
-    string NestPartName { get; set; }
-
-    /// <summary>Gets or sets whether the nest geometry was scaled into inches (true) or left in millimetres.</summary>
-    bool NestUnitInch { get; set; }
   }
 }

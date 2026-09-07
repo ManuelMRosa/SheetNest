@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Ui.Views
+﻿namespace DeepNestSharp.Ui.Views
 {
   using System.Windows;
   using System.Windows.Media;
@@ -32,8 +32,8 @@ namespace DeepNestSharp.Ui.Views
       this.spacingUpDown.Value = part.Spacing >= 0 ? part.Spacing : defaultSpacing;
 
       // Common cutting is a MODE, not a switch, and spacing stays live in all three: it is what the
-      // part keeps to everything it may not share a cut with. SheetCam parts show their stored mode;
-      // direct DXF/STEP parts show only their EFFECTIVE mode. Direct SVG/other formats stay hidden:
+      // part keeps to everything it may not share a cut with. A part shows only its EFFECTIVE mode.
+      // SVG and other formats stay hidden:
       // their exporter cannot emit the resolved CUT_OUTER + midpoint COMMON_LINE cluster contract.
       if (ShowsCommonCuttingSelector(part))
       {
@@ -44,8 +44,7 @@ namespace DeepNestSharp.Ui.Views
         this.commonCuttingCombo.SelectedIndex = (int)part.EffectiveCommonCutting;
         this.commonCuttingCombo.SelectionChanged += (_, __) => this.commonCuttingSelectionChanged = true;
 
-        if (string.IsNullOrWhiteSpace(part.NestSourcePath)
-            && !part.DirectCommonCuttingEnabled
+        if (!part.DirectCommonCuttingEnabled
             && part.CommonCutting != CommonCuttingMode.None)
         {
           this.commonCuttingHint.Text = "A saved legacy common-cutting mode is inactive. Choose a mode to confirm it for this direct DXF/STEP part.";
@@ -119,14 +118,13 @@ namespace DeepNestSharp.Ui.Views
     /// <summary>
     /// Resolves the selector without treating its initial, effective value as a user choice. A direct
     /// DXF/STEP confirms common cutting only after the selection changes; selecting None withdraws that
-    /// confirmation. SheetCam provenance already enables the stored mode, so its direct flag is untouched.
+    /// confirmation.
     /// </summary>
     internal static (CommonCuttingMode Mode, bool DirectEnabled) ChosenCommonCutting(
       int selectedIndex,
       bool selectionChanged,
       CommonCuttingMode current,
       bool directEnabled,
-      bool fromSheetCam,
       bool supportsCommonCutting = true)
     {
       if (!supportsCommonCutting)
@@ -142,7 +140,7 @@ namespace DeepNestSharp.Ui.Views
       }
 
       var chosen = ChosenMode(selectedIndex, current);
-      return (chosen, fromSheetCam ? directEnabled : chosen != CommonCuttingMode.None);
+      return (chosen, chosen != CommonCuttingMode.None);
     }
 
     private static string FormatThickness(double thicknessMm, bool inch)
@@ -281,7 +279,6 @@ namespace DeepNestSharp.Ui.Views
         this.commonCuttingSelectionChanged,
         this.part.CommonCutting,
         this.part.DirectCommonCuttingEnabled,
-        !string.IsNullOrWhiteSpace(this.part.NestSourcePath),
         this.part.SupportsCommonCutting);
       this.part.CommonCutting = commonCutting.Mode;
       this.part.DirectCommonCuttingEnabled = commonCutting.DirectEnabled;

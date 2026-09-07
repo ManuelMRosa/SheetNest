@@ -126,6 +126,78 @@ namespace DeepNestSharp.RasterNest
         sourceCatalogs: sourceCatalogs);
     }
 
+    /// <summary>
+    /// One part tried in many positions while everything else stands still. The expensive half of a
+    /// clearance verdict is resolving the edge records against their source drawings and rebuilding each
+    /// part's exact boundary, and neither depends on where the moving part is being tried, so both are
+    /// done once here instead of once per position per neighbour.
+    /// </summary>
+    internal sealed class ProbeContext
+    {
+      private readonly Dictionary<IPartPlacement, BoundaryGeometry> boundaries = new Dictionary<IPartPlacement, BoundaryGeometry>();
+      private readonly IReadOnlyList<EdgeReference> valid;
+      private readonly double commonLineGap;
+      private readonly double geometryTol;
+      private readonly double numericalTol;
+      private readonly IDictionary<string, DxfContourCatalog> sourceCatalogs;
+
+      internal ProbeContext(
+        IReadOnlyList<EdgeReference> commonEdges,
+        double commonLineGap,
+        double geometryTolerance,
+        IDictionary<string, DxfContourCatalog> sourceCatalogs)
+      {
+        this.commonLineGap = commonLineGap;
+        this.geometryTol = Math.Max(0, geometryTolerance);
+        this.numericalTol = Math.Max(PlacementCollision.PlacementNoise, this.geometryTol);
+        this.sourceCatalogs = sourceCatalogs;
+        this.valid = commonEdges == null || commonEdges.Count == 0
+          ? Array.Empty<EdgeReference>()
+          : ValidEdges(commonEdges, commonLineGap, this.geometryTol, sourceCatalogs);
+      }
+
+      /// <summary>
+      /// Forgets one part's cached boundary, which the caller MUST do every time it moves that part. The
+      /// cache is keyed on the placement OBJECT, and a part that moves is the same object at a new
+      /// position, so a stale entry would answer for where it used to be and the probe would accept a
+      /// position that is not actually clear.
+      /// </summary>
+      internal void Moved(IPartPlacement placement)
+      {
+        if (placement != null)
+        {
+          this.boundaries.Remove(placement);
+        }
+      }
+
+      /// <summary>The same verdict <see cref="TooClose"/> gives, on the shared resolution.</summary>
+      internal bool TooClose(IPartPlacement a, IPartPlacement b, double normalClearance, double sliver)
+      {
+        if (a?.PlacedPart == null || b?.PlacedPart == null)
+        {
+          return false;
+        }
+
+        double clearance = Math.Max(0, normalClearance);
+        if (clearance <= 0)
+        {
+          return PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver);
+        }
+
+        return TooCloseWithValidEdges(
+          a,
+          b,
+          clearance,
+          sliver,
+          this.valid,
+          this.commonLineGap,
+          this.geometryTol,
+          this.numericalTol,
+          this.boundaries,
+          sourceCatalogs: this.sourceCatalogs);
+      }
+    }
+
     private static bool TooCloseWithValidEdges(
       IPartPlacement a,
       IPartPlacement b,

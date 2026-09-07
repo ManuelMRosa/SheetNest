@@ -1,4 +1,4 @@
-namespace DeepNestSharp.RasterNest
+﻿namespace DeepNestSharp.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -28,7 +28,7 @@ namespace DeepNestSharp.RasterNest
     /// <summary>
     /// How deep this pair may bite into each other before it counts: the width of the cut that is going to
     /// run between them, when anybody knows it.
-    /// <para>A kerf is known for a job that came in toolpathed from SheetCam, and that is also the job whose
+    /// <para>A kerf is known only for a job that arrives already toolpathed, and that is also the job whose
     /// shared edge really is cut once. On a plain DXF nobody has said how wide the cut is, and standing a
     /// kerf in for one meant handing every pair five thou of forgiveness whether or not a cut was ever
     /// going to run there: two parts nested to touch could bite four thou into each other, pass in silence,

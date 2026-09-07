@@ -16,7 +16,7 @@
     public double Spacing;  // this part's NOMINAL spacing (in) — what it keeps to anything it cannot share a cut with
     public CommonCuttingMode Cc;  // who it may share a cut edge with; None = nobody
     public int ShareKey;    // identity for SamePart: same drawing AND same hand. Only compared, never ordered
-    public string CommonCuttingDomain = string.Empty; // direct, or the owning SheetCam job; empty means sharing is forbidden
+    public string CommonCuttingDomain = string.Empty; // the contract a part shares under; empty means sharing is forbidden
 
     // Common-line clearance is an EXPLICIT relationship between two concrete placements. Compatibility
     // only says that a pair MAY be offered; it must never make every compatible neighbour collapse from
@@ -854,101 +854,6 @@
         long uEdge = (long)Math.Round(U(a) + (t * (U(b) - U(a))));
         return uEdge >= U(w) ? uEdge - U(w) : long.MaxValue;
       }
-    }
-
-    /// <summary>
-    /// True when every pair that involves a SPACED part keeps at least <paramref name="floor"/>
-    /// inches of clearance. Used to vet tight-packed (halo-0) layouts after compaction: a chain born
-    /// touching can jam mid-separation, and the separation pre-pass caps pushes at RAW contact — so
-    /// a common-line part can end up ~0.0005" from a SPACED neighbour that asked for real spacing.
-    /// Explicit common-edge pairs are exempt because their separate configured gap is enforced elsewhere.
-    /// </summary>
-    internal static bool CommonLineGapsOk(IList<CompactItem> items, double floor)
-    {
-      var raw = items.Select(ToPaths).ToArray();
-      var grown = items.Select((it, i) => Inflate(raw[i], floor)).ToArray();
-      var rawBounds = raw.Select(BoundsOf).ToArray();
-      long pad = (long)Math.Round(floor * Scale) + 1;
-      for (int i = 0; i < items.Count; i++)
-      {
-        var bi = rawBounds[i];
-        var padded = new IntRect(bi.left - pad, bi.top - pad, bi.right + pad, bi.bottom + pad);
-        for (int j = i + 1; j < items.Count; j++)
-        {
-          if (SharesCommonEdge(items[i], items[j]))
-          {
-            continue; // explicit shared-cut pair — its configured gap is enforced elsewhere
-          }
-
-          if (!BoxesTouch(padded, rawBounds[j]))
-          {
-            continue;
-          }
-
-          if (Intersects(grown[i], raw[j]))
-          {
-            return false;
-          }
-        }
-      }
-
-      return true;
-    }
-
-    /// <summary>
-    /// Exact-geometry acceptance gate for REFILL insertions: the candidate must keep every pair's
-    /// required clearance against ALL placed parts â€” (spacingA + spacingB)/2, or the configured gap for
-    /// an explicit common-line pair â€” and its real contour must stay inside the sheet margin. The raster scan
-    /// that proposed the position is conservative, so this should always pass; it is the safety net
-    /// that guarantees a refill insertion can never violate what the compacted layout promised.
-    /// </summary>
-    internal static bool CandidateClear(
-      IList<CompactItem> items,
-      CompactItem cand,
-      double sheetW,
-      double sheetH,
-      double margin,
-      double commonLineGap = CommonLineGap)
-    {
-      const double Eps = 0.0005; // do not reject the raster's own integer-pixel clearance over noise
-
-      if (cand.X + cand.Poly.MinX < margin - Eps || cand.Y + cand.Poly.MinY < margin - Eps
-        || cand.X + cand.Poly.MaxX > sheetW - margin + Eps || cand.Y + cand.Poly.MaxY > sheetH - margin + Eps)
-      {
-        return false;
-      }
-
-      var candRaw = ToPaths(cand);
-      var grownByFloor = new Dictionary<double, List<List<IntPoint>>>();
-      foreach (var it in items)
-      {
-        double req = SharesCommonEdge(cand, it)
-          ? Math.Max(0, commonLineGap)
-          : (Math.Max(0, cand.Spacing) + Math.Max(0, it.Spacing)) / 2.0;
-        double floor = Math.Max(0, req - Eps);
-
-        var itRaw = ToPaths(it);
-        long pad = (long)Math.Round(floor * Scale) + 1;
-        var cb = BoundsOf(candRaw);
-        var padded = new IntRect(cb.left - pad, cb.top - pad, cb.right + pad, cb.bottom + pad);
-        if (!BoxesTouch(padded, BoundsOf(itRaw)))
-        {
-          continue;
-        }
-
-        if (!grownByFloor.TryGetValue(floor, out var grown))
-        {
-          grown = Inflate(candRaw, floor);
-          grownByFloor[floor] = grown;
-        }
-
-        if (Intersects(grown, itRaw))
-        {
-          return false;
-        }
-      }
-
-      return true;
     }
 
     /// <summary>

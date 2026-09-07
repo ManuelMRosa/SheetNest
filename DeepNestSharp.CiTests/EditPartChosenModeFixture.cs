@@ -37,7 +37,7 @@ namespace DeepNestSharp.CiTests
     [InlineData(CommonCuttingMode.SamePart)]
     public void OkWithoutChangingAnUnconfirmedLegacySelectorPreservesItsRawMode(CommonCuttingMode raw)
     {
-      EditPartWindow.ChosenCommonCutting(0, false, raw, false, false)
+      EditPartWindow.ChosenCommonCutting(0, false, raw, false)
         .Should().Be((raw, false));
     }
 
@@ -46,32 +46,15 @@ namespace DeepNestSharp.CiTests
     [InlineData(2, CommonCuttingMode.SamePart)]
     public void ChoosingANonNoneModeConfirmsADirectPart(int selectedIndex, CommonCuttingMode expected)
     {
-      EditPartWindow.ChosenCommonCutting(selectedIndex, true, CommonCuttingMode.None, false, false)
+      EditPartWindow.ChosenCommonCutting(selectedIndex, true, CommonCuttingMode.None, false)
         .Should().Be((expected, true));
     }
 
     [Fact]
     public void ChoosingNoneDisablesADirectPart()
     {
-      EditPartWindow.ChosenCommonCutting(0, true, CommonCuttingMode.SamePart, true, false)
+      EditPartWindow.ChosenCommonCutting(0, true, CommonCuttingMode.SamePart, true)
         .Should().Be((CommonCuttingMode.None, false));
-    }
-
-    [Fact]
-    public void SheetCamChangesItsModeWithoutNeedingADirectConfirmation()
-    {
-      EditPartWindow.ChosenCommonCutting(2, true, CommonCuttingMode.Unrestricted, false, true)
-        .Should().Be((CommonCuttingMode.SamePart, false));
-    }
-
-    [Theory]
-    [InlineData(CommonCuttingMode.None)]
-    [InlineData(CommonCuttingMode.Unrestricted)]
-    [InlineData(CommonCuttingMode.SamePart)]
-    public void OkWithoutChangingASheetCamSelectorPreservesItsRawMode(CommonCuttingMode raw)
-    {
-      EditPartWindow.ChosenCommonCutting((int)raw, false, raw, false, true)
-        .Should().Be((raw, false));
     }
 
     [Fact]
@@ -89,7 +72,6 @@ namespace DeepNestSharp.CiTests
           selectionChanged: true,
           CommonCuttingMode.None,
           directEnabled: false,
-          fromSheetCam: false,
           supportsCommonCutting: svg.SupportsCommonCutting)
         .Should().Be((CommonCuttingMode.None, false));
 
@@ -98,21 +80,10 @@ namespace DeepNestSharp.CiTests
           selectionChanged: false,
           CommonCuttingMode.Unrestricted,
           directEnabled: true,
-          fromSheetCam: false,
           supportsCommonCutting: svg.SupportsCommonCutting)
         .Should().Be((CommonCuttingMode.Unrestricted, true),
           "an invisible control must not rewrite raw project data; the model still keeps it ineffective");
     }
 
-    [Fact]
-    public void DirectDxfAndSheetCamStillShowTheSelector()
-    {
-      EditPartWindow.ShowsCommonCuttingSelector(new DetailLoadInfo { Path = "part.DXF" }).Should().BeTrue();
-      EditPartWindow.ShowsCommonCuttingSelector(new DetailLoadInfo
-      {
-        Path = "materialized.svg",
-        NestSourcePath = @"C:\Jobs\job.nest",
-      }).Should().BeTrue();
-    }
   }
 }

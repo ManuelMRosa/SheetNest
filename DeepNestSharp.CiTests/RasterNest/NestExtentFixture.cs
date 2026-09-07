@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests.RasterNest
+﻿namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -163,7 +163,6 @@ namespace DeepNestSharp.CiTests.RasterNest
         exe,
         out string err,
         default,
-        null,
         null,
         effort);
       watch.Stop();

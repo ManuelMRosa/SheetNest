@@ -868,7 +868,7 @@
           && SplineDeclaresClosed(spline, geometryTolerance))
         {
           // Some CAD writers repeat the endpoint but omit bit 1 of the SPLINE flags. The source curve
-          // is geometrically closed; set the DXF flag so SheetCam receives an explicitly closed contour.
+          // is geometrically closed; set the DXF flag so a reader receives an explicitly closed contour.
           spline.IsClosed = true;
         }
       }

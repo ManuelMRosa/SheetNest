@@ -1,4 +1,4 @@
-namespace DeepNestSharp.RasterNest
+﻿namespace DeepNestSharp.RasterNest
 {
   using System.Collections.Generic;
   using DeepNestLib.IO;
@@ -23,7 +23,7 @@ namespace DeepNestSharp.RasterNest
   }
 
   /// <summary>
-  /// The size a remnant has to come out at to be worth cutting off at all, the way SheetCam's remnant
+  /// The size a remnant has to come out at to be worth cutting off at all, the way a remnant
   /// cutoff states it: at least this big, and no bigger than this. ≤0 on any of the four = not set.
   /// <para>Past the maximum the leftover is not a remnant any more, it is very nearly a sheet, so nothing
   /// is cut and the sheet is kept whole.</para>
@@ -211,19 +211,6 @@ namespace DeepNestSharp.RasterNest
         && (limits.MinY <= 0 || r.H >= limits.MinY - Tol)
         && (limits.MaxX <= 0 || r.W <= limits.MaxX + Tol)
         && (limits.MaxY <= 0 || r.H <= limits.MaxY + Tol);
-    }
-
-    /// <summary>The usable remnant area freed by the cut(s): the sum of the remnant rectangles. 0
-    /// when no strip qualifies.</summary>
-    public static double RemnantArea(double? cutX, double? cutY, double w, double h)
-    {
-      double area = 0;
-      foreach (var r in RemnantRects(cutX, cutY, w, h))
-      {
-        area += r.W * r.H;
-      }
-
-      return area;
     }
 
     /// <summary>

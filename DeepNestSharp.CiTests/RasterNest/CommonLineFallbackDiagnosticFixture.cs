@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests.RasterNest
+﻿namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -42,7 +42,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     }
 
     [Fact]
-    public void SheetCamLegacyEligibilityDoesNotCreateDirectFallbackNotices()
+    public void APairThatNeverAskedForMergedOutputRaisesNoFallbackNotice()
     {
       INfp outline = ArcTopped("legacy-outline.dxf");
       var all = new List<IPartPlacement>
@@ -51,8 +51,8 @@ namespace DeepNestSharp.CiTests.RasterNest
         new PartPlacement(outline) { Source = 1, X = 12 + outline.WidthCalculated + 0.30, Y = 2 },
       };
       var rules = DirectRules(0.30);
-      rules[0] = (CommonCuttingMode.Unrestricted, 0, "sheetcam:job.nest", false, 0.30);
-      rules[1] = (CommonCuttingMode.Unrestricted, 1, "sheetcam:job.nest", false, 0.30);
+      rules[0] = (CommonCuttingMode.Unrestricted, 0, "other", false, 0.30);
+      rules[1] = (CommonCuttingMode.Unrestricted, 1, "other", false, 0.30);
 
       SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
         all,
@@ -63,7 +63,8 @@ namespace DeepNestSharp.CiTests.RasterNest
         0.01,
         0.0001);
 
-      result.Fallbacks.Should().BeEmpty("legacy SheetCam common cutting does not use the direct cluster contract");
+      result.Fallbacks.Should().BeEmpty(
+        "a notice explains why a pair that wanted merged output did not get it, and this pair never wanted it");
     }
 
     [Fact]

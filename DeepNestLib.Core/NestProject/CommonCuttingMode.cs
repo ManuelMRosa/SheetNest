@@ -1,10 +1,10 @@
-namespace DeepNestLib.NestProject
+﻿namespace DeepNestLib.NestProject
 {
   using System.Text.Json.Serialization;
 
   /// <summary>
   /// Who a part is allowed to share a cut edge with. Direct DXF/STEP nominal contours remain separated by
-  /// the configured Common Line Gap and export one midpoint cut inside a resolved cluster. SheetCam parts
+  /// the configured Common Line Gap and export one midpoint cut inside a resolved cluster. Parts
   /// align their already-offset toolpaths one measured kerf apart. Either contract cuts the seam once.
   /// </summary>
   /// <remarks>
@@ -21,24 +21,24 @@ namespace DeepNestLib.NestProject
   /// </para>
   /// <para>
   /// 3. Direct V1 accepts quarter-turn placements and complete, equal-length STRAIGHT outside edges only.
-  /// Chords of a tessellated curve and partial overlaps are excluded. SheetCam's legacy measured-kerf
+  /// Chords of a tessellated curve and partial overlaps are excluded. The legacy measured-kerf
   /// alignment remains angle-independent because it returns the existing toolpaths rather than rebuilding
   /// a nominal cluster boundary.
   /// </para>
   /// <para>
   /// 4. A direct seam is accepted only with a valid CommonEdge record, normal clearance everywhere outside
   /// its indexed edge/corner junction, and a valid resolved topology. A failed move never leaves an
-  /// unrecorded pair at Common Line Gap. SheetCam retains its tooling-footprint collision check.
+  /// unrecorded pair at Common Line Gap.
   /// </para>
   /// <para>
   /// 5. There are two deliberately separate domains. Direct DXF and unfolded STEP/IGES parts have no
   /// toolpath yet: their nominal edges stay at Common Line Gap and export as CUT_OUTER cluster boundaries
-  /// plus one midpoint COMMON_LINE. SheetCam parts keep their measured-kerf toolpaths and return to their
-  /// owning .nest job. The two domains never share with each other or another SheetCam job.
+  /// plus one midpoint COMMON_LINE. A part shares only inside its own contract, and only with a part
+  /// naming that same contract.
   /// </para>
   /// <para>
   /// 6. Common Line Gap and Geometry Tolerance are independent physical settings for the direct resolver.
-  /// The older internal angle/gap/overlap tolerances apply only to SheetCam measured-kerf snapping.
+  /// Sharing is decided on exact contour contact, not on an angle/gap/overlap window.
   /// </para>
   /// </remarks>
   [JsonConverter(typeof(JsonStringEnumConverter))]

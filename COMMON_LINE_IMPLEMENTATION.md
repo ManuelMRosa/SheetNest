@@ -143,7 +143,7 @@ intersections, deduplicates overlapping spans and canonicalizes nearby nodes wit
 GeometryTolerance. Junction repair requires supporting geometry; unrelated nearby
 endpoints must not be bridged automatically.
 
-SheetCam operation order:
+Layer order, which is the order the operations run in:
 
 1. `01_CUT_INNER`: closed inner contours.
 2. `02_COMMON_LINE`: shared paths, ON PATH / NO OFFSET.
@@ -152,7 +152,7 @@ SheetCam operation order:
 Common arcs use open bulged LWPOLYLINE entities so their endpoints use exactly the
 same coordinates as adjacent network entities. No original shared segment remains
 under the common cut. SheetNest generates no common-path lead-in or lead-out and
-does not depend on SheetCam duplicate removal or contour joining.
+does not depend on the reader removing duplicates or joining contours.
 
 ## Settings and units
 
@@ -166,7 +166,7 @@ units. It is not a user-facing kerf or gap setting. Cluster sizing supports Auto
 (bounded to at most 100 parts) or a manual 2..500-part limit.
 
 The existing export format may declare unitless DXF coordinates. Select matching
-project/import units in SheetCam; the gap must never be used to infer file units.
+project and import units in your CAM; the gap must never be used to infer file units.
 
 ## Safety validation
 
@@ -220,5 +220,5 @@ Existing build warnings remain for unsupported .NET 6, System.Text.Json 6.0.5
   endpoint transitions. Conservative rejection is preferable to ambiguous cuts.
 - Thermal optimization, material-specific kerf tables, chain cutting, pierce
   minimization and advanced leads are not implemented.
-- Automated geometry/export tests do not replace a SheetCam import and physical
-  cutting trial. No such production trial is claimed here.
+- Automated geometry/export tests do not replace importing the DXF into your CAM
+  and a physical cutting trial. No such production trial is claimed here.

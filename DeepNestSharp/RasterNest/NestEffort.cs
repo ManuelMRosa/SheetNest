@@ -24,12 +24,12 @@ namespace DeepNestSharp.RasterNest
   /// </remarks>
   internal enum NestEffort
   {
-    /// <summary>The default, because a nest that answers straight away is what the work feels like, and this
-    /// already packs far tighter than what shipped before it.</summary>
+    /// <summary>For when an answer straight away is worth more than the last of the tightness. Still packs
+    /// far tighter than what shipped before this setting existed.</summary>
     Fast = 0,
 
-    /// <summary>The knee of the curve above: as tight as the pack meaningfully gets, at a wait the operator
-    /// has to have chosen.</summary>
+    /// <summary>The default: the knee of the curve above, as tight as the pack meaningfully gets. On a
+    /// common-line job that tightness is what decides whether the last part of a row shares its cut.</summary>
     Normal = 1,
 
     /// <summary>For expensive material, where waiting is cheaper than the offcut. Buys the tail of the
@@ -40,11 +40,29 @@ namespace DeepNestSharp.RasterNest
   /// <summary>One source of truth for a new install and for a session with no saved choice.</summary>
   internal static class NestEffortDefaults
   {
-    internal const NestEffort Default = NestEffort.Fast;
+    internal const NestEffort Default = NestEffort.Normal;
+
+    /// <summary>What a session holds when the operator has never picked an effort.</summary>
+    internal const int Unset = -1;
 
     internal static NestEffort FromPersisted(int value)
       => value >= (int)NestEffort.Fast && value <= (int)NestEffort.Best
         ? (NestEffort)value
         : Default;
+
+    /// <summary>
+    /// Whether a stored effort has to be forgotten once, so the operator lands on the current default.
+    /// <para>
+    /// Builds before this one wrote whatever was in memory over the "never chosen" marker every time the
+    /// app closed, and what was in memory on an untouched install was the old default, Fast. So a stored
+    /// Fast from one of those builds does not say whether anyone chose it. It is reinterpreted ONCE, and
+    /// only Fast: Normal and Best could only ever have got there by someone picking them, because the
+    /// in-memory value was never either of those on its own.
+    /// </para>
+    /// <para>The version stamp is what makes it happen once. Without it, picking Fast on purpose would be
+    /// undone again on the next start.</para>
+    /// </summary>
+    internal static bool NeedsEffortReset(int persisted, int settingsVersion)
+      => settingsVersion < SessionState.CurrentSettingsVersion && persisted == (int)NestEffort.Fast;
   }
 }

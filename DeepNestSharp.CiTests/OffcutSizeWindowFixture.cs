@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests
+﻿namespace DeepNestSharp.CiTests
 {
   using DeepNestSharp.RasterNest;
   using DeepNestSharp.Ui.UserControls;
@@ -6,7 +6,7 @@ namespace DeepNestSharp.CiTests
   using Xunit;
 
   /// <summary>
-  /// The size a remnant has to come out at to be worth cutting off — SheetCam's remnant cutoff, asked for
+  /// The size a remnant has to come out at to be worth cutting off, the remnant cutoff, asked for
   /// as "vamos a ponerle estos settings desde minimum x size para abajo": a minimum and a maximum on each
   /// axis, plus how far the cut runs past the sheet edge.
   /// <para>A 120 x 60 sheet throughout, which is the one in the screenshot, so the numbers under test are

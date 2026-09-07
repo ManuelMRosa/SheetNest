@@ -1,4 +1,4 @@
-namespace DeepNestSharp
+﻿namespace DeepNestSharp
 {
   using System;
   using System.Collections.Generic;
@@ -11,6 +11,16 @@ namespace DeepNestSharp
   /// </summary>
   public class SessionState
   {
+    /// <summary>
+    /// Which build's settings this file holds. Absent, and so zero, on anything written before the
+    /// stamp existed. It is what lets a one-off correction to a stored preference happen exactly once
+    /// instead of every time the app starts.
+    /// </summary>
+    public const int CurrentSettingsVersion = 1;
+
+    /// <summary>The version this file was last written by; see <see cref="CurrentSettingsVersion"/>.</summary>
+    public int SettingsVersion { get; set; }
+
     /// <summary>Sheet edge margin at close; -1 = never saved (keep the app default).</summary>
     public double SheetEdgeMargin { get; set; } = -1;
 
@@ -78,8 +88,10 @@ namespace DeepNestSharp
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
 
-    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = default (fast).
-    /// Kept per user and not in the project, because it is a preference about this operator's own time.</summary>
+    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = never chosen,
+    /// so the product default applies. Kept per user and not in the project, because it is a preference
+    /// about this operator's own time. Written when the operator picks it, NOT when the app closes: an
+    /// earlier build did that and turned "never chosen" into a choice nobody made.</summary>
     public int NestEffort { get; set; } = -1;
 
     /// <summary>Cut the last sheet's leftover off as a rectangular offcut; null = default (off).</summary>
@@ -123,7 +135,6 @@ namespace DeepNestSharp
       bool autosaveEnabled,
       int autosaveMinutes,
       int defaultRotations,
-      RasterNest.NestEffort nestEffort,
       double commonLineGapInches,
       int commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts)
     {
@@ -138,7 +149,10 @@ namespace DeepNestSharp
       this.AutosaveEnabled = autosaveEnabled;
       this.AutosaveMinutes = autosaveMinutes;
       this.DefaultRotations = defaultRotations;
-      this.NestEffort = (int)nestEffort;
+
+      // NestEffort is deliberately NOT written here. Both places that change it save it the moment it
+      // is chosen, so all this did was overwrite the "never chosen" marker with whatever the running
+      // app happened to hold, which on an untouched install was just the default written back.
       this.CommonLineGapInches = IsValidCommonLineGap(commonLineGapInches)
         ? commonLineGapInches
         : DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches;
@@ -205,6 +219,8 @@ namespace DeepNestSharp
       try
       {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+        // Any write brings the file up to date, so a one-off correction never fires twice.
+        this.SettingsVersion = CurrentSettingsVersion;
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
       }
       catch

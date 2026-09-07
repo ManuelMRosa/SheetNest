@@ -1,4 +1,4 @@
-namespace DeepNestLib.CiTests.IO
+﻿namespace DeepNestLib.CiTests.IO
 {
   using System;
   using System.Collections.Generic;
@@ -207,7 +207,7 @@ namespace DeepNestLib.CiTests.IO
         Action validate = () => DxfExporter.ValidateCommonLineDxf(file, Tolerance);
 
         validate.Should().Throw<CommonLineValidationException>(
-          "{0} must never reach SheetCam",
+          "{0} must never reach the machine",
           name).WithMessage("*non-finite*");
       }
     }
@@ -266,7 +266,7 @@ namespace DeepNestLib.CiTests.IO
         Action validate = () => DxfExporter.ValidateCommonLineDxf(file, Tolerance);
 
         validate.Should().Throw<CommonLineValidationException>(
-          "{0} must fail closed before SheetCam receives CUT_OUTER",
+          "{0} must fail closed before anything receives CUT_OUTER",
           name).WithMessage("*invalid entity*");
       }
     }

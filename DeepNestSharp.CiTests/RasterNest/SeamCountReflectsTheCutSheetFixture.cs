@@ -19,9 +19,15 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// <para>
   /// The fix threads the seam count through the same "which candidate did we keep" decisions the code
   /// already makes for placements themselves, instead of mutating the counter from inside the code that
-  /// evaluates every candidate. This is the invariant that failed before the fix and holds after it: for
-  /// N pieces the search finally KEEPS, snapped seams can never exceed N - 1 (a spanning forest over N
-  /// nodes has at most N - 1 edges).
+  /// evaluates every candidate. So the invariant is that the number shown equals the shared cuts
+  /// RECORDED on the sheets that came back, exactly, with nothing from a candidate that lost.
+  /// </para>
+  /// <para>
+  /// This used to be checked against a bound of parts minus one, on the reasoning that seams form a
+  /// spanning forest. They do not: the direct planner deliberately records cycles, so a grid of 24
+  /// squares legitimately shares 37 edges. That bound also let the test pass while common cutting was
+  /// producing nothing at all, which is the worst way for a test to be green. Counting the records is
+  /// both stricter and true of the route that actually runs.
   /// </para>
   /// </summary>
   [Collection(SparrowEngineCollection.Name)]
@@ -32,7 +38,7 @@ namespace DeepNestSharp.CiTests.RasterNest
     public SeamCountReflectsTheCutSheetFixture(ITestOutputHelper output) => this.output = output;
 
     [Fact]
-    public void SnappedSeamsNeverExceedTheSpanningForestBoundOnTheKeptSheet()
+    public void SnappedSeamsCountOnlyTheSharedCutsOnTheSheetsThatCameBack()
     {
       string exe = SparrowExe.Resolve();
       if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
@@ -60,8 +66,8 @@ namespace DeepNestSharp.CiTests.RasterNest
           Rotations = 4,
           Spacing = 0.2,
           Cc = CommonCuttingMode.Unrestricted,
-          CommonCuttingDomain = "sheetcam:test",
-          Kerf = 0.2,
+          CommonCuttingDomain = "direct",
+          RequiresMergedLines = true,
         },
       };
 
@@ -71,14 +77,19 @@ namespace DeepNestSharp.CiTests.RasterNest
       int placed = result.UsedSheets.Sum(s => s.PartPlacements.Count);
       placed.Should().BeGreaterThan(1, "need at least two placed parts for a seam to be possible at all");
 
+      int recorded = result.UsedSheets.Sum(s => s.CommonEdges?.Count ?? 0);
       int snapped = SparrowNestService.DiagSeamsSnapped;
-      this.output.WriteLine($"SEAM: placed={placed} snapped={snapped} (bound={placed - 1})");
+      this.output.WriteLine($"SEAM: placed={placed} snapped={snapped} recorded={recorded}");
 
-      snapped.Should().BeLessOrEqualTo(
-        placed - 1,
-        "snapped seams form a spanning forest over the placed parts, so they can never outnumber the "
-        + "parts minus one — a bigger count means the search's own discarded candidates leaked into the "
-        + "total instead of only the layout that was actually kept");
+      recorded.Should().BeGreaterThan(
+        0,
+        "a sheet of one drawing set to share cuts is the job this counter exists to describe; with zero "
+        + "shared cuts the count below would agree for the wrong reason");
+
+      snapped.Should().Be(
+        recorded,
+        "the operator is shown the shared cuts on the sheets that came back, and nothing else — a "
+        + "bigger count means the search's own discarded candidates leaked into the total");
     }
 
     private static string FindDxfDir()

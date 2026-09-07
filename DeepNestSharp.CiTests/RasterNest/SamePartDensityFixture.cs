@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests.RasterNest
+﻿namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
   using System.Collections.Generic;
@@ -193,7 +193,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       int side = (int)Math.Ceiling(maxExtent * 5);
       var result = SparrowNestService.Nest(
-        parts, new List<(int, int, int)> { (side, side, 1) }, 4, spacing, spacing, 8, exe, out string err, default, null, null, effort);
+        parts, new List<(int, int, int)> { (side, side, 1) }, 4, spacing, spacing, 8, exe, out string err, default, null, effort);
       result.Should().NotBeNull($"nest must return a result (err={err})");
       return (result, spacing);
     }

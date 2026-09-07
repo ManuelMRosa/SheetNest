@@ -1,4 +1,4 @@
-namespace DeepNestSharp.CiTests
+﻿namespace DeepNestSharp.CiTests
 {
   using System;
   using System.Collections.Generic;
@@ -86,7 +86,7 @@ namespace DeepNestSharp.CiTests
     [InlineData(null, "direct")]
     [InlineData("", "direct")]
     [InlineData("   ", "direct")]
-    [InlineData("direct", "sheetcam:job.nest")]
+    [InlineData("direct", "other")]
     public void SharingRequiresTheSameNonEmptyContract(string domainA, string domainB)
     {
       DxfViewer.MayShare(
@@ -98,8 +98,8 @@ namespace DeepNestSharp.CiTests
     public void ContractComparisonIsCaseInsensitive()
     {
       DxfViewer.MayShare(
-        CommonCuttingMode.Unrestricted, A, false, "SheetCam:C:\\Jobs\\A.nest",
-        CommonCuttingMode.Unrestricted, B, false, "sheetcam:c:\\jobs\\a.NEST").Should().BeTrue();
+        CommonCuttingMode.Unrestricted, A, false, "Direct",
+        CommonCuttingMode.Unrestricted, B, false, "DIRECT").Should().BeTrue();
     }
 
     /// <summary>
@@ -116,25 +116,6 @@ namespace DeepNestSharp.CiTests
         .Should().Be(0.015);
       DxfViewer.ClearanceFor(0.25, 0.25, intentionalCommonEdge: false).Should().BeApproximately(0.25, 1e-9);
       DxfViewer.ClearanceFor(0.5, 0.1, intentionalCommonEdge: false).Should().BeApproximately(0.3, 1e-9, "still the average of the two");
-    }
-
-    [Fact]
-    public void OnlySameJobSheetCamPairsKeepTheLegacyMeasuredKerfClearance()
-    {
-      DxfViewer.TryLegacySheetCamClearance(
-        CommonCuttingMode.Unrestricted, A, false, "sheetcam:C:\\jobs\\one.nest", 0.03,
-        CommonCuttingMode.Unrestricted, B, false, "SHEETCAM:c:\\JOBS\\ONE.NEST", 0.04,
-        out double clearance).Should().BeTrue();
-      clearance.Should().Be(0.04);
-
-      DxfViewer.TryLegacySheetCamClearance(
-        CommonCuttingMode.Unrestricted, A, false, Direct, 0.03,
-        CommonCuttingMode.Unrestricted, B, false, Direct, 0.04,
-        out _).Should().BeFalse("direct nominal contours require an explicit CommonEdge record");
-      DxfViewer.TryLegacySheetCamClearance(
-        CommonCuttingMode.Unrestricted, A, false, "sheetcam:one.nest", 0.03,
-        CommonCuttingMode.Unrestricted, B, false, "sheetcam:two.nest", 0.04,
-        out _).Should().BeFalse("toolpaths from different jobs cannot share a return cut");
     }
 
     [Fact]

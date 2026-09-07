@@ -11,6 +11,7 @@ namespace DeepNestSharp.CiTests.RasterNest
   using Xunit.Abstractions;
 
   /// <summary>Reproduces the operator's mixed direct-common-line job with the original DXF files.</summary>
+  [Collection(SparrowEngineCollection.Name)]
   public sealed class MixedCommonLineRegressionFixture
   {
     private const string DxfDirectoryVariable = "SHEETNEST_MIXED_COMMON_LINE_DXF_DIR";

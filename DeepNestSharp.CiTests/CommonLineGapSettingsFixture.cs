@@ -171,7 +171,6 @@ namespace DeepNestSharp.CiTests
         true,
         5,
         4,
-        NestEffort.Fast,
         preferredGap,
         preferredLimit);
       closedSession.EffectiveCommonLineGapInches.Should().BeApproximately(0.015D, 1e-12D,

@@ -74,7 +74,14 @@ namespace DeepNestSharp.CiTests.RasterNest
       {
         new SvgPoint(0, 0), new SvgPoint(7, 0), new SvgPoint(7, 36), new SvgPoint(0, 36),
       });
-      var tooling = SparrowNestService.ToolingFootprint(outline, null, 0.006, 0);
+
+      // The bar grown by half a cut width on every side, which is the footprint compaction packs.
+      const double half = 0.003;
+      var tooling = new NoFitPolygon(new[]
+      {
+        new SvgPoint(-half, -half), new SvgPoint(7 + half, -half),
+        new SvgPoint(7 + half, 36 + half), new SvgPoint(-half, 36 + half),
+      });
       width = tooling.MaxX - tooling.MinX;   // 7.006: the bar plus one kerf
       footMinX = tooling.MinX;
       footMinY = tooling.MinY;

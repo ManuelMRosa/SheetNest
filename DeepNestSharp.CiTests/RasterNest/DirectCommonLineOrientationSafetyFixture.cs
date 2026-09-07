@@ -59,12 +59,81 @@ namespace DeepNestSharp.CiTests.RasterNest
       }
     }
 
+    /// <summary>
+    /// A part that may not share a cut is an obstacle, not a wall. The control above shows this pair's
+    /// best seam is ten units and needs the flipped pose; a small neighbour parked in the notch denies
+    /// that pose. The obstacle then costs seam LENGTH, not the seam: the planner takes the eight-unit
+    /// edge the unflipped pose already offers and walks the neighbour clear of the closing pair.
+    /// Refusing to move it at all is what left every job of mixed parts with no shared cuts whatsoever.
+    /// What must hold is that the neighbour ends up somewhere legal: still on the sheet, still at the
+    /// clearance its own spacing asked for, and still the same placement object the caller handed in.
+    /// </summary>
     [Fact]
-    public void RejectedOppositePoseRestoresEveryOriginalPlacementFieldAndReference()
+    public void ABlockingNeighbourIsWalkedClearInsteadOfCostingTheSeam()
+    {
+      INfp source = OneLongEdgeBar();
+      var placements = VerticalLongEdgePair(source);
+      INfp blockerShape = Rectangle(0.5D, 0.5D);
+      IPartPlacement blocker = PlaceAt(blockerShape, 1, 0D, 2.6D, 4.3D);
+      placements.Add(blocker);
+      var references = placements.ToArray();
+      var parts = placements.Select(placement => placement.Part).ToArray();
+      double blockerYBefore = blocker.Y;
+      Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> rules = DirectRules();
+      rules[1] = (CommonCuttingMode.None, 1, string.Empty, false, 0D);
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        rules,
+        Profiles(source, new[] { 0, 180 }),
+        sheetW: 20D,
+        sheetH: 12D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance);
+
+      // A bar asks for NormalGap and the blocker for nothing, so the pair meets at half of NormalGap.
+      const double RequiredClearance = NormalGap / 2D;
+      using (new AssertionScope())
+      {
+        Length(Record(result)).Should().BeApproximately(8D, GeometryTolerance,
+          "the blocked flip costs the two longest units, and the eight-unit seam is still worth taking");
+
+        for (int i = 0; i < placements.Count; i++)
+        {
+          placements[i].Should().BeSameAs(references[i], $"placement {i} must keep its original identity");
+          placements[i].Part.Should().BeSameAs(parts[i], $"placement {i} must keep its original geometry");
+        }
+
+        blocker.Y.Should().NotBe(blockerYBefore, "the blocker is what had to give way");
+        Math.Abs(blocker.Y - blockerYBefore).Should().BeLessThan(1D,
+          "this is a nudge clear of one neighbour, not a re-nest that flings it across the sheet");
+
+        GapBetween(blocker, placements[0]).Should().BeGreaterOrEqualTo(RequiredClearance - GeometryTolerance,
+          "a part moved to make room is still cut, so it keeps the clearance its spacing asked for");
+        GapBetween(blocker, placements[1]).Should().BeGreaterOrEqualTo(RequiredClearance - GeometryTolerance);
+
+        placements.Should().OnlyContain(placement => placement.MinX >= -GeometryTolerance
+          && placement.MaxX <= 20D + GeometryTolerance
+          && placement.MinY >= -GeometryTolerance
+          && placement.MaxY <= 12D + GeometryTolerance,
+          "nothing may be walked off the sheet");
+      }
+    }
+
+    /// <summary>
+    /// The other side of the walk-clear rule. Two obstacles in the notch instead of one is more than a
+    /// single-neighbour nudge can answer, so there is no seam to be had and the whole candidate is
+    /// abandoned. Abandoning it has to put the sheet back exactly as it came in: same objects, same
+    /// geometry, same pose, same coordinates. A part left displaced by a candidate nobody kept is a
+    /// layout the operator never agreed to and nothing downstream would question.
+    /// </summary>
+    [Fact]
+    public void ARejectedCandidateRestoresEveryOriginalPlacementFieldAndReference()
     {
       INfp source = OneLongEdgeBar();
 
-      // Control: in the absence of the blocker this layout has one ten-unit seam and it requires one
+      // Control: in the absence of the blockers this layout has one ten-unit seam and it requires one
       // of the identically oriented copies to take its explicitly allowed 180-degree pose.
       var control = VerticalLongEdgePair(source);
       SparrowNestService.DirectCommonLineSnapResult controlResult = SparrowNestService.SnapDirectCommonLineEdges(
@@ -84,8 +153,10 @@ namespace DeepNestSharp.CiTests.RasterNest
       IPartPlacement upper = placements[0];
       IPartPlacement lower = placements[1];
       INfp blockerShape = Rectangle(0.5D, 0.5D);
-      IPartPlacement blocker = PlaceAt(blockerShape, 1, 0D, 2.6D, 4.3D);
-      placements.Add(blocker);
+      IPartPlacement firstBlocker = PlaceAt(blockerShape, 1, 0D, 2.3D, 4.2D);
+      IPartPlacement secondBlocker = PlaceAt(blockerShape, 1, 0D, 3.3D, 4.2D);
+      placements.Add(firstBlocker);
+      placements.Add(secondBlocker);
       var references = placements.ToArray();
       var parts = placements.Select(placement => placement.Part).ToArray();
       var rotations = placements.Select(placement => placement.Rotation).ToArray();
@@ -106,8 +177,8 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       using (new AssertionScope())
       {
-        result.Edges.Should().BeEmpty("the flipped lower part would cover the stationary blocker");
-        result.GivenUp.Should().BeGreaterThan(0, "the otherwise-valid +180 candidate was tried and rejected");
+        result.Edges.Should().BeEmpty("two obstacles are past what walking one neighbour clear can answer");
+        result.GivenUp.Should().BeGreaterThan(0, "the otherwise-valid candidate was tried and rejected");
         for (int i = 0; i < placements.Count; i++)
         {
           placements[i].Should().BeSameAs(references[i], $"placement {i} must regain its original identity");
@@ -119,7 +190,61 @@ namespace DeepNestSharp.CiTests.RasterNest
 
         placements[0].Should().BeSameAs(upper);
         placements[1].Should().BeSameAs(lower);
-        placements[2].Should().BeSameAs(blocker);
+        placements[2].Should().BeSameAs(firstBlocker);
+        placements[3].Should().BeSameAs(secondBlocker);
+      }
+    }
+
+    /// <summary>
+    /// "Same part" is decided on identity, not on how well the geometry happens to line up, and the
+    /// planner has to honour that on real contours rather than only in the compatibility helper. Two
+    /// copies presenting perfect faces to each other still get no shared cut when they are not the same
+    /// part. Identity arrives as the share key, which the loader builds from the drawing path AND the
+    /// hand, so a mirrored population already carries a different key by the time the planner sees it.
+    /// </summary>
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void SamePartWeldsOnlyOntoItsOwnDrawing(int secondShareKey, bool expectSeam)
+    {
+      INfp source = OneLongEdgeBar();
+      var placements = new List<IPartPlacement>
+      {
+        PlaceAt(source, 0, 0D, 2D, 5.3D),
+        PlaceAt(source, 1, 0D, 2D, 1D),
+      };
+      var rules = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)>
+      {
+        [0] = (CommonCuttingMode.SamePart, 0, "direct", true, NormalGap),
+        [1] = (CommonCuttingMode.SamePart, secondShareKey, "direct", true, NormalGap),
+      };
+      var profiles = new Dictionary<int, SparrowNestService.DirectOrientationProfile>
+      {
+        [0] = new SparrowNestService.DirectOrientationProfile(source, new[] { 0, 180 }),
+        [1] = new SparrowNestService.DirectOrientationProfile(source, new[] { 0, 180 }),
+      };
+
+      SparrowNestService.DirectCommonLineSnapResult result = SparrowNestService.SnapDirectCommonLineEdges(
+        placements,
+        rules,
+        profiles,
+        sheetW: 20D,
+        sheetH: 12D,
+        margin: 0D,
+        commonLineGap: CommonLineGap,
+        geometryTolerance: GeometryTolerance);
+
+      using (new AssertionScope())
+      {
+        if (expectSeam)
+        {
+          result.Edges.Should().NotBeEmpty("two copies of one drawing in the same hand are the same part");
+        }
+        else
+        {
+          result.Edges.Should().BeEmpty("a different key is a different part, whatever the geometry offers");
+          placements[0].MinY.Should().BeApproximately(5.3D, 1e-9, "a refused pair is not moved together");
+        }
       }
     }
 
@@ -686,6 +811,41 @@ namespace DeepNestSharp.CiTests.RasterNest
         X = minX - part.MinX,
         Y = minY - part.MinY,
       };
+
+    /// <summary>Smallest distance between two placed outlines. Every edge against every edge: these are
+    /// six- and four-point shapes, and a real distance is what the clearance contract is about.</summary>
+    private static double GapBetween(IPartPlacement first, IPartPlacement second)
+    {
+      SvgPoint[] a = first.PlacedPart.Points;
+      SvgPoint[] b = second.PlacedPart.Points;
+      double best = double.MaxValue;
+      for (int i = 0; i < a.Length; i++)
+      {
+        SvgPoint a0 = a[i], a1 = a[(i + 1) % a.Length];
+        for (int j = 0; j < b.Length; j++)
+        {
+          SvgPoint b0 = b[j], b1 = b[(j + 1) % b.Length];
+          best = Math.Min(best, SegmentDistance(a0, a1, b0, b1));
+        }
+      }
+
+      return best;
+    }
+
+    private static double SegmentDistance(SvgPoint p1, SvgPoint p2, SvgPoint q1, SvgPoint q2)
+      => Math.Min(
+        Math.Min(PointToSegment(p1, q1, q2), PointToSegment(p2, q1, q2)),
+        Math.Min(PointToSegment(q1, p1, p2), PointToSegment(q2, p1, p2)));
+
+    private static double PointToSegment(SvgPoint p, SvgPoint a, SvgPoint b)
+    {
+      double dx = b.X - a.X, dy = b.Y - a.Y;
+      double lengthSquared = (dx * dx) + (dy * dy);
+      double t = lengthSquared <= 0D ? 0D : (((p.X - a.X) * dx) + ((p.Y - a.Y) * dy)) / lengthSquared;
+      t = Math.Max(0D, Math.Min(1D, t));
+      double ex = a.X + (t * dx) - p.X, ey = a.Y + (t * dy) - p.Y;
+      return Math.Sqrt((ex * ex) + (ey * ey));
+    }
 
     private static double Normalize(double angle)
     {

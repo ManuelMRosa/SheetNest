@@ -49,8 +49,8 @@
         <TextBlock Grid.Row="3" Grid.Column="0" Text="Nesting effort:" VerticalAlignment="Center" Margin="0,0,10,0" />
         <ComboBox Grid.Row="3" Grid.Column="1" x:Name="effortCombo" Width="150" HorizontalAlignment="Left"
                   ToolTip="How long the nester searches each sheet. It buys a TIGHTER pack, not more parts on the sheet: the parts that fit are found almost at once, and the rest of the search is spent squeezing them together so the material left over comes back as one usable piece.">
-          <ComboBoxItem Tag="0">Fast (default)</ComboBoxItem>
-          <ComboBoxItem Tag="1">Normal</ComboBoxItem>
+          <ComboBoxItem Tag="0">Fast</ComboBoxItem>
+          <ComboBoxItem Tag="1">Normal (default)</ComboBoxItem>
           <ComboBoxItem Tag="2">Best (slowest)</ComboBoxItem>
         </ComboBox>
       </Grid>
@@ -136,20 +136,6 @@
                             Minimum="1" Maximum="60" Value="5"
                             ToolTip="How often the open project is automatically saved for recovery." />
       </Grid>
-    </GroupBox>
-
-    <GroupBox Header="SheetCam integration" Padding="8" Margin="0,10,0,0">
-      <StackPanel>
-        <TextBlock TextWrapping="Wrap" Margin="0,0,0,6"
-                   Text="Make SheetCam's Auto Nesting open SheetNest instead of its built-in nester. In SheetCam use &quot;Export to Auto Nesting&quot;; nest here, then &quot;Send to SheetCam&quot;." />
-        <TextBlock x:Name="integrationStatus" FontWeight="Bold" Margin="0,0,0,8" Text="Not integrated" />
-        <StackPanel Orientation="Horizontal">
-          <Button x:Name="integrateButton" Style="{StaticResource ModernButton}" Content="Integrate with SheetCam..." Width="170" Margin="0,0,8,0" Click="OnIntegrate" />
-          <Button x:Name="restoreButton" Style="{StaticResource ModernButton}" Content="Restore SheetCam's nester" Width="170" Click="OnRestore" />
-        </StackPanel>
-        <TextBlock TextWrapping="Wrap" Opacity="0.7" Margin="0,8,0,0"
-                   Text="SheetCam is a trademark of its owner. SheetNest is an independent project, not affiliated with or endorsed by SheetCam." />
-      </StackPanel>
     </GroupBox>
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">

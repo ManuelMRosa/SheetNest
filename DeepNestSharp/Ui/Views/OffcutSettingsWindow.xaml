@@ -1,4 +1,4 @@
-<Window x:Class="DeepNestSharp.Ui.Views.OffcutSettingsWindow"
+﻿<Window x:Class="DeepNestSharp.Ui.Views.OffcutSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
@@ -139,7 +139,7 @@
                            Minimum="0" Increment="0.05" FormatString="0.####"
                            ToolTip="Gap kept between the packed parts and the offcut cut line (drawing units)." />
 
-        <!-- The size a remnant has to come out at to be worth cutting off, stated the way SheetCam's
+        <!-- The size a remnant has to come out at to be worth cutting off, stated the way a
              remnant cutoff does. Every one of these is 0 by default and 0 means "no opinion", so an
              existing job keeps cutting exactly the remnants it cut before. -->
         <TextBlock x:Name="minXLabel" Grid.Row="1" Grid.Column="0" Text="Minimum X size (in):" VerticalAlignment="Center" Margin="0,0,10,6" />

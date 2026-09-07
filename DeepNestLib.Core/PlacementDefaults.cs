@@ -1,4 +1,4 @@
-namespace DeepNestLib
+﻿namespace DeepNestLib
 {
   using System.Runtime.CompilerServices;
   using DeepNestLib.GeneticAlgorithm;
@@ -6,7 +6,7 @@ namespace DeepNestLib
 
   /// <summary>
   /// Production defaults applied when the assembly loads: the proven nesting improvements are
-  /// turned on so any host (the standalone app, or SheetCam if this build replaces its
+  /// turned on so any host (the standalone app, or an embedding one that replaces its
   /// DeepNestLib.dll) gets them without code changes. Hosts that drive the toggles explicitly
   /// (e.g. the NestBench A/B harness) override these per run, so their behaviour is unaffected.
   /// </summary>
