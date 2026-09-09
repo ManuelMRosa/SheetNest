@@ -351,8 +351,15 @@ namespace DeepNestSharp.Reports
     /// <para>
     /// The anchor is the outline's AREA CENTROID, not the middle of its bounding box: on an L or a C
     /// the box centre lands in the notch, which is off the material and usually straight on top of
-    /// whatever is nested in there. On a convex part the two agree. A part whose middle is a large
-    /// hole still gets its number over the hole, which reads fine on paper and costs nothing.
+    /// whatever is nested in there. On a convex part the two agree.
+    /// </para>
+    /// <para>
+    /// A ring is the case the centroid cannot serve: its centroid is its own HOLE. That is not a
+    /// cosmetic miss, because the nester parks other parts inside big cutouts, so the number would land
+    /// on top of the number of whatever is nested in there and neither could be read. When the centroid
+    /// is off the material the anchor moves to the roomiest point that is ON it, and the size is then
+    /// taken from the room there rather than from the outer box: a thin-walled ring would otherwise
+    /// take the LARGEST number allowed and print it across its own bore.
     /// </para>
     /// <para>
     /// The size follows the part, bounded at both ends: under about four points nothing survives
@@ -370,6 +377,20 @@ namespace DeepNestSharp.Reports
       (double cx, double cy) = Centroid(placed);
       double side = Math.Min(placed.MaxX - placed.MinX, placed.MaxY - placed.MinY) * scale;
       double size = Math.Max(4.0, Math.Min(12.0, side * 0.42));
+
+      if (!OnMaterial(placed, cx, cy))
+      {
+        // Sized where the number actually goes. 2 * room is never MORE than the shorter side of the
+        // box, whatever the shape, so this can only ever shrink the number, never grow it: a part that
+        // already fitted keeps what it had, and one that never fitted gets a size that does.
+        var (mx, my, room) = RoomiestMaterialPoint(placed);
+        if (room > 0)
+        {
+          cx = mx;
+          cy = my;
+          size = Math.Max(4.0, Math.Min(12.0, 2.0 * room * scale * 0.42));
+        }
+      }
 
       // Helvetica advances a digit by 0.556 em and stands a cap 0.717 em tall. Text() draws from the
       // baseline, left aligned, and this writer cannot measure a string, so centring is arithmetic.
@@ -400,6 +421,179 @@ namespace DeepNestSharp.Reports
       return Math.Abs(twiceArea) < 1e-12
         ? ((poly.MinX + poly.MaxX) / 2.0, (poly.MinY + poly.MaxY) / 2.0)
         : (cx / (3.0 * twiceArea), cy / (3.0 * twiceArea));
+    }
+
+    /// <summary>
+    /// Whether the point is on the part's MATERIAL: inside the outline and inside none of its holes.
+    /// <para>
+    /// Reads raw <c>Points</c>, the same coordinates the drawing and <see cref="Centroid"/> use. The
+    /// solution has three point-in-polygon routines already and none of them fits here: two are private
+    /// to the viewer control, and the public one adds <c>OffsetX/OffsetY</c>, which this report never
+    /// applies anywhere. Those offsets happen to be null today, so borrowing it would be right by luck,
+    /// and would put a number where the shape is not the day one of them is set.
+    /// </para>
+    /// </summary>
+    private static bool OnMaterial(INfp poly, double x, double y)
+    {
+      if (poly == null || !ContourContains(poly.Points, x, y))
+      {
+        return false;
+      }
+
+      if (poly.Children != null)
+      {
+        foreach (var hole in poly.Children)
+        {
+          // Guarded exactly as the drawing guards it: a hole too small to be drawn is not on the paper,
+          // so it takes no material away and the number must not dodge it.
+          if (hole?.Points != null && hole.Points.Length >= 3 && ContourContains(hole.Points, x, y))
+          {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>Even-odd ray casting across one closed ring.</summary>
+    private static bool ContourContains(SvgPoint[] pts, double x, double y)
+    {
+      if (pts == null || pts.Length < 3)
+      {
+        return false;
+      }
+
+      bool inside = false;
+      for (int i = 0, j = pts.Length - 1; i < pts.Length; j = i++)
+      {
+        if (((pts[i].Y > y) != (pts[j].Y > y))
+          && (x < (((pts[j].X - pts[i].X) * (y - pts[i].Y)) / (pts[j].Y - pts[i].Y)) + pts[i].X))
+        {
+          inside = !inside;
+        }
+      }
+
+      return inside;
+    }
+
+    /// <summary>
+    /// The material point furthest from any edge, hole edges included, and how far that is. Sampled,
+    /// not solved: a grid over the bounding box, then a few rounds of halving the step around the best
+    /// sample.
+    /// <para>
+    /// A wall thinner than the grid spacing can be stepped straight over, so a miss retries four times
+    /// finer before giving up. A room of zero means nothing was found and the caller keeps what it had,
+    /// which is the anchor this report has always used.
+    /// </para>
+    /// </summary>
+    private static (double X, double Y, double Room) RoomiestMaterialPoint(INfp poly)
+    {
+      // Read ONCE. MinX and its three siblings are a LINQ pass over every point on each read
+      // (NoFitPolygon.cs:96), so leaving them in a loop condition walks the whole part per probe.
+      double minX = poly.MinX;
+      double maxX = poly.MaxX;
+      double minY = poly.MinY;
+      double maxY = poly.MaxY;
+      double w = maxX - minX;
+      double h = maxY - minY;
+      if (w <= 0 || h <= 0)
+      {
+        return (0, 0, 0);
+      }
+
+      foreach (int divisions in new[] { 64, 256 })
+      {
+        double step = Math.Max(w, h) / divisions;
+        var best = (X: 0.0, Y: 0.0, Room: 0.0);
+        for (double x = minX + (step / 2.0); x < maxX; x += step)
+        {
+          for (double y = minY + (step / 2.0); y < maxY; y += step)
+          {
+            Consider(poly, x, y, ref best);
+          }
+        }
+
+        if (best.Room <= 0)
+        {
+          continue;
+        }
+
+        // Walk in on the winner: its eight neighbours at half the step, six times over.
+        for (int round = 0; round < 6; round++)
+        {
+          step /= 2.0;
+          for (int dx = -1; dx <= 1; dx++)
+          {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+              if (dx != 0 || dy != 0)
+              {
+                Consider(poly, best.X + (dx * step), best.Y + (dy * step), ref best);
+              }
+            }
+          }
+        }
+
+        return best;
+      }
+
+      return (0, 0, 0);
+    }
+
+    private static void Consider(INfp poly, double x, double y, ref (double X, double Y, double Room) best)
+    {
+      if (!OnMaterial(poly, x, y))
+      {
+        return;
+      }
+
+      double room = Clearance(poly, x, y);
+      if (room > best.Room)
+      {
+        best = (x, y, room);
+      }
+    }
+
+    /// <summary>Distance from the point to the nearest edge, of the outline or of any hole.</summary>
+    private static double Clearance(INfp poly, double x, double y)
+    {
+      double best = EdgeDistance(poly.Points, x, y);
+      if (poly.Children != null)
+      {
+        foreach (var hole in poly.Children)
+        {
+          if (hole?.Points != null && hole.Points.Length >= 3)
+          {
+            best = Math.Min(best, EdgeDistance(hole.Points, x, y));
+          }
+        }
+      }
+
+      return best;
+    }
+
+    private static double EdgeDistance(SvgPoint[] pts, double x, double y)
+    {
+      double best = double.MaxValue;
+      for (int i = 0, j = pts.Length - 1; i < pts.Length; j = i++)
+      {
+        best = Math.Min(best, PointSegmentDistance(x, y, pts[j].X, pts[j].Y, pts[i].X, pts[i].Y));
+      }
+
+      return best;
+    }
+
+    private static double PointSegmentDistance(double px, double py, double ax, double ay, double bx, double by)
+    {
+      double dx = bx - ax;
+      double dy = by - ay;
+      double length2 = (dx * dx) + (dy * dy);
+      double t = length2 <= 0 ? 0 : ((((px - ax) * dx) + ((py - ay) * dy)) / length2);
+      t = Math.Max(0, Math.Min(1, t));
+      double qx = ax + (t * dx);
+      double qy = ay + (t * dy);
+      return Math.Sqrt(((px - qx) * (px - qx)) + ((py - qy) * (py - qy)));
     }
 
     private static string Trunc(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "~";
