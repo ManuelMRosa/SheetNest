@@ -1935,8 +1935,7 @@
           dialog.FileName,
           plan,
           selected.UnplacedParts?.Count ?? 0,
-          this.unitsMm ? "mm" : "in",
-          this.dxfViewer?.PartColours);
+          this.unitsMm ? "mm" : "in");
       }
       catch (System.Exception ex)
       {
