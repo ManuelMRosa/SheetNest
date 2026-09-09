@@ -3636,6 +3636,10 @@
         }
 
         reportStage("clearance");
+        // Both judgements below are of the SAME `intents`, so they may share exact boundaries: only the
+        // poses can differ between them, and the cache is keyed on the pose. It must NOT outlive this
+        // plan, because a different edge set tessellates the same part differently.
+        var planBoundaries = new CommonEdgeClearance.BoundaryCache();
         bool layoutValid = DirectLayoutIsValid(
           all,
           intents,
@@ -3649,7 +3653,8 @@
           out PlacementAcceptance.Unfit layoutConflict,
           cancel,
           sourceCatalogs,
-          verdictCache);
+          verdictCache,
+          planBoundaries);
         if (!layoutValid && TryNudgeConflictingNeighbor(layoutConflict))
         {
           layoutValid = DirectLayoutIsValid(
@@ -3665,7 +3670,8 @@
             out _,
             cancel,
             sourceCatalogs,
-            verdictCache);
+            verdictCache,
+            planBoundaries);
         }
 
         if (!layoutValid)
@@ -4253,7 +4259,8 @@
       out PlacementAcceptance.Unfit unfit,
       CancellationToken cancel = default,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
-      CommonEdgeClearance.PairVerdictCache verdictCache = null)
+      CommonEdgeClearance.PairVerdictCache verdictCache = null,
+      CommonEdgeClearance.BoundaryCache boundaries = null)
     {
       // Sparrow is a strip packer and is offered more than a sheetful on purpose, so some of what it
       // returns hangs past the sheet and is dropped by the cull in MapAndCompact. Those parts are not
@@ -4273,7 +4280,8 @@
         ClearanceEdges(intents),
         commonLineGap,
         geometryTolerance,
-        stopAtFirst: true, cancel: cancel, sourceCatalogs: sourceCatalogs, verdictCache: verdictCache);
+        stopAtFirst: true, cancel: cancel, sourceCatalogs: sourceCatalogs, verdictCache: verdictCache,
+        boundaries: boundaries);
       string conflicts = string.Join(", ", unfit.Overlapping.Select(
         placement => $"source={placement.Source} at {placement.X:F3},{placement.Y:F3}"));
       failureReason = unfit.OutsideMargin.Count > 0
