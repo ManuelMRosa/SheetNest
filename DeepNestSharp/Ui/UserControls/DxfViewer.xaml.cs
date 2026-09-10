@@ -256,6 +256,12 @@
       };
     }
 
+    /// <summary>
+    /// Raised when the layouts change: a new result or none, and every edit, undo or redo that moves a
+    /// part, so whatever pictures the layouts (the Nests panel) can draw them again.
+    /// </summary>
+    public event EventHandler LayoutsChanged;
+
     public INestResult Result
     {
       get => (INestResult)GetValue(ResultProperty);
@@ -283,6 +289,7 @@
       }
 
       v.Render();
+      v.LayoutsChanged?.Invoke(v, EventArgs.Empty);
     }
 
     /// <summary>
@@ -827,22 +834,6 @@
       ((DxfViewer)d).Render();
     }
 
-    private void OnPrevSheet(object sender, RoutedEventArgs e)
-    {
-      if (this.SheetIndex > 0)
-      {
-        this.SheetIndex--;
-      }
-    }
-
-    private void OnNextSheet(object sender, RoutedEventArgs e)
-    {
-      if (this.SheetIndex < this.groups.Count - 1)
-      {
-        this.SheetIndex++;
-      }
-    }
-
     private sealed class SheetGroup
     {
       public ISheetPlacement Representative { get; set; }
@@ -879,7 +870,6 @@
       if (result == null || this.groups.Count == 0)
       {
         this.emptyHint.Visibility = Visibility.Visible;
-        this.sheetNav.Visibility = Visibility.Collapsed;
         this.editBar.Visibility = Visibility.Collapsed;
         return;
       }
@@ -899,15 +889,6 @@
       }
 
       this.emptyHint.Visibility = Visibility.Collapsed;
-
-      // Navigate by distinct LAYOUT (not by physical sheet), labelled the way industrial nesting
-      // packages do it (one repeated layout shown with its repeat count in parentheses
-      // next to the name): "Nest 1/2 (30)" = layout 1 of 2, cut it 30 times. Job totals stay in the
-      // status bar and results grid — nothing verbose over the drawing.
-      this.sheetLabel.Text = group.Count > 1
-        ? $"Nest {idx + 1}/{this.groups.Count}  ({group.Count})"
-        : $"Nest {idx + 1}/{this.groups.Count}";
-      this.sheetNav.Visibility = this.groups.Count > 1 || group.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
 
       double w = sheet.WidthCalculated;
       double h = sheet.HeightCalculated;
@@ -3616,6 +3597,7 @@
       }
 
       this.UpdateEditButtons();
+      this.LayoutsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private SheetGroup CurrentGroup()
@@ -3736,6 +3718,7 @@
       }
 
       this.RefreshInvalid();
+      this.LayoutsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Re-check the moved part (and anything previously flagged) for overlaps/out-of-sheet.</summary>

@@ -98,18 +98,5 @@
                    ToolTip="Distance from this part to its nearest neighbour, measured when it comes to rest." />
       </StackPanel>
     </Border>
-
-    <!-- Layout navigation, industrial style: one entry per DISTINCT layout,
-         its repeat count in parentheses next to the name — "Nest 1/2 (30)" = layout 1 of 2, cut it
-         30 times. Totals (utilization / sheets / placed) live in the status bar, not over the plot. -->
-    <Border x:Name="sheetNav" Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,3"
-            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,12" Visibility="Collapsed">
-      <StackPanel Orientation="Horizontal">
-        <Button Content="&#9664;" Width="28" Click="OnPrevSheet" ToolTip="Previous layout" />
-        <TextBlock x:Name="sheetLabel" Foreground="Black" VerticalAlignment="Center"
-                   Margin="10,0" MinWidth="80" TextAlignment="Center" FontWeight="Bold" />
-        <Button Content="&#9654;" Width="28" Click="OnNextSheet" ToolTip="Next layout" />
-      </StackPanel>
-    </Border>
   </Grid>
 </UserControl>

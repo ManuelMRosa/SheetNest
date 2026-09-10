@@ -51,6 +51,13 @@
     {
       InitializeComponent();
       this.DataContext = viewModel;
+
+      // The Nests panel follows the viewer: its cards are redrawn whenever the layouts change, and its
+      // selection moves when the viewer changes layout on its own (undoing an edit made on another one).
+      this.dxfViewer.LayoutsChanged += (s, e) => this.RefreshNestCards();
+      System.ComponentModel.DependencyPropertyDescriptor
+        .FromProperty(DeepNestSharp.Ui.UserControls.DxfViewer.SheetIndexProperty, typeof(DeepNestSharp.Ui.UserControls.DxfViewer))
+        .AddValueChanged(this.dxfViewer, (s, e) => this.SelectShownNest());
       viewModel.AboutDialogService = new AboutDialogService(() => new AboutDialog());
       this.Loaded += MainWindow_Loaded;
       this.Closing += MainWindow_Closing;
@@ -765,10 +772,9 @@
     }
 
     /// <summary>
-    /// Feeds the per-row "Available X/Y" badges in the Parts and Sheets panels: sets each row's
-    /// NestedCount (sheets consumed / parts placed by the on-screen result; 0 = no result) and the
-    /// wrappers render availability from it. The badges are ALWAYS visible — with no result every
-    /// row simply reads N/N.
+    /// Feeds the counts on the part and sheet cards: sets each row's NestedCount (sheets consumed / parts
+    /// placed by the on-screen result; 0 = no result) and the wrappers derive Remaining and Total from it.
+    /// The counts are ALWAYS shown; with no result nothing is nested and everything remains.
     /// </summary>
     private void UpdateNestedInfo(INestResult result)
     {
@@ -787,8 +793,8 @@
         return;
       }
 
-      // Sheets: sheets of this size the nest consumed (recorded at deduction time); the wrapper
-      // renders availability as Quantity / (Quantity + NestedCount).
+      // Sheets: sheets of this size the nest consumed (recorded at deduction time); the wrapper's
+      // Quantity is already what is left, and its TotalCount adds this back.
       foreach (var s in sheetRows)
       {
         int used = 0;
@@ -941,18 +947,15 @@
     /// <summary>Reflects the drawing units (in/mm) in every unit-labelled UI element.</summary>
     private void ApplyUnits()
     {
-      string u = this.unitsMm ? "mm" : "in";
-      if (this.sheetSizeColumn != null)
-      {
-        this.sheetSizeColumn.Header = $"Sheet ({u})";
-      }
-
+      this.Resources["UnitsLabel"] = this.unitsMm ? "mm" : "in";
       if (this.dxfViewer != null)
       {
         this.dxfViewer.UnitsMm = this.unitsMm;
         this.dxfViewer.CommonLineGap = ViewModel.SvgNestConfigViewModel.SvgNestConfig.CommonLineGapInches
           * (this.unitsMm ? CommonLineDefaults.InchesToMillimeters : 1.0);
       }
+
+      this.RefreshNestCards(); // their sizes carry the units
     }
 
     /// <summary>Persists the user's sheet presets right away (load-modify-save, like the MRU).</summary>
@@ -1273,6 +1276,59 @@
       }
 
       this.partsListView?.Items.Refresh();
+    }
+
+    /// <summary>True while the Nests list is being filled or re-selected to match the viewer, so its own
+    /// SelectionChanged does not push that selection straight back into the viewer.</summary>
+    private bool syncingNests;
+
+    /// <summary>
+    /// Rebuilds the Nests panel from the layouts the viewer holds, in the viewer's order so card n is layout
+    /// n, and selects the one on screen. Runs on a new result or none, after every edit, undo or redo that
+    /// moves a part, and after a units change, because the sizes carry the units.
+    /// </summary>
+    private void RefreshNestCards()
+    {
+      if (this.nestsList == null || this.dxfViewer == null)
+      {
+        return;
+      }
+
+      var plan = this.dxfViewer.GetProductionPlan();
+      var cards = NestCard.From(plan, this.unitsMm);
+      for (int i = 0; i < cards.Count; i++)
+      {
+        cards[i].Thumbnail = NestCard.DrawThumbnail(plan[i].Sheet);
+      }
+
+      this.syncingNests = true;
+      this.nestsList.ItemsSource = cards;
+      this.nestsList.SelectedIndex = cards.Count == 0 ? -1 : Math.Max(0, Math.Min(this.dxfViewer.SheetIndex, cards.Count - 1));
+      this.syncingNests = false;
+      this.nestsEmptyHint.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Picking a nest card puts that layout in the viewer.</summary>
+    private void OnNestsListSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+      if (!this.syncingNests && this.nestsList.SelectedIndex >= 0)
+      {
+        this.dxfViewer.SheetIndex = this.nestsList.SelectedIndex;
+      }
+    }
+
+    /// <summary>The viewer can change layout by itself, undoing an edit made on another one, and the selected
+    /// card has to follow it.</summary>
+    private void SelectShownNest()
+    {
+      if (this.nestsList == null || this.nestsList.Items.Count == 0)
+      {
+        return;
+      }
+
+      this.syncingNests = true;
+      this.nestsList.SelectedIndex = Math.Max(0, Math.Min(this.dxfViewer.SheetIndex, this.nestsList.Items.Count - 1));
+      this.syncingNests = false;
     }
 
     /// <summary>One palette entry as the popup's swatch grid shows it.</summary>

@@ -53,16 +53,6 @@
   <!-- Clear Result: same classic button (bold text), no red — retro look has no colored buttons. -->
   <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}" />
 
-  <!-- Square icon button (✎ / ✕): small classic button. -->
-  <Style x:Key="IconButton" TargetType="Button">
-    <Setter Property="Width" Value="22" />
-    <Setter Property="Height" Value="22" />
-    <Setter Property="MinWidth" Value="22" />
-    <Setter Property="Padding" Value="0" />
-    <Setter Property="FontSize" Value="11" />
-    <Setter Property="VerticalAlignment" Value="Center" />
-  </Style>
-
   <!-- Thin vertical divider between toolbar groups. -->
   <Style x:Key="ToolbarSeparator" TargetType="Rectangle">
     <Setter Property="Width" Value="1" />

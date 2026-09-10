@@ -18,6 +18,9 @@
     <converters:PartPreviewConverter x:Key="PartPreview" />
     <converters:RgbToBrushConverter x:Key="RgbToBrush" />
 
+    <!-- The drawing units every size on the cards is written in. ApplyUnits swaps it for "mm". -->
+    <sys:String x:Key="UnitsLabel">in</sys:String>
+
     <!-- A colour swatch is the colour and nothing else. The default button template paints a background,
          a raised border and padding around its content, which framed every colour in a white box. -->
     <Style x:Key="ColourSwatchButton" TargetType="Button">
@@ -118,224 +121,269 @@
       </DockPanel>
     </Border>
 
-    <!-- Main work area -->
+    <!-- Main work area: the viewer with the job's parts and stock in a bar under it, and the nests of the
+         result in a column that runs beside both. -->
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" MinWidth="320" />
+        <ColumnDefinition Width="*" MinWidth="420" />
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="360" MinWidth="280" />
+        <ColumnDefinition Width="300" MinWidth="220" />
       </Grid.ColumnDefinitions>
 
-      <!-- Center: faithful DXF nest viewer. (The old results grid below it was removed: the raster
-           engine returns a single result, so the row only duplicated the status bar readouts.) -->
-      <Border Grid.Column="0" Margin="4" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
-        <userControls:DxfViewer x:Name="dxfViewer" Result="{Binding NestMonitorViewModel.SelectedItem}"
-                                SheetIndex="0" />
-      </Border>
+      <Grid Grid.Column="0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" MinHeight="200" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="200" MinHeight="110" />
+        </Grid.RowDefinitions>
 
-      <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="{DynamicResource Brush.BorderSubtle}" />
+        <!-- Faithful DXF nest viewer. Which nest it shows is picked in the Nests panel. (The old results
+             grid below it was removed: the raster engine returns a single result, so the row only
+             duplicated the status bar readouts.) -->
+        <Border Grid.Row="0" Margin="4,4,0,0" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+          <userControls:DxfViewer x:Name="dxfViewer" Result="{Binding NestMonitorViewModel.SelectedItem}" />
+        </Border>
 
-      <!-- Right: Parts / Sheets / Settings -->
-      <TabControl Grid.Column="2" Margin="0,4,4,4">
-        <TabItem Header="Parts">
-          <!-- A nest result owns the current stock/part counts: lock editing until Clear Result. -->
-          <DockPanel>
-            <DockPanel.Style>
-              <Style TargetType="DockPanel">
-                <Setter Property="IsEnabled" Value="False" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding NestMonitorViewModel.SelectedItem}" Value="{x:Null}">
-                    <Setter Property="IsEnabled" Value="True" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </DockPanel.Style>
-            <StackPanel DockPanel.Dock="Bottom">
-              <!-- 3D import lives in File > Import 3D (STEP / IGES)... — not frequent enough for a permanent button. -->
-              <Button Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked" Margin="4" HorizontalAlignment="Stretch"
-                      ToolTip="Add a part to nest (DXF)." />
-            </StackPanel>
-            <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
-                      SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"
-                      MouseDoubleClick="OnPartsListDoubleClick"
-                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-              <ListView.ItemContainerStyle>
-                <Style TargetType="ListViewItem">
-                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" Background="{DynamicResource Brush.BorderSubtle}" />
+
+        <!-- Bottom bar: Parts / Sheets / Clearances -->
+        <TabControl Grid.Row="2" Margin="4,0,0,4">
+          <TabItem Header="Parts">
+            <!-- A nest result owns the current stock/part counts: lock editing until Clear Result. -->
+            <DockPanel>
+              <DockPanel.Style>
+                <Style TargetType="DockPanel">
+                  <Setter Property="IsEnabled" Value="False" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding NestMonitorViewModel.SelectedItem}" Value="{x:Null}">
+                      <Setter Property="IsEnabled" Value="True" />
+                    </DataTrigger>
+                  </Style.Triggers>
                 </Style>
-              </ListView.ItemContainerStyle>
-              <ListView.ItemTemplate>
-                <DataTemplate>
-                  <!-- Industrial part row: preview · name + settings caption · Available badge · actions.
-                       Quantity itself lives in the Edit Part dialog (✎ / double-click). -->
-                  <Border Margin="4,3" Padding="6" CornerRadius="0"
-                          Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
-                    <Border.ToolTip>
-                      <TextBlock>
-                        <Run Text="{Binding Path, Mode=OneWay}" /><LineBreak />
-                        <Run Text="{Binding SizeLabel, Mode=OneWay, StringFormat='size {0} in'}" /><LineBreak />
-                        <Run Text="{Binding NetArea, Mode=OneWay, StringFormat='net area {0:0.0} in²'}" />
-                      </TextBlock>
-                    </Border.ToolTip>
-                    <Grid>
+              </DockPanel.Style>
+              <!-- Toolbar over the list: its buttons act on the selected part, and without a selection there is
+                   nothing for them to act on. 3D import lives in File > Import 3D (STEP / IGES)..., not
+                   frequent enough for a permanent button. -->
+              <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,4,2">
+                <Button Style="{DynamicResource ModernButton}" Content="+ Add Part" Click="OnAddPartClicked"
+                        ToolTip="Add a part to nest (DXF)." />
+                <!-- Disabled as a group, not per button: the buttons take the theme's style as a DynamicResource
+                     because this window is built before the application loads its theme, and a style cannot be
+                     BasedOn a DynamicResource. A StaticResource here stops the app from starting. -->
+                <StackPanel Orientation="Horizontal">
+                  <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedItem, ElementName=partsListView}" Value="{x:Null}">
+                          <Setter Property="IsEnabled" Value="False" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </StackPanel.Style>
+                  <Button Style="{DynamicResource ModernButton}" Margin="4,0,0,0" Content="Edit" Click="OnEditPart"
+                          Tag="{Binding ActiveDocument.SelectedDetailLoadInfo}"
+                          ToolTip="Edit the selected part (quantity, orientations, priority)" />
+                  <Button Style="{DynamicResource ModernButton}" Margin="4,0,0,0" Content="Remove"
+                          Command="{Binding ActiveDocument.RemovePartCommand}"
+                          CommandParameter="{Binding ActiveDocument.SelectedDetailLoadInfo}"
+                          ToolTip="Remove the selected part" />
+                  <Button Style="{DynamicResource ModernButton}" Margin="4,0,0,0" Content="Color" Click="OnPartColorClick"
+                          Tag="{Binding ActiveDocument.SelectedDetailLoadInfo}"
+                          ToolTip="Colour the selected part is drawn in" />
+                </StackPanel>
+              </StackPanel>
+              <ListView x:Name="partsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.DetailLoadInfos}"
+                        SelectedItem="{Binding ActiveDocument.SelectedDetailLoadInfo}"
+                        MouseDoubleClick="OnPartsListDoubleClick"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListView.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ListView.ItemsPanel>
+                <ListView.ItemTemplate>
+                  <DataTemplate>
+                    <!-- One part, compact: its outline, drawn the way the printed report draws parts, then the
+                         counts the job is checked against. The square is the colour the part has in the nest.
+                         Quantity itself lives in the Edit Part dialog (Edit / double-click). -->
+                    <Grid Width="190" Margin="1">
+                      <Grid.ToolTip>
+                        <TextBlock>
+                          <Run Text="{Binding Path, Mode=OneWay}" /><LineBreak />
+                          <Run Text="{Binding NestingLabel, Mode=OneWay}" /><LineBreak />
+                          <Run Text="{Binding NetArea, Mode=OneWay, StringFormat='net area {0:0.0}'}" />
+                        </TextBlock>
+                      </Grid.ToolTip>
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
-                      <Border Grid.Column="0" Width="48" Height="48" Background="{DynamicResource Brush.Card}"
-                              BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1" Margin="0,0,8,0">
-                        <Image Source="{Binding PreviewSource, Converter={StaticResource PartPreview}}" Stretch="Uniform" Margin="3" />
-                      </Border>
-                      <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding NestingLabel, Mode=OneWay}" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
-                      </StackPanel>
-                      <!-- Always-visible availability: copies left to nest / requested. -->
-                      <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="6,0"
-                                  ToolTip="Parts still to nest / requested (quantity + spares + mirrored)">
-                        <TextBlock Style="{DynamicResource CaptionText}" Text="Available" FontSize="10" HorizontalAlignment="Center" Margin="0,0,0,1" />
-                        <Border Style="{DynamicResource CountBadge}">
-                          <TextBlock Style="{DynamicResource CountBadgeText}" Text="{Binding NestedInfo, Mode=OneWay}" />
-                        </Border>
-                      </StackPanel>
-                      <!-- The colour this part is drawn in: the swatch IS the button — no arrow, no text,
-                           just the colour it currently has. Clicking it opens the picker. -->
-                      <Button Grid.Column="3" Style="{DynamicResource ColourSwatchButton}"
-                              Width="24" Height="22" VerticalAlignment="Center" Margin="4,0,0,0"
-                              ToolTip="Colour this part is drawn in"
-                              Click="OnPartColorClick" Tag="{Binding}">
-                        <!-- A size of its own: an empty Border asks for nothing and would vanish. -->
-                        <Border Width="24" Height="22"
-                                Background="{Binding EffectiveColorRgb, Converter={StaticResource RgbToBrush}}" />
-                      </Button>
-                      <Button Grid.Column="4" Style="{DynamicResource IconButton}" Content="&#9998;" VerticalAlignment="Center" Margin="2,0,0,0"
-                              ToolTip="Edit part (quantity, orientations, priority)"
-                              Click="OnEditPart" Tag="{Binding}" />
-                      <Button Grid.Column="5" Style="{DynamicResource IconButton}" Content="&#10005;" VerticalAlignment="Center" Margin="2,0,0,0"
-                              ToolTip="Remove part"
-                              Command="{Binding DataContext.ActiveDocument.RemovePartCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                              CommandParameter="{Binding}" />
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ListView.ItemTemplate>
-            </ListView>
-          </DockPanel>
-        </TabItem>
-        <TabItem Header="Sheets">
-          <!-- Same lock as the Parts tab: the result's deduction must stay in sync with this list. -->
-          <DockPanel>
-            <DockPanel.Style>
-              <Style TargetType="DockPanel">
-                <Setter Property="IsEnabled" Value="False" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding NestMonitorViewModel.SelectedItem}" Value="{x:Null}">
-                    <Setter Property="IsEnabled" Value="True" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </DockPanel.Style>
-            <Button DockPanel.Dock="Bottom" Style="{DynamicResource ModernButton}" Content="+ Add Sheet" Click="OnAddSheetMenu" Margin="4" HorizontalAlignment="Stretch"
-                    ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
-            <TextBlock DockPanel.Dock="Top" Style="{DynamicResource CaptionText}" Margin="4,4,4,6"
-                       Text="width = long side · every listed sheet participates; for each sheet the nester cuts the size that fills most of itself · tick Unlimited on a size and the job takes as many of it as it needs" TextWrapping="Wrap" />
-            <!-- Industrial stock list: clean text rows ("120 × 60 · Available 31/31 · ✎ ✕"); size and
-                 quantity are BOTH edited through the Edit sheet dialog (✎ or double-click). -->
-            <ListView x:Name="sheetsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.SheetLoadInfos}"
-                      SelectedItem="{Binding ActiveDocument.SelectedSheetLoadInfo}"
-                      MouseDoubleClick="OnSheetsListDoubleClick">
-              <ListView.Resources>
-                <!-- Scoped to THIS ListView only (safe — never app-wide implicit styles). -->
-                <Style TargetType="GridViewColumnHeader">
-                  <Setter Property="Background" Value="Transparent" />
-                  <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
-                  <Setter Property="BorderThickness" Value="0,0,0,1" />
-                  <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
-                  <Setter Property="FontSize" Value="11" />
-                  <Setter Property="Padding" Value="6,3" />
-                  <Setter Property="HorizontalContentAlignment" Value="Left" />
-                </Style>
-              </ListView.Resources>
-              <ListView.View>
-                <GridView>
-                  <GridViewColumn x:Name="sheetSizeColumn" Header="Sheet (in)" Width="120">
-                    <GridViewColumn.CellTemplate>
-                      <DataTemplate>
-                        <TextBlock FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" Margin="4,4"
-                                   ToolTip="Sheet size, width × height (width = the long side). Edit with ✎ or double-click">
-                          <TextBlock.Text>
-                            <MultiBinding StringFormat="{}{0} × {1}">
-                              <Binding Path="Width" Mode="OneWay" />
-                              <Binding Path="Height" Mode="OneWay" />
-                            </MultiBinding>
-                          </TextBlock.Text>
+                      <Image Grid.Column="0" Width="48" Height="48" VerticalAlignment="Top" Stretch="Uniform"
+                             Source="{Binding PreviewSource, Converter={StaticResource PartPreview}, ConverterParameter=Outline}" />
+                      <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                        <DockPanel>
+                          <Border DockPanel.Dock="Left" Width="10" Height="10" Margin="0,0,4,0" VerticalAlignment="Center"
+                                  BorderBrush="{DynamicResource Brush.BorderStrong}" BorderThickness="1"
+                                  Background="{Binding EffectiveColorRgb, Converter={StaticResource RgbToBrush}}" />
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding RequiredCount, Mode=OneWay, StringFormat='Required: {0}'}" />
+                        <TextBlock Text="{Binding NestedCount, Mode=OneWay, StringFormat='Nested: {0}'}" />
+                        <TextBlock Text="{Binding RemainingCount, Mode=OneWay, StringFormat='Remaining: {0}'}" />
+                        <TextBlock TextTrimming="CharacterEllipsis">
+                          <Run Text="{Binding SizeLabel, Mode=OneWay, StringFormat='Size: {0}'}" /> <Run Text="{DynamicResource UnitsLabel}" />
                         </TextBlock>
-                      </DataTemplate>
-                    </GridViewColumn.CellTemplate>
-                  </GridViewColumn>
-                  <GridViewColumn Header="Available" Width="130">
-                    <GridViewColumn.CellTemplate>
-                      <DataTemplate>
-                        <!-- Always visible "Quantity Available": sheets of this size
-                             still available / total (31/31 before a nest; 3/31 after one used 28).
-                             An unlimited size has no availability to count down, so it says so and
-                             reports what the nest took instead. -->
-                        <Border Style="{DynamicResource CountBadge}"
-                                ToolTip="Sheets of this size still available / total. An unlimited size never runs down, so it reports how many the nest used.">
-                          <TextBlock Style="{DynamicResource CountBadgeText}" Text="{Binding NestedInfo, Mode=OneWay}" />
-                        </Border>
-                      </DataTemplate>
-                    </GridViewColumn.CellTemplate>
-                  </GridViewColumn>
-                  <GridViewColumn Header="" Width="66">
-                    <GridViewColumn.CellTemplate>
-                      <DataTemplate>
-                        <StackPanel Orientation="Horizontal">
-                          <Button Style="{DynamicResource IconButton}" Content="&#9998;" ToolTip="Edit sheet (size and quantity)"
-                                  Click="OnEditSheet" Tag="{Binding}" />
-                          <Button Style="{DynamicResource IconButton}" Content="&#10005;" Margin="2,0,0,0" ToolTip="Remove sheet"
-                                  Command="{Binding DataContext.ActiveDocument.RemoveSheetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                  CommandParameter="{Binding}" />
-                        </StackPanel>
-                      </DataTemplate>
-                    </GridViewColumn.CellTemplate>
-                  </GridViewColumn>
-                </GridView>
-              </ListView.View>
-            </ListView>
-          </DockPanel>
-        </TabItem>
-        <TabItem Header="Clearances">
-          <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="12" DataContext="{Binding SvgNestConfigViewModel}">
-              <TextBlock Text="Clearances" FontWeight="Bold" FontSize="14" Margin="0,0,0,10" />
-
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <!-- Part spacing, rotation and common-line are set PER PART in the Edit Part dialog
-                     (pencil button / double-click a part). For 3D (STEP/IGES) parts the K-factor,
-                     thickness and unit also live in that dialog — per part, editable, re-unfolds on change. -->
-
-                <TextBlock Grid.Row="0" Grid.Column="0" Style="{DynamicResource SettingLabel}" Text="Sheet edge margin" />
-                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
-                  <xctk:DoubleUpDown x:Name="sheetEdgeMarginBox" Width="100" Minimum="0" Increment="0.5"
-                                     Value="{Binding SvgNestConfig.SheetSpacing}"
-                                     ToolTip="Empty border kept clear around the sheet (in the drawing's units)." />
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+            </DockPanel>
+          </TabItem>
+          <TabItem Header="Sheets">
+            <!-- Same lock as the Parts tab: the result's deduction must stay in sync with this list. -->
+            <DockPanel>
+              <DockPanel.Style>
+                <Style TargetType="DockPanel">
+                  <Setter Property="IsEnabled" Value="False" />
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding NestMonitorViewModel.SelectedItem}" Value="{x:Null}">
+                      <Setter Property="IsEnabled" Value="True" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </DockPanel.Style>
+              <!-- Toolbar over the list: Edit and Remove act on the selected sheet, so they wait for one. They are
+                   disabled as a group for the same reason as the Parts toolbar. -->
+              <DockPanel DockPanel.Dock="Top" Margin="4,4,4,2">
+                <Button Style="{DynamicResource ModernButton}" Content="+ Add Sheet" Click="OnAddSheetMenu"
+                        ToolTip="Add a stock sheet: pick a standard size or enter a custom one" />
+                <StackPanel Orientation="Horizontal">
+                  <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedItem, ElementName=sheetsListView}" Value="{x:Null}">
+                          <Setter Property="IsEnabled" Value="False" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </StackPanel.Style>
+                  <Button Style="{DynamicResource ModernButton}" Margin="4,0,0,0" Content="Edit" Click="OnEditSheet"
+                          Tag="{Binding ActiveDocument.SelectedSheetLoadInfo}"
+                          ToolTip="Edit the selected sheet (size and quantity)" />
+                  <Button Style="{DynamicResource ModernButton}" Margin="4,0,0,0" Content="Remove"
+                          Command="{Binding ActiveDocument.RemoveSheetCommand}"
+                          CommandParameter="{Binding ActiveDocument.SelectedSheetLoadInfo}"
+                          ToolTip="Remove the selected sheet" />
                 </StackPanel>
-              </Grid>
-            </StackPanel>
-          </ScrollViewer>
+                <TextBlock Style="{DynamicResource CaptionText}" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                           Text="width = long side · every listed sheet participates; for each sheet the nester cuts the size that fills most of itself · tick Unlimited on a size and the job takes as many of it as it needs" />
+              </DockPanel>
+              <ListView x:Name="sheetsListView" ItemsSource="{Binding ActiveDocument.ProjectInfo.SheetLoadInfos}"
+                        SelectedItem="{Binding ActiveDocument.SelectedSheetLoadInfo}"
+                        MouseDoubleClick="OnSheetsListDoubleClick"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListView.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ListView.ItemsPanel>
+                <ListView.ItemTemplate>
+                  <DataTemplate>
+                    <!-- One stock size, compact: the size, then how many there are, how many the nest used and
+                         how many are left. Size and quantity are BOTH edited through the Edit sheet dialog (Edit or
+                         double-click). -->
+                    <StackPanel Width="150" Margin="1"
+                                ToolTip="Sheet size, width × height (width = the long side). Double-click or Edit to change it">
+                      <TextBlock FontWeight="SemiBold">
+                        <Run Text="{Binding Width, Mode=OneWay}" /><Run Text=" × " /><Run Text="{Binding Height, Mode=OneWay}" /> <Run Text="{DynamicResource UnitsLabel}" />
+                      </TextBlock>
+                      <TextBlock x:Name="quantityLine" Text="{Binding TotalCount, Mode=OneWay, StringFormat='Quantity: {0}'}" />
+                      <TextBlock Text="{Binding NestedCount, Mode=OneWay, StringFormat='Used: {0}'}" />
+                      <TextBlock x:Name="availableLine" Text="{Binding Quantity, Mode=OneWay, StringFormat='Available: {0}'}" />
+                    </StackPanel>
+                    <DataTemplate.Triggers>
+                      <!-- An unlimited size never runs down, so it has no stock level to show: it says so, and
+                           Used still reports what the nest took. -->
+                      <DataTrigger Binding="{Binding Unlimited}" Value="True">
+                        <Setter TargetName="quantityLine" Property="Text" Value="Quantity: Unlimited" />
+                        <Setter TargetName="availableLine" Property="Visibility" Value="Collapsed" />
+                      </DataTrigger>
+                    </DataTemplate.Triggers>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+            </DockPanel>
+          </TabItem>
+          <TabItem Header="Clearances">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="12" DataContext="{Binding SvgNestConfigViewModel}">
+                <TextBlock Text="Clearances" FontWeight="Bold" FontSize="14" Margin="0,0,0,10" />
+
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+
+                  <!-- Part spacing, rotation and common-line are set PER PART in the Edit Part dialog
+                       (pencil button / double-click a part). For 3D (STEP/IGES) parts the K-factor,
+                       thickness and unit also live in that dialog — per part, editable, re-unfolds on change. -->
+
+                  <TextBlock Grid.Row="0" Grid.Column="0" Style="{DynamicResource SettingLabel}" Text="Sheet edge margin" />
+                  <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                    <xctk:DoubleUpDown x:Name="sheetEdgeMarginBox" Width="100" Minimum="0" Increment="0.5"
+                                       Value="{Binding SvgNestConfig.SheetSpacing}"
+                                       ToolTip="Empty border kept clear around the sheet (in the drawing's units)." />
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+        </TabControl>
+      </Grid>
+
+      <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="{DynamicResource Brush.BorderSubtle}" />
+
+      <!-- Right: the nests of the result, one entry per distinct layout, drawn in outline like the printed
+           report. Picking one puts that layout in the viewer, and the entry on screen stays selected. Entries
+           wrap, so a panel widened past two of them shows two columns. -->
+      <TabControl Grid.Column="2" Margin="0,4,4,4">
+        <TabItem Header="Nests">
+          <Grid>
+            <ListBox x:Name="nestsList" BorderThickness="0" SelectionChanged="OnNestsListSelectionChanged"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid Width="230" Margin="1">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Image Grid.Column="0" Source="{Binding Thumbnail}" Width="90" Height="60" Stretch="Uniform" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding Sheets, StringFormat='Sheets: {0}'}" />
+                      <TextBlock Text="{Binding Utilization, StringFormat='Utilization: {0}'}" />
+                      <TextBlock Text="{Binding Size, StringFormat='Size: {0}'}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock x:Name="nestsEmptyHint" Style="{DynamicResource CaptionText}" Margin="8" TextWrapping="Wrap"
+                       HorizontalAlignment="Center" VerticalAlignment="Top" IsHitTestVisible="False"
+                       Text="Run a nest to see its layouts here." />
+          </Grid>
         </TabItem>
       </TabControl>
     </Grid>
@@ -362,14 +410,14 @@
       </StackPanel>
     </Border>
 
-    <!-- Part colour picker. One popup for the whole list, moved onto whichever row's swatch was clicked.
+    <!-- Part colour picker. One popup for the whole list, moved onto whichever card's swatch was clicked.
          Built here rather than with the toolkit's ColorPicker: that control's Advanced tab does not switch,
          so its colour canvas was unreachable. This uses the same canvas directly, with no tabs in the way. -->
-    <!-- Opens to the LEFT of the swatch, i.e. INTO the window. The swatch sits near the right edge of the
-         Parts panel, so anchoring below it pushed the panel past the window edge - and a Popup is a
+    <!-- Opens ABOVE the swatch, i.e. INTO the window. The part cards sit in the bar along the bottom, so
+         anchoring below the swatch would push the picker past the window's bottom edge - and a Popup is a
          top-level window, so WPF only keeps it on the SCREEN, never inside its parent. -->
     <Popup x:Name="partColorPopup" StaysOpen="False" AllowsTransparency="True"
-           Placement="Left" HorizontalOffset="-4" PopupAnimation="Fade">
+           Placement="Top" VerticalOffset="-4" PopupAnimation="Fade">
       <Border Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" Padding="6">
         <StackPanel>
           <TextBlock Text="Part colour" FontWeight="SemiBold" Margin="0,0,0,4" />
