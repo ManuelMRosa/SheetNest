@@ -6,23 +6,30 @@ namespace DeepNestSharp.Reports
   using System.IO;
   using System.Linq;
   using System.Text;
+  using System.Text.RegularExpressions;
   using DeepNestLib;
   using DeepNestLib.Placement;
 
   /// <summary>
-  /// Writes the production nest report as a PDF: a job summary page (sheets to cut, utilization,
-  /// part totals) plus one page per DISTINCT layout with a scaled drawing and its cut count —
-  /// the paper the operator takes to the laser. Self-contained minimal PDF writer (vector lines +
-  /// Helvetica text is all a report needs): no external PDF library, nothing to license.
+  /// Writes the production nest report as a PDF: one nest sheet per DISTINCT layout, the paper the
+  /// operator takes to the laser. Each page carries the layout's settings top left, the parts on it
+  /// below them and the sheet drawn to scale on the right, every part numbered to its row.
+  /// Self-contained minimal PDF writer (vector lines + Courier text is all a report needs): no external
+  /// PDF library, nothing to license.
   /// </summary>
   public static class NestReportPdf
   {
-    private const double PageW = 612; // US Letter portrait, points
-    private const double PageH = 792;
+    private const double PageW = 792; // US Letter landscape, points
+    private const double PageH = 612;
 
     /// <summary>
     /// Writes the report. It prints in black and white only: greys survive any shop printer, and parts
     /// are drawn as outlines so a sheet costs almost no toner and a marked-up copy stays readable.
+    /// <para>
+    /// The job takes the name of the file the report is saved as. A page reports only what SheetNest
+    /// knows: it has no machine, tooling, material or thickness, so those lines are left out rather than
+    /// printed empty.
+    /// </para>
     /// </summary>
     public static void Write(
       string path,
@@ -35,175 +42,81 @@ namespace DeepNestSharp.Reports
         throw new InvalidOperationException("Nothing to report. Run a nest first.");
       }
 
-      // Mixed stock: every layout carries ITS OWN sheet size — never assume the first one's.
-      int totalSheets = layouts.Sum(l => l.Count);
-      int totalParts = layouts.Sum(l => l.Count * l.Sheet.PartPlacements.Count);
-      double placedArea = layouts.Sum(l => l.Count * l.Sheet.PartPlacements.Sum(p => Math.Abs(p.Part.NetArea)));
-      double stockArea = layouts.Sum(l => l.Count * l.Sheet.Sheet.WidthCalculated * l.Sheet.Sheet.HeightCalculated);
-      double overallUtil = stockArea <= 0 ? 0 : placedArea / stockArea * 100.0;
+      // Courier advances every character by 0.6 em, so at 10 points each column is a count of 6 point
+      // steps and a line padded with spaces lines up under the one above without measuring anything.
+      const double size = 10;
+      const double leading = 12;
+      const double left = 36;
+      const double bottom = 48;
+      const int labelWidth = 17; // "SHEET UTILIZATION", the longest label
+      const int nameWidth = 40;
 
-      // Total quantity per source part across the whole job (mirrored copies listed separately —
-      // a left-hand and a right-hand part are different physical parts on the shop floor).
-      var partTotals = NumberedPartTotals(layouts);
+      // The sheet drawing owns the right of the page, bottom margin to top margin. The text column ends
+      // before it: a parts row is 4 + 1 + 40 + 1 + 7 = 53 characters, 318 points from the left margin.
+      const double boxX = 384, boxW = 372, boxH = 528;
 
-      // The number is what ties a shape on the drawing back to a row here, so both tables and the
-      // drawing read it out of the same place.
-      var partNumbers = partTotals.ToDictionary(t => t.File, t => t.Number, StringComparer.OrdinalIgnoreCase);
-
-      const double numX = 48;
-      const double nameX = 76;
+      string drawingName = Trunc(Path.GetFileNameWithoutExtension(path), 35);
+      string date = DateTime.Now.ToString("ddd MMM dd HH:mm:ss yyyy", CultureInfo.InvariantCulture);
 
       var pdf = new MiniPdf();
-      string stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-      int pageCount = 1 + layouts.Count;
-
-      // ── Page 1: written for TWO readers — the material buyer (big unambiguous "what to buy"
-      // box, nothing to interpret) and the operator (cutting plan + part totals tables below). ──
-      {
-        var c = new PageContent();
-        Header(c, stamp);
-
-        // MATERIAL REQUIRED — one line per sheet size with a big count. This is the purchase order.
-        var stockLines = layouts
-          .GroupBy(l => (W: l.Sheet.Sheet.WidthCalculated, H: l.Sheet.Sheet.HeightCalculated))
-          .Select(g => (g.Key.W, g.Key.H, Count: g.Sum(x => x.Count)))
-          .OrderByDescending(t => t.W * t.H)
-          .ToList();
-        double totalSqFt = stockLines.Sum(s => s.W * s.H * s.Count) / 144.0;
-
-        // Portrait: page 1 is a single stacked column (40..572 wide), section after section.
-        c.Text(40, 716, 13, bold: true, "MATERIAL REQUIRED");
-        double rowH = 34;
-        double boxH = (stockLines.Count * rowH) + 32;
-        double boxTop = 706;
-        c.FillRect(40, boxTop - boxH, 532, boxH, 0.94, 0.94, 0.94);
-        c.Rect(40, boxTop - boxH, 532, boxH, 0.9);
-        double ry = boxTop - 27;
-        foreach (var (w, h, count) in stockLines)
-        {
-          c.Text(56, ry, 21, bold: true, count.ToString("#,0", CultureInfo.InvariantCulture));
-          c.Text(120, ry, 13, bold: false, $"sheet{(count == 1 ? string.Empty : "s")} of  {Num(w)} x {Num(h)} {units}");
-          c.SetFill(0.35, 0.35, 0.35);
-          c.Text(430, ry, 10, bold: false, $"{(w * h * count / 144.0).ToString("#,0", CultureInfo.InvariantCulture)} sq ft");
-          c.SetFill(0, 0, 0);
-          ry -= rowH;
-        }
-
-        c.Line(52, ry + 22, 560, ry + 22, 0.6);
-        c.Text(56, ry + 6, 11, bold: true,
-          $"Total:  {totalSheets.ToString("#,0", CultureInfo.InvariantCulture)} sheet{(totalSheets == 1 ? string.Empty : "s")}   -   {totalSqFt.ToString("#,0", CultureInfo.InvariantCulture)} sq ft");
-
-        // Job summary panel (stacked below the material box).
-        double sumTop = boxTop - boxH - 34;
-        int jRows = unplacedCount > 0 ? 4 : 3;
-        double sumBoxH = (jRows * 19) + 14;
-        c.Text(40, sumTop, 13, bold: true, "JOB SUMMARY");
-        c.FillRect(40, sumTop - 10 - sumBoxH, 532, sumBoxH, 0.965, 0.965, 0.965);
-        c.Rect(40, sumTop - 10 - sumBoxH, 532, sumBoxH, 0.9);
-        double jy = sumTop - 27;
-        void JRow(string label, string value)
-        {
-          c.Text(56, jy, 10.5, bold: false, label);
-          c.Text(400, jy, 10.5, bold: true, value);
-          jy -= 19;
-        }
-
-        JRow("Parts to cut", totalParts.ToString("#,0", CultureInfo.InvariantCulture));
-        JRow("Material used", $"{overallUtil.ToString("0.0", CultureInfo.InvariantCulture)} %");
-        JRow("Different layouts", layouts.Count.ToString(CultureInfo.InvariantCulture));
-        if (unplacedCount > 0)
-        {
-          JRow("Parts NOT placed", unplacedCount.ToString(CultureInfo.InvariantCulture));
-        }
-
-        // CUTTING PLAN — one row per layout, table form: what to cut, on what, how many times.
-        // Runs down to a floor that reserves room for the PART TOTALS section below it.
-        double tableTop = sumTop - 10 - sumBoxH - 34;
-        c.Text(40, tableTop, 13, bold: true, "CUTTING PLAN");
-        double ty = tableTop - 20;
-        c.FillRect(40, ty - 5, 532, 19, 0.92, 0.92, 0.92);
-        c.Text(48, ty, 10, bold: true, "Layout");
-        c.Text(110, ty, 10, bold: true, "Page");
-        c.Text(160, ty, 10, bold: true, "Sheet size");
-        c.Text(280, ty, 10, bold: true, "Parts");
-        c.Text(360, ty, 10, bold: true, "Cut");
-        c.Text(460, ty, 10, bold: true, "Used");
-        ty -= 19;
-        int planShown = 0;
-        for (int i = 0; i < layouts.Count && ty >= 190; i++)
-        {
-          var l = layouts[i];
-          c.Text(48, ty, 10, bold: false, $"Layout {i + 1}");
-          c.Text(110, ty, 10, bold: false, (i + 2).ToString(CultureInfo.InvariantCulture));
-          c.Text(160, ty, 10, bold: false, $"{Num(l.Sheet.Sheet.WidthCalculated)} x {Num(l.Sheet.Sheet.HeightCalculated)}");
-          c.Text(280, ty, 10, bold: false, l.Sheet.PartPlacements.Count.ToString(CultureInfo.InvariantCulture));
-          c.Text(360, ty, 10, bold: true, $"x {l.Count}");
-          c.Text(460, ty, 10, bold: false, $"{Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)} %");
-          c.Line(40, ty - 5, 572, ty - 5, 0.3);
-          ty -= 17;
-          planShown++;
-        }
-
-        if (planShown < layouts.Count)
-        {
-          c.Text(48, ty, 10, bold: false, $"... and {layouts.Count - planShown} more layouts (see their pages)");
-          ty -= 17;
-        }
-
-        // PART TOTALS — what the job produces, for checking against the order (below the plan).
-        double py = ty - 24;
-        c.Text(40, py, 13, bold: true, "PART TOTALS");
-        py -= 20;
-        c.FillRect(40, py - 5, 532, 19, 0.92, 0.92, 0.92);
-        c.Text(numX, py, 10, bold: true, "No.");
-        c.Text(nameX, py, 10, bold: true, "Part");
-        c.Text(520, py, 10, bold: true, "Qty");
-        py -= 19;
-        int totalsShown = 0;
-        foreach (var (file, qty, number) in partTotals)
-        {
-          if (py < 40)
-          {
-            break;
-          }
-
-          // The number the operator reads off the drawing, so it leads the row.
-          c.Text(numX, py, 10, bold: true, number.ToString(CultureInfo.InvariantCulture));
-          c.Text(nameX, py, 10, bold: false, Trunc(file, 58));
-          c.Text(520, py, 10, bold: false, qty.ToString("#,0", CultureInfo.InvariantCulture));
-          c.Line(40, py - 5, 572, py - 5, 0.3);
-          py -= 17;
-          totalsShown++;
-        }
-
-        if (totalsShown < partTotals.Count)
-        {
-          c.Text(48, System.Math.Max(py, 32), 10, bold: false, $"... and {partTotals.Count - totalsShown} more");
-        }
-
-        Footer(c, 1, pageCount);
-        pdf.AddPage(c);
-      }
-
-      // ── One page per distinct layout ────────────────────────────────────────────────────────
       for (int i = 0; i < layouts.Count; i++)
       {
         var (sp, count, _) = layouts[i];
         double sheetW = sp.Sheet.WidthCalculated;
         double sheetH = sp.Sheet.HeightCalculated;
         var c = new PageContent();
-        Header(c, stamp);
 
-        c.Text(40, 700, 16, bold: true, $"Layout {i + 1} of {layouts.Count}   -   cut x {count}");
-        c.Text(40, 680, 11, bold: false,
-          $"{sp.PartPlacements.Count} parts   |   {Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}% utilization   |   sheet {Num(sheetW)} x {Num(sheetH)} {units}");
+        // SETTING INFORMATION: what the job and its sheet are, then what cutting this layout amounts to.
+        double y = 560;
+        Heading(c, left, y, size, "SETTING INFORMATION");
+        y -= 22;
+        void Setting(string label, string value)
+        {
+          c.Text(left, y, size, bold: false, $"{label,-labelWidth} : {value}");
+          y -= leading;
+        }
 
-        // Drawing area (top, full portrait width) — sheet border + every part outline with its
-        // holes, Y up like the shop; centered both ways inside the box.
-        const double boxX = 40, boxY = 250, boxW = 532, boxH = 410;
+        Setting("DRAWING NAME", drawingName);
+        Setting("LAYOUT", $"{i + 1} of {layouts.Count}");
+        Setting("DATE", date);
+        Setting("SHEET SIZE", $"{Num(sheetW)} x {Num(sheetH)} {units}");
+        y -= leading;
+        Setting("SHEET UTILIZATION", $"{Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}%");
+        Setting("NUMBER OF SHEETS", count.ToString(CultureInfo.InvariantCulture));
+        if (unplacedCount > 0)
+        {
+          // On every page, because any one of them may be the only one somebody reads.
+          Setting("PARTS NOT PLACED", unplacedCount.ToString(CultureInfo.InvariantCulture));
+        }
+
+        // NEST PARTS LIST: this layout's parts, numbered from 1 down the list. Num Off is what ONE sheet
+        // yields; NUMBER OF SHEETS above says how many times over.
+        var parts = NumberedParts(sp);
+        double py = 420;
+        Heading(c, left, py, size, "NEST PARTS LIST");
+        py -= 22;
+        c.Text(left, py, size, bold: false, $"{"Item",4} {"Part Name",-nameWidth} {"Num Off",7}");
+        py -= leading;
+
+        // Rows down to the bottom margin; a list too long for that gives its last line to saying so.
+        int fits = (int)((py - bottom) / leading) + 1;
+        int shown = parts.Count <= fits ? parts.Count : fits - 1;
+        foreach (var (file, qty, number) in parts.Take(shown))
+        {
+          c.Text(left, py, size, bold: false, $"{number,4} {Trunc(file, nameWidth),-nameWidth} {qty,7}");
+          py -= leading;
+        }
+
+        if (shown < parts.Count)
+        {
+          c.Text(left, py, size, bold: false, $"     ... and {parts.Count - shown} more");
+        }
+
+        // The sheet to scale, standing on the bottom margin and centred across the drawing's room: a wide
+        // sheet lands low on the right, and a tall one gets the full height of the page.
         double scale = Math.Min(boxW / sheetW, boxH / sheetH);
         double ox = boxX + ((boxW - (sheetW * scale)) / 2.0);
-        double oy = boxY + ((boxH - (sheetH * scale)) / 2.0);
+        double oy = bottom;
 
         c.Rect(ox, oy, sheetW * scale, sheetH * scale, 0.9);
         foreach (var pp in sp.PartPlacements)
@@ -228,8 +141,9 @@ namespace DeepNestSharp.Reports
         }
 
         // Part numbers, in a SECOND pass on purpose: every outline goes down first, so a neighbour's
-        // line drawn later can never cross a digit already placed. Same numbers as the tables, so a shape
-        // on the sheet can be matched to a row and marked.
+        // line drawn later can never cross a digit already placed. Same numbers as the parts list, so a
+        // shape on the sheet can be matched to a row and marked.
+        var partNumbers = parts.ToDictionary(t => t.File, t => t.Number, StringComparer.OrdinalIgnoreCase);
         foreach (var pp in sp.PartPlacements)
         {
           var poly = pp.PlacedPart;
@@ -245,57 +159,17 @@ namespace DeepNestSharp.Reports
           c.Text(nx, ny, nsize, bold: true, numberText);
         }
 
-        // Parts on this layout (below the drawing, portrait flow). Mirrored copies list separately.
-        var onSheet = sp.PartPlacements
-          .GroupBy(p => Label(p), StringComparer.OrdinalIgnoreCase)
-          .Select(g => (File: g.Key, Qty: g.Count()))
-          .OrderByDescending(t => t.Qty)
-          .ToList();
-
-        double py = 204;
-        c.Text(40, 222, 12, bold: true, "Parts on this layout");
-        int listShown = 0;
-        foreach (var (file, qty) in onSheet)
-        {
-          if (py < 40)
-          {
-            break;
-          }
-
-          // Same number as page 1 and as the drawing above it: this is the legend the operator reads
-          // while the sheet is in front of them.
-          if (partNumbers.TryGetValue(file, out int number))
-          {
-            c.Text(40, py, 10, bold: true, number.ToString(CultureInfo.InvariantCulture));
-          }
-
-          c.Text(62, py, 10, bold: false, $"{qty} x  {Trunc(file, 58)}");
-          py -= 15;
-          listShown++;
-        }
-
-        if (listShown < onSheet.Count)
-        {
-          c.Text(40, System.Math.Max(py, 32), 10, bold: false, $"... and {onSheet.Count - listShown} more");
-        }
-
-        Footer(c, i + 2, pageCount);
         pdf.AddPage(c);
       }
 
       File.WriteAllBytes(path, pdf.Build());
     }
 
-    private static void Header(PageContent c, string stamp)
+    /// <summary>A section title, underlined across its own text.</summary>
+    private static void Heading(PageContent c, double x, double y, double size, string title)
     {
-      c.Text(40, 752, 18, bold: true, "SheetNest - Nest Report");
-      c.Text(478, 755, 10, bold: false, stamp);
-      c.Line(40, 742, 572, 742, 1.0);
-    }
-
-    private static void Footer(PageContent c, int page, int of)
-    {
-      c.Text(280, 24, 9, bold: false, $"Page {page} of {of}");
+      c.Text(x, y, size, bold: false, title);
+      c.Line(x, y - 3, x + (0.6 * size * title.Length), y - 3, 0.6);
     }
 
     private static double Util(ISheetPlacement sp)
@@ -320,30 +194,58 @@ namespace DeepNestSharp.Reports
     private static string Label(IPartPlacement p) => PartColors.LabelFor(p);
 
     /// <summary>
-    /// One row per distinct part in the job, in the order the tables show them (biggest quantity
-    /// first), each carrying the number that identifies it on every sheet drawing.
+    /// One row per distinct part on ONE layout, in the order its parts list prints them, each carrying
+    /// the number that marks it on that layout's drawing.
     /// <para>
-    /// The numbers are handed out ONCE over the whole job, never per page: the same part has to carry
-    /// the same number on layout 1 and on layout 4, or the operator cannot mark anything by it. A
-    /// mirrored copy is its own row and so its own number, because it is the other hand and takes a
-    /// different mark.
+    /// Numbered from 1 on every page, the way a nest sheet numbers its items: the list a number is read
+    /// against sits on the same page as the drawing it was read off. Qty is what one sheet of the layout
+    /// yields. A mirrored copy is its own row and so its own number, because it is the other hand and
+    /// takes a different mark.
     /// </para>
     /// </summary>
-    internal static List<(string File, int Qty, int Number)> NumberedPartTotals(
-      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts)
+    internal static List<(string File, int Qty, int Number)> NumberedParts(ISheetPlacement sheet)
     {
-      if (layouts == null || layouts.Count == 0)
-      {
-        return new List<(string, int, int)>();
-      }
-
-      return layouts
-        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: Label(p), l.Count)))
-        .GroupBy(t => t.File, StringComparer.OrdinalIgnoreCase)
-        .Select(g => (File: g.Key, Qty: g.Sum(t => t.Count)))
-        .OrderByDescending(t => t.Qty)
+      return sheet.PartPlacements
+        .GroupBy(p => Label(p), StringComparer.OrdinalIgnoreCase)
+        .Select(g => (File: g.Key, Qty: g.Count()))
+        .OrderBy(t => t.File, Comparer<string>.Create(NaturalCompare))
         .Select((t, i) => (t.File, t.Qty, Number: i + 1))
         .ToList();
+    }
+
+    /// <summary>
+    /// Orders names the way a file listing does, so p9 comes before p88 and p88 before p103: runs of
+    /// digits compare as numbers, the text between them ignoring case. Plain text order would put p103
+    /// first.
+    /// </summary>
+    private static int NaturalCompare(string a, string b)
+    {
+      // Split keeps the digit runs because they are captured, so both arrays alternate text and digits,
+      // text first even when it is empty.
+      string[] x = Regex.Split(a ?? string.Empty, @"(\d+)");
+      string[] y = Regex.Split(b ?? string.Empty, @"(\d+)");
+      for (int i = 0; i < Math.Min(x.Length, y.Length); i++)
+      {
+        int order;
+        if (i % 2 == 0)
+        {
+          order = string.Compare(x[i], y[i], StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+          // Numbers of any length: without their leading zeros, the longer run is the bigger number.
+          string m = x[i].TrimStart('0');
+          string n = y[i].TrimStart('0');
+          order = m.Length != n.Length ? m.Length.CompareTo(n.Length) : string.CompareOrdinal(m, n);
+        }
+
+        if (order != 0)
+        {
+          return order;
+        }
+      }
+
+      return x.Length.CompareTo(y.Length);
     }
 
     /// <summary>
@@ -392,12 +294,13 @@ namespace DeepNestSharp.Reports
         }
       }
 
-      // Helvetica advances a digit by 0.556 em and stands a cap 0.717 em tall. Text() draws from the
-      // baseline, left aligned, and this writer cannot measure a string, so centring is arithmetic.
-      double width = 0.556 * size * Math.Max(1, text?.Length ?? 1);
+      // Courier-Bold advances every glyph by 0.6 em and stands its digits 0.616 em tall (Adobe's metrics
+      // for the font). Text() draws from the baseline, left aligned, and this writer cannot measure a
+      // string, so centring is arithmetic.
+      double width = 0.6 * size * Math.Max(1, text?.Length ?? 1);
       return (
         ox + (cx * scale) - (width / 2.0),
-        oy + (cy * scale) - (0.717 * size / 2.0),
+        oy + (cy * scale) - (0.616 * size / 2.0),
         size);
     }
 
@@ -605,17 +508,6 @@ namespace DeepNestSharp.Reports
     {
       private readonly StringBuilder sb = new StringBuilder();
 
-      public void SetFill(double r, double g, double b)
-      {
-        this.sb.AppendLine(FormattableString.Invariant($"{r:0.###} {g:0.###} {b:0.###} rg"));
-      }
-
-      public void FillRect(double x, double y, double w, double h, double r, double g, double b)
-      {
-        this.sb.AppendLine(FormattableString.Invariant(
-          $"{r:0.###} {g:0.###} {b:0.###} rg {x:0.##} {y:0.##} {w:0.##} {h:0.##} re f 0 0 0 rg"));
-      }
-
       public void Text(double x, double y, double size, bool bold, string text)
       {
         this.sb.AppendLine(FormattableString.Invariant(
@@ -671,8 +563,8 @@ namespace DeepNestSharp.Reports
     }
 
     /// <summary>
-    /// Minimal PDF assembler: fixed Letter-portrait pages, Helvetica + Helvetica-Bold (standard-14
-    /// fonts every viewer ships — nothing embedded), uncompressed content streams, exact xref.
+    /// Minimal PDF assembler: fixed Letter-landscape pages, Courier + Courier-Bold (standard-14 fonts
+    /// every viewer ships, so nothing is embedded), uncompressed content streams, exact xref.
     /// </summary>
     private sealed class MiniPdf
     {
@@ -691,8 +583,8 @@ namespace DeepNestSharp.Reports
         {
           Latin1("<< /Type /Catalog /Pages 2 0 R >>"),
           Latin1($"<< /Type /Pages /Count {n} /Kids [{string.Join(" ", Enumerable.Range(0, n).Select(i => $"{6 + (2 * i)} 0 R"))}] >>"),
-          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"),
-          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"),
+          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>"),
+          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>"),
         };
 
         foreach (var stream in this.pageStreams)

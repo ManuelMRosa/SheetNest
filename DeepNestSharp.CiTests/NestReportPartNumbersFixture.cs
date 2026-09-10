@@ -12,64 +12,30 @@
   using Xunit;
 
   /// <summary>
-  /// The report numbers every distinct part from 1 and prints that number on each of its copies in the
-  /// sheet drawing, so an operator can read a number off a cut piece and find its row. The number is
-  /// therefore only worth anything if it means the SAME part everywhere it appears.
+  /// Each layout page numbers its parts from 1 and prints that number on each of their copies in the
+  /// sheet drawing, so an operator can read a number off the drawing and find its row in the list on the
+  /// same page. The number is therefore only worth anything if it means the SAME part everywhere it
+  /// appears on that page.
+  /// <para>
+  /// That a second layout starts again from 1, and that Num Off counts one sheet, is checked on the
+  /// printed bytes in <see cref="NestReportLayoutFixture"/>.
+  /// </para>
   /// </summary>
   public class NestReportPartNumbersFixture
   {
-    [Fact]
-    public void NumbersRunFromOneAndFollowTheOrderTheTableIsPrintedIn()
-    {
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (SheetOf(("few.dxf", 1), ("many.dxf", 3), ("some.dxf", 2)), 1, "A"),
-      };
-
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
-
-      totals.Select(t => t.Number).Should().Equal(new[] { 1, 2, 3 }, "the table reads 1, 2, 3 down the page");
-      totals.Select(t => t.File).Should().Equal(
-        new[] { "many.dxf", "some.dxf", "few.dxf" },
-        "the rows stay ordered by quantity, so the numbers follow that order");
-      totals.Select(t => t.Qty).Should().Equal(new[] { 3, 2, 1 });
-    }
-
     /// <summary>
-    /// The one that makes the feature work. A part cut on two different layouts is one part with one
-    /// mark; numbering each page on its own would print a 1 on layout A and a 2 on layout B for the
-    /// same drawing, and every mark made from the report would be wrong.
+    /// Names in natural order, the way a file listing shows them. These three separate it from both
+    /// orders it could be mistaken for: plain text order puts p103 first, and largest quantity first,
+    /// which the report used before, puts p88 first.
     /// </summary>
     [Fact]
-    public void APartOnTwoLayoutsGetsOneNumberAndItsQuantityAddsUp()
+    public void NumbersRunFromOneInNaturalNameOrder()
     {
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (SheetOf(("bracket.dxf", 2)), 1, "A"),
-        (SheetOf(("bracket.dxf", 1), ("plate.dxf", 1)), 1, "B"),
-      };
+      var parts = NestReportPdf.NumberedParts(SheetOf(("p103.dxf", 1), ("p88.dxf", 3), ("p9.dxf", 2)));
 
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
-
-      totals.Should().HaveCount(2, "two drawings, whatever they are spread across");
-      var bracket = totals.Single(t => t.File == "bracket.dxf");
-      bracket.Number.Should().Be(1);
-      bracket.Qty.Should().Be(3, "two on the first layout and one on the second");
-    }
-
-    /// <summary>A layout cut several times produces its parts several times over.</summary>
-    [Fact]
-    public void CuttingALayoutMoreThanOnceMultipliesTheQuantityButNotTheNumbers()
-    {
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (SheetOf(("bracket.dxf", 2)), 5, "A"),
-      };
-
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
-
-      totals.Should().ContainSingle().Which.Qty.Should().Be(10);
-      totals[0].Number.Should().Be(1);
+      parts.Select(t => t.File).Should().Equal(new[] { "p9.dxf", "p88.dxf", "p103.dxf" });
+      parts.Select(t => t.Number).Should().Equal(new[] { 1, 2, 3 }, "the list reads 1, 2, 3 down the page");
+      parts.Select(t => t.Qty).Should().Equal(new[] { 2, 3, 1 });
     }
 
     /// <summary>
@@ -85,16 +51,12 @@
         Part("bracket.dxf", 20, 0),
         Mirrored(Part("bracket.dxf", 40, 0)),
       };
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (Sheet(placements), 1, "A"),
-      };
 
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
+      var parts = NestReportPdf.NumberedParts(Sheet(placements));
 
-      totals.Should().HaveCount(2);
-      totals.Select(t => t.File).Should().BeEquivalentTo(new[] { "bracket.dxf", "bracket.dxf (mirrored)" });
-      totals.Select(t => t.Number).Should().Equal(new[] { 1, 2 });
+      parts.Select(t => t.File).Should().Equal(new[] { "bracket.dxf", "bracket.dxf (mirrored)" });
+      parts.Select(t => t.Number).Should().Equal(new[] { 1, 2 });
+      parts.Select(t => t.Qty).Should().Equal(new[] { 2, 1 });
     }
 
     /// <summary>
@@ -110,8 +72,8 @@
       var (x, y, size) = NestReportPdf.NumberLabel(shape, "7", ox: 0, oy: 0, scale: 1);
 
       // Recover the centre the label was built around: Text() is given the baseline's left end.
-      double centreX = x + (0.556 * size * "7".Length / 2.0);
-      double centreY = y + (0.717 * size / 2.0);
+      double centreX = x + (0.6 * size * "7".Length / 2.0);
+      double centreY = y + (0.616 * size / 2.0);
 
       Inside(shape, centreX, centreY).Should().BeTrue("the number belongs on the part it names");
       Inside(shape, 5, 5).Should().BeFalse("and the bounding-box centre, which is what this replaces, is not");
@@ -200,8 +162,8 @@
         0.15,
         "the number is sized to the 20 wide band's roomiest corner, not to the 100 wide plate");
 
-      double right = x + (0.556 * size);
-      double top = y + (0.717 * size);
+      double right = x + (0.6 * size);
+      double top = y + (0.616 * size);
       foreach (var (cx, cy) in new[] { (x, y), (right, y), (x, top), (right, top) })
       {
         Inside(plate, cx, cy).Should().BeTrue("every corner of the number sits on the plate");
@@ -224,8 +186,8 @@
       var (x, y, size) = NestReportPdf.NumberLabel(plate, "7", ox: 0, oy: 0, scale: 1);
 
       size.Should().BeApproximately(12.0, 1e-9, "0.42 of the 100 side, clamped at the ceiling");
-      x.Should().BeApproximately(50.0 - (0.556 * 12.0 / 2.0), 1e-9);
-      y.Should().BeApproximately(50.0 - (0.717 * 12.0 / 2.0), 1e-9);
+      x.Should().BeApproximately(50.0 - (0.6 * 12.0 / 2.0), 1e-9);
+      y.Should().BeApproximately(50.0 - (0.616 * 12.0 / 2.0), 1e-9);
     }
 
     /// <summary>
@@ -273,7 +235,7 @@
         Occurrences(pdf, "/F2 4 Tf").Should().Be(
           6,
           "four parts drawn on the first layout page and two on the second, each with its number");
-        pdf.Should().Contain("(No.) Tj", "the table needs the column the drawing refers to");
+        pdf.Should().MatchRegex(@"\(Item Part Name +Num Off\) Tj", "the table needs the column the drawing refers to");
         pdf.Should().Contain("(1) Tj").And.Contain("(2) Tj");
       }
       finally
@@ -315,7 +277,7 @@
     private static (double X, double Y, double Size) LabelCentre(INfp shape, string text)
     {
       var (x, y, size) = NestReportPdf.NumberLabel(shape, text, ox: 0, oy: 0, scale: 1);
-      return (x + (0.556 * size * text.Length / 2.0), y + (0.717 * size / 2.0), size);
+      return (x + (0.6 * size * text.Length / 2.0), y + (0.616 * size / 2.0), size);
     }
 
     /// <summary>A circle as the DXF reader delivers one: 60 points, its 6 degree tessellation floor.</summary>
