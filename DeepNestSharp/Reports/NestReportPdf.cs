@@ -7,6 +7,8 @@ namespace DeepNestSharp.Reports
   using System.Linq;
   using System.Text;
   using System.Text.RegularExpressions;
+  using System.Windows;
+  using System.Windows.Media;
   using DeepNestLib;
   using DeepNestLib.Placement;
 
@@ -16,11 +18,45 @@ namespace DeepNestSharp.Reports
   /// below them and the sheet drawn to scale on the right, every part numbered to its row.
   /// Self-contained minimal PDF writer (vector lines + Courier text is all a report needs): no external
   /// PDF library, nothing to license.
+  /// <para>
+  /// The same page is also painted on screen, by <see cref="RenderPage"/>, laid out by the same
+  /// <see cref="DrawPage"/>: identical to the paper except that it has no paper, so the sheet is the only white
+  /// thing on it.
+  /// </para>
   /// </summary>
   public static class NestReportPdf
   {
+    internal const string SettingHeading = "SETTING INFORMATION";
+    internal const string PartsHeading = "NEST PARTS LIST";
+
     private const double PageW = 792; // US Letter landscape, points
     private const double PageH = 612;
+
+    // The sheet drawing owns the right of the page, bottom margin to top margin. The text column ends
+    // before it: a parts row is 4 + 1 + 40 + 1 + 7 = 53 characters, 318 points from the left margin.
+    private const double BoxX = 384;
+    private const double BoxW = 372;
+    private const double BoxH = 528;
+    private const int LabelWidth = 17; // "SHEET UTILIZATION", the longest label
+    private const int NameWidth = 40;
+
+    /// <summary>The parts list's column heading, padded to line up with <see cref="PartRows"/>.</summary>
+    internal static readonly string PartListHeader = $"{"Item",4} {"Part Name",-NameWidth} {"Num Off",7}";
+
+    /// <summary>
+    /// The four things a report page is drawn with. The PDF writes them into a content stream and the screen
+    /// paints them; both are driven by <see cref="DrawPage"/>, so the two cannot drift apart.
+    /// </summary>
+    private interface IPageCanvas
+    {
+      void Text(double x, double y, double size, bool bold, string text);
+
+      void Line(double x1, double y1, double x2, double y2, double width);
+
+      void Rect(double x, double y, double w, double h, double lineWidth);
+
+      void Polygon(IEnumerable<(double X, double Y)> pts);
+    }
 
     /// <summary>
     /// Writes the report. It prints in black and white only: greys survive any shop printer, and parts
@@ -36,137 +72,233 @@ namespace DeepNestSharp.Reports
       IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
       int unplacedCount,
       string units = "in")
+      => Write(path, layouts, unplacedCount, units, DateTime.Now);
+
+    /// <summary>As the public overload, stamped with a given time instead of now, so a test can compare whole
+    /// pages.</summary>
+    internal static void Write(
+      string path,
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int unplacedCount,
+      string units,
+      DateTime now)
     {
       if (layouts == null || layouts.Count == 0)
       {
         throw new InvalidOperationException("Nothing to report. Run a nest first.");
       }
 
-      // Courier advances every character by 0.6 em, so at 10 points each column is a count of 6 point
-      // steps and a line padded with spaces lines up under the one above without measuring anything.
-      const double size = 10;
-      const double leading = 12;
-      const double left = 36;
-      const double bottom = 48;
-      const int labelWidth = 17; // "SHEET UTILIZATION", the longest label
-      const int nameWidth = 40;
-
-      // The sheet drawing owns the right of the page, bottom margin to top margin. The text column ends
-      // before it: a parts row is 4 + 1 + 40 + 1 + 7 = 53 characters, 318 points from the left margin.
-      const double boxX = 384, boxW = 372, boxH = 528;
-
-      string drawingName = Trunc(Path.GetFileNameWithoutExtension(path), 35);
-      string date = DateTime.Now.ToString("ddd MMM dd HH:mm:ss yyyy", CultureInfo.InvariantCulture);
-
+      string drawingName = Path.GetFileNameWithoutExtension(path);
       var pdf = new MiniPdf();
       for (int i = 0; i < layouts.Count; i++)
       {
-        var (sp, count, _) = layouts[i];
-        double sheetW = sp.Sheet.WidthCalculated;
-        double sheetH = sp.Sheet.HeightCalculated;
         var c = new PageContent();
-
-        // SETTING INFORMATION: what the job and its sheet are, then what cutting this layout amounts to.
-        double y = 560;
-        Heading(c, left, y, size, "SETTING INFORMATION");
-        y -= 22;
-        void Setting(string label, string value)
-        {
-          c.Text(left, y, size, bold: false, $"{label,-labelWidth} : {value}");
-          y -= leading;
-        }
-
-        Setting("DRAWING NAME", drawingName);
-        Setting("LAYOUT", $"{i + 1} of {layouts.Count}");
-        Setting("DATE", date);
-        Setting("SHEET SIZE", $"{Num(sheetW)} x {Num(sheetH)} {units}");
-        y -= leading;
-        Setting("SHEET UTILIZATION", $"{Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}%");
-        Setting("NUMBER OF SHEETS", count.ToString(CultureInfo.InvariantCulture));
-        if (unplacedCount > 0)
-        {
-          // On every page, because any one of them may be the only one somebody reads.
-          Setting("PARTS NOT PLACED", unplacedCount.ToString(CultureInfo.InvariantCulture));
-        }
-
-        // NEST PARTS LIST: this layout's parts, numbered from 1 down the list. Num Off is what ONE sheet
-        // yields; NUMBER OF SHEETS above says how many times over.
-        var parts = NumberedParts(sp);
-        double py = 420;
-        Heading(c, left, py, size, "NEST PARTS LIST");
-        py -= 22;
-        c.Text(left, py, size, bold: false, $"{"Item",4} {"Part Name",-nameWidth} {"Num Off",7}");
-        py -= leading;
-
-        // Rows down to the bottom margin; a list too long for that gives its last line to saying so.
-        int fits = (int)((py - bottom) / leading) + 1;
-        int shown = parts.Count <= fits ? parts.Count : fits - 1;
-        foreach (var (file, qty, number) in parts.Take(shown))
-        {
-          c.Text(left, py, size, bold: false, $"{number,4} {Trunc(file, nameWidth),-nameWidth} {qty,7}");
-          py -= leading;
-        }
-
-        if (shown < parts.Count)
-        {
-          c.Text(left, py, size, bold: false, $"     ... and {parts.Count - shown} more");
-        }
-
-        // The sheet to scale, standing on the bottom margin and centred across the drawing's room: a wide
-        // sheet lands low on the right, and a tall one gets the full height of the page.
-        double scale = Math.Min(boxW / sheetW, boxH / sheetH);
-        double ox = boxX + ((boxW - (sheetW * scale)) / 2.0);
-        double oy = bottom;
-
-        c.Rect(ox, oy, sheetW * scale, sheetH * scale, 0.9);
-        foreach (var pp in sp.PartPlacements)
-        {
-          var poly = pp.PlacedPart;
-          if (poly?.Points == null || poly.Points.Length < 3)
-          {
-            continue;
-          }
-
-          c.Polygon(poly.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))));
-          if (poly.Children != null)
-          {
-            foreach (var hole in poly.Children)
-            {
-              if (hole?.Points != null && hole.Points.Length >= 3)
-              {
-                c.Polygon(hole.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))));
-              }
-            }
-          }
-        }
-
-        // Part numbers, in a SECOND pass on purpose: every outline goes down first, so a neighbour's
-        // line drawn later can never cross a digit already placed. Same numbers as the parts list, so a
-        // shape on the sheet can be matched to a row and marked.
-        var partNumbers = parts.ToDictionary(t => t.File, t => t.Number, StringComparer.OrdinalIgnoreCase);
-        foreach (var pp in sp.PartPlacements)
-        {
-          var poly = pp.PlacedPart;
-          if (poly?.Points == null
-            || poly.Points.Length < 3
-            || !partNumbers.TryGetValue(Label(pp), out int number))
-          {
-            continue;
-          }
-
-          string numberText = number.ToString(CultureInfo.InvariantCulture);
-          var (nx, ny, nsize) = NumberLabel(poly, numberText, ox, oy, scale);
-          c.Text(nx, ny, nsize, bold: true, numberText);
-        }
-
+        DrawPage(c, layouts, i, drawingName, now, unplacedCount, units);
         pdf.AddPage(c);
       }
 
       File.WriteAllBytes(path, pdf.Build());
     }
 
+    /// <summary>
+    /// One page of the report for the screen: the page the PDF prints for that layout, laid out by the same
+    /// <see cref="DrawPage"/> in the PDF's own points (792 by 612), but without the paper. It is meant to lie on
+    /// the viewer's grey, where the sheet is the only white thing on it. Frozen.
+    /// </summary>
+    public static DrawingImage RenderPage(
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int index,
+      string drawingName,
+      int unplacedCount,
+      string units = "in")
+      => RenderPage(layouts, index, drawingName, unplacedCount, units, DateTime.Now);
+
+    /// <summary>As the public overload, stamped with a given time instead of now, so a test can compare whole
+    /// pages.</summary>
+    internal static DrawingImage RenderPage(
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int index,
+      string drawingName,
+      int unplacedCount,
+      string units,
+      DateTime now)
+    {
+      if (layouts == null || layouts.Count == 0)
+      {
+        throw new InvalidOperationException("Nothing to report. Run a nest first.");
+      }
+
+      var page = new WpfPage();
+      DrawPage(page, layouts, index, drawingName, now, unplacedCount, units);
+      var image = new DrawingImage(page.Finish());
+      image.Freeze();
+      return image;
+    }
+
+    /// <summary>
+    /// The settings of one layout's page, in the two groups the page prints them in: what the job and its
+    /// sheet are, then what cutting this layout amounts to. Each line is a label and its value, padded so the
+    /// colons line up.
+    /// </summary>
+    internal static (List<string> Job, List<string> Cut) SettingLines(
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int index,
+      string drawingName,
+      DateTime now,
+      int unplacedCount,
+      string units)
+    {
+      var (sp, count, _) = layouts[index];
+      string Setting(string label, string value) => $"{label,-LabelWidth} : {value}";
+
+      var job = new List<string>
+      {
+        Setting("DRAWING NAME", Trunc(drawingName, 35)),
+        Setting("LAYOUT", $"{index + 1} of {layouts.Count}"),
+        Setting("DATE", now.ToString("ddd MMM dd HH:mm:ss yyyy", CultureInfo.InvariantCulture)),
+        Setting("SHEET SIZE", $"{Num(sp.Sheet.WidthCalculated)} x {Num(sp.Sheet.HeightCalculated)} {units}"),
+      };
+
+      var cut = new List<string>
+      {
+        Setting("SHEET UTILIZATION", $"{Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}%"),
+        Setting("NUMBER OF SHEETS", count.ToString(CultureInfo.InvariantCulture)),
+      };
+
+      if (unplacedCount > 0)
+      {
+        // On every page, because any one of them may be the only one somebody reads.
+        cut.Add(Setting("PARTS NOT PLACED", unplacedCount.ToString(CultureInfo.InvariantCulture)));
+      }
+
+      return (job, cut);
+    }
+
+    /// <summary>
+    /// The parts list of one layout, one row per distinct part under <see cref="PartListHeader"/>: its item
+    /// number, its name and what one sheet yields. Every row; the page decides how many it has room for.
+    /// </summary>
+    internal static List<string> PartRows(ISheetPlacement sheet)
+      => NumberedParts(sheet)
+        .Select(t => $"{t.Number,4} {Trunc(t.File, NameWidth),-NameWidth} {t.Qty,7}")
+        .ToList();
+
+    /// <summary>Points per sheet unit that the page draws this sheet at: as big as the drawing's room allows
+    /// in both directions.</summary>
+    internal static double DrawingScale(double sheetW, double sheetH) => Math.Min(BoxW / sheetW, BoxH / sheetH);
+
+    /// <summary>Lays out the page of one layout, for whichever canvas is given: the PDF or the screen.</summary>
+    private static void DrawPage(
+      IPageCanvas c,
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int index,
+      string drawingName,
+      DateTime now,
+      int unplacedCount,
+      string units)
+    {
+      // Courier advances every character by 0.6 em, so at 10 points each column is a count of 6 point
+      // steps and a line padded with spaces lines up under the one above without measuring anything.
+      const double size = 10;
+      const double leading = 12;
+      const double left = 36;
+      const double bottom = 48;
+
+      var sp = layouts[index].Sheet;
+      double sheetW = sp.Sheet.WidthCalculated;
+      double sheetH = sp.Sheet.HeightCalculated;
+
+      // SETTING INFORMATION: what the job and its sheet are, then what cutting this layout amounts to.
+      var (job, cut) = SettingLines(layouts, index, drawingName, now, unplacedCount, units);
+      double y = 560;
+      Heading(c, left, y, size, SettingHeading);
+      y -= 22;
+      foreach (string line in job)
+      {
+        c.Text(left, y, size, bold: false, line);
+        y -= leading;
+      }
+
+      y -= leading;
+      foreach (string line in cut)
+      {
+        c.Text(left, y, size, bold: false, line);
+        y -= leading;
+      }
+
+      // NEST PARTS LIST: this layout's parts, numbered from 1 down the list. Num Off is what ONE sheet
+      // yields; NUMBER OF SHEETS above says how many times over.
+      var rows = PartRows(sp);
+      double py = 420;
+      Heading(c, left, py, size, PartsHeading);
+      py -= 22;
+      c.Text(left, py, size, bold: false, PartListHeader);
+      py -= leading;
+
+      // Rows down to the bottom margin; a list too long for that gives its last line to saying so.
+      int fits = (int)((py - bottom) / leading) + 1;
+      int shown = rows.Count <= fits ? rows.Count : fits - 1;
+      foreach (string row in rows.Take(shown))
+      {
+        c.Text(left, py, size, bold: false, row);
+        py -= leading;
+      }
+
+      if (shown < rows.Count)
+      {
+        c.Text(left, py, size, bold: false, $"     ... and {rows.Count - shown} more");
+      }
+
+      // The sheet to scale, standing on the bottom margin and centred across the drawing's room: a wide
+      // sheet lands low on the right, and a tall one gets the full height of the page.
+      double scale = DrawingScale(sheetW, sheetH);
+      double ox = BoxX + ((BoxW - (sheetW * scale)) / 2.0);
+      double oy = bottom;
+
+      c.Rect(ox, oy, sheetW * scale, sheetH * scale, 0.9);
+      foreach (var pp in sp.PartPlacements)
+      {
+        var poly = pp.PlacedPart;
+        if (poly?.Points == null || poly.Points.Length < 3)
+        {
+          continue;
+        }
+
+        c.Polygon(poly.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))));
+        if (poly.Children != null)
+        {
+          foreach (var hole in poly.Children)
+          {
+            if (hole?.Points != null && hole.Points.Length >= 3)
+            {
+              c.Polygon(hole.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))));
+            }
+          }
+        }
+      }
+
+      // Part numbers, in a SECOND pass on purpose: every outline goes down first, so a neighbour's
+      // line drawn later can never cross a digit already placed. Same numbers as the parts list, so a
+      // shape on the sheet can be matched to a row and marked.
+      var partNumbers = NumberedParts(sp).ToDictionary(t => t.File, t => t.Number, StringComparer.OrdinalIgnoreCase);
+      foreach (var pp in sp.PartPlacements)
+      {
+        var poly = pp.PlacedPart;
+        if (poly?.Points == null
+          || poly.Points.Length < 3
+          || !partNumbers.TryGetValue(Label(pp), out int number))
+        {
+          continue;
+        }
+
+        string numberText = number.ToString(CultureInfo.InvariantCulture);
+        var (nx, ny, nsize) = NumberLabel(poly, numberText, ox, oy, scale);
+        c.Text(nx, ny, nsize, bold: true, numberText);
+      }
+    }
+
     /// <summary>A section title, underlined across its own text.</summary>
-    private static void Heading(PageContent c, double x, double y, double size, string title)
+    private static void Heading(IPageCanvas c, double x, double y, double size, string title)
     {
       c.Text(x, y, size, bold: false, title);
       c.Line(x, y - 3, x + (0.6 * size * title.Length), y - 3, 0.6);
@@ -504,7 +636,7 @@ namespace DeepNestSharp.Reports
     private static string Num(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
 
     /// <summary>One page's content stream: text, lines, rectangles and polygon outlines.</summary>
-    private sealed class PageContent
+    private sealed class PageContent : IPageCanvas
     {
       private readonly StringBuilder sb = new StringBuilder();
 
@@ -559,6 +691,86 @@ namespace DeepNestSharp.Reports
       private static string Escape(string s)
       {
         return s.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
+      }
+    }
+
+    /// <summary>
+    /// A page painted for the screen, in the PDF's own coordinates: points, origin at the bottom left, Y up.
+    /// WPF draws Y down, so every point is flipped against the page height, and text is set on its baseline,
+    /// which is where the PDF puts it. The inks and line widths are the PDF's; Courier New stands in for the
+    /// PDF's Courier and shares its 0.6 em advance, so the padded columns line up the same.
+    /// <para>
+    /// There is no paper. The page lies on the viewer's grey and only the sheet is filled, in white, so the
+    /// nest is the one white thing on screen.
+    /// </para>
+    /// </summary>
+    private sealed class WpfPage : IPageCanvas
+    {
+      // The PDF strokes lines in 0.35 grey and the sheet border and outlines in 0.15 grey.
+      private static readonly Brush LineInk = Frozen(new SolidColorBrush(Color.FromRgb(0x59, 0x59, 0x59)));
+      private static readonly Brush OutlineInk = Frozen(new SolidColorBrush(Color.FromRgb(0x26, 0x26, 0x26)));
+      private static readonly Typeface Regular = new Typeface(new FontFamily("Courier New"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+      private static readonly Typeface Bold = new Typeface(new FontFamily("Courier New"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+
+      private readonly DrawingGroup drawing = new DrawingGroup();
+      private readonly DrawingContext dc;
+
+      public WpfPage()
+      {
+        this.dc = this.drawing.Open();
+
+        // No paper, but the page is still marked out, invisibly: a drawing is only as big as what is in it, and
+        // without this the image would shrink to its contents and nothing would sit where the PDF puts it.
+        this.dc.DrawRectangle(Brushes.Transparent, null, new System.Windows.Rect(0, 0, PageW, PageH));
+      }
+
+      public void Text(double x, double y, double size, bool bold, string text)
+      {
+        var formatted = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, bold ? Bold : Regular, size, Brushes.Black, 1.0);
+        this.dc.DrawText(formatted, new Point(x, PageH - y - formatted.Baseline));
+      }
+
+      public void Line(double x1, double y1, double x2, double y2, double width)
+      {
+        this.dc.DrawLine(new Pen(LineInk, width), new Point(x1, PageH - y1), new Point(x2, PageH - y2));
+      }
+
+      /// <summary>The sheet: the one thing on the page that is filled, and filled white.</summary>
+      public void Rect(double x, double y, double w, double h, double lineWidth)
+      {
+        this.dc.DrawRectangle(Brushes.White, new Pen(OutlineInk, lineWidth), new System.Windows.Rect(x, PageH - y - h, w, h));
+      }
+
+      public void Polygon(IEnumerable<(double X, double Y)> pts)
+      {
+        var points = pts.Select(p => new Point(p.X, PageH - p.Y)).ToList();
+        if (points.Count == 0)
+        {
+          return;
+        }
+
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+          ctx.BeginFigure(points[0], isFilled: false, isClosed: true);
+          ctx.PolyLineTo(points.Skip(1).ToList(), isStroked: true, isSmoothJoin: true);
+        }
+
+        geometry.Freeze();
+        this.dc.DrawGeometry(null, new Pen(OutlineInk, 0.5), geometry);
+      }
+
+      /// <summary>Closes the page for drawing and hands it over.</summary>
+      public Drawing Finish()
+      {
+        this.dc.Close();
+        return this.drawing;
+      }
+
+      private static Brush Frozen(SolidColorBrush brush)
+      {
+        brush.Freeze();
+        return brush;
       }
     }
 
