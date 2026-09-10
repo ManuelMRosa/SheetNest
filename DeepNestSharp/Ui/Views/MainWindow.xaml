@@ -96,7 +96,7 @@
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Export DXF" Click="OnExportDxf" ToolTip="Export the selected nest result to DXF" />
-          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Report PDF" Click="OnNestReportPdf" ToolTip="Save a PDF nest report: cutting plan, layouts, quantities and utilization" />
+          <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="Report PDF" Click="OnNestReportPdf" ToolTip="Save a PDF nest report: one page per layout, with the sheet drawn to scale, its parts list and utilization" />
         </StackPanel>
         <StackPanel Orientation="Horizontal">
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="New" Command="{Binding CreateNestProjectCommand}" ToolTip="Start a new nesting project" />
