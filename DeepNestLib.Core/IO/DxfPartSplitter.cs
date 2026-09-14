@@ -139,7 +139,7 @@
         }
       }
 
-      var labels = ReadLabels(all);
+      var labels = ReadLabels(all, layers);
       var ordered = parts.OrderByDescending(p => p.Area).ToList();
       IReadOnlyList<(string Name, int Quantity)> named = AssignLabels(ordered, labels);
       var result = new List<DxfPart>();
@@ -516,11 +516,34 @@
       return nearest;
     }
 
-    private static IReadOnlyList<(SvgPoint At, string Text)> ReadLabels(IEnumerable<DxfEntity> entities)
+    /// <summary>
+    /// The texts offering to name a part. A drawing that writes its part names in the naming colour is
+    /// taken at its word: only those name anything, and a note written in any other colour is a note. A
+    /// drawing that says nothing in that colour has every text read, which is how this worked before
+    /// colour had a say and is what keeps working for the drawings people import today.
+    /// </summary>
+    /// <remarks>
+    /// <para>A text in the marking colour never names a part either way. It is what gets engraved on
+    /// the part, and telling those two apart is the whole point.</para>
+    /// <para>What switches the drawing over is a TEXT in the naming colour, not a line in it. A drawing
+    /// whose outlines are blue and whose labels are black still has its labels read: the colour says
+    /// this TEXT names the part, and a line names nothing.</para>
+    /// </remarks>
+    private static IReadOnlyList<(SvgPoint At, string Text)> ReadLabels(
+      IEnumerable<DxfEntity> entities,
+      DxfLayerColors layers)
     {
+      var all = entities.ToList();
+      bool namesAreColoured = all.Any(e => IsText(e) && DxfColorRoles.RoleOf(e, layers) == DxfColorRole.Name);
       var labels = new List<(SvgPoint At, string Text)>();
-      foreach (DxfEntity entity in entities)
+      foreach (DxfEntity entity in all)
       {
+        DxfColorRole role = DxfColorRoles.RoleOf(entity, layers);
+        if (role == DxfColorRole.PartMark || (namesAreColoured && role != DxfColorRole.Name))
+        {
+          continue;
+        }
+
         switch (entity)
         {
           case DxfText text when !string.IsNullOrWhiteSpace(text.Value):
@@ -536,6 +559,8 @@
 
       return labels;
     }
+
+    private static bool IsText(DxfEntity entity) => entity is DxfText || entity is DxfMText;
 
     /// <summary>Whether <paramref name="inner"/> lies within <paramref name="outer"/>. Asked of a vertex
     /// at a time until one gives a straight answer: a vertex that lands exactly on the other ring cannot

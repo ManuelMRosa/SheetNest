@@ -129,6 +129,81 @@
       parts.Should().HaveCount(2);
     }
 
+    /// <summary>
+    /// A drawing that writes its part names in the naming colour is taken at its word: nothing written
+    /// in any other colour names a part, however near the middle of it somebody wrote it. This is what
+    /// ends the guessing for good, rather than guessing better.
+    /// </summary>
+    [Fact]
+    public void WhenNamesAreWrittenInTheNamingColourNothingElseNames()
+    {
+      var parts = DxfPartSplitter.Split("named.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "SCRAP,9"), White),
+        InColor(new DxfText(new DxfPoint(10, 3, 0), 1D, "PLATE,4"), Blue),
+        InColor(Rectangle(40, 0, 20, 20), White),
+      });
+
+      parts.Should().HaveCount(2);
+      parts.Single(p => p.Name != null).Name.Should().Be("PLATE");
+      parts.Single(p => p.Name != null).Quantity.Should().Be(4);
+    }
+
+    /// <summary>A part with nothing written on it in that colour is left to be numbered rather than
+    /// taking whatever else is drawn inside it. Falling back part by part would bring the guessing
+    /// straight back for the one part that is missing its label, which is the part it would hurt.
+    /// </summary>
+    [Fact]
+    public void APartWithNoNameInThatColourIsLeftToBeNumbered()
+    {
+      var parts = DxfPartSplitter.Split("named.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "PLATE,4"), Blue),
+        InColor(Rectangle(40, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(50, 10, 0), 1D, "A NOTE ABOUT THIS ONE"), White),
+      });
+
+      parts.Should().HaveCount(2);
+      parts.Count(p => p.Name == null).Should().Be(1, "a note written in the cutting colour is a note");
+    }
+
+    /// <summary>A text in the marking colour is what gets engraved on the part. It never names it,
+    /// whatever else the drawing holds.</summary>
+    [Fact]
+    public void AMarkedTextNeverNamesAPart()
+    {
+      var parts = DxfPartSplitter.Split("marked.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "SN-4400,7"), Yellow),
+        InColor(Rectangle(40, 0, 20, 20), White),
+      });
+
+      parts.Should().HaveCount(2);
+      parts.Should().OnlyContain(p => p.Name == null, "the mark is engraved on the part, not its name");
+    }
+
+    /// <summary>
+    /// What switches a drawing over is a TEXT written in the naming colour, not a line in it. The
+    /// reporter's own drawings are blue from end to end; a drawing whose outlines are blue and whose
+    /// labels are black has to keep reading its labels.
+    /// </summary>
+    [Fact]
+    public void ABlueOutlineDoesNotStopABlackLabelNaming()
+    {
+      var parts = DxfPartSplitter.Split("blue.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), Blue),
+        InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "PLATE,4"), White),
+      });
+
+      parts.Should().ContainSingle();
+      parts[0].Name.Should().Be("PLATE");
+      parts[0].Quantity.Should().Be(4);
+    }
+
     /// <summary>Yellow is a family, not one number: these three are all yellow in the default table.
     /// </summary>
     [Theory]
