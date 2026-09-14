@@ -133,11 +133,13 @@
       }
 
       var labels = ReadLabels(all);
+      var ordered = parts.OrderByDescending(p => p.Area).ToList();
+      IReadOnlyList<(string Name, int Quantity)> named = AssignLabels(ordered, labels);
       var result = new List<DxfPart>();
-      foreach (Island part in parts.OrderByDescending(p => p.Area))
+      for (int i = 0; i < ordered.Count; i++)
       {
-        (string labelName, int quantity) = LabelFor(part.Outer, labels);
-        result.Add(new DxfPart(part.Entities, part.Indexes, part.HoleCount, labelName, quantity));
+        Island part = ordered[i];
+        result.Add(new DxfPart(part.Entities, part.Indexes, part.HoleCount, named[i].Name, named[i].Quantity));
       }
 
       return result;
@@ -408,21 +410,102 @@
       return (trimmed, 0);
     }
 
-    /// <summary>The innermost part holding this label owns it: a part nested inside another's hole is
-    /// inside both, and the label drawn on it names the small one.</summary>
-    private static (string Name, int Quantity) LabelFor(
-      INfp outer,
+    /// <summary>
+    /// Which label names each part, and how many it asks for. Decided for all the parts at once,
+    /// because two of the three rules cannot be answered one part at a time.
+    /// </summary>
+    /// <remarks>
+    /// <para>A label belongs to the SMALLEST part that holds it. A part sitting inside another part's
+    /// hole is inside both outlines, and the label drawn on it names the small one; asked part by part,
+    /// the big one claimed it too and was cut under a name and a quantity that were never its own.</para>
+    /// <para>A text that turns up inside more than one part cannot tell parts apart: it is the drawing
+    /// number, or a note written on every part. It names none of them. Should that leave a part with
+    /// nothing, it gets its labels back - four parts the operator really did call BRACKET are four
+    /// parts called BRACKET, not four parts left unnamed.</para>
+    /// <para>What is left is settled by distance to the middle of the part, because a label put there
+    /// to name the part is drawn on the part, while a stale mark or a note sits off in a corner. The
+    /// order the entities happen to sit in the file decided this until now, and that is not something
+    /// the operator can see or control: the same drawing named its parts differently depending on how
+    /// the CAD program had saved it.</para>
+    /// </remarks>
+    private static IReadOnlyList<(string Name, int Quantity)> AssignLabels(
+      IReadOnlyList<Island> parts,
       IReadOnlyList<(SvgPoint At, string Text)> labels)
     {
-      foreach (var label in labels)
+      var owned = new List<List<int>>();
+      for (int i = 0; i < parts.Count; i++)
       {
-        if (Encloses(outer, label.At))
+        owned.Add(new List<int>());
+      }
+
+      for (int l = 0; l < labels.Count; l++)
+      {
+        int owner = -1;
+        for (int p = 0; p < parts.Count; p++)
         {
-          return ParseLabel(label.Text);
+          if (Encloses(parts[p].Outer, labels[l].At) && (owner < 0 || parts[p].Area < parts[owner].Area))
+          {
+            owner = p;
+          }
+        }
+
+        if (owner >= 0)
+        {
+          owned[owner].Add(l);
         }
       }
 
-      return (null, 0);
+      // How many parts hold a text that READS the same. Counted on the words rather than on the entity,
+      // because a drawing number is written once on each part: four separate texts that all say 12345.
+      var partsHolding = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      foreach (List<int> held in owned)
+      {
+        foreach (string text in held.Select(l => labels[l].Text.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+          partsHolding[text] = partsHolding.TryGetValue(text, out int count) ? count + 1 : 1;
+        }
+      }
+
+      var named = new List<(string Name, int Quantity)>();
+      for (int p = 0; p < parts.Count; p++)
+      {
+        List<int> candidates = owned[p].Where(l => partsHolding[labels[l].Text.Trim()] == 1).ToList();
+        if (candidates.Count == 0)
+        {
+          candidates = owned[p];
+        }
+
+        named.Add(candidates.Count == 0 ? (null, 0) : ParseLabel(labels[Nearest(candidates, parts[p], labels)].Text));
+      }
+
+      return named;
+    }
+
+    /// <summary>The label nearest the middle of the part. A tie goes to the one the drawing lists
+    /// first, so that a drawing always answers the same rather than however the sort happened to
+    /// settle.</summary>
+    private static int Nearest(
+      IReadOnlyList<int> candidates,
+      Island part,
+      IReadOnlyList<(SvgPoint At, string Text)> labels)
+    {
+      double centreX = (part.Outer.MinX + part.Outer.MaxX) / 2;
+      double centreY = (part.Outer.MinY + part.Outer.MaxY) / 2;
+      int nearest = candidates[0];
+      double shortest = double.MaxValue;
+      foreach (int l in candidates)
+      {
+        double dx = labels[l].At.X - centreX;
+        double dy = labels[l].At.Y - centreY;
+        double distance = (dx * dx) + (dy * dy);
+        if (distance < shortest)
+        {
+          shortest = distance;
+          nearest = l;
+        }
+      }
+
+      return nearest;
     }
 
     private static IReadOnlyList<(SvgPoint At, string Text)> ReadLabels(IEnumerable<DxfEntity> entities)

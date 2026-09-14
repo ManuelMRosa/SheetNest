@@ -147,6 +147,93 @@
     }
 
     /// <summary>
+    /// Reported on issue #6. A part holding two texts took whichever one the drawing happened to list
+    /// first, so its name and its QUANTITY came out of the order the CAD program saved entities in,
+    /// which is not something the operator can see or control. This part carries a stale mark left in
+    /// its corner and its real label near the middle; the real one has to name it, or five parts get
+    /// cut once.
+    /// </summary>
+    [Fact]
+    public void ThePartsOwnLabelBeatsAStaleOneInItsCorner()
+    {
+      var parts = DxfPartSplitter.Split("stale.dxf", new List<DxfEntity>
+      {
+        Rectangle(0, 0, 100, 100),
+        Text(4, 96, "C"),
+        Text(50, 50, "12345, C,5"),
+      });
+
+      parts.Should().ContainSingle();
+      parts[0].Name.Should().Be("12345, C");
+      parts[0].Quantity.Should().Be(5);
+    }
+
+    /// <summary>The same two texts saved the other way round have to name the part the same. Alone this
+    /// passes on the old rule as well; it is here as the pair of the test above, because together they
+    /// are what says the answer does not depend on the order.</summary>
+    [Fact]
+    public void TheOrderTextWasSavedInDoesNotDecideTheName()
+    {
+      var parts = DxfPartSplitter.Split("stale.dxf", new List<DxfEntity>
+      {
+        Rectangle(0, 0, 100, 100),
+        Text(50, 50, "12345, C,5"),
+        Text(4, 96, "C"),
+      });
+
+      parts.Should().ContainSingle();
+      parts[0].Name.Should().Be("12345, C");
+      parts[0].Quantity.Should().Be(5);
+    }
+
+    /// <summary>
+    /// The second drawing on the report: every part carries the drawing number as well as its own
+    /// letter, and the drawing number is written nearer the middle than the letter is. A text that
+    /// turns up inside EVERY part cannot tell parts apart - it is the drawing number, or a note - so it
+    /// names none of them. Before this, three parts took their letter and the fourth took the drawing
+    /// number, in the same drawing.
+    /// </summary>
+    [Fact]
+    public void ATextInsideEveryPartNamesNoneOfThem()
+    {
+      var parts = DxfPartSplitter.Split("drawing-number.dxf", new List<DxfEntity>
+      {
+        Rectangle(0, 0, 20, 20),
+        Text(10, 10.5, "12345"),
+        Text(10, 6, "A"),
+        Rectangle(40, 0, 20, 20),
+        Text(50, 10.5, "12345"),
+        Text(50, 6, "B"),
+      });
+
+      parts.Select(p => p.Name).Should().BeEquivalentTo(new[] { "A", "B" });
+    }
+
+    /// <summary>
+    /// A part sitting inside another part's hole is inside the big part's outline too, so its label
+    /// named BOTH of them: the big part came out with the small one's name and, worse, with its
+    /// quantity, so a part nobody ordered got cut three times. A label belongs to the smallest part
+    /// that holds it, which is what this file has always said it did.
+    /// </summary>
+    [Fact]
+    public void ALabelOnAPartInsideAnothersHoleNamesOnlyTheSmallOne()
+    {
+      var parts = DxfPartSplitter.Split("nested-label.dxf", new List<DxfEntity>
+      {
+        Rectangle(0, 0, 40, 40),
+        Rectangle(5, 5, 30, 30),
+        Rectangle(10, 10, 10, 10),
+        Text(15, 15, "SMALL,3"),
+      });
+
+      parts.Should().HaveCount(2);
+      parts.Single(p => p.HoleCount == 0).Name.Should().Be("SMALL");
+      parts.Single(p => p.HoleCount == 0).Quantity.Should().Be(3);
+      parts.Single(p => p.HoleCount == 1).Name.Should().BeNull("the part around it was never labelled");
+      parts.Single(p => p.HoleCount == 1).Quantity.Should().Be(0);
+    }
+
+    /// <summary>
     /// The arcs have to survive the split. The common-line planner reads an ARC out of the source
     /// schema, so a part written back as tessellated segments would silently lose the ability to share
     /// a cut on a radius.
