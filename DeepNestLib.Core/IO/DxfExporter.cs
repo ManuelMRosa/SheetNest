@@ -152,7 +152,10 @@
             else
 #endif
             {
-              fl = DxfParser.ConvertDxfToRawDetail(polygon.Name, DxfFile.Load(polygon.Name).Entities.ToArray());
+              DxfFile source = DxfFile.Load(polygon.Name);
+              fl = DxfParser.ConvertDxfToRawDetail(
+                polygon.Name,
+                DxfColorRoles.Cuttable(source.Entities, DxfLayerColors.Of(source)));
             }
           }
           catch
@@ -813,9 +816,10 @@
             throw new FileNotFoundException();
           }
 
+          DxfFile opened = snapshot.OpenFile();
           detail = DxfParser.ConvertDxfToRawDetail(
             source,
-            snapshot.OpenFile().Entities.ToArray());
+            DxfColorRoles.Cuttable(opened.Entities, DxfLayerColors.Of(opened)));
         }
       }
       catch

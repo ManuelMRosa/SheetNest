@@ -41,6 +41,12 @@
       DxfEntityType.Underlay, DxfEntityType.Light, DxfEntityType.Shape, DxfEntityType.Section,
     };
 
+    /// <summary>Whether this entity draws something that gets measured, as opposed to a note, a
+    /// dimension or an underlay. Asked by the colour filter, which has to tell a drawing whose geometry
+    /// is all in the marking colour from one that never held any.</summary>
+    internal static bool IsGeometry(DxfEntity entity)
+      => entity != null && !AnnotationTypes.Contains(entity.EntityType);
+
     private static double ArcStepDegrees(double radius)
     {
       if (radius <= 0)
@@ -109,7 +115,10 @@
           lock (loadLock)
           {
             dxffile = DxfFile.Load(fi.FullName);
-            IEnumerable<DxfEntity> entities = dxffile.Entities.ToArray();
+            IEnumerable<DxfEntity> entities = DxfColorRoles.CuttableOrExplain(
+              fi.FullName,
+              dxffile.Entities,
+              DxfLayerColors.Of(dxffile));
             return ConvertDxfToRawDetail(fi.FullName, entities);
           }
         }
@@ -402,7 +411,10 @@
     internal static RawDetail<DxfEntity> LoadDxfStream(string name, Stream inputStream)
     {
       DxfFile dxffile = DxfFile.Load(inputStream);
-      IEnumerable<DxfEntity> entities = dxffile.Entities.ToArray();
+      IEnumerable<DxfEntity> entities = DxfColorRoles.CuttableOrExplain(
+        name,
+        dxffile.Entities,
+        DxfLayerColors.Of(dxffile));
       return ConvertDxfToRawDetail(name, entities);
     }
 

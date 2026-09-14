@@ -67,10 +67,17 @@
     /// The parts in a drawing, outermost first. A drawing holding one part returns one entry, so a
     /// caller can treat "did this split" as <c>Count &gt; 1</c>.
     /// </summary>
-    public static IReadOnlyList<DxfPart> Split(string name, IEnumerable<DxfEntity> entities)
+    public static IReadOnlyList<DxfPart> Split(
+      string name,
+      IEnumerable<DxfEntity> entities,
+      DxfLayerColors layers = null)
     {
       var all = (entities ?? Array.Empty<DxfEntity>()).ToList();
-      RawDetail<DxfEntity> detail = DxfParser.ConvertDxfToRawDetail(name, all);
+
+      // The WHOLE drawing stays as the index basis: a part is written out by keeping its entities by
+      // position, so dropping the marks from this list would shift every index and write the wrong
+      // entities into every part. Only what gets measured into contours is filtered.
+      RawDetail<DxfEntity> detail = DxfParser.ConvertDxfToRawDetail(name, DxfColorRoles.Cuttable(all, layers));
 
       var contours = detail.Outers.OfType<LocalContour<DxfEntity>>().ToList();
       var rings = contours.Select(ToPolygon).ToList();
@@ -162,7 +169,8 @@
       // and putting them back into the same collection does not put them back in the output - seven of
       // eight parts came out with an empty entities section that way, and nesting refused each of them.
       byte[] bytes = ReadAllBytesShared(sourcePath);
-      IReadOnlyList<DxfPart> parts = Split(sourcePath, Reload(bytes).Entities);
+      DxfFile drawing = Reload(bytes);
+      IReadOnlyList<DxfPart> parts = Split(sourcePath, drawing.Entities, DxfLayerColors.Of(drawing));
       if (parts.Count < 2)
       {
         return Array.Empty<SplitPartFile>();

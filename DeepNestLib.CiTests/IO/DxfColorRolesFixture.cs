@@ -1,0 +1,249 @@
+﻿namespace DeepNestLib.CiTests.IO
+{
+  using System;
+  using System.Collections.Generic;
+  using System.IO;
+  using System.Linq;
+  using DeepNestLib.IO;
+  using FluentAssertions;
+  using IxMilia.Dxf;
+  using IxMilia.Dxf.Entities;
+  using Xunit;
+
+  /// <summary>
+  /// A drawing says what each line is for by the colour it is drawn in, the way the machines these parts
+  /// are cut on already work: yellow engraves, blue says what the part is called, everything else gets
+  /// cut. Until now nothing read a colour at all, so a part number scribed inside a part was read as a
+  /// hole, cut out, and the part came off the sheet with a piece missing.
+  /// </summary>
+  public class DxfColorRolesFixture
+  {
+    private const int Yellow = 2;
+    private const int Blue = 5;
+    private const int Red = 1;
+    private const int White = 7;
+
+    /// <summary>
+    /// The one that costs material: read as a hole, the mark is cut out and dropped, and the part comes
+    /// off the sheet with a piece missing where its number should have been.
+    /// </summary>
+    [Fact]
+    public void AMarkInsideAPartIsNotAHoleInIt()
+    {
+      var parts = DxfPartSplitter.Split("marked.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(Rectangle(5, 5, 4, 4), Yellow),
+      });
+
+      parts.Should().ContainSingle();
+      parts[0].HoleCount.Should().Be(0, "the mark is engraved on the part, not cut out of it");
+    }
+
+    /// <summary>And a mark drawn beside the part is not a part of its own, which is what it would be
+    /// nested and cut as.</summary>
+    [Fact]
+    public void AMarkBesideAPartIsNotASecondPart()
+    {
+      var parts = DxfPartSplitter.Split("marked.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(Rectangle(40, 0, 4, 4), Yellow),
+      });
+
+      parts.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// A shop usually sets the colour on the LAYER and leaves every line saying "whatever my layer is".
+    /// Reading only the colour on the line would miss every drawing that works that way, which is most
+    /// of them.
+    /// </summary>
+    [Fact]
+    public void AMarkThatTakesItsColourFromItsLayerIsStillAMark()
+    {
+      var drawing = new DxfFile();
+      drawing.Layers.Add(new DxfLayer("PROFILE", DxfColor.FromIndex(White)));
+      drawing.Layers.Add(new DxfLayer("ENGRAVE", DxfColor.FromIndex(Yellow)));
+
+      var parts = DxfPartSplitter.Split(
+        "marked.dxf",
+        new List<DxfEntity>
+        {
+          OnLayer(Rectangle(0, 0, 20, 20), "PROFILE"),
+          OnLayer(Rectangle(5, 5, 4, 4), "ENGRAVE"),
+        },
+        DxfLayerColors.Of(drawing));
+
+      parts.Should().ContainSingle();
+      parts[0].HoleCount.Should().Be(0);
+    }
+
+    /// <summary>Blue says a TEXT names the part. A line names nothing, so a blue line is cut like any
+    /// other: only yellow changes what happens to geometry.</summary>
+    [Fact]
+    public void ABlueLineIsCutLikeAnyOther()
+    {
+      var parts = DxfPartSplitter.Split("blue.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), Blue),
+        InColor(Rectangle(40, 0, 20, 20), Blue),
+      });
+
+      parts.Should().HaveCount(2, "the reporter's drawings are blue from end to end");
+    }
+
+    /// <summary>
+    /// A drawing drawn entirely in the marking colour has to say so. Turned away further down it would
+    /// be reported as holding "only text, dimensions or other annotation", which is not true and leaves
+    /// the operator with nothing to act on.
+    /// </summary>
+    [Fact]
+    public async System.Threading.Tasks.Task ADrawingDrawnAllInTheMarkingColourSaysSo()
+    {
+      string path = WriteDrawing(InColor(Rectangle(0, 0, 20, 20), Yellow));
+
+      try
+      {
+        System.Func<System.Threading.Tasks.Task> load = () => DxfParser.LoadDxfFile(path);
+
+        (await load.Should().ThrowAsync<ArgumentException>()).WithMessage("*nothing left to cut*");
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
+    /// <summary>A drawing that says nothing about colour is all cut, which is every drawing anybody is
+    /// importing today.</summary>
+    [Fact]
+    public void ADrawingThatSaysNothingAboutColourIsAllCut()
+    {
+      var parts = DxfPartSplitter.Split("plain.dxf", new List<DxfEntity>
+      {
+        Rectangle(0, 0, 20, 20),
+        Rectangle(40, 0, 20, 20),
+      });
+
+      parts.Should().HaveCount(2);
+    }
+
+    /// <summary>Yellow is a family, not one number: these three are all yellow in the default table.
+    /// </summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(50)]
+    [InlineData(52)]
+    public void TheYellowsAreRecognised(int aci)
+    {
+      DxfColorRoles.IsYellowish(DxfColor.DefaultColors[aci]).Should().BeTrue();
+    }
+
+    /// <summary>The half that says the colour rule is a rule rather than something that matches
+    /// anything: amber and chartreuse sit either side of yellow and are not it.</summary>
+    [Theory]
+    [InlineData(1)]    // red
+    [InlineData(3)]    // green
+    [InlineData(5)]    // blue
+    [InlineData(7)]    // white
+    [InlineData(9)]    // grey
+    [InlineData(40)]   // amber
+    [InlineData(60)]   // chartreuse
+    public void AColourThatIsNotYellowIsNotAMark(int aci)
+    {
+      DxfColorRoles.IsYellowish(DxfColor.DefaultColors[aci]).Should().BeFalse();
+    }
+
+    /// <summary>Blue is a family too: pure blue, a dark blue and a pale one all name a part.</summary>
+    [Theory]
+    [InlineData(5)]    // blue
+    [InlineData(170)]  // blue again, further down the table
+    [InlineData(174)]  // a dark blue
+    [InlineData(171)]  // a pale one
+    public void TheBluesAreRecognised(int aci)
+    {
+      DxfColorRoles.IsBluish(DxfColor.DefaultColors[aci]).Should().BeTrue();
+    }
+
+    /// <summary>Cyan and magenta both hold as much blue as blue does. What tells blue from them is that
+    /// nothing else comes near it.</summary>
+    [Theory]
+    [InlineData(4)]    // cyan
+    [InlineData(6)]    // magenta
+    [InlineData(7)]    // white
+    [InlineData(9)]    // grey
+    [InlineData(3)]    // green
+    [InlineData(1)]    // red
+    [InlineData(2)]    // yellow
+    public void AColourThatIsNotBlueDoesNotName(int aci)
+    {
+      DxfColorRoles.IsBluish(DxfColor.DefaultColors[aci]).Should().BeFalse();
+    }
+
+    /// <summary>What the drawing says on the line itself beats what it says on the layer, which is the
+    /// order a CAD program draws it in.</summary>
+    [Fact]
+    public void AColourOnTheLineBeatsTheOneOnItsLayer()
+    {
+      var drawing = new DxfFile();
+      drawing.Layers.Add(new DxfLayer("ENGRAVE", DxfColor.FromIndex(Yellow)));
+      DxfEntity line = OnLayer(InColor(new DxfLine(new DxfPoint(0, 0, 0), new DxfPoint(10, 0, 0)), Red), "ENGRAVE");
+
+      DxfColorRoles.RoleOf(line, DxfLayerColors.Of(drawing)).Should().Be(DxfColorRole.Cut);
+    }
+
+    /// <summary>A true colour is what the drawing means when it carries one, whatever index sits beside
+    /// it. The reporter's own text is written that way: index 5 and true colour 0000FF.</summary>
+    [Fact]
+    public void ATrueColourIsReadBeforeTheIndex()
+    {
+      var line = new DxfLine(new DxfPoint(0, 0, 0), new DxfPoint(10, 0, 0))
+      {
+        Color = DxfColor.FromIndex(Red),
+        Color24Bit = 0x00FFFF00,
+      };
+
+      DxfColorRoles.RoleOf(line, DxfLayerColors.None).Should().Be(DxfColorRole.PartMark);
+    }
+
+    private static DxfPolyline Rectangle(double x, double y, double width, double height)
+    {
+      return new DxfPolyline(new[]
+      {
+        new DxfVertex(new DxfPoint(x, y, 0)),
+        new DxfVertex(new DxfPoint(x + width, y, 0)),
+        new DxfVertex(new DxfPoint(x + width, y + height, 0)),
+        new DxfVertex(new DxfPoint(x, y + height, 0)),
+        new DxfVertex(new DxfPoint(x, y, 0)),
+      });
+    }
+
+    private static T InColor<T>(T entity, int aci)
+      where T : DxfEntity
+    {
+      entity.Color = DxfColor.FromIndex((byte)aci);
+      return entity;
+    }
+
+    private static T OnLayer<T>(T entity, string layer)
+      where T : DxfEntity
+    {
+      entity.Layer = layer;
+      return entity;
+    }
+
+    private static string WriteDrawing(params DxfEntity[] entities)
+    {
+      var file = new DxfFile();
+      foreach (DxfEntity entity in entities)
+      {
+        file.Entities.Add(entity);
+      }
+
+      string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".dxf");
+      file.Save(path);
+      return path;
+    }
+  }
+}
