@@ -282,6 +282,106 @@
       DxfColorRoles.RoleOf(line, DxfLayerColors.None).Should().Be(DxfColorRole.PartMark);
     }
 
+    /// <summary>
+    /// The mark has to stay with the part. It is not a contour and nothing claims it, so without being
+    /// put there on purpose it is left out of the file the part is written to, and there is nothing left
+    /// to engrave.
+    /// </summary>
+    [Fact]
+    public void AMarkInsideAPartGoesWithThePart()
+    {
+      DxfText mark = InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "A1-1"), Yellow);
+
+      var parts = DxfPartSplitter.Split("marked.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), White),
+        mark,
+        InColor(Rectangle(40, 0, 20, 20), White),
+      });
+
+      parts.Should().HaveCount(2);
+      parts.Single(p => p.Entities.Contains(mark)).HoleCount.Should().Be(0, "a mark is not a hole in it");
+      parts.Count(p => p.Entities.Contains(mark)).Should().Be(1, "it goes with one part, not both");
+    }
+
+    /// <summary>A mark drawn outside every part is a note on the drawing and belongs to none of them.
+    /// </summary>
+    [Fact]
+    public void AMarkOutsideEveryPartGoesWithNone()
+    {
+      DxfText note = InColor(new DxfText(new DxfPoint(100, 100, 0), 1D, "CUT 2 OFF"), Yellow);
+
+      var parts = DxfPartSplitter.Split("marked.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 20, 20), White),
+        note,
+        InColor(Rectangle(40, 0, 20, 20), White),
+      });
+
+      parts.Should().HaveCount(2);
+      parts.Should().OnlyContain(p => !p.Entities.Contains(note));
+    }
+
+    /// <summary>A mark on a part sitting inside another part's hole is the small part's mark. Engraved
+    /// on the big one it would be on the wrong piece of metal.</summary>
+    [Fact]
+    public void AMarkOnAPartInsideAnothersHoleGoesWithTheSmallOne()
+    {
+      DxfText mark = InColor(new DxfText(new DxfPoint(15, 15, 0), 1D, "SMALL"), Yellow);
+
+      var parts = DxfPartSplitter.Split("nested.dxf", new List<DxfEntity>
+      {
+        InColor(Rectangle(0, 0, 40, 40), White),
+        InColor(Rectangle(5, 5, 30, 30), White),
+        InColor(Rectangle(10, 10, 10, 10), White),
+        mark,
+      });
+
+      parts.Should().HaveCount(2);
+      parts.Single(p => p.HoleCount == 0).Entities.Should().Contain(mark);
+      parts.Single(p => p.HoleCount == 1).Entities.Should().NotContain(mark, "the mark is on the small part");
+    }
+
+    /// <summary>
+    /// The whole point, end to end: the file a part is written to still holds its mark, because that
+    /// file is what everything downstream reads to draw the mark and to write it out.
+    /// </summary>
+    [Fact]
+    public void TheFileAPartIsWrittenToStillHoldsItsMark()
+    {
+      string path = WriteDrawing(
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "A1-1"), Yellow),
+        InColor(new DxfText(new DxfPoint(10, 4, 0), 1D, "A1-1,3"), Blue),
+        InColor(Rectangle(40, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(50, 10, 0), 1D, "A1-2"), Yellow),
+        InColor(new DxfText(new DxfPoint(50, 4, 0), 1D, "A1-2,3"), Blue));
+
+      try
+      {
+        var written = DxfPartSplitter.WriteParts(path);
+
+        written.Should().HaveCount(2);
+        foreach (var part in written)
+        {
+          DxfFile file;
+          using (var stream = File.OpenRead(part.Path))
+          {
+            file = DxfFile.Load(stream);
+          }
+
+          string mark = Path.GetFileNameWithoutExtension(part.Path).Split(',')[0];
+          file.Entities.OfType<DxfText>().Select(t => t.Value).Should().Contain(
+            mark,
+            "the part keeps the mark that was drawn on it");
+        }
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
     private static DxfPolyline Rectangle(double x, double y, double width, double height)
     {
       return new DxfPolyline(new[]

@@ -139,6 +139,8 @@
         }
       }
 
+      AssignMarks(all, parts, indexOf, layers);
+
       var labels = ReadLabels(all, layers);
       var ordered = parts.OrderByDescending(p => p.Area).ToList();
       IReadOnlyList<(string Name, int Quantity)> named = AssignLabels(ordered, labels);
@@ -416,6 +418,75 @@
       }
 
       return (trimmed, 0);
+    }
+
+    /// <summary>
+    /// A part's marks go with the part. What is drawn in the marking colour is engraved on the part and
+    /// never cut, so it is not a contour and nothing has claimed it; without this it is left out of the
+    /// file the part is written to and there is nothing left to engrave.
+    /// </summary>
+    /// <remarks>
+    /// A mark belongs to the SMALLEST part that holds it, the same rule the labels follow, so a mark
+    /// drawn on a part sitting inside another part's hole goes with the small one. A mark drawn outside
+    /// every part belongs to none of them: it is a note on the drawing. And a mark is never a hole,
+    /// which is what this has to keep being true of, because a hole gets cut out and thrown away.
+    /// </remarks>
+    private static void AssignMarks(
+      IReadOnlyList<DxfEntity> all,
+      IReadOnlyList<Island> parts,
+      IReadOnlyDictionary<DxfEntity, int> indexOf,
+      DxfLayerColors layers)
+    {
+      foreach (DxfEntity entity in all)
+      {
+        if (DxfColorRoles.RoleOf(entity, layers) != DxfColorRole.PartMark)
+        {
+          continue;
+        }
+
+        SvgPoint at = MarkPoint(entity);
+        if (at == null)
+        {
+          continue;
+        }
+
+        Island owner = null;
+        foreach (Island candidate in parts)
+        {
+          if (Encloses(candidate.Outer, at) && (owner == null || candidate.Area < owner.Area))
+          {
+            owner = candidate;
+          }
+        }
+
+        owner?.Add(new[] { entity }, indexOf);
+      }
+    }
+
+    /// <summary>Where a mark sits, to work out which part it is on. For text it is where the text is
+    /// anchored, and for anything drawn a point on it. Null for something there is no sensible point
+    /// for, which then belongs to no part rather than to a guessed one.</summary>
+    private static SvgPoint MarkPoint(DxfEntity entity)
+    {
+      switch (entity)
+      {
+        case DxfText text:
+          return new SvgPoint(text.Location.X, text.Location.Y);
+        case DxfMText mtext:
+          return new SvgPoint(mtext.InsertionPoint.X, mtext.InsertionPoint.Y);
+        case DxfLine line:
+          return new SvgPoint((line.P1.X + line.P2.X) / 2, (line.P1.Y + line.P2.Y) / 2);
+        case DxfArc arc:
+          return new SvgPoint(arc.Center.X, arc.Center.Y);
+        case DxfCircle circle:
+          return new SvgPoint(circle.Center.X, circle.Center.Y);
+        case DxfLwPolyline lwPolyline when lwPolyline.Vertices.Count > 0:
+          return new SvgPoint(lwPolyline.Vertices[0].X, lwPolyline.Vertices[0].Y);
+        case DxfPolyline polyline when polyline.Vertices.Count > 0:
+          return new SvgPoint(polyline.Vertices[0].Location.X, polyline.Vertices[0].Location.Y);
+        default:
+          return null;
+      }
     }
 
     /// <summary>
