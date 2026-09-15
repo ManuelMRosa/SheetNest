@@ -382,6 +382,78 @@
       }
     }
 
+    /// <summary>What is engraved on a part is read back out of the part's own file, which is the one
+    /// thing everything that has to draw it or write it out holds in common.</summary>
+    [Fact]
+    public void WhatIsEngravedOnAPartIsReadBackFromItsFile()
+    {
+      string path = WriteDrawing(
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "A1-1"), Yellow),
+        InColor(new DxfText(new DxfPoint(10, 4, 0), 1D, "A1-1,3"), Blue));
+
+      try
+      {
+        IReadOnlyList<DxfEntity> marks = DxfPartMarks.For(path);
+
+        marks.OfType<DxfText>().Select(t => t.Value).Should().BeEquivalentTo(new[] { "A1-1" },
+          "the blue text names the part and the white outline is cut; only the yellow is engraved");
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
+    [Fact]
+    public void APartWithNothingMarkedOnItHasNothingEngraved()
+    {
+      string path = WriteDrawing(InColor(Rectangle(0, 0, 20, 20), White));
+
+      try
+      {
+        DxfPartMarks.For(path).Should().BeEmpty();
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
+    [Fact]
+    public void AFileThatIsNotThereIsNotAskedAboutTwice()
+    {
+      DxfPartMarks.For(Path.Combine(Path.GetTempPath(), "no-such-part.dxf")).Should().BeEmpty();
+      DxfPartMarks.For(null).Should().BeEmpty();
+    }
+
+    /// <summary>The answer is kept so a redraw does not read the drawing off the disk every time, and a
+    /// part that has been written again since says what it says NOW.</summary>
+    [Fact]
+    public void APartRewrittenSinceIsReadAgain()
+    {
+      string path = WriteDrawing(
+        InColor(Rectangle(0, 0, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "BEFORE"), Yellow));
+
+      try
+      {
+        DxfPartMarks.For(path).OfType<DxfText>().Select(t => t.Value).Should().BeEquivalentTo(new[] { "BEFORE" });
+
+        var again = new DxfFile();
+        again.Entities.Add(InColor(Rectangle(0, 0, 20, 20), White));
+        again.Entities.Add(InColor(new DxfText(new DxfPoint(10, 10, 0), 1D, "AFTER"), Yellow));
+        again.Save(path);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(1));
+
+        DxfPartMarks.For(path).OfType<DxfText>().Select(t => t.Value).Should().BeEquivalentTo(new[] { "AFTER" });
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
     private static DxfPolyline Rectangle(double x, double y, double width, double height)
     {
       return new DxfPolyline(new[]

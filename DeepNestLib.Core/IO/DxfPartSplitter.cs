@@ -251,7 +251,7 @@
     /// that same DXF open in their CAD program, and the plain read refuses a file held there; the rest
     /// of the loading code already shares, so this has to as well.
     /// </summary>
-    private static byte[] ReadAllBytesShared(string path)
+    internal static byte[] ReadAllBytesShared(string path)
     {
       using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
       using (var buffer = new MemoryStream())
