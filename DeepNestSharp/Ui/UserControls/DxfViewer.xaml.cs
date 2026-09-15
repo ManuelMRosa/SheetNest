@@ -73,6 +73,10 @@
     // Manual nesting state: rendered path per placement, current selection, drag bookkeeping, and
     // the placements currently overlapping something (drawn red).
     private readonly List<(System.Windows.Shapes.Path Path, IPartPlacement Pp)> partPaths = new List<(System.Windows.Shapes.Path, IPartPlacement)>();
+
+    /// <summary>What each placed part carries engraved, drawn over it. Kept beside the parts so a part
+    /// that is dragged takes its marking with it instead of leaving it behind on the sheet.</summary>
+    private readonly List<(System.Windows.Shapes.Path Path, IPartPlacement Pp)> markPaths = new List<(System.Windows.Shapes.Path, IPartPlacement)>();
     private readonly HashSet<IPartPlacement> invalid = new HashSet<IPartPlacement>();
 
     // The offcut cut line and its size label. Same reason: the strip's edge follows the pack, so it has to
@@ -872,6 +876,7 @@
       this.dragCache = null; // placements may have been replaced wholesale — never answer from stale geometry
       this.canvas.Children.Clear();
       this.partPaths.Clear();
+      this.markPaths.Clear();
       this.offcutShapes.Clear();
       this.ClearMeasure(); // canvas was cleared; drop dangling measure-shape references
 
@@ -967,6 +972,21 @@
           };
           this.canvas.Children.Add(path);
           this.partPaths.Add((path, pp));
+
+          Geometry marks = BuildPlacedMarks(pp, h);
+          if (marks != null)
+          {
+            var markPath = new System.Windows.Shapes.Path
+            {
+              Data = marks,
+              Stroke = PartStroke,
+              StrokeThickness = stroke,
+              StrokeLineJoin = PenLineJoin.Round,
+              IsHitTestVisible = false,
+            };
+            this.canvas.Children.Add(markPath);
+            this.markPaths.Add((markPath, pp));
+          }
         }
         catch
         {
@@ -1245,6 +1265,30 @@
 
       geometry.Freeze();
       return geometry;
+    }
+
+    /// <summary>What a placed part carries engraved, in sheet coordinates with Y flipped to the screen
+    /// like everything else here. Null when the part carries nothing.</summary>
+    private static Geometry BuildPlacedMarks(IPartPlacement pp, double sheetHeight)
+    {
+      if (pp?.Part == null)
+      {
+        return null;
+      }
+
+      Geometry marks = PartMarkDrawing.Placed(pp.Part.Name, pp.X, pp.Y, pp.Rotation, pp.IsMirrored);
+      if (marks == null)
+      {
+        return null;
+      }
+
+      marks = marks.Clone();
+      var toScreen = new TransformGroup();
+      toScreen.Children.Add(new ScaleTransform(1, -1));
+      toScreen.Children.Add(new TranslateTransform(0, sheetHeight));
+      marks.Transform = toScreen;
+      marks.Freeze();
+      return marks;
     }
 
     private static void AppendContour(StreamGeometryContext ctx, INfp contour, Func<double, double, Point> tx)
@@ -2111,6 +2155,16 @@
         }
       }
 
+      for (int i = 0; i < this.markPaths.Count; i++)
+      {
+        if (this.markPaths[i].Pp == this.selectedPp)
+        {
+          Geometry marks = BuildPlacedMarks(this.selectedPp, this.currentSheetH);
+          this.markPaths[i].Path.Data = marks ?? Geometry.Empty;
+          break;
+        }
+      }
+
       this.RefreshOffcutOverlay();
 
       // Position live, distance to the neighbour only when it stops: measuring that exactly is a search.
@@ -2279,6 +2333,15 @@
         }
       }
 
+      for (int i = 0; i < this.markPaths.Count; i++)
+      {
+        if (this.markPaths[i].Pp == pp)
+        {
+          this.markPaths[i] = (this.markPaths[i].Path, replacement);
+          break;
+        }
+      }
+
       this.selectedPp = replacement;
       this.RefreshSelectedPath();
       this.CommitManualEdit();
@@ -2346,6 +2409,15 @@
         if (this.partPaths[i].Pp == pp)
         {
           this.partPaths[i] = (this.partPaths[i].Path, replacement);
+          break;
+        }
+      }
+
+      for (int i = 0; i < this.markPaths.Count; i++)
+      {
+        if (this.markPaths[i].Pp == pp)
+        {
+          this.markPaths[i] = (this.markPaths[i].Path, replacement);
           break;
         }
       }

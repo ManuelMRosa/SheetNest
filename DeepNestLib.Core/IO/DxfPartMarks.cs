@@ -87,6 +87,39 @@
     }
 
     /// <summary>
+    /// Which way engraved text reads once its part has been placed, and whether it now hangs from its
+    /// other end.
+    /// </summary>
+    /// <remarks>
+    /// <para>The line the text sits on follows the part, mirror included: reflecting a direction maps
+    /// its angle to 180 minus itself, the same way it does for an arc's sweep. What must NOT follow the
+    /// part is the letters themselves. A DXF does not reflect glyphs, so reflecting the line alone
+    /// leaves text reading backwards along it, which on a part number is the difference between a part
+    /// and a piece of scrap.</para>
+    /// <para>So when the reflected line would have the words running away from the reader, the text is
+    /// turned the other half turn to face them again and hung from its other end, which puts the same
+    /// words in the same place the right way round.</para>
+    /// <para>Here rather than in the exporter because the screen has to show a mark the way it is going
+    /// to be cut.</para>
+    /// </remarks>
+    public static (double Angle, bool Flip) TextPlacement(bool mirror, double rotationAngle, double own)
+    {
+      if (!mirror)
+      {
+        return (own + rotationAngle, false);
+      }
+
+      double reflected = Normalise(180.0 - own + rotationAngle);
+      return Readable(reflected) ? (reflected, false) : (Normalise(reflected + 180.0), true);
+    }
+
+    /// <summary>An angle in [0, 360).</summary>
+    public static double Normalise(double angle) => ((angle % 360.0) + 360.0) % 360.0;
+
+    /// <summary>Whether text written at this angle reads without turning the sheet round.</summary>
+    public static bool Readable(double angle) => angle <= 90.0 || angle >= 270.0;
+
+    /// <summary>
     /// The layers the marks in this file are drawn on, as the drawing declares them. A shop that colours
     /// its layers rather than its lines leaves every mark saying "whatever my layer is", so writing the
     /// mark out without its layer would lose the colour that says it is a mark at all.

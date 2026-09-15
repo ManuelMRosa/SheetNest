@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Reports
+﻿namespace DeepNestSharp.Reports
 {
   using System;
   using System.Collections.Generic;
@@ -249,6 +249,21 @@ namespace DeepNestSharp.Reports
                 c.Polygon(hole.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), fill: false, holeFill: true);
               }
             }
+          }
+        }
+
+        // What each part carries engraved, over the parts and under the numbers: traced as lines,
+        // because the marking is geometry on the metal rather than a caption on a drawing.
+        foreach (var pp in sp.PartPlacements)
+        {
+          foreach (IReadOnlyList<System.Windows.Point> stroke in DeepNestSharp.Ui.PartMarkDrawing.Strokes(
+            pp.Part?.Name,
+            pp.X,
+            pp.Y,
+            pp.Rotation,
+            pp.IsMirrored))
+          {
+            c.Polygon(stroke.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), fill: false);
           }
         }
 

@@ -425,7 +425,7 @@
               dxfText.Location = TransformLocation(mirror, rotationAngle, dxfText.Location) + offset;
               dxfText.SecondAlignmentPoint =
                 TransformLocation(mirror, rotationAngle, dxfText.SecondAlignmentPoint) + offset;
-              (double textAngle, bool flipText) = TextPlacement(mirror, rotationAngle, dxfText.Rotation);
+              (double textAngle, bool flipText) = DxfPartMarks.TextPlacement(mirror, rotationAngle, dxfText.Rotation);
               dxfText.Rotation = textAngle;
               if (flipText)
               {
@@ -440,7 +440,7 @@
             {
               DxfMText dxfMText = (DxfMText)entity;
               dxfMText.InsertionPoint = TransformLocation(mirror, rotationAngle, dxfMText.InsertionPoint) + offset;
-              (double blockAngle, bool flipBlock) = TextPlacement(mirror, rotationAngle, dxfMText.RotationAngle);
+              (double blockAngle, bool flipBlock) = DxfPartMarks.TextPlacement(mirror, rotationAngle, dxfMText.RotationAngle);
               dxfMText.RotationAngle = blockAngle;
               if (flipBlock)
               {
@@ -507,37 +507,6 @@
 
       return RotateLocation(rotationAngle, pt);
     }
-
-    /// <summary>
-    /// Which way engraved text reads once its part has been placed, and whether it now hangs from its
-    /// other end.
-    /// </summary>
-    /// <remarks>
-    /// <para>The line the text sits on follows the part, mirror included: reflecting a direction maps
-    /// its angle to 180 minus itself, the same way it does for an arc's sweep. What must NOT follow the
-    /// part is the letters themselves. A DXF does not reflect glyphs, so reflecting the line alone
-    /// leaves text that reads backwards along it, which on a part number is the difference between a
-    /// part and a piece of scrap.</para>
-    /// <para>So when the reflected line would have the words running away from the reader, the text is
-    /// turned the other half turn to face them again and hung from its other end, which puts the same
-    /// words in the same place the right way round.</para>
-    /// </remarks>
-    private static (double Angle, bool Flip) TextPlacement(bool mirror, double rotationAngle, double own)
-    {
-      if (!mirror)
-      {
-        return (own + rotationAngle, false);
-      }
-
-      double reflected = Normalise(180.0 - own + rotationAngle);
-      return Readable(reflected) ? (reflected, false) : (Normalise(reflected + 180.0), true);
-    }
-
-    /// <summary>An angle in [0, 360).</summary>
-    private static double Normalise(double angle) => ((angle % 360.0) + 360.0) % 360.0;
-
-    /// <summary>Whether text written at this angle reads without turning the sheet round.</summary>
-    private static bool Readable(double angle) => angle <= 90.0 || angle >= 270.0;
 
     /// <summary>Left and right swap over when text is turned over, so the words still grow away from the
     /// point they are anchored at instead of back across the part.</summary>
