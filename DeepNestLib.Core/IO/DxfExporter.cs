@@ -131,6 +131,34 @@
       return sheetdxf;
     }
 
+    /// <summary>
+    /// What a part carries engraved on it, moved onto the sheet with the part. Marks are not contours,
+    /// so they come from the part's file rather than from the geometry measured out of it, and they are
+    /// written on the layer the operator drew them on: a shop that colours its layers leaves the mark
+    /// saying "whatever my layer is", and the layer has to go with it or the colour that makes it a mark
+    /// is lost.
+    /// </summary>
+    private static List<DxfEntity> PlacedMarks(
+      DxfFile into,
+      string source,
+      DxfPoint offset,
+      double rotation,
+      bool mirror)
+    {
+      IReadOnlyList<DxfEntity> marks = DxfPartMarks.Fresh(source);
+      if (marks.Count == 0)
+      {
+        return new List<DxfEntity>();
+      }
+
+      foreach (DxfLayer layer in DxfPartMarks.LayersFor(source))
+      {
+        AddLayer(into, layer.Name, layer.Color);
+      }
+
+      return OffsetToNest(marks.ToList(), offset, rotation, mirror);
+    }
+
     private static IEnumerable<DxfEntity> GetOffsetDxfEntities(IEnumerable<INfp> polygons, ISheet sheet, int i, bool differentiateChildren)
     {
       foreach (var polygon in polygons)
@@ -391,6 +419,38 @@
               break;
             }
 
+          case DxfEntityType.Text:
+            {
+              DxfText dxfText = (DxfText)entity;
+              dxfText.Location = TransformLocation(mirror, rotationAngle, dxfText.Location) + offset;
+              dxfText.SecondAlignmentPoint =
+                TransformLocation(mirror, rotationAngle, dxfText.SecondAlignmentPoint) + offset;
+              (double textAngle, bool flipText) = TextPlacement(mirror, rotationAngle, dxfText.Rotation);
+              dxfText.Rotation = textAngle;
+              if (flipText)
+              {
+                dxfText.HorizontalTextJustification = Flipped(dxfText.HorizontalTextJustification);
+              }
+
+              result.Add(dxfText);
+              break;
+            }
+
+          case DxfEntityType.MText:
+            {
+              DxfMText dxfMText = (DxfMText)entity;
+              dxfMText.InsertionPoint = TransformLocation(mirror, rotationAngle, dxfMText.InsertionPoint) + offset;
+              (double blockAngle, bool flipBlock) = TextPlacement(mirror, rotationAngle, dxfMText.RotationAngle);
+              dxfMText.RotationAngle = blockAngle;
+              if (flipBlock)
+              {
+                dxfMText.AttachmentPoint = Flipped(dxfMText.AttachmentPoint);
+              }
+
+              result.Add(dxfMText);
+              break;
+            }
+
           case DxfEntityType.Body:
           case DxfEntityType.DgnUnderlay:
           case DxfEntityType.Dimension:
@@ -400,7 +460,6 @@
           case DxfEntityType.Insert:
           case DxfEntityType.Light:
           case DxfEntityType.ModelerGeometry:
-          case DxfEntityType.MText:
           case DxfEntityType.OleFrame:
           case DxfEntityType.Ole2Frame:
           case DxfEntityType.PdfUnderlay:
@@ -413,7 +472,6 @@
           case DxfEntityType.Seqend:
           case DxfEntityType.Shape:
           case DxfEntityType.Solid:
-          case DxfEntityType.Text:
           case DxfEntityType.Tolerance:
           case DxfEntityType.Trace:
           case DxfEntityType.Underlay:
@@ -448,6 +506,64 @@
       }
 
       return RotateLocation(rotationAngle, pt);
+    }
+
+    /// <summary>
+    /// Which way engraved text reads once its part has been placed, and whether it now hangs from its
+    /// other end.
+    /// </summary>
+    /// <remarks>
+    /// <para>The line the text sits on follows the part, mirror included: reflecting a direction maps
+    /// its angle to 180 minus itself, the same way it does for an arc's sweep. What must NOT follow the
+    /// part is the letters themselves. A DXF does not reflect glyphs, so reflecting the line alone
+    /// leaves text that reads backwards along it, which on a part number is the difference between a
+    /// part and a piece of scrap.</para>
+    /// <para>So when the reflected line would have the words running away from the reader, the text is
+    /// turned the other half turn to face them again and hung from its other end, which puts the same
+    /// words in the same place the right way round.</para>
+    /// </remarks>
+    private static (double Angle, bool Flip) TextPlacement(bool mirror, double rotationAngle, double own)
+    {
+      if (!mirror)
+      {
+        return (own + rotationAngle, false);
+      }
+
+      double reflected = Normalise(180.0 - own + rotationAngle);
+      return Readable(reflected) ? (reflected, false) : (Normalise(reflected + 180.0), true);
+    }
+
+    /// <summary>An angle in [0, 360).</summary>
+    private static double Normalise(double angle) => ((angle % 360.0) + 360.0) % 360.0;
+
+    /// <summary>Whether text written at this angle reads without turning the sheet round.</summary>
+    private static bool Readable(double angle) => angle <= 90.0 || angle >= 270.0;
+
+    /// <summary>Left and right swap over when text is turned over, so the words still grow away from the
+    /// point they are anchored at instead of back across the part.</summary>
+    private static DxfHorizontalTextJustification Flipped(DxfHorizontalTextJustification justification)
+    {
+      switch (justification)
+      {
+        case DxfHorizontalTextJustification.Left: return DxfHorizontalTextJustification.Right;
+        case DxfHorizontalTextJustification.Right: return DxfHorizontalTextJustification.Left;
+        default: return justification;
+      }
+    }
+
+    /// <summary>The same swap for the nine points a block of text can hang from.</summary>
+    private static DxfAttachmentPoint Flipped(DxfAttachmentPoint attachment)
+    {
+      switch (attachment)
+      {
+        case DxfAttachmentPoint.TopLeft: return DxfAttachmentPoint.TopRight;
+        case DxfAttachmentPoint.TopRight: return DxfAttachmentPoint.TopLeft;
+        case DxfAttachmentPoint.MiddleLeft: return DxfAttachmentPoint.MiddleRight;
+        case DxfAttachmentPoint.MiddleRight: return DxfAttachmentPoint.MiddleLeft;
+        case DxfAttachmentPoint.BottomLeft: return DxfAttachmentPoint.BottomRight;
+        case DxfAttachmentPoint.BottomRight: return DxfAttachmentPoint.BottomLeft;
+        default: return attachment;
+      }
     }
 
     /// <summary>Swaps the contents of a list in place; the entities own their collections.</summary>
@@ -559,6 +675,16 @@
           {
             dxf.Entities.Add(entity);
           }
+        }
+
+        foreach (DxfEntity mark in PlacedMarks(
+          dxf,
+          placement.Part.Name,
+          new DxfPoint(placement.X, placement.Y, 0D),
+          placement.Rotation,
+          placement.IsMirrored))
+        {
+          dxf.Entities.Add(mark);
         }
       }
 
@@ -1460,6 +1586,22 @@
         foreach (var entity in entityList)
         {
           sheetdxf.Entities.Add(entity);
+        }
+
+        // What the parts carry engraved, added AFTER the merge and the join, the same way the offcut
+        // cuts are: a mark must never be chained into a part's contour.
+        var sheetXoffset = -sheet.WidthCalculated * i;
+        foreach (INfp polygon in polygons.Where(o => o.Sheet.Id == sheet.Id && o.Fitted))
+        {
+          foreach (DxfEntity mark in PlacedMarks(
+            sheetdxf,
+            polygon.Name,
+            new DxfPoint(polygon.X + sheetXoffset, polygon.Y, 0D),
+            polygon.Rotation,
+            polygon.IsMirrored))
+          {
+            sheetdxf.Entities.Add(mark);
+          }
         }
 
         // The offcut separation cut(s) (rectangular-offcut nests): ordinary cut geometry, added
