@@ -182,7 +182,9 @@
       var colors = new Dictionary<string, uint?>(StringComparer.OrdinalIgnoreCase);
       foreach (DxfLayer layer in file.Layers)
       {
-        colors[string.IsNullOrWhiteSpace(layer.Name) ? "0" : layer.Name] = DxfColorRoles.FromIndex(layer.Color);
+        // Trimmed on the way in as well as on the way out: a layer called "ENGRAVE " with a space on
+        // it has to answer to the marks that say they are on ENGRAVE.
+        colors[string.IsNullOrWhiteSpace(layer.Name) ? "0" : layer.Name.Trim()] = DxfColorRoles.FromIndex(layer.Color);
       }
 
       return new DxfLayerColors(colors);

@@ -75,6 +75,26 @@
         "they are the same letters, the same way up");
     }
 
+    /// <summary>
+    /// A mark the operator centred hangs from its SECOND point; a CAD program leaves the first at
+    /// nothing. Drawn from the first, a centred part number lands in the corner of the sheet while the
+    /// exporter writes it in the middle of the part, and the screen stops telling the truth about what
+    /// will be cut.
+    /// </summary>
+    [Fact]
+    public void ACentredMarkIsDrawnWhereItHangsFrom()
+    {
+      string path = this.WritePart(marked: true, centred: true);
+
+      var drawn = PartMarkDrawing.Strokes(path, 0, 0, 0, false).SelectMany(s => s).ToList();
+
+      drawn.Should().NotBeEmpty();
+      double midX = (drawn.Min(p => p.X) + drawn.Max(p => p.X)) / 2.0;
+      double midY = (drawn.Min(p => p.Y) + drawn.Max(p => p.Y)) / 2.0;
+      midX.Should().BeApproximately(10, 1.0, "the mark is centred on the middle of the part");
+      midY.Should().BeApproximately(10, 1.0);
+    }
+
     [Fact]
     public void APartWithNothingEngravedDrawsNothing()
     {
@@ -85,9 +105,9 @@
     }
 
     /// <summary>A 20 x 20 part with A1-1 engraved in the middle of it.</summary>
-    private string WritePart(bool marked)
+    private string WritePart(bool marked, bool centred = false)
     {
-      string path = Path.Combine(this.tempDir, (marked ? "marked" : "bare") + ".dxf");
+      string path = Path.Combine(this.tempDir, (marked ? (centred ? "centred" : "marked") : "bare") + ".dxf");
       var dxf = new DxfFile();
       dxf.Entities.Add(new DxfPolyline(new[]
       {
@@ -101,7 +121,16 @@
 
       if (marked)
       {
-        dxf.Entities.Add(new DxfText(new DxfPoint(10, 10, 0), 2D, "A1-1") { Color = DxfColor.FromIndex(Yellow) });
+        var mark = new DxfText(new DxfPoint(10, 10, 0), 2D, "A1-1") { Color = DxfColor.FromIndex(Yellow) };
+        if (centred)
+        {
+          mark.Location = new DxfPoint(0, 0, 0);
+          mark.SecondAlignmentPoint = new DxfPoint(10, 10, 0);
+          mark.HorizontalTextJustification = DxfHorizontalTextJustification.Center;
+          mark.VerticalTextJustification = DxfVerticalTextJustification.Middle;
+        }
+
+        dxf.Entities.Add(mark);
       }
 
       dxf.Save(path);

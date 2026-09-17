@@ -422,11 +422,28 @@
           case DxfEntityType.Text:
             {
               DxfText dxfText = (DxfText)entity;
-              dxfText.Location = TransformLocation(mirror, rotationAngle, dxfText.Location) + offset;
-              dxfText.SecondAlignmentPoint =
-                TransformLocation(mirror, rotationAngle, dxfText.SecondAlignmentPoint) + offset;
               (double textAngle, bool flipText) = DxfPartMarks.TextPlacement(mirror, rotationAngle, dxfText.Rotation);
               dxfText.Rotation = textAngle;
+              if (IsStretched(dxfText))
+              {
+                // Aligned and fit text is stretched BETWEEN its two points, so the second one is the far
+                // end of the run and not somewhere it could be moved to.
+                dxfText.Location = TransformLocation(mirror, rotationAngle, dxfText.Location) + offset;
+                dxfText.SecondAlignmentPoint =
+                  TransformLocation(mirror, rotationAngle, dxfText.SecondAlignmentPoint) + offset;
+              }
+              else
+              {
+                // A TEXT carries two points and which one a reader honours depends on its justification:
+                // left off the baseline it is the first, anything else the second. Turning a part over
+                // changes the justification, so both points go to where the mark actually is; moving only
+                // the one that reads well in a test leaves the other one pointing at the sheet origin,
+                // and that is the one the machine would follow.
+                DxfPoint placed = TransformLocation(mirror, rotationAngle, Anchor(dxfText)) + offset;
+                dxfText.Location = placed;
+                dxfText.SecondAlignmentPoint = placed;
+              }
+
               if (flipText)
               {
                 dxfText.HorizontalTextJustification = Flipped(dxfText.HorizontalTextJustification);
@@ -507,6 +524,19 @@
 
       return RotateLocation(rotationAngle, pt);
     }
+
+    /// <summary>The point a reader actually hangs this text from: the first one only when it is left
+    /// justified off the baseline, the second one in every other case.</summary>
+    private static DxfPoint Anchor(DxfText text)
+      => text.HorizontalTextJustification == DxfHorizontalTextJustification.Left
+        && text.VerticalTextJustification == DxfVerticalTextJustification.Baseline
+        ? text.Location
+        : text.SecondAlignmentPoint;
+
+    /// <summary>Whether this text is stretched between its two points rather than hung from one.</summary>
+    private static bool IsStretched(DxfText text)
+      => text.HorizontalTextJustification == DxfHorizontalTextJustification.Aligned
+        || text.HorizontalTextJustification == DxfHorizontalTextJustification.Fit;
 
     /// <summary>Left and right swap over when text is turned over, so the words still grow away from the
     /// point they are anchored at instead of back across the part.</summary>

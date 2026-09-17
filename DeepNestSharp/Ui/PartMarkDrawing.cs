@@ -126,13 +126,35 @@
       DxfPoint at;
       double height;
       double own;
+
+      // Which way the words sit round the point they hang from, as fractions of the text's own width and
+      // height. A DXF says this with a justification or an attachment point, and getting it wrong here
+      // would draw a centred part number in the corner of the part while the exporter writes it in the
+      // middle: the screen has to agree with what gets cut.
+      double acrossFrom;
+      double downFrom;
       switch (mark)
       {
         case DxfText text when !string.IsNullOrWhiteSpace(text.Value):
-          (words, at, height, own) = (text.Value, text.Location, text.TextHeight, text.Rotation);
+          words = text.Value;
+          height = text.TextHeight;
+          own = text.Rotation;
+
+          // A TEXT hangs from its first point only when it is left justified off the baseline; anything
+          // else hangs from the second, and a CAD program leaves the first at nothing in that case.
+          bool fromFirst = text.HorizontalTextJustification == DxfHorizontalTextJustification.Left
+            && text.VerticalTextJustification == DxfVerticalTextJustification.Baseline;
+          at = fromFirst ? text.Location : text.SecondAlignmentPoint;
+          acrossFrom = Across(text.HorizontalTextJustification);
+          downFrom = Down(text.VerticalTextJustification);
           break;
         case DxfMText mtext when !string.IsNullOrWhiteSpace(mtext.Text):
-          (words, at, height, own) = (mtext.Text, mtext.InsertionPoint, mtext.InitialTextHeight, mtext.RotationAngle);
+          words = mtext.Text;
+          at = mtext.InsertionPoint;
+          height = mtext.InitialTextHeight;
+          own = mtext.RotationAngle;
+          acrossFrom = Across(mtext.AttachmentPoint);
+          downFrom = Down(mtext.AttachmentPoint);
           break;
         default:
           return null;
@@ -160,21 +182,89 @@
 
       (double angle, bool flip) = DxfPartMarks.TextPlacement(mirrored, rotation, own);
       Point anchor = Place(at, x, y, rotation, mirrored);
+      if (flip)
+      {
+        // Turning the part over hangs the words from their other end, so they sit the other way round
+        // the point as well.
+        acrossFrom = 1.0 - acrossFrom;
+      }
 
       var placed = new TransformGroup();
 
       // Text is traced the way a screen reads, downwards; in a drawing Y goes up, so it hangs below its
       // anchor instead of above it.
       placed.Children.Add(new ScaleTransform(1, -1));
-      if (flip)
-      {
-        placed.Children.Add(new TranslateTransform(-formatted.Width, 0));
-      }
-
+      placed.Children.Add(new TranslateTransform(
+        -formatted.Width * acrossFrom,
+        formatted.Height * downFrom));
       placed.Children.Add(new RotateTransform(angle));
       placed.Children.Add(new TranslateTransform(anchor.X, anchor.Y));
       letters.Transform = placed;
       return letters;
+    }
+
+    /// <summary>How far along its own width a line of text sits from the point it hangs from.</summary>
+    private static double Across(DxfHorizontalTextJustification justification)
+    {
+      switch (justification)
+      {
+        case DxfHorizontalTextJustification.Center:
+        case DxfHorizontalTextJustification.Middle:
+          return 0.5;
+        case DxfHorizontalTextJustification.Right:
+          return 1.0;
+        default:
+          return 0.0;
+      }
+    }
+
+    private static double Across(DxfAttachmentPoint attachment)
+    {
+      switch (attachment)
+      {
+        case DxfAttachmentPoint.TopCenter:
+        case DxfAttachmentPoint.MiddleCenter:
+        case DxfAttachmentPoint.BottomCenter:
+          return 0.5;
+        case DxfAttachmentPoint.TopRight:
+        case DxfAttachmentPoint.MiddleRight:
+        case DxfAttachmentPoint.BottomRight:
+          return 1.0;
+        default:
+          return 0.0;
+      }
+    }
+
+    /// <summary>How far down its own height a line of text sits from the point it hangs from. Text on a
+    /// baseline stands ON the point, which is most of the way down it.</summary>
+    private static double Down(DxfVerticalTextJustification justification)
+    {
+      switch (justification)
+      {
+        case DxfVerticalTextJustification.Top:
+          return 0.0;
+        case DxfVerticalTextJustification.Middle:
+          return 0.5;
+        default:
+          return 0.8;
+      }
+    }
+
+    private static double Down(DxfAttachmentPoint attachment)
+    {
+      switch (attachment)
+      {
+        case DxfAttachmentPoint.MiddleLeft:
+        case DxfAttachmentPoint.MiddleCenter:
+        case DxfAttachmentPoint.MiddleRight:
+          return 0.5;
+        case DxfAttachmentPoint.BottomLeft:
+        case DxfAttachmentPoint.BottomCenter:
+        case DxfAttachmentPoint.BottomRight:
+          return 1.0;
+        default:
+          return 0.0;
+      }
     }
 
     /// <summary>Where a point on a part ends up once the part has been placed.</summary>

@@ -75,7 +75,31 @@
       marks[0].HorizontalTextJustification.Should().Be(
         DxfHorizontalTextJustification.Right,
         "it hangs from its other end so the same words stay in the same place");
+
+      // BOTH points, because which one a reader honours depends on the justification, and turning the
+      // part over changed it. Checking only the one that reads well in a test leaves the other pointing
+      // at the sheet origin, and that is the one the machine would follow.
       marks[0].Location.X.Should().BeApproximately(-3, 1e-6, "the mark follows the part it is on");
+      marks[0].Location.Y.Should().BeApproximately(5.5, 1e-6);
+      marks[0].SecondAlignmentPoint.X.Should().BeApproximately(-3, 1e-6, "this is the point a right-justified text hangs from");
+      marks[0].SecondAlignmentPoint.Y.Should().BeApproximately(5.5, 1e-6);
+    }
+
+    /// <summary>
+    /// A mark the operator centred on the part hangs from its SECOND point, not its first, so that is
+    /// the one that has to end up on the part. The first is left at nothing in a drawing like that, and
+    /// moving it alone would put the marking at the corner of the sheet.
+    /// </summary>
+    [Fact]
+    public async Task ACentredMarkIsPlacedByThePointItHangsFrom()
+    {
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: false, centred: true);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfText mark = DxfFile.Load(outPath).Entities.OfType<DxfText>().Single();
+      mark.SecondAlignmentPoint.X.Should().BeApproximately(7, 1e-6, "the mark sits 5 into a part placed at 2");
+      mark.SecondAlignmentPoint.Y.Should().BeApproximately(5.5, 1e-6);
     }
 
     /// <summary>A shop that colours its layers leaves every mark saying "whatever my layer is". Writing
@@ -109,14 +133,34 @@
       DxfFile.Load(barePath).Entities.Count.Should().Be(DxfFile.Load(markedPath).Entities.Count - 1);
     }
 
+    /// <summary>
+    /// A yellow centre point is an ordinary thing to find in a part, and the transform has no way to move
+    /// one. Left to reach it, it refuses the entity and the whole sheet goes with it: no export at all,
+    /// for a dot.
+    /// </summary>
+    [Fact]
+    public async Task AMarkThatCannotBeMovedDoesNotTakeTheSheetWithIt()
+    {
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: false, strayPoint: true);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfFile written = DxfFile.Load(outPath);
+      written.Entities.OfType<DxfText>().Should().ContainSingle("the engraving still comes out");
+      written.Entities.Should().Contain(e => e is DxfLwPolyline || e is DxfPolyline || e is DxfLine,
+        "and so does the part");
+    }
+
     /// <summary>One 10 × 5 rectangle with A1-1 engraved in it, placed on a 96 × 48 sheet, backed by a
     /// real DXF on disk: the exporter reloads originals by <c>Part.Name</c>.</summary>
     private (ISheetPlacement SheetPlacement, string OutPath) BuildPlacement(
       bool mirrored,
       string markLayer = null,
-      bool withMark = true)
+      bool withMark = true,
+      bool centred = false,
+      bool strayPoint = false)
     {
-      string name = withMark ? (markLayer ?? "marked") : "bare";
+      string name = withMark ? (markLayer ?? (centred ? "centred" : strayPoint ? "stray" : "marked")) : "bare";
       string partPath = Path.Combine(this.tempDir, name + ".dxf");
       var dxf = new DxfFile();
       var outline = new DxfPolyline(new[]
@@ -133,6 +177,15 @@
       if (withMark)
       {
         var mark = new DxfText(new DxfPoint(5, 2.5, 0), 0.5, "A1-1");
+        if (centred)
+        {
+          // Centred text keeps its real anchor in the second point and leaves the first at nothing,
+          // which is exactly how a CAD program writes it.
+          mark.Location = new DxfPoint(0, 0, 0);
+          mark.SecondAlignmentPoint = new DxfPoint(5, 2.5, 0);
+          mark.HorizontalTextJustification = DxfHorizontalTextJustification.Center;
+        }
+
         if (markLayer == null)
         {
           mark.Color = DxfColor.FromIndex(Yellow);
@@ -144,6 +197,11 @@
         }
 
         dxf.Entities.Add(mark);
+      }
+
+      if (strayPoint)
+      {
+        dxf.Entities.Add(new DxfModelPoint(new DxfPoint(2, 2, 0)) { Color = DxfColor.FromIndex(Yellow) });
       }
 
       dxf.Save(partPath);

@@ -263,7 +263,7 @@
             pp.Rotation,
             pp.IsMirrored))
           {
-            c.Polygon(stroke.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), fill: false);
+            c.Polygon(stroke.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), fill: false, close: false);
           }
         }
 
@@ -501,7 +501,7 @@
 
       /// <summary>Part outline (its part-type colour, or aluminum-gray when uncoloured) or hole (white
       /// fill), always stroked.</summary>
-      public void Polygon(IEnumerable<(double X, double Y)> pts, bool fill, bool holeFill = false, (byte R, byte G, byte B)? fillColour = null)
+      public void Polygon(IEnumerable<(double X, double Y)> pts, bool fill, bool holeFill = false, (byte R, byte G, byte B)? fillColour = null, bool close = true)
       {
         bool first = true;
         foreach (var (x, y) in pts)
@@ -522,7 +522,11 @@
           ? FormattableString.Invariant($"{fillColour.Value.R / 255.0:0.###} {fillColour.Value.G / 255.0:0.###} {fillColour.Value.B / 255.0:0.###}")
           : "0.71 0.72 0.74";
         string paint = fill ? partRg + " rg b" : holeFill ? "1 1 1 rg b" : "s";
-        this.sb.AppendLine(FormattableString.Invariant($"h 0.5 w 0.15 0.15 0.15 RG {paint} 0 0 0 rg"));
+
+        // An engraved arc or a scribe line is a path, not a shape: closing it would draw a straight run
+        // back to where it started that is not on the part.
+        string shut = close ? "h " : string.Empty;
+        this.sb.AppendLine(FormattableString.Invariant($"{shut}0.5 w 0.15 0.15 0.15 RG {paint} 0 0 0 rg"));
       }
 
       public byte[] ToBytes()

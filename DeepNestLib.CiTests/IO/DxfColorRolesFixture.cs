@@ -454,6 +454,32 @@
       }
     }
 
+    /// <summary>A path that is not just missing but malformed. The import is what refuses a drawing and
+    /// says why; asking what is engraved on it must not throw in the middle of a repaint.</summary>
+    [Fact]
+    public void APathThatCouldNotBeAFileIsAnsweredWithNothing()
+    {
+      // A null in the middle of it: the one thing a path still cannot hold, and what a rebuilt path
+      // out of a corrupt project file comes back as.
+      string broken = "C:" + ((char)0) + "part.dxf";
+
+      DxfPartMarks.For(broken).Should().BeEmpty();
+      DxfPartMarks.Fresh(broken).Should().BeEmpty();
+      DxfPartMarks.LayersFor(broken).Should().BeEmpty();
+    }
+
+    /// <summary>A layer name written with a space on the end is the same layer as the one its marks say
+    /// they are on, or the mark loses the colour that makes it a mark.</summary>
+    [Fact]
+    public void ALayerWhoseNameHasASpaceOnItStillColoursItsMarks()
+    {
+      var drawing = new DxfFile();
+      drawing.Layers.Add(new DxfLayer("ENGRAVE ", DxfColor.FromIndex(Yellow)));
+      DxfEntity mark = OnLayer(new DxfText(new DxfPoint(5, 5, 0), 1D, "A1-1"), "ENGRAVE");
+
+      DxfColorRoles.RoleOf(mark, DxfLayerColors.Of(drawing)).Should().Be(DxfColorRole.PartMark);
+    }
+
     private static DxfPolyline Rectangle(double x, double y, double width, double height)
     {
       return new DxfPolyline(new[]

@@ -22,8 +22,23 @@
   /// </remarks>
   public static class DxfPartMarks
   {
-    private static readonly ConcurrentDictionary<string, (long Ticks, byte[] Bytes, IReadOnlyList<DxfEntity> Marks)> Cache
-      = new ConcurrentDictionary<string, (long, byte[], IReadOnlyList<DxfEntity>)>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// What a mark is allowed to be drawn with: everything the exporter knows how to move onto a sheet.
+    /// Anything else - a block, a solid, a bare point - is left out here rather than further down, where
+    /// the exporter refuses an entity it cannot transform and takes the whole sheet with it. A yellow
+    /// centre point in one part should not be the reason a nest does not come out.
+    /// </summary>
+    private static readonly HashSet<DxfEntityType> Movable = new HashSet<DxfEntityType>
+    {
+      DxfEntityType.Arc, DxfEntityType.ArcAlignedText, DxfEntityType.Attribute,
+      DxfEntityType.AttributeDefinition, DxfEntityType.Circle, DxfEntityType.Ellipse,
+      DxfEntityType.Image, DxfEntityType.Leader, DxfEntityType.Line, DxfEntityType.LwPolyline,
+      DxfEntityType.MLine, DxfEntityType.Polyline, DxfEntityType.Spline, DxfEntityType.Text,
+      DxfEntityType.MText,
+    };
+
+    private static readonly ConcurrentDictionary<string, (long Ticks, IReadOnlyList<DxfEntity> Marks)> Cache
+      = new ConcurrentDictionary<string, (long, IReadOnlyList<DxfEntity>)>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// What is engraved on the part in this file. Empty for a part with nothing marked on it, and for a
@@ -37,23 +52,8 @@
         return Array.Empty<DxfEntity>();
       }
 
-      long ticks;
-      try
-      {
-        var file = new FileInfo(path);
-        if (!file.Exists)
-        {
-          return Array.Empty<DxfEntity>();
-        }
-
-        ticks = file.LastWriteTimeUtc.Ticks;
-      }
-      catch (IOException)
-      {
-        return Array.Empty<DxfEntity>();
-      }
-
-      return Entry(path, ticks).Marks;
+      long? ticks = WrittenAt(path);
+      return ticks == null ? Array.Empty<DxfEntity>() : Entry(path, ticks.Value);
     }
 
     /// <summary>
@@ -71,18 +71,27 @@
 
       try
       {
-        var file = new FileInfo(path);
-        if (!file.Exists)
-        {
-          return Array.Empty<DxfEntity>();
-        }
-
-        byte[] bytes = Entry(path, file.LastWriteTimeUtc.Ticks).Bytes;
-        return bytes == null ? Array.Empty<DxfEntity>() : MarksIn(bytes);
+        return MarksIn(DxfPartSplitter.ReadAllBytesShared(path));
       }
-      catch (IOException)
+      catch (Exception)
       {
         return Array.Empty<DxfEntity>();
+      }
+    }
+
+    /// <summary>When this file was last written, or null when there is no reading it. A path can be
+    /// malformed as well as missing, and either way the import is what refuses the drawing and says
+    /// why; asking what is engraved on it must not throw in the middle of a repaint.</summary>
+    private static long? WrittenAt(string path)
+    {
+      try
+      {
+        var file = new FileInfo(path);
+        return file.Exists ? file.LastWriteTimeUtc.Ticks : (long?)null;
+      }
+      catch (Exception)
+      {
+        return null;
       }
     }
 
@@ -133,29 +142,19 @@
 
       try
       {
-        var file = new FileInfo(path);
-        if (!file.Exists)
-        {
-          return Array.Empty<DxfLayer>();
-        }
-
-        byte[] bytes = Entry(path, file.LastWriteTimeUtc.Ticks).Bytes;
-        if (bytes == null)
-        {
-          return Array.Empty<DxfLayer>();
-        }
-
-        using (var stream = new MemoryStream(bytes))
+        using (var stream = new MemoryStream(DxfPartSplitter.ReadAllBytesShared(path)))
         {
           DxfFile drawing = DxfFile.Load(stream);
           DxfLayerColors layers = DxfLayerColors.Of(drawing);
           var used = new HashSet<string>(
             drawing.Entities
               .Where(entity => DxfColorRoles.RoleOf(entity, layers) == DxfColorRole.PartMark)
-              .Select(entity => string.IsNullOrWhiteSpace(entity.Layer) ? "0" : entity.Layer.Trim()),
+              .Select(entity => Named(entity.Layer)),
             StringComparer.OrdinalIgnoreCase);
 
-          return drawing.Layers.Where(layer => used.Contains(layer.Name)).ToList();
+          // Compared on the trimmed name at both ends: a layer called "ENGRAVE " with a space on it is
+          // the same layer as the one its marks say they are on.
+          return drawing.Layers.Where(layer => used.Contains(Named(layer.Name))).ToList();
         }
       }
       catch (Exception)
@@ -164,31 +163,30 @@
       }
     }
 
-    private static (byte[] Bytes, IReadOnlyList<DxfEntity> Marks) Entry(string path, long ticks)
+    private static IReadOnlyList<DxfEntity> Entry(string path, long ticks)
     {
-      if (Cache.TryGetValue(path, out (long Ticks, byte[] Bytes, IReadOnlyList<DxfEntity> Marks) cached)
-        && cached.Ticks == ticks)
+      if (Cache.TryGetValue(path, out (long Ticks, IReadOnlyList<DxfEntity> Marks) cached) && cached.Ticks == ticks)
       {
-        return (cached.Bytes, cached.Marks);
+        return cached.Marks;
       }
 
-      byte[] bytes;
+      IReadOnlyList<DxfEntity> marks;
       try
       {
-        bytes = DxfPartSplitter.ReadAllBytesShared(path);
+        marks = MarksIn(DxfPartSplitter.ReadAllBytesShared(path));
       }
       catch (Exception)
       {
         // A drawing that cannot be read is refused by the import, which says why in words the operator
         // can act on. Asking what is engraved on it is not the place to repeat that.
-        Cache[path] = (ticks, null, Array.Empty<DxfEntity>());
-        return (null, Array.Empty<DxfEntity>());
+        marks = Array.Empty<DxfEntity>();
       }
 
-      IReadOnlyList<DxfEntity> marks = MarksIn(bytes);
-      Cache[path] = (ticks, bytes, marks);
-      return (bytes, marks);
+      Cache[path] = (ticks, marks);
+      return marks;
     }
+
+    private static string Named(string layer) => string.IsNullOrWhiteSpace(layer) ? "0" : layer.Trim();
 
     private static IReadOnlyList<DxfEntity> MarksIn(byte[] bytes)
     {
@@ -207,7 +205,8 @@
 
       DxfLayerColors layers = DxfLayerColors.Of(drawing);
       return drawing.Entities
-        .Where(entity => DxfColorRoles.RoleOf(entity, layers) == DxfColorRole.PartMark)
+        .Where(entity => Movable.Contains(entity.EntityType)
+          && DxfColorRoles.RoleOf(entity, layers) == DxfColorRole.PartMark)
         .ToList();
     }
   }
