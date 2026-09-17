@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Ui
+﻿namespace DeepNestSharp.Ui
 {
   using System.Collections.Generic;
   using System.Globalization;
@@ -39,6 +39,8 @@ namespace DeepNestSharp.Ui
       string units = unitsMm ? "mm" : "in";
       for (int i = 0; i < plan.Count; i++)
       {
+        // The plan's own name is deliberately not used: a card is named for where it is in the list, and
+        // that is the number the operator reads off the report and the drawing.
         var (sheet, count, _) = plan[i];
         cards.Add(new NestCard
         {

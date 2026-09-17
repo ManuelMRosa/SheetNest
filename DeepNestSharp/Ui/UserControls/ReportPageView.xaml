@@ -1,4 +1,4 @@
-<UserControl x:Class="DeepNestSharp.Ui.UserControls.ReportPageView"
+﻿<UserControl x:Class="DeepNestSharp.Ui.UserControls.ReportPageView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <!-- Nest report's page, handled like the nest viewer: the wheel zooms toward the cursor, the wheel held down pans,
@@ -7,7 +7,8 @@
         MouseWheel="OnMouseWheel" MouseDown="OnMouseDown" MouseMove="OnMouseMove" MouseUp="OnMouseUp"
         MouseRightButtonDown="OnResetView">
     <!-- Anchored top-left, like the viewer's canvas, so the transform works from the host's own corner. -->
-    <Image x:Name="page" Width="792" Height="612" Stretch="Fill" HorizontalAlignment="Left" VerticalAlignment="Top">
+    <!-- Sized in code from the report's own page size, so the two cannot drift apart. -->
+    <Image x:Name="page" Stretch="Fill" HorizontalAlignment="Left" VerticalAlignment="Top">
       <Image.RenderTransform>
         <TransformGroup>
           <ScaleTransform x:Name="scale" />

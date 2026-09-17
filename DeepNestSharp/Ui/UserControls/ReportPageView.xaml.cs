@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Ui.UserControls
+﻿namespace DeepNestSharp.Ui.UserControls
 {
   using System;
   using System.Windows;
@@ -19,8 +19,9 @@ namespace DeepNestSharp.Ui.UserControls
       typeof(ReportPageView),
       new PropertyMetadata(null, OnSourceChanged));
 
-    private const double PageW = 792; // the report page, in points
-    private const double PageH = 612;
+    // The page is the size the report prints it, said once in NestReportPdf.
+    private const double PageW = DeepNestSharp.Reports.NestReportPdf.PageW;
+    private const double PageH = DeepNestSharp.Reports.NestReportPdf.PageH;
 
     private bool fitted;
     private bool isPanning;
@@ -31,6 +32,9 @@ namespace DeepNestSharp.Ui.UserControls
     public ReportPageView()
     {
       InitializeComponent();
+
+      this.page.Width = PageW;
+      this.page.Height = PageH;
 
       // A page set while there was no room to fit it into (the report was still collapsed) is fitted as soon as
       // there is; after that the operator's zoom is left alone.

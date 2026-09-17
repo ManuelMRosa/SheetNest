@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Reports
+﻿namespace DeepNestSharp.Reports
 {
   using System;
   using System.Collections.Generic;
@@ -29,8 +29,12 @@ namespace DeepNestSharp.Reports
     internal const string SettingHeading = "SETTING INFORMATION";
     internal const string PartsHeading = "NEST PARTS LIST";
 
-    private const double PageW = 792; // US Letter landscape, points
-    private const double PageH = 612;
+    /// <summary>The report page, in points: US Letter landscape. The viewer that shows the same page on
+    /// screen reads these rather than repeating them.</summary>
+    internal const double PageW = 792;
+
+    /// <summary>The report page's height in points; see <see cref="PageW"/>.</summary>
+    internal const double PageH = 612;
 
     // The sheet drawing owns the right of the page, bottom margin to top margin. The text column ends
     // before it: a parts row is 4 + 1 + 40 + 1 + 7 = 53 characters, 318 points from the left margin.
