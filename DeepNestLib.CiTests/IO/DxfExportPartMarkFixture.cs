@@ -151,6 +151,47 @@
         "and so does the part");
     }
 
+    /// <summary>
+    /// A block of text says which way it reads TWICE: in its angle and in its X-axis direction vector,
+    /// and a reader that finds both follows the vector. Turning the part without turning the vector
+    /// leaves the mark lying the way it was drawn, off the part and sometimes off the sheet. Checking
+    /// the angle alone passes while that happens, because the angle is what the screen reads.
+    /// </summary>
+    [Fact]
+    public async Task ABlockMarkOnATurnedPartPointsTheWayThePartWasTurned()
+    {
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: false, mtext: true, rotation: 90);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfMText mark = DxfFile.Load(outPath).Entities.OfType<DxfMText>().Single();
+      mark.XAxisDirection.X.Should().BeApproximately(0, 1e-6, "a quarter turn leaves the words running up the sheet");
+      mark.XAxisDirection.Y.Should().BeApproximately(1, 1e-6);
+      mark.InsertionPoint.X.Should().BeApproximately(-0.5, 1e-6, "and the mark still lands with its part");
+      mark.InsertionPoint.Y.Should().BeApproximately(8, 1e-6);
+    }
+
+    /// <summary>
+    /// Turning a part over reflects the line its mark sits on, and at 45 degrees that leaves the words
+    /// running away from the reader, so they are turned the other half turn to face back. The direction
+    /// vector has to carry that half turn too, or the mark comes out pointing down the reflected line.
+    /// </summary>
+    [Fact]
+    public async Task AMirroredBlockMarkPointsTheWayItReads()
+    {
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: true, mtext: true, rotation: 45);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfMText mark = DxfFile.Load(outPath).Entities.OfType<DxfMText>().Single();
+      double readable = Math.Sqrt(2) / 2;
+      mark.XAxisDirection.X.Should().BeApproximately(readable, 1e-6, "45 degrees, not the 225 the reflected line points at");
+      mark.XAxisDirection.Y.Should().BeApproximately(readable, 1e-6);
+      mark.AttachmentPoint.Should().Be(
+        DxfAttachmentPoint.TopRight,
+        "it hangs from its other end so the same words stay in the same place");
+    }
+
     /// <summary>One 10 × 5 rectangle with A1-1 engraved in it, placed on a 96 × 48 sheet, backed by a
     /// real DXF on disk: the exporter reloads originals by <c>Part.Name</c>.</summary>
     private (ISheetPlacement SheetPlacement, string OutPath) BuildPlacement(
@@ -158,9 +199,13 @@
       string markLayer = null,
       bool withMark = true,
       bool centred = false,
-      bool strayPoint = false)
+      bool strayPoint = false,
+      bool mtext = false,
+      double rotation = 0)
     {
-      string name = withMark ? (markLayer ?? (centred ? "centred" : strayPoint ? "stray" : "marked")) : "bare";
+      string name = withMark
+        ? (markLayer ?? (centred ? "centred" : strayPoint ? "stray" : mtext ? "block" : "marked"))
+        : "bare";
       string partPath = Path.Combine(this.tempDir, name + ".dxf");
       var dxf = new DxfFile();
       var outline = new DxfPolyline(new[]
@@ -176,14 +221,32 @@
 
       if (withMark)
       {
-        var mark = new DxfText(new DxfPoint(5, 2.5, 0), 0.5, "A1-1");
-        if (centred)
+        DxfEntity mark;
+        if (mtext)
         {
-          // Centred text keeps its real anchor in the second point and leaves the first at nothing,
-          // which is exactly how a CAD program writes it.
-          mark.Location = new DxfPoint(0, 0, 0);
-          mark.SecondAlignmentPoint = new DxfPoint(5, 2.5, 0);
-          mark.HorizontalTextJustification = DxfHorizontalTextJustification.Center;
+          // MTEXT did not exist before R13, so a part file left at the default version drops the mark
+          // on the way to disk and the test would be measuring an empty drawing.
+          dxf.Header.Version = DxfAcadVersion.R2000;
+          mark = new DxfMText
+          {
+            InsertionPoint = new DxfPoint(5, 2.5, 0),
+            InitialTextHeight = 0.5,
+            Text = "A1-1",
+          };
+        }
+        else
+        {
+          var text = new DxfText(new DxfPoint(5, 2.5, 0), 0.5, "A1-1");
+          if (centred)
+          {
+            // Centred text keeps its real anchor in the second point and leaves the first at nothing,
+            // which is exactly how a CAD program writes it.
+            text.Location = new DxfPoint(0, 0, 0);
+            text.SecondAlignmentPoint = new DxfPoint(5, 2.5, 0);
+            text.HorizontalTextJustification = DxfHorizontalTextJustification.Center;
+          }
+
+          mark = text;
         }
 
         if (markLayer == null)
@@ -209,10 +272,18 @@
       var det = new NestExecutionHelper().LoadRawDetail(new FileInfo(partPath));
       det.TryConvertToNfp(0, out INfp nfp).Should().BeTrue();
 
+      // A real nest turns the PART and copies that angle onto the placement (PartPlacementWorker:351),
+      // and the export reads the part's angle, not the placement's. Setting only the placement would
+      // leave the part flat and the test measuring a nest that never turned anything.
+      if (rotation != 0)
+      {
+        nfp = nfp.Rotate(rotation);
+      }
+
       var sheet = Sheet.NewSheet(1, 96, 48);
       var placements = new List<IPartPlacement>
       {
-        new PartPlacement(nfp) { X = 2, Y = 3, Rotation = 0, Id = 0, Source = 0, IsMirrored = mirrored },
+        new PartPlacement(nfp) { X = 2, Y = 3, Rotation = rotation, Id = 0, Source = 0, IsMirrored = mirrored },
       };
 
       var sheetPlacement = new SheetPlacement(PlacementTypeEnum.BoundingBox, sheet, placements, 0, SvgNest.Config.ClipperScale);

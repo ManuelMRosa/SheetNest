@@ -459,6 +459,14 @@
               dxfMText.InsertionPoint = TransformLocation(mirror, rotationAngle, dxfMText.InsertionPoint) + offset;
               (double blockAngle, bool flipBlock) = DxfPartMarks.TextPlacement(mirror, rotationAngle, dxfMText.RotationAngle);
               dxfMText.RotationAngle = blockAngle;
+
+              // A block of text says which way it reads twice, in its angle and in its X-axis direction
+              // vector, and a reader that finds both follows the vector. Turning the part without turning
+              // the vector leaves the mark lying the way it was drawn, off the part and sometimes off the
+              // sheet; the angle alone is what the screen reads, so it looks right there while it is not.
+              double blockRadians = GeometryUtil.ToRadians(blockAngle);
+              dxfMText.XAxisDirection = new DxfVector(Math.Cos(blockRadians), Math.Sin(blockRadians), 0D);
+
               if (flipBlock)
               {
                 dxfMText.AttachmentPoint = Flipped(dxfMText.AttachmentPoint);
