@@ -471,7 +471,11 @@
       switch (entity)
       {
         case DxfText text:
-          return new SvgPoint(text.Location.X, text.Location.Y);
+          {
+            DxfPoint at = DxfPartMarks.AnchorOf(text);
+            return new SvgPoint(at.X, at.Y);
+          }
+
         case DxfMText mtext:
           return new SvgPoint(mtext.InsertionPoint.X, mtext.InsertionPoint.Y);
         case DxfLine line:
@@ -618,7 +622,11 @@
         switch (entity)
         {
           case DxfText text when !string.IsNullOrWhiteSpace(text.Value):
-            labels.Add((new SvgPoint(text.Location.X, text.Location.Y), text.Value));
+            {
+              DxfPoint at = DxfPartMarks.AnchorOf(text);
+              labels.Add((new SvgPoint(at.X, at.Y), text.Value));
+            }
+
             break;
           case DxfMText mtext when !string.IsNullOrWhiteSpace(mtext.Text):
             labels.Add((new SvgPoint(mtext.InsertionPoint.X, mtext.InsertionPoint.Y), mtext.Text));

@@ -129,6 +129,29 @@
     public static bool Readable(double angle) => angle <= 90.0 || angle >= 270.0;
 
     /// <summary>
+    /// The point a text hangs from: the first one only when it is left justified off the baseline, the
+    /// second one in every other case.
+    /// </summary>
+    /// <remarks>
+    /// <para>A CAD centring a text leaves the first point at nothing and puts the anchor that counts in
+    /// the second, so reading the first asks about the drawing origin instead of about the part. That
+    /// is far enough away to lose the text altogether: the splitter decides which part a text is on by
+    /// testing whether its point falls inside one, and a text that falls inside nothing is dropped from
+    /// every part file written.</para>
+    /// <para>Here rather than in any one caller because four places need this rule - the splitter for
+    /// marks and for names, the exporter, and the screen - and it has already gone out of step once.
+    /// </para>
+    /// <para>Aligned and fit text is stretched BETWEEN its two points, so the second is the far end of
+    /// the run rather than somewhere the text hangs from. It is still on the part, which is all the
+    /// splitter is asking; the exporter treats that case separately.</para>
+    /// </remarks>
+    public static DxfPoint AnchorOf(DxfText text)
+      => text.HorizontalTextJustification == DxfHorizontalTextJustification.Left
+        && text.VerticalTextJustification == DxfVerticalTextJustification.Baseline
+        ? text.Location
+        : text.SecondAlignmentPoint;
+
+    /// <summary>
     /// The layers the marks in this file are drawn on, as the drawing declares them. A shop that colours
     /// its layers rather than its lines leaves every mark saying "whatever my layer is", so writing the
     /// mark out without its layer would lose the colour that says it is a mark at all.

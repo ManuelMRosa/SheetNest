@@ -140,11 +140,7 @@
           height = text.TextHeight;
           own = text.Rotation;
 
-          // A TEXT hangs from its first point only when it is left justified off the baseline; anything
-          // else hangs from the second, and a CAD program leaves the first at nothing in that case.
-          bool fromFirst = text.HorizontalTextJustification == DxfHorizontalTextJustification.Left
-            && text.VerticalTextJustification == DxfVerticalTextJustification.Baseline;
-          at = fromFirst ? text.Location : text.SecondAlignmentPoint;
+          at = DxfPartMarks.AnchorOf(text);
           acrossFrom = Across(text.HorizontalTextJustification);
           downFrom = Down(text.VerticalTextJustification);
           break;

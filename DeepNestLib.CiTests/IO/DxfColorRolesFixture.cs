@@ -382,6 +382,80 @@
       }
     }
 
+    /// <summary>
+    /// A mark the operator centred on the part hangs from its SECOND point, and a CAD leaves the first
+    /// at nothing. Deciding which part it belongs to by the first point asks about the drawing origin,
+    /// which is inside no part, so the mark is given to none - and a mark given to none is deleted from
+    /// every file written, without a word, because the writer keeps only what was given to a part.
+    /// </summary>
+    [Fact]
+    public void ACentredMarkSurvivesIntoThePartsFile()
+    {
+      string path = WriteDrawing(
+        InColor(Rectangle(10, 10, 20, 20), White),
+        InColor(Centred(20, 20, "A1-1"), Yellow),
+        InColor(new DxfText(new DxfPoint(20, 14, 0), 1D, "A1-1,3"), Blue),
+        InColor(Rectangle(50, 10, 20, 20), White),
+        InColor(Centred(60, 20, "A1-2"), Yellow),
+        InColor(new DxfText(new DxfPoint(60, 14, 0), 1D, "A1-2,3"), Blue));
+
+      try
+      {
+        var written = DxfPartSplitter.WriteParts(path);
+
+        written.Should().HaveCount(2);
+        foreach (var part in written)
+        {
+          DxfFile file;
+          using (var stream = File.OpenRead(part.Path))
+          {
+            file = DxfFile.Load(stream);
+          }
+
+          string mark = Path.GetFileNameWithoutExtension(part.Path).Split(',')[0];
+          file.Entities.OfType<DxfText>().Select(t => t.Value).Should().Contain(
+            mark,
+            "a centred mark belongs to the part it was centred on, not to nothing");
+        }
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
+    /// <summary>
+    /// The same first point decides which part a name belongs to. A centred one asks about the origin
+    /// too, so the part loses the name the operator gave it AND the count of how many to cut, and falls
+    /// back to being numbered and cut once.
+    /// </summary>
+    [Fact]
+    public void ACentredLabelStillNamesItsPartAndSaysHowMany()
+    {
+      string path = WriteDrawing(
+        InColor(Rectangle(10, 10, 20, 20), White),
+        InColor(Centred(20, 20, "A1-1,3"), Blue),
+        InColor(Rectangle(50, 10, 20, 20), White),
+        InColor(Centred(60, 20, "A1-2,7"), Blue));
+
+      try
+      {
+        var written = DxfPartSplitter.WriteParts(path);
+
+        written.Should().HaveCount(2);
+        written.Select(p => Path.GetFileNameWithoutExtension(p.Path)).Should().BeEquivalentTo(
+          new[] { "A1-1", "A1-2" },
+          "a centred label names the part it was centred on");
+        written.Select(p => p.Quantity).Should().BeEquivalentTo(
+          new[] { 3, 7 },
+          "and says how many of that part to cut");
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
     /// <summary>What is engraved on a part is read back out of the part's own file, which is the one
     /// thing everything that has to draw it or write it out holds in common.</summary>
     [Fact]
@@ -490,6 +564,18 @@
         new DxfVertex(new DxfPoint(x, y + height, 0)),
         new DxfVertex(new DxfPoint(x, y, 0)),
       });
+    }
+
+    /// <summary>Text the way a CAD writes it once the operator has centred it: the anchor that counts
+    /// in the second point, and the first left at nothing.</summary>
+    private static DxfText Centred(double x, double y, string value)
+    {
+      return new DxfText(new DxfPoint(0, 0, 0), 1D, value)
+      {
+        SecondAlignmentPoint = new DxfPoint(x, y, 0),
+        HorizontalTextJustification = DxfHorizontalTextJustification.Center,
+        VerticalTextJustification = DxfVerticalTextJustification.Middle,
+      };
     }
 
     private static T InColor<T>(T entity, int aci)
