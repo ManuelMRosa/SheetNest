@@ -320,17 +320,14 @@
 
           case DxfEntityType.Leader:
             DxfLeader dxfLeader = (DxfLeader)entity;
-            tmpPts = new List<DxfPoint>();
 
-            foreach (DxfPoint vrt in dxfLeader.Vertices)
+            // Point by point, in place. A leader refuses to hold fewer than two points even for an
+            // instant, so emptying the list to refill it throws before anything can be put back.
+            for (int v = 0; v < dxfLeader.Vertices.Count; v++)
             {
-              var tmppnt = TransformLocation(mirror, rotationAngle, vrt);
-              tmppnt += offset;
-              tmpPts.Add(tmppnt);
+              dxfLeader.Vertices[v] = TransformLocation(mirror, rotationAngle, dxfLeader.Vertices[v]) + offset;
             }
 
-            dxfLeader.Vertices.Clear();
-            dxfLeader.Vertices.Concat(tmpPts);
             result.Add(dxfLeader);
             break;
 
@@ -364,20 +361,19 @@
 
           case DxfEntityType.MLine:
             DxfMLine mLine = (DxfMLine)entity;
-            tmpPts = new List<DxfPoint>();
-            mLine.StartPoint += offset;
 
-            mLine.StartPoint = TransformLocation(mirror, rotationAngle, mLine.StartPoint);
+            // Turn first, then move, the way every other entity here does. Offsetting first put the
+            // sheet offset through the rotation as well, which walks the start point off the part by
+            // more the further across the sheet the part was nested.
+            mLine.StartPoint = TransformLocation(mirror, rotationAngle, mLine.StartPoint) + offset;
 
-            foreach (DxfPoint vrt in mLine.Vertices)
+            // In place, so the vertex list stays the same length as the direction lists that run
+            // alongside it and are indexed with it.
+            for (int v = 0; v < mLine.Vertices.Count; v++)
             {
-              var tmppnt = TransformLocation(mirror, rotationAngle, vrt);
-              tmppnt += offset;
-              tmpPts.Add(tmppnt);
+              mLine.Vertices[v] = TransformLocation(mirror, rotationAngle, mLine.Vertices[v]) + offset;
             }
 
-            mLine.Vertices.Clear();
-            mLine.Vertices.Concat(tmpPts);
             result.Add(mLine);
             break;
 

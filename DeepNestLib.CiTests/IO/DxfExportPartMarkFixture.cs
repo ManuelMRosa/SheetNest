@@ -192,6 +192,33 @@
         "it hangs from its other end so the same words stay in the same place");
     }
 
+    /// <summary>
+    /// A mark drawn as a LEADER came off the sheet with no vertices at all: the transform emptied the
+    /// list and then threw away the sequence it meant to put back. Nothing about the placement matters,
+    /// it happens to a part that was never moved, so a drawn mark has simply not been coming out.
+    /// </summary>
+    /// <remarks>
+    /// The MLINE branch had the same two lines and is fixed with it, but cannot be covered here: the
+    /// library writes an MLINE its own reader then refuses, so the part file cannot be read back to
+    /// build a placement from. That is a fault in the library, not in the transform.
+    /// </remarks>
+    [Fact]
+    public async Task AMarkDrawnAsALeaderKeepsItsVertices()
+    {
+      var leader = new DxfLeader(new[] { new DxfPoint(3, 2, 0), new DxfPoint(7, 3, 0) });
+
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: true, rotation: 90, drawnMark: leader);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfLeader written = DxfFile.Load(outPath).Entities.OfType<DxfLeader>().Single();
+      written.Vertices.Should().HaveCount(2, "an emptied list is a mark that never reaches the sheet");
+      written.Vertices[0].X.Should().BeApproximately(0, 1e-6);
+      written.Vertices[0].Y.Should().BeApproximately(0, 1e-6);
+      written.Vertices[1].X.Should().BeApproximately(-1, 1e-6);
+      written.Vertices[1].Y.Should().BeApproximately(-4, 1e-6);
+    }
+
     /// <summary>One 10 × 5 rectangle with A1-1 engraved in it, placed on a 96 × 48 sheet, backed by a
     /// real DXF on disk: the exporter reloads originals by <c>Part.Name</c>.</summary>
     private (ISheetPlacement SheetPlacement, string OutPath) BuildPlacement(
@@ -201,10 +228,12 @@
       bool centred = false,
       bool strayPoint = false,
       bool mtext = false,
-      double rotation = 0)
+      double rotation = 0,
+      DxfEntity drawnMark = null)
     {
       string name = withMark
-        ? (markLayer ?? (centred ? "centred" : strayPoint ? "stray" : mtext ? "block" : "marked"))
+        ? (markLayer ?? (drawnMark != null ? drawnMark.GetType().Name
+          : centred ? "centred" : strayPoint ? "stray" : mtext ? "block" : "marked"))
         : "bare";
       string partPath = Path.Combine(this.tempDir, name + ".dxf");
       var dxf = new DxfFile();
@@ -222,7 +251,13 @@
       if (withMark)
       {
         DxfEntity mark;
-        if (mtext)
+        if (drawnMark != null)
+        {
+          // Anything the operator drew rather than typed. None of these exist before R13 either.
+          dxf.Header.Version = DxfAcadVersion.R2000;
+          mark = drawnMark;
+        }
+        else if (mtext)
         {
           // MTEXT did not exist before R13, so a part file left at the default version drops the mark
           // on the way to disk and the test would be measuring an empty drawing.
