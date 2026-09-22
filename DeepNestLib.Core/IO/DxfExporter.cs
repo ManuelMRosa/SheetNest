@@ -273,18 +273,38 @@
             break;
 
           case DxfEntityType.Attribute:
-            DxfAttribute dxfAttribute = (DxfAttribute)entity;
-            dxfAttribute.Location = TransformLocation(mirror, rotationAngle, dxfAttribute.Location);
-            dxfAttribute.Location += offset;
-            result.Add(dxfAttribute);
-            break;
+            {
+              DxfAttribute dxfAttribute = (DxfAttribute)entity;
+              (DxfPoint at, double angle, bool flip) = PlaceHungText(
+                mirror, rotationAngle, offset, DxfPartMarks.AnchorOf(dxfAttribute), dxfAttribute.Rotation);
+              dxfAttribute.Location = at;
+              dxfAttribute.SecondAlignmentPoint = at;
+              dxfAttribute.Rotation = angle;
+              if (flip)
+              {
+                dxfAttribute.HorizontalTextJustification = Flipped(dxfAttribute.HorizontalTextJustification);
+              }
+
+              result.Add(dxfAttribute);
+              break;
+            }
 
           case DxfEntityType.AttributeDefinition:
-            DxfAttributeDefinition dxfAttributecommon = (DxfAttributeDefinition)entity;
-            dxfAttributecommon.Location = TransformLocation(mirror, rotationAngle, dxfAttributecommon.Location);
-            dxfAttributecommon.Location += offset;
-            result.Add(dxfAttributecommon);
-            break;
+            {
+              DxfAttributeDefinition dxfAttributecommon = (DxfAttributeDefinition)entity;
+              (DxfPoint at, double angle, bool flip) = PlaceHungText(
+                mirror, rotationAngle, offset, DxfPartMarks.AnchorOf(dxfAttributecommon), dxfAttributecommon.Rotation);
+              dxfAttributecommon.Location = at;
+              dxfAttributecommon.SecondAlignmentPoint = at;
+              dxfAttributecommon.Rotation = angle;
+              if (flip)
+              {
+                dxfAttributecommon.HorizontalTextJustification = Flipped(dxfAttributecommon.HorizontalTextJustification);
+              }
+
+              result.Add(dxfAttributecommon);
+              break;
+            }
 
           case DxfEntityType.Circle:
             DxfCircle dxfCircle = (DxfCircle)entity;
@@ -527,6 +547,23 @@
       }
 
       return RotateLocation(rotationAngle, pt);
+    }
+
+    /// <summary>
+    /// Where a mark that hangs from a point ends up once its part is placed, which way it reads there,
+    /// and whether it now hangs from its other end.
+    /// </summary>
+    /// <remarks>Both of a mark's points go to the one place, because which of them a reader honours
+    /// depends on a justification that turning the part over changes.</remarks>
+    private static (DxfPoint At, double Angle, bool Flip) PlaceHungText(
+      bool mirror,
+      double rotationAngle,
+      DxfPoint offset,
+      DxfPoint anchor,
+      double own)
+    {
+      (double angle, bool flip) = DxfPartMarks.TextPlacement(mirror, rotationAngle, own);
+      return (TransformLocation(mirror, rotationAngle, anchor) + offset, angle, flip);
     }
 
     /// <summary>Whether this text is stretched between its two points rather than hung from one.</summary>

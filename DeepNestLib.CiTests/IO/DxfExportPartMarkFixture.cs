@@ -219,6 +219,36 @@
       written.Vertices[1].Y.Should().BeApproximately(-4, 1e-6);
     }
 
+    /// <summary>
+    /// An attribute carries the same two points as a text and the same rule about which one holds it,
+    /// but the export moved only the first. On a centred one that is the point a CAD left at nothing,
+    /// so the marking was written at the corner of the sheet while the point the machine follows never
+    /// moved at all. The same fault as the one in the text, in the branch next door.
+    /// </summary>
+    [Fact]
+    public async Task ACentredAttributeMarkIsPlacedByThePointItHangsFrom()
+    {
+      var attribute = new DxfAttribute
+      {
+        Location = new DxfPoint(0, 0, 0),
+        SecondAlignmentPoint = new DxfPoint(5, 2.5, 0),
+        HorizontalTextJustification = DxfHorizontalTextJustification.Center,
+        VerticalTextJustification = DxfVerticalTextJustification.Middle,
+        TextHeight = 0.5,
+        Value = "A1-1",
+      };
+
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: true, drawnMark: attribute);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfAttribute written = DxfFile.Load(outPath).Entities.OfType<DxfAttribute>().Single();
+      written.SecondAlignmentPoint.X.Should().BeApproximately(-3, 1e-6, "this is the point it hangs from");
+      written.SecondAlignmentPoint.Y.Should().BeApproximately(5.5, 1e-6);
+      written.Location.X.Should().BeApproximately(-3, 1e-6, "and the other one must not be left behind");
+      written.Location.Y.Should().BeApproximately(5.5, 1e-6);
+    }
+
     /// <summary>One 10 × 5 rectangle with A1-1 engraved in it, placed on a 96 × 48 sheet, backed by a
     /// real DXF on disk: the exporter reloads originals by <c>Part.Name</c>.</summary>
     private (ISheetPlacement SheetPlacement, string OutPath) BuildPlacement(
