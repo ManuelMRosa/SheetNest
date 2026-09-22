@@ -456,6 +456,77 @@
       }
     }
 
+    /// <summary>
+    /// An ATTRIB is what a CAD writes when the number comes from a block's attribute instead of from a
+    /// line somebody typed. The splitter had no idea where one sits, so it belonged to no part and was
+    /// deleted from every file written - and being centred, it is the anchor case as well.
+    /// </summary>
+    [Fact]
+    public void AMarkDrawnAsAnAttributeSurvivesIntoThePartsFile()
+    {
+      var attribute = new DxfAttribute
+      {
+        Location = new DxfPoint(0, 0, 0),
+        SecondAlignmentPoint = new DxfPoint(20, 20, 0),
+        HorizontalTextJustification = DxfHorizontalTextJustification.Center,
+        VerticalTextJustification = DxfVerticalTextJustification.Middle,
+        TextHeight = 1D,
+        Value = "A1-1",
+      };
+
+      AssertMarkReachesFirstPart(attribute, f => f.Entities.OfType<DxfAttribute>().Count());
+    }
+
+    /// <summary>
+    /// A curve the operator drew freehand. Its fit points are empty, which is how a CAD writes a spline
+    /// in practice, so a point on it has to come from the control points instead.
+    /// </summary>
+    [Fact]
+    public void AMarkDrawnAsASplineSurvivesIntoThePartsFile()
+    {
+      var spline = new DxfSpline { DegreeOfCurve = 2 };
+      spline.ControlPoints.Add(new DxfControlPoint(new DxfPoint(15, 18, 0)));
+      spline.ControlPoints.Add(new DxfControlPoint(new DxfPoint(20, 22, 0)));
+      spline.ControlPoints.Add(new DxfControlPoint(new DxfPoint(25, 18, 0)));
+      foreach (double knot in new[] { 0D, 0D, 0D, 1D, 1D, 1D })
+      {
+        spline.KnotValues.Add(knot);
+      }
+
+      AssertMarkReachesFirstPart(spline, f => f.Entities.OfType<DxfSpline>().Count());
+    }
+
+    /// <summary>Two parts, the mark inside the first one, and the first one's file still holds it.
+    /// </summary>
+    private static void AssertMarkReachesFirstPart(DxfEntity mark, Func<DxfFile, int> countIn)
+    {
+      string path = WriteModernDrawing(
+        InColor(Rectangle(10, 10, 20, 20), White),
+        InColor(mark, Yellow),
+        InColor(new DxfText(new DxfPoint(20, 14, 0), 1D, "A1-1,3"), Blue),
+        InColor(Rectangle(50, 10, 20, 20), White),
+        InColor(new DxfText(new DxfPoint(60, 14, 0), 1D, "A1-2,3"), Blue));
+
+      try
+      {
+        var written = DxfPartSplitter.WriteParts(path);
+        written.Should().HaveCount(2);
+
+        string marked = written.Single(p => Path.GetFileNameWithoutExtension(p.Path) == "A1-1").Path;
+        DxfFile file;
+        using (var stream = File.OpenRead(marked))
+        {
+          file = DxfFile.Load(stream);
+        }
+
+        countIn(file).Should().Be(1, "the part keeps what was drawn on it in the marking colour");
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
     /// <summary>What is engraved on a part is read back out of the part's own file, which is the one
     /// thing everything that has to draw it or write it out holds in common.</summary>
     [Fact]
@@ -590,6 +661,22 @@
     {
       entity.Layer = layer;
       return entity;
+    }
+
+    /// <summary>The same, at a version new enough to hold what a CAD actually draws with: R12 drops a
+    /// SPLINE on the way to disk without a word.</summary>
+    private static string WriteModernDrawing(params DxfEntity[] entities)
+    {
+      var file = new DxfFile();
+      file.Header.Version = DxfAcadVersion.R2000;
+      foreach (DxfEntity entity in entities)
+      {
+        file.Entities.Add(entity);
+      }
+
+      string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".dxf");
+      file.Save(path);
+      return path;
     }
 
     private static string WriteDrawing(params DxfEntity[] entities)

@@ -488,6 +488,54 @@
           return new SvgPoint(lwPolyline.Vertices[0].X, lwPolyline.Vertices[0].Y);
         case DxfPolyline polyline when polyline.Vertices.Count > 0:
           return new SvgPoint(polyline.Vertices[0].Location.X, polyline.Vertices[0].Location.Y);
+
+        case DxfAttribute attribute:
+          {
+            DxfPoint at = DxfPartMarks.AnchorOf(attribute);
+            return new SvgPoint(at.X, at.Y);
+          }
+
+        case DxfAttributeDefinition definition:
+          {
+            DxfPoint at = DxfPartMarks.AnchorOf(definition);
+            return new SvgPoint(at.X, at.Y);
+          }
+
+        case DxfEllipse ellipse:
+          return new SvgPoint(ellipse.Center.X, ellipse.Center.Y);
+
+        case DxfArcAlignedText arcText:
+          {
+            // The middle of the run of letters, not the centre of the arc they follow: on a wide arc
+            // that centre sits well off the part, or inside the next part along.
+            double middle = GeometryUtil.ToRadians((arcText.StartAngle + arcText.EndAngle) / 2D);
+            return new SvgPoint(
+              arcText.CenterPoint.X + (arcText.ArcRadius * Math.Cos(middle)),
+              arcText.CenterPoint.Y + (arcText.ArcRadius * Math.Sin(middle)));
+          }
+
+        case DxfImage image:
+          // The middle of the picture. Its location is the bottom left corner, which can fall off a
+          // part the picture itself sits well inside.
+          return new SvgPoint(
+            image.Location.X + (((image.UVector.X * image.ImageSize.X) + (image.VVector.X * image.ImageSize.Y)) / 2D),
+            image.Location.Y + (((image.UVector.Y * image.ImageSize.X) + (image.VVector.Y * image.ImageSize.Y)) / 2D));
+
+        case DxfLeader leader when leader.Vertices.Count > 0:
+          // The first vertex is the arrow head, which is the end that points at what it labels.
+          return new SvgPoint(leader.Vertices[0].X, leader.Vertices[0].Y);
+
+        case DxfSpline fitted when fitted.FitPoints.Count > 0:
+          return new SvgPoint(fitted.FitPoints[0].X, fitted.FitPoints[0].Y);
+
+        case DxfSpline spline when spline.ControlPoints.Count > 0:
+          // A CAD writes a spline with control points and no fit points at all. The first control
+          // point is on the curve for the clamped splines a drawing holds.
+          return new SvgPoint(spline.ControlPoints[0].Point.X, spline.ControlPoints[0].Point.Y);
+
+        // MLINE is deliberately not here. Keeping one would leave it in the part file, and the library
+        // writes an MLINE that it then cannot read back, so the part would stop importing altogether.
+        // Dropping the mark is the lesser loss until that is dealt with.
         default:
           return null;
       }

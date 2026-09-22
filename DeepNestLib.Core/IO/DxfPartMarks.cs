@@ -146,10 +146,32 @@
     /// splitter is asking; the exporter treats that case separately.</para>
     /// </remarks>
     public static DxfPoint AnchorOf(DxfText text)
-      => text.HorizontalTextJustification == DxfHorizontalTextJustification.Left
-        && text.VerticalTextJustification == DxfVerticalTextJustification.Baseline
-        ? text.Location
-        : text.SecondAlignmentPoint;
+      => AnchorOf(
+        text.Location, text.SecondAlignmentPoint,
+        text.HorizontalTextJustification, text.VerticalTextJustification);
+
+    /// <summary>The same rule for an attribute, which carries the same two points and the same pair of
+    /// justifications without sharing a base class with a text.</summary>
+    public static DxfPoint AnchorOf(DxfAttribute attribute)
+      => AnchorOf(
+        attribute.Location, attribute.SecondAlignmentPoint,
+        attribute.HorizontalTextJustification, attribute.VerticalTextJustification);
+
+    /// <inheritdoc cref="AnchorOf(DxfAttribute)"/>
+    public static DxfPoint AnchorOf(DxfAttributeDefinition definition)
+      => AnchorOf(
+        definition.Location, definition.SecondAlignmentPoint,
+        definition.HorizontalTextJustification, definition.VerticalTextJustification);
+
+    private static DxfPoint AnchorOf(
+      DxfPoint location,
+      DxfPoint second,
+      DxfHorizontalTextJustification horizontal,
+      DxfVerticalTextJustification vertical)
+      => horizontal == DxfHorizontalTextJustification.Left
+        && vertical == DxfVerticalTextJustification.Baseline
+        ? location
+        : second;
 
     /// <summary>
     /// The layers the marks in this file are drawn on, as the drawing declares them. A shop that colours
