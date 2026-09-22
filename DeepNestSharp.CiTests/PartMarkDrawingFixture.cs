@@ -95,6 +95,22 @@
       midY.Should().BeApproximately(10, 1.0);
     }
 
+    /// <summary>
+    /// Aligned text is stretched between its two points, so those two are what say where it starts and
+    /// which way it reads. Hanging it from the far end draws it back across the part, nowhere near
+    /// where the same mark is going to be cut.
+    /// </summary>
+    [Fact]
+    public void AnAlignedMarkIsDrawnFromTheEndItStartsAt()
+    {
+      string path = this.WritePart(marked: true, aligned: true);
+
+      var drawn = PartMarkDrawing.Strokes(path, 0, 0, 0, false).SelectMany(s => s).ToList();
+
+      drawn.Should().NotBeEmpty();
+      drawn.Min(p => p.X).Should().BeApproximately(4, 1.0, "the words start at the run's first point");
+    }
+
     [Fact]
     public void APartWithNothingEngravedDrawsNothing()
     {
@@ -105,9 +121,11 @@
     }
 
     /// <summary>A 20 x 20 part with A1-1 engraved in the middle of it.</summary>
-    private string WritePart(bool marked, bool centred = false)
+    private string WritePart(bool marked, bool centred = false, bool aligned = false)
     {
-      string path = Path.Combine(this.tempDir, (marked ? (centred ? "centred" : "marked") : "bare") + ".dxf");
+      string path = Path.Combine(
+        this.tempDir,
+        (marked ? (centred ? "centred" : aligned ? "aligned" : "marked") : "bare") + ".dxf");
       var dxf = new DxfFile();
       dxf.Entities.Add(new DxfPolyline(new[]
       {
@@ -128,6 +146,14 @@
           mark.SecondAlignmentPoint = new DxfPoint(10, 10, 0);
           mark.HorizontalTextJustification = DxfHorizontalTextJustification.Center;
           mark.VerticalTextJustification = DxfVerticalTextJustification.Middle;
+        }
+
+        if (aligned)
+        {
+          // Stretched between the two, which is what says where it starts and which way it reads.
+          mark.Location = new DxfPoint(4, 10, 0);
+          mark.SecondAlignmentPoint = new DxfPoint(16, 10, 0);
+          mark.HorizontalTextJustification = DxfHorizontalTextJustification.Aligned;
         }
 
         dxf.Entities.Add(mark);

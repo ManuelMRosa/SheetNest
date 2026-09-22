@@ -440,13 +440,22 @@
               DxfText dxfText = (DxfText)entity;
               (double textAngle, bool flipText) = DxfPartMarks.TextPlacement(mirror, rotationAngle, dxfText.Rotation);
               dxfText.Rotation = textAngle;
-              if (IsStretched(dxfText))
+              if (DxfPartMarks.IsStretched(dxfText))
               {
                 // Aligned and fit text is stretched BETWEEN its two points, so the second one is the far
-                // end of the run and not somewhere it could be moved to.
-                dxfText.Location = TransformLocation(mirror, rotationAngle, dxfText.Location) + offset;
-                dxfText.SecondAlignmentPoint =
-                  TransformLocation(mirror, rotationAngle, dxfText.SecondAlignmentPoint) + offset;
+                // end of the run and not somewhere it could be moved to. The pair of them is also what
+                // says which way it reads, so turning the part over reverses it: the same span of sheet,
+                // but the words running away from the reader. Writing it from the other end puts the
+                // same words in the same place the right way round.
+                DxfPoint from = TransformLocation(mirror, rotationAngle, dxfText.Location) + offset;
+                DxfPoint to = TransformLocation(mirror, rotationAngle, dxfText.SecondAlignmentPoint) + offset;
+
+                // Which way it reads has to come from the run itself. A stretched text's own angle says
+                // nothing, because its two points are what define its direction, and the angle worked
+                // out above is only right when the file happened to agree with them.
+                bool backwards = !DxfPartMarks.Readable(DxfPartMarks.RunAngle(from, to));
+                dxfText.Location = backwards ? to : from;
+                dxfText.SecondAlignmentPoint = backwards ? from : to;
               }
               else
               {
@@ -565,11 +574,6 @@
       (double angle, bool flip) = DxfPartMarks.TextPlacement(mirror, rotationAngle, own);
       return (TransformLocation(mirror, rotationAngle, anchor) + offset, angle, flip);
     }
-
-    /// <summary>Whether this text is stretched between its two points rather than hung from one.</summary>
-    private static bool IsStretched(DxfText text)
-      => text.HorizontalTextJustification == DxfHorizontalTextJustification.Aligned
-        || text.HorizontalTextJustification == DxfHorizontalTextJustification.Fit;
 
     /// <summary>Left and right swap over when text is turned over, so the words still grow away from the
     /// point they are anchored at instead of back across the part.</summary>

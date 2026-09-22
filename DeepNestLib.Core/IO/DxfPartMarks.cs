@@ -129,6 +129,20 @@
     public static bool Readable(double angle) => angle <= 90.0 || angle >= 270.0;
 
     /// <summary>
+    /// Whether this text is stretched between its two points rather than hung from one of them.
+    /// </summary>
+    /// <remarks>Aligned and fit text has no anchor and no angle of its own: the two points are both
+    /// real ends of the run, and between them they say where it sits and which way it reads.</remarks>
+    public static bool IsStretched(DxfText text)
+      => text.HorizontalTextJustification == DxfHorizontalTextJustification.Aligned
+        || text.HorizontalTextJustification == DxfHorizontalTextJustification.Fit;
+
+    /// <summary>Which way a run of stretched text reads, in degrees, from the two points it spans.
+    /// </summary>
+    public static double RunAngle(DxfPoint from, DxfPoint to)
+      => Normalise(Math.Atan2(to.Y - from.Y, to.X - from.X) * 180.0 / Math.PI);
+
+    /// <summary>
     /// The point a text hangs from: the first one only when it is left justified off the baseline, the
     /// second one in every other case.
     /// </summary>

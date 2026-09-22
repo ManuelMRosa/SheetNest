@@ -249,6 +249,35 @@
       written.Location.Y.Should().BeApproximately(5.5, 1e-6);
     }
 
+    /// <summary>
+    /// Aligned text is stretched BETWEEN its two points rather than hung from one, so the pair of them
+    /// is what says which way it reads. Turning the part over reverses that run: the same span of
+    /// sheet, but a reader lays the letters out from the first point towards the second and they come
+    /// out backwards. On a part number that is the difference between a part and a piece of scrap.
+    /// </summary>
+    [Fact]
+    public async Task AMirroredAlignedMarkStillReadsForwards()
+    {
+      var aligned = new DxfText(new DxfPoint(2, 2, 0), 0.5, "A1-1")
+      {
+        SecondAlignmentPoint = new DxfPoint(8, 2, 0),
+        HorizontalTextJustification = DxfHorizontalTextJustification.Aligned,
+      };
+
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: true, drawnMark: aligned);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfText written = DxfFile.Load(outPath).Entities.OfType<DxfText>().Single();
+
+      // Turned over, the run from 2 to 8 lands between -6 and 0: the same span, pointing the other
+      // way. It has to be written from the far end so the letters still grow the way they are read.
+      written.Location.X.Should().BeApproximately(-6, 1e-6, "the run starts where the words start");
+      written.SecondAlignmentPoint.X.Should().BeApproximately(0, 1e-6, "and ends where they end");
+      written.Location.Y.Should().BeApproximately(5, 1e-6);
+      written.SecondAlignmentPoint.Y.Should().BeApproximately(5, 1e-6);
+    }
+
     /// <summary>One 10 × 5 rectangle with A1-1 engraved in it, placed on a 96 × 48 sheet, backed by a
     /// real DXF on disk: the exporter reloads originals by <c>Part.Name</c>.</summary>
     private (ISheetPlacement SheetPlacement, string OutPath) BuildPlacement(

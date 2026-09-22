@@ -138,11 +138,26 @@
         case DxfText text when !string.IsNullOrWhiteSpace(text.Value):
           words = text.Value;
           height = text.TextHeight;
-          own = text.Rotation;
 
-          at = DxfPartMarks.AnchorOf(text);
-          acrossFrom = Across(text.HorizontalTextJustification);
-          downFrom = Down(text.VerticalTextJustification);
+          if (DxfPartMarks.IsStretched(text))
+          {
+            // Aligned and fit text has no anchor and no angle of its own: its two points are both real
+            // ends of the run and between them say where it starts and which way it reads. The screen
+            // does not stretch the letters to fill the run, it starts them at the same end and lays
+            // them along it, which is enough to show which part carries what and which way round.
+            at = text.Location;
+            own = DxfPartMarks.RunAngle(text.Location, text.SecondAlignmentPoint);
+            acrossFrom = 0;
+            downFrom = 0;
+          }
+          else
+          {
+            at = DxfPartMarks.AnchorOf(text);
+            own = text.Rotation;
+            acrossFrom = Across(text.HorizontalTextJustification);
+            downFrom = Down(text.VerticalTextJustification);
+          }
+
           break;
         case DxfMText mtext when !string.IsNullOrWhiteSpace(mtext.Text):
           words = mtext.Text;
