@@ -21,13 +21,14 @@ If you cut sheet metal, SheetNest helps you get the most parts out of every shee
 
 - **Fits the most parts on every sheet, automatically.** True-shape nesting packs your parts tightly by their real outline, so you waste less material and buy fewer sheets. Real 800-part jobs nest in seconds.
 - **Imports your DXF part drawings.** Drop in the DXF files you already have and start nesting.
+- **Your drawing's colours say what each line is for.** Anything drawn in yellow is engraved: it is never cut, and it travels with its part onto the sheet, on screen and in the exported DXF, turned and mirrored with it. Blue text names the part and, after a comma, says how many you need (`BRACKET,12`). Every other colour is cut. A drawing that holds several parts comes in as one row per part.
 - **Imports 3D parts and flattens them for you.** Bring in a 3D sheet-metal part (STEP or IGES) and SheetNest unfolds it to a flat pattern that's ready to nest. The 3D unfolding engine is built in, runs offline, and needs nothing extra installed. You can set a per-part bend allowance (K-factor) and check the flat length with the built-in Measure tool.
 - **Tell it what you need.** Enter how many of each part you want (including mirrored copies), and list the sheet sizes and stock you actually have. Save your own sheet-size presets so they're one click next time.
 - **Nest with one click, then fine-tune by hand.** Let SheetNest lay everything out, then drag, rotate, nudge, and drop parts to contact yourself, with spacing kept safe and full undo/redo.
 - **Compatible parts can share one cut.** Choose per part whether it may share with any compatible part or only another copy of itself. SheetNest keeps ordinary spacing everywhere else, seats selected straight outside edges at the configurable Common Line Gap, and exports each cluster as a closed outer boundary plus one midpoint seam on clearly named layers your CAM can read.
 - **Picks the best sheet size for you.** Stock several sizes and SheetNest puts the bulk on the size that packs densest and the leftovers on the size that wastes least. Standard US sheet sizes are built in, plus your own custom sizes.
 - **Exports cut-ready DXF.** One clean DXF per layout, parts only, so your CAM software has nothing extra to trip over. Identical sheets are grouped into a simple "cut N of this layout" plan.
-- **One-click PDF report.** A purchasing-ready report showing how much material to buy (sheets per size and total area), the cutting plan, part totals, and a scaled drawing of each layout.
+- **One-click PDF report.** One page per layout, the paper you take to the machine: the job's settings, how many sheets to cut, the parts on that sheet, and the sheet drawn to scale with every part numbered to its row. Black and white with parts as outlines, so it prints clearly on any shop printer and uses almost no toner.
 - **Works in inches or millimeters.** Switch units to match your shop, with sheets up to 6000 × 2000 mm.
 - **Keeps your work safe.** Autosave and crash recovery, a backup copy on every save, a Recent Projects list, and double-click a project file to open it right where you left off. Each saved project remembers its own sheet stock and its finished nest.
 - **Free and open.** No account, no subscription, no license key. Open-source software you can just use.
@@ -45,13 +46,8 @@ If you cut sheet metal, SheetNest helps you get the most parts out of every shee
 </p>
 
 <p align="center">
-  <img src="imgs/nest-report.png" alt="SheetNest PDF nest report: material required, job summary, cutting plan and part totals" width="640"><br>
-  <em>The one-click PDF report: how much material to buy, the cutting plan, and what is on each layout.</em>
-</p>
-
-<p align="center">
-  <img src="imgs/nest-report-layout.png" alt="SheetNest nest report layout page: the sheet drawn to scale with every part numbered" width="640"><br>
-  <em>Every layout drawn to scale, with each part numbered so a cut piece can be matched to its row and marked.</em>
+  <img src="imgs/nest-report.png" alt="SheetNest PDF nest report page: settings, parts list and the sheet drawn to scale with every part numbered" width="640"><br>
+  <em>The one-click PDF report: one page per layout, with each part numbered so a cut piece can be matched to its row and marked.</em>
 </p>
 
 ## License
