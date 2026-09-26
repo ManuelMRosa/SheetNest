@@ -1,4 +1,4 @@
-namespace DeepNestSharp.Ui.Converters
+﻿namespace DeepNestSharp.Ui.Converters
 {
   using System;
   using System.Collections.Generic;
@@ -93,7 +93,7 @@ namespace DeepNestSharp.Ui.Converters
         var raw = load.GetAwaiter().GetResult();
         if (raw != null && raw.TryConvertToNfp(0, out INfp nfp))
         {
-          image = Build(nfp, PartColors.For(colours, path));
+          image = Build(nfp, PartColors.For(colours, path), dxfPath);
         }
       }
       catch
@@ -107,7 +107,7 @@ namespace DeepNestSharp.Ui.Converters
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
 
-    private static ImageSource Build(INfp nfp, (byte R, byte G, byte B) colour)
+    private static ImageSource Build(INfp nfp, (byte R, byte G, byte B) colour, string dxfPath)
     {
       var g = new StreamGeometry { FillRule = FillRule.EvenOdd };
       using (var ctx = g.Open())
@@ -137,7 +137,25 @@ namespace DeepNestSharp.Ui.Converters
       fill.Freeze();
 
       var drawing = new GeometryDrawing(fill, pen, g);
-      var image = new DrawingImage(drawing);
+
+      // What the part carries engraved, over the top of it. It comes back in the drawing's own frame, so
+      // it is turned over to match the thumbnail, which draws Y downwards.
+      Geometry marks = PartMarkDrawing.Placed(dxfPath, 0, 0, 0, false);
+      if (marks == null)
+      {
+        var only = new DrawingImage(drawing);
+        only.Freeze();
+        return only;
+      }
+
+      marks = marks.Clone();
+      marks.Transform = new ScaleTransform(1, -1);
+      var markPen = new Pen(new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)), dim / 90.0);
+      markPen.Freeze();
+      var group = new DrawingGroup();
+      group.Children.Add(drawing);
+      group.Children.Add(new GeometryDrawing(null, markPen, marks));
+      var image = new DrawingImage(group);
       image.Freeze();
       return image;
     }

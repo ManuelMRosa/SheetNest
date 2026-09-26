@@ -38,7 +38,7 @@
         return;
       }
 
-      await Task.Run(() => dxf.Save(path, true)).ConfigureAwait(false);
+      await Task.Run(() => DxfR2000Writer.Save(dxf, path)).ConfigureAwait(false);
     }
 
     public async Task Export(Stream stream, ISheetPlacement sheetPlacement, bool doMergeLines, bool differentiateChildren)
@@ -48,7 +48,7 @@
         DxfFile dxf = GenerateCommonLineDxfFile(sheetPlacement, differentiateChildren);
         if (dxf.Entities.Count > 0)
         {
-          await Task.Run(() => dxf.Save(stream, true)).ConfigureAwait(false);
+          await Task.Run(() => DxfR2000Writer.Save(dxf, stream)).ConfigureAwait(false);
         }
 
         return;
@@ -68,7 +68,7 @@
       {
         await Task.Run(() =>
         {
-          dxf.Save(stream, true);
+          DxfR2000Writer.Save(dxf, stream);
           //dxf.Save(@"C:\Temp\DeepnestSharp.dxf");
         }).ConfigureAwait(false);
       }
@@ -99,11 +99,11 @@
             {
               if (dxfexports.Count() == 1)
               {
-                dxf.Save(fi.FullName, true);
+                DxfR2000Writer.Save(dxf, fi.FullName);
               }
               else
               {
-                dxf.Save($"{fi.FullName.Substring(0, fi.FullName.Length - 4)}{id}.dxf", true);
+                DxfR2000Writer.Save(dxf, $"{fi.FullName.Substring(0, fi.FullName.Length - 4)}{id}.dxf");
               }
             }).ConfigureAwait(false);
           }
@@ -131,6 +131,34 @@
       return sheetdxf;
     }
 
+    /// <summary>
+    /// What a part carries engraved on it, moved onto the sheet with the part. Marks are not contours,
+    /// so they come from the part's file rather than from the geometry measured out of it, and they are
+    /// written on the layer the operator drew them on: a shop that colours its layers leaves the mark
+    /// saying "whatever my layer is", and the layer has to go with it or the colour that makes it a mark
+    /// is lost.
+    /// </summary>
+    private static List<DxfEntity> PlacedMarks(
+      DxfFile into,
+      string source,
+      DxfPoint offset,
+      double rotation,
+      bool mirror)
+    {
+      IReadOnlyList<DxfEntity> marks = DxfPartMarks.Fresh(source);
+      if (marks.Count == 0)
+      {
+        return new List<DxfEntity>();
+      }
+
+      foreach (DxfLayer layer in DxfPartMarks.LayersFor(source))
+      {
+        AddLayer(into, layer.Name, layer.Color);
+      }
+
+      return OffsetToNest(marks.ToList(), offset, rotation, mirror);
+    }
+
     private static IEnumerable<DxfEntity> GetOffsetDxfEntities(IEnumerable<INfp> polygons, ISheet sheet, int i, bool differentiateChildren)
     {
       foreach (var polygon in polygons)
@@ -152,7 +180,10 @@
             else
 #endif
             {
-              fl = DxfParser.ConvertDxfToRawDetail(polygon.Name, DxfFile.Load(polygon.Name).Entities.ToArray());
+              DxfFile source = DxfFile.Load(polygon.Name);
+              fl = DxfParser.ConvertDxfToRawDetail(
+                polygon.Name,
+                DxfColorRoles.Cuttable(source.Entities, DxfLayerColors.Of(source)));
             }
           }
           catch
@@ -242,18 +273,38 @@
             break;
 
           case DxfEntityType.Attribute:
-            DxfAttribute dxfAttribute = (DxfAttribute)entity;
-            dxfAttribute.Location = TransformLocation(mirror, rotationAngle, dxfAttribute.Location);
-            dxfAttribute.Location += offset;
-            result.Add(dxfAttribute);
-            break;
+            {
+              DxfAttribute dxfAttribute = (DxfAttribute)entity;
+              (DxfPoint at, double angle, bool flip) = PlaceHungText(
+                mirror, rotationAngle, offset, DxfPartMarks.AnchorOf(dxfAttribute), dxfAttribute.Rotation);
+              dxfAttribute.Location = at;
+              dxfAttribute.SecondAlignmentPoint = at;
+              dxfAttribute.Rotation = angle;
+              if (flip)
+              {
+                dxfAttribute.HorizontalTextJustification = Flipped(dxfAttribute.HorizontalTextJustification);
+              }
+
+              result.Add(dxfAttribute);
+              break;
+            }
 
           case DxfEntityType.AttributeDefinition:
-            DxfAttributeDefinition dxfAttributecommon = (DxfAttributeDefinition)entity;
-            dxfAttributecommon.Location = TransformLocation(mirror, rotationAngle, dxfAttributecommon.Location);
-            dxfAttributecommon.Location += offset;
-            result.Add(dxfAttributecommon);
-            break;
+            {
+              DxfAttributeDefinition dxfAttributecommon = (DxfAttributeDefinition)entity;
+              (DxfPoint at, double angle, bool flip) = PlaceHungText(
+                mirror, rotationAngle, offset, DxfPartMarks.AnchorOf(dxfAttributecommon), dxfAttributecommon.Rotation);
+              dxfAttributecommon.Location = at;
+              dxfAttributecommon.SecondAlignmentPoint = at;
+              dxfAttributecommon.Rotation = angle;
+              if (flip)
+              {
+                dxfAttributecommon.HorizontalTextJustification = Flipped(dxfAttributecommon.HorizontalTextJustification);
+              }
+
+              result.Add(dxfAttributecommon);
+              break;
+            }
 
           case DxfEntityType.Circle:
             DxfCircle dxfCircle = (DxfCircle)entity;
@@ -289,17 +340,14 @@
 
           case DxfEntityType.Leader:
             DxfLeader dxfLeader = (DxfLeader)entity;
-            tmpPts = new List<DxfPoint>();
 
-            foreach (DxfPoint vrt in dxfLeader.Vertices)
+            // Point by point, in place. A leader refuses to hold fewer than two points even for an
+            // instant, so emptying the list to refill it throws before anything can be put back.
+            for (int v = 0; v < dxfLeader.Vertices.Count; v++)
             {
-              var tmppnt = TransformLocation(mirror, rotationAngle, vrt);
-              tmppnt += offset;
-              tmpPts.Add(tmppnt);
+              dxfLeader.Vertices[v] = TransformLocation(mirror, rotationAngle, dxfLeader.Vertices[v]) + offset;
             }
 
-            dxfLeader.Vertices.Clear();
-            dxfLeader.Vertices.Concat(tmpPts);
             result.Add(dxfLeader);
             break;
 
@@ -333,20 +381,19 @@
 
           case DxfEntityType.MLine:
             DxfMLine mLine = (DxfMLine)entity;
-            tmpPts = new List<DxfPoint>();
-            mLine.StartPoint += offset;
 
-            mLine.StartPoint = TransformLocation(mirror, rotationAngle, mLine.StartPoint);
+            // Turn first, then move, the way every other entity here does. Offsetting first put the
+            // sheet offset through the rotation as well, which walks the start point off the part by
+            // more the further across the sheet the part was nested.
+            mLine.StartPoint = TransformLocation(mirror, rotationAngle, mLine.StartPoint) + offset;
 
-            foreach (DxfPoint vrt in mLine.Vertices)
+            // In place, so the vertex list stays the same length as the direction lists that run
+            // alongside it and are indexed with it.
+            for (int v = 0; v < mLine.Vertices.Count; v++)
             {
-              var tmppnt = TransformLocation(mirror, rotationAngle, vrt);
-              tmppnt += offset;
-              tmpPts.Add(tmppnt);
+              mLine.Vertices[v] = TransformLocation(mirror, rotationAngle, mLine.Vertices[v]) + offset;
             }
 
-            mLine.Vertices.Clear();
-            mLine.Vertices.Concat(tmpPts);
             result.Add(mLine);
             break;
 
@@ -388,6 +435,72 @@
               break;
             }
 
+          case DxfEntityType.Text:
+            {
+              DxfText dxfText = (DxfText)entity;
+              (double textAngle, bool flipText) = DxfPartMarks.TextPlacement(mirror, rotationAngle, dxfText.Rotation);
+              dxfText.Rotation = textAngle;
+              if (DxfPartMarks.IsStretched(dxfText))
+              {
+                // Aligned and fit text is stretched BETWEEN its two points, so the second one is the far
+                // end of the run and not somewhere it could be moved to. The pair of them is also what
+                // says which way it reads, so turning the part over reverses it: the same span of sheet,
+                // but the words running away from the reader. Writing it from the other end puts the
+                // same words in the same place the right way round.
+                DxfPoint from = TransformLocation(mirror, rotationAngle, dxfText.Location) + offset;
+                DxfPoint to = TransformLocation(mirror, rotationAngle, dxfText.SecondAlignmentPoint) + offset;
+
+                // Which way it reads has to come from the run itself. A stretched text's own angle says
+                // nothing, because its two points are what define its direction, and the angle worked
+                // out above is only right when the file happened to agree with them.
+                bool backwards = !DxfPartMarks.Readable(DxfPartMarks.RunAngle(from, to));
+                dxfText.Location = backwards ? to : from;
+                dxfText.SecondAlignmentPoint = backwards ? from : to;
+              }
+              else
+              {
+                // A TEXT carries two points and which one a reader honours depends on its justification:
+                // left off the baseline it is the first, anything else the second. Turning a part over
+                // changes the justification, so both points go to where the mark actually is; moving only
+                // the one that reads well in a test leaves the other one pointing at the sheet origin,
+                // and that is the one the machine would follow.
+                DxfPoint placed = TransformLocation(mirror, rotationAngle, DxfPartMarks.AnchorOf(dxfText)) + offset;
+                dxfText.Location = placed;
+                dxfText.SecondAlignmentPoint = placed;
+              }
+
+              if (flipText)
+              {
+                dxfText.HorizontalTextJustification = Flipped(dxfText.HorizontalTextJustification);
+              }
+
+              result.Add(dxfText);
+              break;
+            }
+
+          case DxfEntityType.MText:
+            {
+              DxfMText dxfMText = (DxfMText)entity;
+              dxfMText.InsertionPoint = TransformLocation(mirror, rotationAngle, dxfMText.InsertionPoint) + offset;
+              (double blockAngle, bool flipBlock) = DxfPartMarks.TextPlacement(mirror, rotationAngle, dxfMText.RotationAngle);
+              dxfMText.RotationAngle = blockAngle;
+
+              // A block of text says which way it reads twice, in its angle and in its X-axis direction
+              // vector, and a reader that finds both goes by the last one. Turning the part without turning
+              // the vector leaves the mark lying the way it was drawn, off the part and sometimes off the
+              // sheet; the angle alone is what the screen reads, so it looks right there while it is not.
+              double blockRadians = GeometryUtil.ToRadians(blockAngle);
+              dxfMText.XAxisDirection = new DxfVector(Math.Cos(blockRadians), Math.Sin(blockRadians), 0D);
+
+              if (flipBlock)
+              {
+                dxfMText.AttachmentPoint = Flipped(dxfMText.AttachmentPoint);
+              }
+
+              result.Add(dxfMText);
+              break;
+            }
+
           case DxfEntityType.Body:
           case DxfEntityType.DgnUnderlay:
           case DxfEntityType.Dimension:
@@ -397,7 +510,6 @@
           case DxfEntityType.Insert:
           case DxfEntityType.Light:
           case DxfEntityType.ModelerGeometry:
-          case DxfEntityType.MText:
           case DxfEntityType.OleFrame:
           case DxfEntityType.Ole2Frame:
           case DxfEntityType.PdfUnderlay:
@@ -410,7 +522,6 @@
           case DxfEntityType.Seqend:
           case DxfEntityType.Shape:
           case DxfEntityType.Solid:
-          case DxfEntityType.Text:
           case DxfEntityType.Tolerance:
           case DxfEntityType.Trace:
           case DxfEntityType.Underlay:
@@ -445,6 +556,50 @@
       }
 
       return RotateLocation(rotationAngle, pt);
+    }
+
+    /// <summary>
+    /// Where a mark that hangs from a point ends up once its part is placed, which way it reads there,
+    /// and whether it now hangs from its other end.
+    /// </summary>
+    /// <remarks>Both of a mark's points go to the one place, because which of them a reader honours
+    /// depends on a justification that turning the part over changes.</remarks>
+    private static (DxfPoint At, double Angle, bool Flip) PlaceHungText(
+      bool mirror,
+      double rotationAngle,
+      DxfPoint offset,
+      DxfPoint anchor,
+      double own)
+    {
+      (double angle, bool flip) = DxfPartMarks.TextPlacement(mirror, rotationAngle, own);
+      return (TransformLocation(mirror, rotationAngle, anchor) + offset, angle, flip);
+    }
+
+    /// <summary>Left and right swap over when text is turned over, so the words still grow away from the
+    /// point they are anchored at instead of back across the part.</summary>
+    private static DxfHorizontalTextJustification Flipped(DxfHorizontalTextJustification justification)
+    {
+      switch (justification)
+      {
+        case DxfHorizontalTextJustification.Left: return DxfHorizontalTextJustification.Right;
+        case DxfHorizontalTextJustification.Right: return DxfHorizontalTextJustification.Left;
+        default: return justification;
+      }
+    }
+
+    /// <summary>The same swap for the nine points a block of text can hang from.</summary>
+    private static DxfAttachmentPoint Flipped(DxfAttachmentPoint attachment)
+    {
+      switch (attachment)
+      {
+        case DxfAttachmentPoint.TopLeft: return DxfAttachmentPoint.TopRight;
+        case DxfAttachmentPoint.TopRight: return DxfAttachmentPoint.TopLeft;
+        case DxfAttachmentPoint.MiddleLeft: return DxfAttachmentPoint.MiddleRight;
+        case DxfAttachmentPoint.MiddleRight: return DxfAttachmentPoint.MiddleLeft;
+        case DxfAttachmentPoint.BottomLeft: return DxfAttachmentPoint.BottomRight;
+        case DxfAttachmentPoint.BottomRight: return DxfAttachmentPoint.BottomLeft;
+        default: return attachment;
+      }
     }
 
     /// <summary>Swaps the contents of a list in place; the entities own their collections.</summary>
@@ -556,6 +711,16 @@
           {
             dxf.Entities.Add(entity);
           }
+        }
+
+        foreach (DxfEntity mark in PlacedMarks(
+          dxf,
+          placement.Part.Name,
+          new DxfPoint(placement.X, placement.Y, 0D),
+          placement.Rotation,
+          placement.IsMirrored))
+        {
+          dxf.Entities.Add(mark);
         }
       }
 
@@ -813,9 +978,10 @@
             throw new FileNotFoundException();
           }
 
+          DxfFile opened = snapshot.OpenFile();
           detail = DxfParser.ConvertDxfToRawDetail(
             source,
-            snapshot.OpenFile().Entities.ToArray());
+            DxfColorRoles.Cuttable(opened.Entities, DxfLayerColors.Of(opened)));
         }
       }
       catch
@@ -1456,6 +1622,22 @@
         foreach (var entity in entityList)
         {
           sheetdxf.Entities.Add(entity);
+        }
+
+        // What the parts carry engraved, added AFTER the merge and the join, the same way the offcut
+        // cuts are: a mark must never be chained into a part's contour.
+        var sheetXoffset = -sheet.WidthCalculated * i;
+        foreach (INfp polygon in polygons.Where(o => o.Sheet.Id == sheet.Id && o.Fitted))
+        {
+          foreach (DxfEntity mark in PlacedMarks(
+            sheetdxf,
+            polygon.Name,
+            new DxfPoint(polygon.X + sheetXoffset, polygon.Y, 0D),
+            polygon.Rotation,
+            polygon.IsMirrored))
+          {
+            sheetdxf.Entities.Add(mark);
+          }
         }
 
         // The offcut separation cut(s) (rectangular-offcut nests): ordinary cut geometry, added

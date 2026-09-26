@@ -73,6 +73,15 @@
     // Manual nesting state: rendered path per placement, current selection, drag bookkeeping, and
     // the placements currently overlapping something (drawn red).
     private readonly List<(System.Windows.Shapes.Path Path, IPartPlacement Pp)> partPaths = new List<(System.Windows.Shapes.Path, IPartPlacement)>();
+
+    /// <summary>
+    /// What each placed part carries engraved, drawn over it. Kept beside the parts so a part that is
+    /// dragged takes its marking with it instead of leaving it behind on the sheet. The turn it was
+    /// traced at is kept with it: dragging only moves it, and tracing the outline of every letter again
+    /// on each step of a drag is work nobody asked for.
+    /// </summary>
+    private readonly List<(System.Windows.Shapes.Path Path, IPartPlacement Pp, double Rotation, bool Mirrored)> markPaths
+      = new List<(System.Windows.Shapes.Path, IPartPlacement, double, bool)>();
     private readonly HashSet<IPartPlacement> invalid = new HashSet<IPartPlacement>();
 
     // The offcut cut line and its size label. Same reason: the strip's edge follows the pack, so it has to
@@ -872,6 +881,7 @@
       this.dragCache = null; // placements may have been replaced wholesale — never answer from stale geometry
       this.canvas.Children.Clear();
       this.partPaths.Clear();
+      this.markPaths.Clear();
       this.offcutShapes.Clear();
       this.ClearMeasure(); // canvas was cleared; drop dangling measure-shape references
 
@@ -967,6 +977,22 @@
           };
           this.canvas.Children.Add(path);
           this.partPaths.Add((path, pp));
+
+          Geometry marks = BuildMarkShape(pp);
+          if (marks != null)
+          {
+            var markPath = new System.Windows.Shapes.Path
+            {
+              Data = marks,
+              Stroke = PartStroke,
+              StrokeThickness = stroke,
+              StrokeLineJoin = PenLineJoin.Round,
+              IsHitTestVisible = false,
+              RenderTransform = MarkPlacement(pp, h),
+            };
+            this.canvas.Children.Add(markPath);
+            this.markPaths.Add((markPath, pp, pp.Rotation, pp.IsMirrored));
+          }
         }
         catch
         {
@@ -1246,6 +1272,35 @@
       geometry.Freeze();
       return geometry;
     }
+
+    /// <summary>
+    /// What a placed part carries engraved, turned the way the part is turned but not yet moved onto the
+    /// sheet, with Y flipped to the screen like everything else here. Where it goes is the Path's own
+    /// transform, so a drag moves it instead of tracing every letter again. Null when the part carries
+    /// nothing.
+    /// </summary>
+    private static Geometry BuildMarkShape(IPartPlacement pp)
+    {
+      if (pp?.Part == null)
+      {
+        return null;
+      }
+
+      Geometry marks = PartMarkDrawing.Placed(pp.Part.Name, 0, 0, pp.Rotation, pp.IsMirrored);
+      if (marks == null)
+      {
+        return null;
+      }
+
+      marks = marks.Clone();
+      marks.Transform = new ScaleTransform(1, -1);
+      marks.Freeze();
+      return marks;
+    }
+
+    /// <summary>Where on the sheet a part's marking sits, in screen coordinates.</summary>
+    private static TranslateTransform MarkPlacement(IPartPlacement pp, double sheetHeight)
+      => new TranslateTransform(pp.X, sheetHeight - pp.Y);
 
     private static void AppendContour(StreamGeometryContext ctx, INfp contour, Func<double, double, Point> tx)
     {
@@ -2111,6 +2166,30 @@
         }
       }
 
+      for (int i = 0; i < this.markPaths.Count; i++)
+      {
+        if (this.markPaths[i].Pp != this.selectedPp)
+        {
+          continue;
+        }
+
+        // A drag only moves the part. Its marking is re-traced only when the part has actually been
+        // turned since, which is what rotating or mirroring it records.
+        if (this.markPaths[i].Rotation != this.selectedPp.Rotation
+          || this.markPaths[i].Mirrored != this.selectedPp.IsMirrored)
+        {
+          this.markPaths[i].Path.Data = BuildMarkShape(this.selectedPp) ?? Geometry.Empty;
+          this.markPaths[i] = (
+            this.markPaths[i].Path,
+            this.selectedPp,
+            this.selectedPp.Rotation,
+            this.selectedPp.IsMirrored);
+        }
+
+        this.markPaths[i].Path.RenderTransform = MarkPlacement(this.selectedPp, this.currentSheetH);
+        break;
+      }
+
       this.RefreshOffcutOverlay();
 
       // Position live, distance to the neighbour only when it stops: measuring that exactly is a search.
@@ -2279,6 +2358,21 @@
         }
       }
 
+      for (int i = 0; i < this.markPaths.Count; i++)
+      {
+        if (this.markPaths[i].Pp == pp)
+        {
+          // The turn it was traced at deliberately stays as it was, so the refresh that follows sees it
+          // does not match and traces the marking again.
+          this.markPaths[i] = (
+            this.markPaths[i].Path,
+            replacement,
+            this.markPaths[i].Rotation,
+            this.markPaths[i].Mirrored);
+          break;
+        }
+      }
+
       this.selectedPp = replacement;
       this.RefreshSelectedPath();
       this.CommitManualEdit();
@@ -2346,6 +2440,21 @@
         if (this.partPaths[i].Pp == pp)
         {
           this.partPaths[i] = (this.partPaths[i].Path, replacement);
+          break;
+        }
+      }
+
+      for (int i = 0; i < this.markPaths.Count; i++)
+      {
+        if (this.markPaths[i].Pp == pp)
+        {
+          // The turn it was traced at deliberately stays as it was, so the refresh that follows sees it
+          // does not match and traces the marking again.
+          this.markPaths[i] = (
+            this.markPaths[i].Path,
+            replacement,
+            this.markPaths[i].Rotation,
+            this.markPaths[i].Mirrored);
           break;
         }
       }

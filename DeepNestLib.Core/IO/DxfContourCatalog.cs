@@ -1,4 +1,4 @@
-namespace DeepNestLib.IO
+﻿namespace DeepNestLib.IO
 {
   using System;
   using System.Collections.Concurrent;
@@ -87,7 +87,7 @@ namespace DeepNestLib.IO
             DxfFile file = DxfFile.Load(stream);
             return Create(
               candidate.Path,
-              file.Entities.ToArray(),
+              DxfColorRoles.Cuttable(file.Entities, DxfLayerColors.Of(file)),
               endpointTolerance ?? DefaultEndpointTolerance(file.Header));
           },
           LazyThreadSafetyMode.ExecutionAndPublication));
@@ -140,7 +140,7 @@ namespace DeepNestLib.IO
       DxfFile file = DxfFile.Load(stream);
       DxfContourCatalog catalog = Create(
         fullPath,
-        file.Entities.ToArray(),
+        DxfColorRoles.Cuttable(file.Entities, DxfLayerColors.Of(file)),
         endpointTolerance ?? DefaultEndpointTolerance(file.Header));
       return new DxfSourceSnapshot(fullPath, sourceBytes, catalog);
     }

@@ -67,10 +67,17 @@
     /// The parts in a drawing, outermost first. A drawing holding one part returns one entry, so a
     /// caller can treat "did this split" as <c>Count &gt; 1</c>.
     /// </summary>
-    public static IReadOnlyList<DxfPart> Split(string name, IEnumerable<DxfEntity> entities)
+    public static IReadOnlyList<DxfPart> Split(
+      string name,
+      IEnumerable<DxfEntity> entities,
+      DxfLayerColors layers = null)
     {
       var all = (entities ?? Array.Empty<DxfEntity>()).ToList();
-      RawDetail<DxfEntity> detail = DxfParser.ConvertDxfToRawDetail(name, all);
+
+      // The WHOLE drawing stays as the index basis: a part is written out by keeping its entities by
+      // position, so dropping the marks from this list would shift every index and write the wrong
+      // entities into every part. Only what gets measured into contours is filtered.
+      RawDetail<DxfEntity> detail = DxfParser.ConvertDxfToRawDetail(name, DxfColorRoles.Cuttable(all, layers));
 
       var contours = detail.Outers.OfType<LocalContour<DxfEntity>>().ToList();
       var rings = contours.Select(ToPolygon).ToList();
@@ -132,12 +139,16 @@
         }
       }
 
-      var labels = ReadLabels(all);
+      AssignMarks(all, parts, indexOf, layers);
+
+      var labels = ReadLabels(all, layers);
+      var ordered = parts.OrderByDescending(p => p.Area).ToList();
+      IReadOnlyList<(string Name, int Quantity)> named = AssignLabels(ordered, labels);
       var result = new List<DxfPart>();
-      foreach (Island part in parts.OrderByDescending(p => p.Area))
+      for (int i = 0; i < ordered.Count; i++)
       {
-        (string labelName, int quantity) = LabelFor(part.Outer, labels);
-        result.Add(new DxfPart(part.Entities, part.Indexes, part.HoleCount, labelName, quantity));
+        Island part = ordered[i];
+        result.Add(new DxfPart(part.Entities, part.Indexes, part.HoleCount, named[i].Name, named[i].Quantity));
       }
 
       return result;
@@ -160,7 +171,8 @@
       // and putting them back into the same collection does not put them back in the output - seven of
       // eight parts came out with an empty entities section that way, and nesting refused each of them.
       byte[] bytes = ReadAllBytesShared(sourcePath);
-      IReadOnlyList<DxfPart> parts = Split(sourcePath, Reload(bytes).Entities);
+      DxfFile drawing = Reload(bytes);
+      IReadOnlyList<DxfPart> parts = Split(sourcePath, drawing.Entities, DxfLayerColors.Of(drawing));
       if (parts.Count < 2)
       {
         return Array.Empty<SplitPartFile>();
@@ -239,7 +251,7 @@
     /// that same DXF open in their CAD program, and the plain read refuses a file held there; the rest
     /// of the loading code already shares, so this has to as well.
     /// </summary>
-    private static byte[] ReadAllBytesShared(string path)
+    internal static byte[] ReadAllBytesShared(string path)
     {
       using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
       using (var buffer = new MemoryStream())
@@ -408,32 +420,261 @@
       return (trimmed, 0);
     }
 
-    /// <summary>The innermost part holding this label owns it: a part nested inside another's hole is
-    /// inside both, and the label drawn on it names the small one.</summary>
-    private static (string Name, int Quantity) LabelFor(
-      INfp outer,
+    /// <summary>
+    /// A part's marks go with the part. What is drawn in the marking colour is engraved on the part and
+    /// never cut, so it is not a contour and nothing has claimed it; without this it is left out of the
+    /// file the part is written to and there is nothing left to engrave.
+    /// </summary>
+    /// <remarks>
+    /// A mark belongs to the SMALLEST part that holds it, the same rule the labels follow, so a mark
+    /// drawn on a part sitting inside another part's hole goes with the small one. A mark drawn outside
+    /// every part belongs to none of them: it is a note on the drawing. And a mark is never a hole,
+    /// which is what this has to keep being true of, because a hole gets cut out and thrown away.
+    /// </remarks>
+    private static void AssignMarks(
+      IReadOnlyList<DxfEntity> all,
+      IReadOnlyList<Island> parts,
+      IReadOnlyDictionary<DxfEntity, int> indexOf,
+      DxfLayerColors layers)
+    {
+      foreach (DxfEntity entity in all)
+      {
+        if (DxfColorRoles.RoleOf(entity, layers) != DxfColorRole.PartMark)
+        {
+          continue;
+        }
+
+        SvgPoint at = MarkPoint(entity);
+        if (at == null)
+        {
+          continue;
+        }
+
+        Island owner = null;
+        foreach (Island candidate in parts)
+        {
+          if (Encloses(candidate.Outer, at) && (owner == null || candidate.Area < owner.Area))
+          {
+            owner = candidate;
+          }
+        }
+
+        owner?.Add(new[] { entity }, indexOf);
+      }
+    }
+
+    /// <summary>Where a mark sits, to work out which part it is on. For text it is where the text is
+    /// anchored, and for anything drawn a point on it. Null for something there is no sensible point
+    /// for, which then belongs to no part rather than to a guessed one.</summary>
+    private static SvgPoint MarkPoint(DxfEntity entity)
+    {
+      switch (entity)
+      {
+        case DxfText text:
+          {
+            DxfPoint at = DxfPartMarks.AnchorOf(text);
+            return new SvgPoint(at.X, at.Y);
+          }
+
+        case DxfMText mtext:
+          return new SvgPoint(mtext.InsertionPoint.X, mtext.InsertionPoint.Y);
+        case DxfLine line:
+          return new SvgPoint((line.P1.X + line.P2.X) / 2, (line.P1.Y + line.P2.Y) / 2);
+        case DxfArc arc:
+          return new SvgPoint(arc.Center.X, arc.Center.Y);
+        case DxfCircle circle:
+          return new SvgPoint(circle.Center.X, circle.Center.Y);
+        case DxfLwPolyline lwPolyline when lwPolyline.Vertices.Count > 0:
+          return new SvgPoint(lwPolyline.Vertices[0].X, lwPolyline.Vertices[0].Y);
+        case DxfPolyline polyline when polyline.Vertices.Count > 0:
+          return new SvgPoint(polyline.Vertices[0].Location.X, polyline.Vertices[0].Location.Y);
+
+        case DxfAttribute attribute:
+          {
+            DxfPoint at = DxfPartMarks.AnchorOf(attribute);
+            return new SvgPoint(at.X, at.Y);
+          }
+
+        case DxfAttributeDefinition definition:
+          {
+            DxfPoint at = DxfPartMarks.AnchorOf(definition);
+            return new SvgPoint(at.X, at.Y);
+          }
+
+        case DxfEllipse ellipse:
+          return new SvgPoint(ellipse.Center.X, ellipse.Center.Y);
+
+        case DxfArcAlignedText arcText:
+          {
+            // The middle of the run of letters, not the centre of the arc they follow: on a wide arc
+            // that centre sits well off the part, or inside the next part along.
+            double middle = GeometryUtil.ToRadians((arcText.StartAngle + arcText.EndAngle) / 2D);
+            return new SvgPoint(
+              arcText.CenterPoint.X + (arcText.ArcRadius * Math.Cos(middle)),
+              arcText.CenterPoint.Y + (arcText.ArcRadius * Math.Sin(middle)));
+          }
+
+        case DxfImage image:
+          // The middle of the picture. Its location is the bottom left corner, which can fall off a
+          // part the picture itself sits well inside.
+          return new SvgPoint(
+            image.Location.X + (((image.UVector.X * image.ImageSize.X) + (image.VVector.X * image.ImageSize.Y)) / 2D),
+            image.Location.Y + (((image.UVector.Y * image.ImageSize.X) + (image.VVector.Y * image.ImageSize.Y)) / 2D));
+
+        case DxfLeader leader when leader.Vertices.Count > 0:
+          // The first vertex is the arrow head, which is the end that points at what it labels.
+          return new SvgPoint(leader.Vertices[0].X, leader.Vertices[0].Y);
+
+        case DxfSpline fitted when fitted.FitPoints.Count > 0:
+          return new SvgPoint(fitted.FitPoints[0].X, fitted.FitPoints[0].Y);
+
+        case DxfSpline spline when spline.ControlPoints.Count > 0:
+          // A CAD writes a spline with control points and no fit points at all. The first control
+          // point is on the curve for the clamped splines a drawing holds.
+          return new SvgPoint(spline.ControlPoints[0].Point.X, spline.ControlPoints[0].Point.Y);
+
+        // MLINE is deliberately not here. Keeping one would leave it in the part file, and the library
+        // writes an MLINE that it then cannot read back, so the part would stop importing altogether.
+        // Dropping the mark is the lesser loss until that is dealt with.
+        default:
+          return null;
+      }
+    }
+
+    /// <summary>
+    /// Which label names each part, and how many it asks for. Decided for all the parts at once,
+    /// because two of the three rules cannot be answered one part at a time.
+    /// </summary>
+    /// <remarks>
+    /// <para>A label belongs to the SMALLEST part that holds it. A part sitting inside another part's
+    /// hole is inside both outlines, and the label drawn on it names the small one; asked part by part,
+    /// the big one claimed it too and was cut under a name and a quantity that were never its own.</para>
+    /// <para>A text that turns up inside more than one part cannot tell parts apart: it is the drawing
+    /// number, or a note written on every part. It names none of them. Should that leave a part with
+    /// nothing, it gets its labels back - four parts the operator really did call BRACKET are four
+    /// parts called BRACKET, not four parts left unnamed.</para>
+    /// <para>What is left is settled by distance to the middle of the part, because a label put there
+    /// to name the part is drawn on the part, while a stale mark or a note sits off in a corner. The
+    /// order the entities happen to sit in the file decided this until now, and that is not something
+    /// the operator can see or control: the same drawing named its parts differently depending on how
+    /// the CAD program had saved it.</para>
+    /// </remarks>
+    private static IReadOnlyList<(string Name, int Quantity)> AssignLabels(
+      IReadOnlyList<Island> parts,
       IReadOnlyList<(SvgPoint At, string Text)> labels)
     {
-      foreach (var label in labels)
+      var owned = new List<List<int>>();
+      for (int i = 0; i < parts.Count; i++)
       {
-        if (Encloses(outer, label.At))
+        owned.Add(new List<int>());
+      }
+
+      for (int l = 0; l < labels.Count; l++)
+      {
+        int owner = -1;
+        for (int p = 0; p < parts.Count; p++)
         {
-          return ParseLabel(label.Text);
+          if (Encloses(parts[p].Outer, labels[l].At) && (owner < 0 || parts[p].Area < parts[owner].Area))
+          {
+            owner = p;
+          }
+        }
+
+        if (owner >= 0)
+        {
+          owned[owner].Add(l);
         }
       }
 
-      return (null, 0);
+      // How many parts hold a text that READS the same. Counted on the words rather than on the entity,
+      // because a drawing number is written once on each part: four separate texts that all say 12345.
+      var partsHolding = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+      foreach (List<int> held in owned)
+      {
+        foreach (string text in held.Select(l => labels[l].Text.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+          partsHolding[text] = partsHolding.TryGetValue(text, out int count) ? count + 1 : 1;
+        }
+      }
+
+      var named = new List<(string Name, int Quantity)>();
+      for (int p = 0; p < parts.Count; p++)
+      {
+        List<int> candidates = owned[p].Where(l => partsHolding[labels[l].Text.Trim()] == 1).ToList();
+        if (candidates.Count == 0)
+        {
+          candidates = owned[p];
+        }
+
+        named.Add(candidates.Count == 0 ? (null, 0) : ParseLabel(labels[Nearest(candidates, parts[p], labels)].Text));
+      }
+
+      return named;
     }
 
-    private static IReadOnlyList<(SvgPoint At, string Text)> ReadLabels(IEnumerable<DxfEntity> entities)
+    /// <summary>The label nearest the middle of the part. A tie goes to the one the drawing lists
+    /// first, so that a drawing always answers the same rather than however the sort happened to
+    /// settle.</summary>
+    private static int Nearest(
+      IReadOnlyList<int> candidates,
+      Island part,
+      IReadOnlyList<(SvgPoint At, string Text)> labels)
     {
-      var labels = new List<(SvgPoint At, string Text)>();
-      foreach (DxfEntity entity in entities)
+      double centreX = (part.Outer.MinX + part.Outer.MaxX) / 2;
+      double centreY = (part.Outer.MinY + part.Outer.MaxY) / 2;
+      int nearest = candidates[0];
+      double shortest = double.MaxValue;
+      foreach (int l in candidates)
       {
+        double dx = labels[l].At.X - centreX;
+        double dy = labels[l].At.Y - centreY;
+        double distance = (dx * dx) + (dy * dy);
+        if (distance < shortest)
+        {
+          shortest = distance;
+          nearest = l;
+        }
+      }
+
+      return nearest;
+    }
+
+    /// <summary>
+    /// The texts offering to name a part. A drawing that writes its part names in the naming colour is
+    /// taken at its word: only those name anything, and a note written in any other colour is a note. A
+    /// drawing that says nothing in that colour has every text read, which is how this worked before
+    /// colour had a say and is what keeps working for the drawings people import today.
+    /// </summary>
+    /// <remarks>
+    /// <para>A text in the marking colour never names a part either way. It is what gets engraved on
+    /// the part, and telling those two apart is the whole point.</para>
+    /// <para>What switches the drawing over is a TEXT in the naming colour, not a line in it. A drawing
+    /// whose outlines are blue and whose labels are black still has its labels read: the colour says
+    /// this TEXT names the part, and a line names nothing.</para>
+    /// </remarks>
+    private static IReadOnlyList<(SvgPoint At, string Text)> ReadLabels(
+      IEnumerable<DxfEntity> entities,
+      DxfLayerColors layers)
+    {
+      var all = entities.ToList();
+      bool namesAreColoured = all.Any(e => IsText(e) && DxfColorRoles.RoleOf(e, layers) == DxfColorRole.Name);
+      var labels = new List<(SvgPoint At, string Text)>();
+      foreach (DxfEntity entity in all)
+      {
+        DxfColorRole role = DxfColorRoles.RoleOf(entity, layers);
+        if (role == DxfColorRole.PartMark || (namesAreColoured && role != DxfColorRole.Name))
+        {
+          continue;
+        }
+
         switch (entity)
         {
           case DxfText text when !string.IsNullOrWhiteSpace(text.Value):
-            labels.Add((new SvgPoint(text.Location.X, text.Location.Y), text.Value));
+            {
+              DxfPoint at = DxfPartMarks.AnchorOf(text);
+              labels.Add((new SvgPoint(at.X, at.Y), text.Value));
+            }
+
             break;
           case DxfMText mtext when !string.IsNullOrWhiteSpace(mtext.Text):
             labels.Add((new SvgPoint(mtext.InsertionPoint.X, mtext.InsertionPoint.Y), mtext.Text));
@@ -445,6 +686,8 @@
 
       return labels;
     }
+
+    private static bool IsText(DxfEntity entity) => entity is DxfText || entity is DxfMText;
 
     /// <summary>Whether <paramref name="inner"/> lies within <paramref name="outer"/>. Asked of a vertex
     /// at a time until one gives a straight answer: a vertex that lands exactly on the other ring cannot
