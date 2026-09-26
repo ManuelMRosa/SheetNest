@@ -122,7 +122,9 @@
             return ConvertDxfToRawDetail(fi.FullName, entities);
           }
         }
-        catch (IOException) when (i <= NumberOfRetries)
+        // The last attempt lets the error through: a drawing that is missing, or still locked, has to say so
+        // rather than come back as nothing.
+        catch (IOException) when (i < NumberOfRetries)
         {
           await Task.Delay(DelayOnRetry);
         }

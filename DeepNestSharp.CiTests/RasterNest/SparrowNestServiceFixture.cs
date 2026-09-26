@@ -815,6 +815,70 @@
     }
 
     /// <summary>
+    /// A part whose drawing is gone when NEST is pressed (moved, renamed, a temp copy cleaned away) has to stop
+    /// the nest and name the file. The loader used to hand it back as nothing, the part was left out without a
+    /// word, and the rest nested as if the job were whole: a sheet short of a part, cut before anyone counts.
+    /// </summary>
+    [Fact]
+    public void AMissingDrawingStopsTheNestAndSaysWhich()
+    {
+      this.NestWithOneBadPart("gone.dxf", path => { }, "could not be read");
+    }
+
+    /// <summary>The same for a drawing that opens but holds nothing the loader can nest: an SVG drawn only with
+    /// paths.</summary>
+    [Fact]
+    public void ADrawingWithNoShapeStopsTheNestAndSaysWhich()
+    {
+      this.NestWithOneBadPart(
+        "blank.svg",
+        path => File.WriteAllText(path, "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0 L10 0 L10 10 Z\"/></svg>"),
+        "no shape");
+    }
+
+    /// <summary>A good square and one bad part, nested together. Nothing may come back but an error naming the
+    /// bad one.</summary>
+    private void NestWithOneBadPart(string badName, Action<string> writeBad, string reason)
+    {
+      var dir = Path.Combine(Path.GetTempPath(), "SheetNestTests", Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(dir);
+      try
+      {
+        string square = WriteSquare(dir, 10);
+        string bad = Path.Combine(dir, badName);
+        writeBad(bad);
+
+        // The nest has to stop before the engine starts, so this runs with or without one. With the engine,
+        // code that skips the bad part nests the square and says nothing, which is the failure this guards;
+        // without it, any file that exists stands in for the engine and is never run.
+        string exe = SparrowExe.Resolve() ?? square;
+
+        var parts = new List<RasterPartInfo>
+        {
+          new RasterPartInfo { Path = square, Quantity = 2 },
+          new RasterPartInfo { Path = bad, Quantity = 1 },
+        };
+        var stock = new List<(int, int, int, bool)> { (100, 100, 1, false) };
+
+        var result = SparrowNestService.Nest(parts, stock, 4, 1.0, 0.5, 5, exe, out string err);
+        this.output.WriteLine($"BAD {badName}: result={(result == null ? "null" : "some")} err={err}");
+
+        result.Should().BeNull("a job missing one of its parts must not come back as if it were whole");
+        err.Should().Contain(badName).And.Contain(reason);
+      }
+      finally
+      {
+        try
+        {
+          Directory.Delete(dir, true);
+        }
+        catch (IOException)
+        {
+        }
+      }
+    }
+
+    /// <summary>
     /// With two sizes in stock the nest must cut the one that fills most of its own sheet, not the one
     /// listed first. The wasteful size is listed FIRST on purpose: that is exactly what the old
     /// walk-the-list-in-order code would have taken, so this goes red the moment the choice is removed.

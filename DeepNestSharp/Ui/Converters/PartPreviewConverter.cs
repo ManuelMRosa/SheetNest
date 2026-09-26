@@ -18,22 +18,33 @@
   /// </summary>
   public class PartPreviewConverter : IValueConverter
   {
+    /// <summary>
+    /// The ConverterParameter that asks for an outline instead of a filled drawing. The parts list passes it,
+    /// to show parts the way the printed report draws them with their colour as a square beside them; the
+    /// Edit Part dialog passes nothing and keeps its filled preview.
+    /// </summary>
+    private const string OutlineParameter = "Outline";
+
+    /// <summary>Outline drawings are cached under their own key, so one kind is never handed out as the other.</summary>
+    private const string OutlineKeySuffix = "|outline";
+
     private static readonly Dictionary<string, ImageSource> Cache = new Dictionary<string, ImageSource>();
 
     /// <summary>
-    /// Colour per part file, so each thumbnail is drawn in the colour that part has on the sheet — the parts
-    /// list IS the legend. Set by the window that owns the part list, because a converter is created in XAML
-    /// and only ever receives the bound value.
+    /// Colour per part file, so a filled preview is drawn in the colour that part has on the sheet. Set by the
+    /// window that owns the part list, because a converter is created in XAML and only ever receives the bound
+    /// value.
     /// </summary>
     private static IReadOnlyDictionary<string, (byte R, byte G, byte B)> colours;
 
-    /// <summary>Drops the cached thumbnail for a path so it rebuilds — used after a 3D part is
-    /// re-unfolded (new K-factor) and its flat DXF changes.</summary>
+    /// <summary>Drops the cached thumbnails for a path so they rebuild: used after a 3D part is re-unfolded
+    /// (new K-factor) and its flat DXF changes. Both kinds go, filled and outline.</summary>
     public static void Invalidate(string path)
     {
       if (!string.IsNullOrEmpty(path))
       {
         Cache.Remove(path);
+        Cache.Remove(path + OutlineKeySuffix);
       }
     }
 
@@ -52,6 +63,9 @@
       {
         return null;
       }
+
+      bool outline = string.Equals(parameter as string, OutlineParameter, StringComparison.Ordinal);
+      string key = outline ? path + OutlineKeySuffix : path;
 
       // 3D parts preview the ALREADY-unfolded flat (FreeCAD is far too slow to run per thumbnail);
       // if it isn't unfolded yet, show nothing — PreviewSource refreshes this once loading completes.
@@ -72,7 +86,7 @@
         return null;
       }
 
-      if (Cache.TryGetValue(path, out ImageSource cached))
+      if (Cache.TryGetValue(key, out ImageSource cached))
       {
         return cached;
       }
@@ -93,7 +107,7 @@
         var raw = load.GetAwaiter().GetResult();
         if (raw != null && raw.TryConvertToNfp(0, out INfp nfp))
         {
-          image = Build(nfp, PartColors.For(colours, path), dxfPath);
+          image = Build(nfp, PartColors.For(colours, path), outline, dxfPath);
         }
       }
       catch
@@ -101,13 +115,13 @@
         image = null;
       }
 
-      Cache[path] = image;
+      Cache[key] = image;
       return image;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
 
-    private static ImageSource Build(INfp nfp, (byte R, byte G, byte B) colour, string dxfPath)
+    private static ImageSource Build(INfp nfp, (byte R, byte G, byte B) colour, bool outline, string dxfPath)
     {
       var g = new StreamGeometry { FillRule = FillRule.EvenOdd };
       using (var ctx = g.Open())
@@ -128,13 +142,20 @@
         return null;
       }
 
+      // An outline has no fill to carry the shape, so its line is heavier: about a pixel at the 48 pixels
+      // the parts list shows it at.
       double dim = Math.Max(g.Bounds.Width, g.Bounds.Height);
-      var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)), dim / 60.0);
+      var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)), dim / (outline ? 40.0 : 60.0));
       pen.Freeze();
-      // The part's own colour, opaque, exactly as the viewer paints it on the sheet — this thumbnail is how
-      // the operator maps a colour back to a part name.
-      var fill = new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
-      fill.Freeze();
+
+      // Filled: the part's own colour, opaque, exactly as the viewer paints it on the sheet. Outline: nothing,
+      // the way the printed report draws a part; the list shows the colour as a square beside it instead.
+      SolidColorBrush fill = null;
+      if (!outline)
+      {
+        fill = new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
+        fill.Freeze();
+      }
 
       var drawing = new GeometryDrawing(fill, pen, g);
 
@@ -160,7 +181,7 @@
       return image;
     }
 
-    private static void AppendContour(StreamGeometryContext ctx, INfp c)
+    internal static void AppendContour(StreamGeometryContext ctx, INfp c)
     {
       if (c == null || c.Length < 2)
       {

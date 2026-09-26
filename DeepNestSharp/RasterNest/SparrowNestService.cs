@@ -894,6 +894,13 @@
           });
           source++;
         }
+        else
+        {
+          // The same rule as a file that cannot be read. A part that yields no outline, left out quietly, is
+          // neither nested nor counted as unplaced.
+          error = $"{Path.GetFileName(part.Path)} holds no shape that can be nested.";
+          return null;
+        }
       }
 
       return loaded;

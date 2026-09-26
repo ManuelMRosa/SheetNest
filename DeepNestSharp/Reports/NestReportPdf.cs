@@ -6,351 +6,280 @@
   using System.IO;
   using System.Linq;
   using System.Text;
+  using System.Text.RegularExpressions;
   using DeepNestLib;
   using DeepNestLib.Placement;
 
   /// <summary>
-  /// Writes the production nest report as a PDF: a job summary page (sheets to cut, utilization,
-  /// part totals) plus one page per DISTINCT layout with a scaled drawing and its cut count —
-  /// the paper the operator takes to the laser. Self-contained minimal PDF writer (vector lines +
-  /// Helvetica text is all a report needs): no external PDF library, nothing to license.
+  /// Writes the production nest report as a PDF: one nest sheet per DISTINCT layout, the paper the
+  /// operator takes to the laser. Each page carries the layout's settings top left, the parts on it
+  /// below them and the sheet drawn to scale on the right, every part numbered to its row.
+  /// Self-contained minimal PDF writer (vector lines + Courier text is all a report needs): no external
+  /// PDF library, nothing to license.
   /// </summary>
   public static class NestReportPdf
   {
-    private const double PageW = 612; // US Letter portrait, points
-    private const double PageH = 792;
+    internal const string SettingHeading = "SETTING INFORMATION";
+    internal const string PartsHeading = "NEST PARTS LIST";
+
+    /// <summary>The report page, in points: US Letter landscape.</summary>
+    internal const double PageW = 792;
+
+    /// <summary>The report page's height in points; see <see cref="PageW"/>.</summary>
+    internal const double PageH = 612;
+
+    // The sheet drawing owns the right of the page, bottom margin to top margin. The text column ends
+    // before it: a parts row is 4 + 1 + 40 + 1 + 7 = 53 characters, 318 points from the left margin.
+    private const double BoxX = 384;
+    private const double BoxW = 372;
+    private const double BoxH = 528;
+    private const int LabelWidth = 17; // "SHEET UTILIZATION", the longest label
+    private const int NameWidth = 40;
+
+    /// <summary>The parts list's column heading, padded to line up with <see cref="PartRows"/>.</summary>
+    internal static readonly string PartListHeader = $"{"Item",4} {"Part Name",-NameWidth} {"Num Off",7}";
 
     /// <summary>
-    /// <paramref name="partColours"/> comes from the window, not from the placements: the colours follow
-    /// the order of the PART LIST and the owner may have picked their own, and neither of those can be read
-    /// off a sheet. Null falls back to colouring by the order the parts appear in the layouts.
+    /// The four things a report page is drawn with, written into the page's content stream by
+    /// <see cref="DrawPage"/>.
+    /// </summary>
+    private interface IPageCanvas
+    {
+      void Text(double x, double y, double size, bool bold, string text);
+
+      void Line(double x1, double y1, double x2, double y2, double width);
+
+      void Rect(double x, double y, double w, double h, double lineWidth);
+
+      /// <summary>A ring, or an engraved path when it asks not to be closed.</summary>
+      void Polygon(IEnumerable<(double X, double Y)> pts, bool close = true);
+    }
+
+    /// <summary>
+    /// Writes the report. It prints in black and white only: greys survive any shop printer, and parts
+    /// are drawn as outlines so a sheet costs almost no toner and a marked-up copy stays readable.
+    /// <para>
+    /// The job takes the name of the file the report is saved as. A page reports only what SheetNest
+    /// knows: it has no machine, tooling, material or thickness, so those lines are left out rather than
+    /// printed empty.
+    /// </para>
     /// </summary>
     public static void Write(
       string path,
       IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
       int unplacedCount,
-      string units = "in",
-      IReadOnlyDictionary<string, (byte R, byte G, byte B)> partColours = null)
+      string units = "in")
+      => Write(path, layouts, unplacedCount, units, DateTime.Now);
+
+    /// <summary>As the public overload, stamped with a given time instead of now, so a test can compare whole
+    /// pages.</summary>
+    internal static void Write(
+      string path,
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int unplacedCount,
+      string units,
+      DateTime now)
     {
       if (layouts == null || layouts.Count == 0)
       {
         throw new InvalidOperationException("Nothing to report. Run a nest first.");
       }
 
-      // Mixed stock: every layout carries ITS OWN sheet size — never assume the first one's.
-      int totalSheets = layouts.Sum(l => l.Count);
-      int totalParts = layouts.Sum(l => l.Count * l.Sheet.PartPlacements.Count);
-      double placedArea = layouts.Sum(l => l.Count * l.Sheet.PartPlacements.Sum(p => Math.Abs(p.Part.NetArea)));
-      double stockArea = layouts.Sum(l => l.Count * l.Sheet.Sheet.WidthCalculated * l.Sheet.Sheet.HeightCalculated);
-      double overallUtil = stockArea <= 0 ? 0 : placedArea / stockArea * 100.0;
-
-      // Total quantity per source part across the whole job (mirrored copies listed separately —
-      // a left-hand and a right-hand part are different physical parts on the shop floor).
-      // Colour rides alongside the label: they are keyed differently on purpose — a mirrored copy is its own
-      // LINE (different physical part to count) but shares its original's COLOUR (the parts list has one
-      // thumbnail per file, and that thumbnail is what names the colour).
-      var partTotals = NumberedPartTotals(layouts);
-
-      // The number is what ties a shape on the drawing back to a row here, so both tables and the
-      // drawing read it out of the same place.
-      var partNumbers = partTotals.ToDictionary(t => t.File, t => t.Number, StringComparer.OrdinalIgnoreCase);
-
-      var colours = partColours
-        ?? PartColors.Build(layouts.SelectMany(l => l.Sheet.PartPlacements).Select(p => p.Part?.Name));
-
-      // Every part in the job is coloured, a single-type job included — the paper has to match the screen.
-      bool colourCoded = colours.Count > 0;
-      const double numX = 48;
-      double swatchX = 76;
-      double nameX = colourCoded ? 88 : 76;
-
+      string drawingName = Path.GetFileNameWithoutExtension(path);
       var pdf = new MiniPdf();
-      string stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-      int pageCount = 1 + layouts.Count;
-
-      // ── Page 1: written for TWO readers — the material buyer (big unambiguous "what to buy"
-      // box, nothing to interpret) and the operator (cutting plan + part totals tables below). ──
-      {
-        var c = new PageContent();
-        Header(c, stamp);
-
-        // MATERIAL REQUIRED — one line per sheet size with a big count. This is the purchase order.
-        var stockLines = layouts
-          .GroupBy(l => (W: l.Sheet.Sheet.WidthCalculated, H: l.Sheet.Sheet.HeightCalculated))
-          .Select(g => (g.Key.W, g.Key.H, Count: g.Sum(x => x.Count)))
-          .OrderByDescending(t => t.W * t.H)
-          .ToList();
-        double totalSqFt = stockLines.Sum(s => s.W * s.H * s.Count) / 144.0;
-
-        // Portrait: page 1 is a single stacked column (40..572 wide), section after section.
-        c.Text(40, 716, 13, bold: true, "MATERIAL REQUIRED");
-        double rowH = 34;
-        double boxH = (stockLines.Count * rowH) + 32;
-        double boxTop = 706;
-        c.FillRect(40, boxTop - boxH, 532, boxH, 0.94, 0.94, 0.94);
-        c.Rect(40, boxTop - boxH, 532, boxH, 0.9);
-        double ry = boxTop - 27;
-        foreach (var (w, h, count) in stockLines)
-        {
-          c.Text(56, ry, 21, bold: true, count.ToString("#,0", CultureInfo.InvariantCulture));
-          c.Text(120, ry, 13, bold: false, $"sheet{(count == 1 ? string.Empty : "s")} of  {Num(w)} x {Num(h)} {units}");
-          c.SetFill(0.35, 0.35, 0.35);
-          c.Text(430, ry, 10, bold: false, $"{(w * h * count / 144.0).ToString("#,0", CultureInfo.InvariantCulture)} sq ft");
-          c.SetFill(0, 0, 0);
-          ry -= rowH;
-        }
-
-        c.Line(52, ry + 22, 560, ry + 22, 0.6);
-        c.Text(56, ry + 6, 11, bold: true,
-          $"Total:  {totalSheets.ToString("#,0", CultureInfo.InvariantCulture)} sheet{(totalSheets == 1 ? string.Empty : "s")}   -   {totalSqFt.ToString("#,0", CultureInfo.InvariantCulture)} sq ft");
-
-        // Job summary panel (stacked below the material box).
-        double sumTop = boxTop - boxH - 34;
-        int jRows = unplacedCount > 0 ? 4 : 3;
-        double sumBoxH = (jRows * 19) + 14;
-        c.Text(40, sumTop, 13, bold: true, "JOB SUMMARY");
-        c.FillRect(40, sumTop - 10 - sumBoxH, 532, sumBoxH, 0.965, 0.965, 0.965);
-        c.Rect(40, sumTop - 10 - sumBoxH, 532, sumBoxH, 0.9);
-        double jy = sumTop - 27;
-        void JRow(string label, string value, bool warn = false)
-        {
-          c.Text(56, jy, 10.5, bold: false, label);
-          if (warn)
-          {
-            c.SetFill(0.75, 0, 0);
-          }
-
-          c.Text(400, jy, 10.5, bold: true, value);
-          c.SetFill(0, 0, 0);
-          jy -= 19;
-        }
-
-        JRow("Parts to cut", totalParts.ToString("#,0", CultureInfo.InvariantCulture));
-        JRow("Material used", $"{overallUtil.ToString("0.0", CultureInfo.InvariantCulture)} %");
-        JRow("Different layouts", layouts.Count.ToString(CultureInfo.InvariantCulture));
-        if (unplacedCount > 0)
-        {
-          JRow("Parts NOT placed", unplacedCount.ToString(CultureInfo.InvariantCulture), warn: true);
-        }
-
-        // CUTTING PLAN — one row per layout, table form: what to cut, on what, how many times.
-        // Runs down to a floor that reserves room for the PART TOTALS section below it.
-        double tableTop = sumTop - 10 - sumBoxH - 34;
-        c.Text(40, tableTop, 13, bold: true, "CUTTING PLAN");
-        double ty = tableTop - 20;
-        c.FillRect(40, ty - 5, 532, 19, 0.92, 0.92, 0.92);
-        c.Text(48, ty, 10, bold: true, "Layout");
-        c.Text(110, ty, 10, bold: true, "Page");
-        c.Text(160, ty, 10, bold: true, "Sheet size");
-        c.Text(280, ty, 10, bold: true, "Parts");
-        c.Text(360, ty, 10, bold: true, "Cut");
-        c.Text(460, ty, 10, bold: true, "Used");
-        ty -= 19;
-        int planShown = 0;
-        for (int i = 0; i < layouts.Count && ty >= 190; i++)
-        {
-          var l = layouts[i];
-          c.Text(48, ty, 10, bold: false, $"Layout {i + 1}");
-          c.Text(110, ty, 10, bold: false, (i + 2).ToString(CultureInfo.InvariantCulture));
-          c.Text(160, ty, 10, bold: false, $"{Num(l.Sheet.Sheet.WidthCalculated)} x {Num(l.Sheet.Sheet.HeightCalculated)}");
-          c.Text(280, ty, 10, bold: false, l.Sheet.PartPlacements.Count.ToString(CultureInfo.InvariantCulture));
-          c.Text(360, ty, 10, bold: true, $"x {l.Count}");
-          c.Text(460, ty, 10, bold: false, $"{Util(l.Sheet).ToString("0.0", CultureInfo.InvariantCulture)} %");
-          c.Line(40, ty - 5, 572, ty - 5, 0.3);
-          ty -= 17;
-          planShown++;
-        }
-
-        if (planShown < layouts.Count)
-        {
-          c.Text(48, ty, 10, bold: false, $"... and {layouts.Count - planShown} more layouts (see their pages)");
-          ty -= 17;
-        }
-
-        // PART TOTALS — what the job produces, for checking against the order (below the plan).
-        double py = ty - 24;
-        c.Text(40, py, 13, bold: true, "PART TOTALS");
-        py -= 20;
-        c.FillRect(40, py - 5, 532, 19, 0.92, 0.92, 0.92);
-        c.Text(numX, py, 10, bold: true, "No.");
-        c.Text(nameX, py, 10, bold: true, "Part");
-        c.Text(520, py, 10, bold: true, "Qty");
-        py -= 19;
-        int totalsShown = 0;
-        foreach (var (file, colourKey, qty, number) in partTotals)
-        {
-          if (py < 40)
-          {
-            break;
-          }
-
-          // The number the operator reads off the drawing, so it leads the row.
-          c.Text(numX, py, 10, bold: true, number.ToString(CultureInfo.InvariantCulture));
-          if (colourCoded && colours.TryGetValue(colourKey, out var swatch))
-          {
-            c.FillRect(swatchX, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
-          }
-
-          c.Text(nameX, py, 10, bold: false, Trunc(file, 58));
-          c.Text(520, py, 10, bold: false, qty.ToString("#,0", CultureInfo.InvariantCulture));
-          c.Line(40, py - 5, 572, py - 5, 0.3);
-          py -= 17;
-          totalsShown++;
-        }
-
-        if (totalsShown < partTotals.Count)
-        {
-          c.Text(48, System.Math.Max(py, 32), 10, bold: false, $"... and {partTotals.Count - totalsShown} more");
-        }
-
-        Footer(c, 1, pageCount);
-        pdf.AddPage(c);
-      }
-
-      // ── One page per distinct layout ────────────────────────────────────────────────────────
       for (int i = 0; i < layouts.Count; i++)
       {
-        var (sp, count, _) = layouts[i];
-        double sheetW = sp.Sheet.WidthCalculated;
-        double sheetH = sp.Sheet.HeightCalculated;
         var c = new PageContent();
-        Header(c, stamp);
-
-        c.Text(40, 700, 16, bold: true, $"Layout {i + 1} of {layouts.Count}   -   cut x {count}");
-        c.Text(40, 680, 11, bold: false,
-          $"{sp.PartPlacements.Count} parts   |   {Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}% utilization   |   sheet {Num(sheetW)} x {Num(sheetH)} {units}");
-
-        // Drawing area (top, full portrait width) — sheet border + every part outline with its
-        // holes, Y up like the shop; centered both ways inside the box.
-        const double boxX = 40, boxY = 250, boxW = 532, boxH = 410;
-        double scale = Math.Min(boxW / sheetW, boxH / sheetH);
-        double ox = boxX + ((boxW - (sheetW * scale)) / 2.0);
-        double oy = boxY + ((boxH - (sheetH * scale)) / 2.0);
-
-        c.Rect(ox, oy, sheetW * scale, sheetH * scale, 0.9);
-        foreach (var pp in sp.PartPlacements)
-        {
-          var poly = pp.PlacedPart;
-          if (poly?.Points == null || poly.Points.Length < 3)
-          {
-            continue;
-          }
-
-          c.Polygon(
-            poly.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))),
-            fill: true,
-            fillColour: colourCoded ? PartColors.For(colours, pp) : (ValueTuple<byte, byte, byte>?)null);
-          if (poly.Children != null)
-          {
-            foreach (var hole in poly.Children)
-            {
-              if (hole?.Points != null && hole.Points.Length >= 3)
-              {
-                c.Polygon(hole.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), fill: false, holeFill: true);
-              }
-            }
-          }
-        }
-
-        // What each part carries engraved, over the parts and under the numbers: traced as lines,
-        // because the marking is geometry on the metal rather than a caption on a drawing.
-        foreach (var pp in sp.PartPlacements)
-        {
-          foreach (IReadOnlyList<System.Windows.Point> stroke in DeepNestSharp.Ui.PartMarkDrawing.Strokes(
-            pp.Part?.Name,
-            pp.X,
-            pp.Y,
-            pp.Rotation,
-            pp.IsMirrored))
-          {
-            c.Polygon(stroke.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), fill: false, close: false);
-          }
-        }
-
-        // Part numbers, in a SECOND pass on purpose: drawn inside the loop above, a neighbour filled
-        // afterwards would paint over a number already placed. Same numbers as the tables, so a shape
-        // on the sheet can be matched to a row and marked.
-        foreach (var pp in sp.PartPlacements)
-        {
-          var poly = pp.PlacedPart;
-          if (poly?.Points == null
-            || poly.Points.Length < 3
-            || !partNumbers.TryGetValue(Label(pp), out int number))
-          {
-            continue;
-          }
-
-          string numberText = number.ToString(CultureInfo.InvariantCulture);
-          var (nx, ny, nsize) = NumberLabel(poly, numberText, ox, oy, scale);
-          bool lightInk = colourCoded && NeedsLightInk(PartColors.For(colours, pp));
-          if (lightInk)
-          {
-            c.SetFill(1, 1, 1);
-          }
-
-          c.Text(nx, ny, nsize, bold: true, numberText);
-          if (lightInk)
-          {
-            c.SetFill(0, 0, 0);
-          }
-        }
-
-        // Parts on this layout (below the drawing, portrait flow). Mirrored copies list separately.
-        var onSheet = sp.PartPlacements
-          .GroupBy(p => Label(p), StringComparer.OrdinalIgnoreCase)
-          .Select(g => (File: g.Key, Colour: PartColors.ColourKeyFor(g.First()), Qty: g.Count()))
-          .OrderByDescending(t => t.Qty)
-          .ToList();
-
-        double py = 204;
-        c.Text(40, 222, 12, bold: true, "Parts on this layout");
-        int listShown = 0;
-        foreach (var (file, colourKey, qty) in onSheet)
-        {
-          if (py < 40)
-          {
-            break;
-          }
-
-          // Same number as page 1 and as the drawing above it: this is the legend the operator reads
-          // while the sheet is in front of them.
-          if (partNumbers.TryGetValue(file, out int number))
-          {
-            c.Text(40, py, 10, bold: true, number.ToString(CultureInfo.InvariantCulture));
-          }
-
-          if (colourCoded && colours.TryGetValue(colourKey, out var swatch))
-          {
-            c.FillRect(62, py, 8, 8, swatch.R / 255.0, swatch.G / 255.0, swatch.B / 255.0);
-          }
-
-          c.Text(colourCoded ? 74 : 62, py, 10, bold: false, $"{qty} x  {Trunc(file, 58)}");
-          py -= 15;
-          listShown++;
-        }
-
-        if (listShown < onSheet.Count)
-        {
-          c.Text(40, System.Math.Max(py, 32), 10, bold: false, $"... and {onSheet.Count - listShown} more");
-        }
-
-        Footer(c, i + 2, pageCount);
+        DrawPage(c, layouts, i, drawingName, now, unplacedCount, units);
         pdf.AddPage(c);
       }
 
       File.WriteAllBytes(path, pdf.Build());
     }
 
-    private static void Header(PageContent c, string stamp)
+    /// <summary>
+    /// The settings of one layout's page, in the two groups the page prints them in: what the job and its
+    /// sheet are, then what cutting this layout amounts to. Each line is a label and its value, padded so the
+    /// colons line up.
+    /// </summary>
+    internal static (List<string> Job, List<string> Cut) SettingLines(
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int index,
+      string drawingName,
+      DateTime now,
+      int unplacedCount,
+      string units)
     {
-      c.Text(40, 752, 18, bold: true, "SheetNest - Nest Report");
-      c.Text(478, 755, 10, bold: false, stamp);
-      c.Line(40, 742, 572, 742, 1.0);
+      var (sp, count, _) = layouts[index];
+      string Setting(string label, string value) => $"{label,-LabelWidth} : {value}";
+
+      var job = new List<string>
+      {
+        Setting("DRAWING NAME", Trunc(drawingName, 35)),
+        Setting("LAYOUT", $"{index + 1} of {layouts.Count}"),
+        Setting("DATE", now.ToString("ddd MMM dd HH:mm:ss yyyy", CultureInfo.InvariantCulture)),
+        Setting("SHEET SIZE", $"{Num(sp.Sheet.WidthCalculated)} x {Num(sp.Sheet.HeightCalculated)} {units}"),
+      };
+
+      var cut = new List<string>
+      {
+        Setting("SHEET UTILIZATION", $"{Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}%"),
+        Setting("NUMBER OF SHEETS", count.ToString(CultureInfo.InvariantCulture)),
+      };
+
+      if (unplacedCount > 0)
+      {
+        // On every page, because any one of them may be the only one somebody reads.
+        cut.Add(Setting("PARTS NOT PLACED", unplacedCount.ToString(CultureInfo.InvariantCulture)));
+      }
+
+      return (job, cut);
     }
 
-    private static void Footer(PageContent c, int page, int of)
+    /// <summary>
+    /// The parts list of one layout, one row per distinct part under <see cref="PartListHeader"/>: its item
+    /// number, its name and what one sheet yields. Every row; the page decides how many it has room for.
+    /// </summary>
+    internal static List<string> PartRows(ISheetPlacement sheet)
+      => NumberedParts(sheet)
+        .Select(t => $"{t.Number,4} {Trunc(t.File, NameWidth),-NameWidth} {t.Qty,7}")
+        .ToList();
+
+    /// <summary>Points per sheet unit that the page draws this sheet at: as big as the drawing's room allows
+    /// in both directions.</summary>
+    internal static double DrawingScale(double sheetW, double sheetH) => Math.Min(BoxW / sheetW, BoxH / sheetH);
+
+    /// <summary>Lays out the page of one layout on the given canvas.</summary>
+    private static void DrawPage(
+      IPageCanvas c,
+      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
+      int index,
+      string drawingName,
+      DateTime now,
+      int unplacedCount,
+      string units)
     {
-      c.Text(280, 24, 9, bold: false, $"Page {page} of {of}");
+      // Courier advances every character by 0.6 em, so at 10 points each column is a count of 6 point
+      // steps and a line padded with spaces lines up under the one above without measuring anything.
+      const double size = 10;
+      const double leading = 12;
+      const double left = 36;
+      const double bottom = 48;
+
+      var sp = layouts[index].Sheet;
+      double sheetW = sp.Sheet.WidthCalculated;
+      double sheetH = sp.Sheet.HeightCalculated;
+
+      // SETTING INFORMATION: what the job and its sheet are, then what cutting this layout amounts to.
+      var (job, cut) = SettingLines(layouts, index, drawingName, now, unplacedCount, units);
+      double y = 560;
+      Heading(c, left, y, size, SettingHeading);
+      y -= 22;
+      foreach (string line in job)
+      {
+        c.Text(left, y, size, bold: false, line);
+        y -= leading;
+      }
+
+      y -= leading;
+      foreach (string line in cut)
+      {
+        c.Text(left, y, size, bold: false, line);
+        y -= leading;
+      }
+
+      // NEST PARTS LIST: this layout's parts, numbered from 1 down the list. Num Off is what ONE sheet
+      // yields; NUMBER OF SHEETS above says how many times over.
+      var rows = PartRows(sp);
+      double py = 420;
+      Heading(c, left, py, size, PartsHeading);
+      py -= 22;
+      c.Text(left, py, size, bold: false, PartListHeader);
+      py -= leading;
+
+      // Rows down to the bottom margin; a list too long for that gives its last line to saying so.
+      int fits = (int)((py - bottom) / leading) + 1;
+      int shown = rows.Count <= fits ? rows.Count : fits - 1;
+      foreach (string row in rows.Take(shown))
+      {
+        c.Text(left, py, size, bold: false, row);
+        py -= leading;
+      }
+
+      if (shown < rows.Count)
+      {
+        c.Text(left, py, size, bold: false, $"     ... and {rows.Count - shown} more");
+      }
+
+      // The sheet to scale, standing on the bottom margin and centred across the drawing's room: a wide
+      // sheet lands low on the right, and a tall one gets the full height of the page.
+      double scale = DrawingScale(sheetW, sheetH);
+      double ox = BoxX + ((BoxW - (sheetW * scale)) / 2.0);
+      double oy = bottom;
+
+      c.Rect(ox, oy, sheetW * scale, sheetH * scale, 0.9);
+      foreach (var pp in sp.PartPlacements)
+      {
+        var poly = pp.PlacedPart;
+        if (poly?.Points == null || poly.Points.Length < 3)
+        {
+          continue;
+        }
+
+        c.Polygon(poly.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))));
+        if (poly.Children != null)
+        {
+          foreach (var hole in poly.Children)
+          {
+            if (hole?.Points != null && hole.Points.Length >= 3)
+            {
+              c.Polygon(hole.Points.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))));
+            }
+          }
+        }
+      }
+
+      // What each part carries engraved, over the parts and under the numbers: traced as lines, because
+      // the marking is geometry on the metal rather than a caption on a drawing, and left open, because
+      // an engraved arc closed would gain a straight run that is not on the part.
+      foreach (var pp in sp.PartPlacements)
+      {
+        foreach (IReadOnlyList<System.Windows.Point> stroke in DeepNestSharp.Ui.PartMarkDrawing.Strokes(
+          pp.Part?.Name,
+          pp.X,
+          pp.Y,
+          pp.Rotation,
+          pp.IsMirrored))
+        {
+          c.Polygon(stroke.Select(p => (ox + (p.X * scale), oy + (p.Y * scale))), close: false);
+        }
+      }
+
+      // Part numbers, in a SECOND pass on purpose: every outline goes down first, so a neighbour's
+      // line drawn later can never cross a digit already placed. Same numbers as the parts list, so a
+      // shape on the sheet can be matched to a row and marked.
+      var partNumbers = NumberedParts(sp).ToDictionary(t => t.File, t => t.Number, StringComparer.OrdinalIgnoreCase);
+      foreach (var pp in sp.PartPlacements)
+      {
+        var poly = pp.PlacedPart;
+        if (poly?.Points == null
+          || poly.Points.Length < 3
+          || !partNumbers.TryGetValue(Label(pp), out int number))
+        {
+          continue;
+        }
+
+        string numberText = number.ToString(CultureInfo.InvariantCulture);
+        var (nx, ny, nsize) = NumberLabel(poly, numberText, ox, oy, scale);
+        c.Text(nx, ny, nsize, bold: true, numberText);
+      }
+    }
+
+    /// <summary>A section title, underlined across its own text.</summary>
+    private static void Heading(IPageCanvas c, double x, double y, double size, string title)
+    {
+      c.Text(x, y, size, bold: false, title);
+      c.Line(x, y - 3, x + (0.6 * size * title.Length), y - 3, 0.6);
     }
 
     private static double Util(ISheetPlacement sp)
@@ -375,30 +304,58 @@
     private static string Label(IPartPlacement p) => PartColors.LabelFor(p);
 
     /// <summary>
-    /// One row per distinct part in the job, in the order the tables show them (biggest quantity
-    /// first), each carrying the number that identifies it on every sheet drawing.
+    /// One row per distinct part on ONE layout, in the order its parts list prints them, each carrying
+    /// the number that marks it on that layout's drawing.
     /// <para>
-    /// The numbers are handed out ONCE over the whole job, never per page: the same part has to carry
-    /// the same number on layout 1 and on layout 4, or the operator cannot mark anything by it. A
-    /// mirrored copy is its own row and so its own number, because it is the other hand and takes a
-    /// different mark.
+    /// Numbered from 1 on every page, the way a nest sheet numbers its items: the list a number is read
+    /// against sits on the same page as the drawing it was read off. Qty is what one sheet of the layout
+    /// yields. A mirrored copy is its own row and so its own number, because it is the other hand and
+    /// takes a different mark.
     /// </para>
     /// </summary>
-    internal static List<(string File, string Colour, int Qty, int Number)> NumberedPartTotals(
-      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts)
+    internal static List<(string File, int Qty, int Number)> NumberedParts(ISheetPlacement sheet)
     {
-      if (layouts == null || layouts.Count == 0)
+      return sheet.PartPlacements
+        .GroupBy(p => Label(p), StringComparer.OrdinalIgnoreCase)
+        .Select(g => (File: g.Key, Qty: g.Count()))
+        .OrderBy(t => t.File, Comparer<string>.Create(NaturalCompare))
+        .Select((t, i) => (t.File, t.Qty, Number: i + 1))
+        .ToList();
+    }
+
+    /// <summary>
+    /// Orders names the way a file listing does, so p9 comes before p88 and p88 before p103: runs of
+    /// digits compare as numbers, the text between them ignoring case. Plain text order would put p103
+    /// first.
+    /// </summary>
+    private static int NaturalCompare(string a, string b)
+    {
+      // Split keeps the digit runs because they are captured, so both arrays alternate text and digits,
+      // text first even when it is empty.
+      string[] x = Regex.Split(a ?? string.Empty, @"(\d+)");
+      string[] y = Regex.Split(b ?? string.Empty, @"(\d+)");
+      for (int i = 0; i < Math.Min(x.Length, y.Length); i++)
       {
-        return new List<(string, string, int, int)>();
+        int order;
+        if (i % 2 == 0)
+        {
+          order = string.Compare(x[i], y[i], StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+          // Numbers of any length: without their leading zeros, the longer run is the bigger number.
+          string m = x[i].TrimStart('0');
+          string n = y[i].TrimStart('0');
+          order = m.Length != n.Length ? m.Length.CompareTo(n.Length) : string.CompareOrdinal(m, n);
+        }
+
+        if (order != 0)
+        {
+          return order;
+        }
       }
 
-      return layouts
-        .SelectMany(l => l.Sheet.PartPlacements.Select(p => (File: Label(p), Colour: PartColors.ColourKeyFor(p), l.Count)))
-        .GroupBy(t => t.File, StringComparer.OrdinalIgnoreCase)
-        .Select(g => (File: g.Key, Colour: g.First().Colour, Qty: g.Sum(t => t.Count)))
-        .OrderByDescending(t => t.Qty)
-        .Select((t, i) => (t.File, t.Colour, t.Qty, Number: i + 1))
-        .ToList();
+      return x.Length.CompareTo(y.Length);
     }
 
     /// <summary>
@@ -406,8 +363,15 @@
     /// <para>
     /// The anchor is the outline's AREA CENTROID, not the middle of its bounding box: on an L or a C
     /// the box centre lands in the notch, which is off the material and usually straight on top of
-    /// whatever is nested in there. On a convex part the two agree. A part whose middle is a large
-    /// hole still gets its number over the hole, which reads fine on paper and costs nothing.
+    /// whatever is nested in there. On a convex part the two agree.
+    /// </para>
+    /// <para>
+    /// A ring is the case the centroid cannot serve: its centroid is its own HOLE. That is not a
+    /// cosmetic miss, because the nester parks other parts inside big cutouts, so the number would land
+    /// on top of the number of whatever is nested in there and neither could be read. When the centroid
+    /// is off the material the anchor moves to the roomiest point that is ON it, and the size is then
+    /// taken from the room there rather than from the outer box: a thin-walled ring would otherwise
+    /// take the LARGEST number allowed and print it across its own bore.
     /// </para>
     /// <para>
     /// The size follows the part, bounded at both ends: under about four points nothing survives
@@ -426,12 +390,27 @@
       double side = Math.Min(placed.MaxX - placed.MinX, placed.MaxY - placed.MinY) * scale;
       double size = Math.Max(4.0, Math.Min(12.0, side * 0.42));
 
-      // Helvetica advances a digit by 0.556 em and stands a cap 0.717 em tall. Text() draws from the
-      // baseline, left aligned, and this writer cannot measure a string, so centring is arithmetic.
-      double width = 0.556 * size * Math.Max(1, text?.Length ?? 1);
+      if (!OnMaterial(placed, cx, cy))
+      {
+        // Sized where the number actually goes. 2 * room is never MORE than the shorter side of the
+        // box, whatever the shape, so this can only ever shrink the number, never grow it: a part that
+        // already fitted keeps what it had, and one that never fitted gets a size that does.
+        var (mx, my, room) = RoomiestMaterialPoint(placed);
+        if (room > 0)
+        {
+          cx = mx;
+          cy = my;
+          size = Math.Max(4.0, Math.Min(12.0, 2.0 * room * scale * 0.42));
+        }
+      }
+
+      // Courier-Bold advances every glyph by 0.6 em and stands its digits 0.616 em tall (Adobe's metrics
+      // for the font). Text() draws from the baseline, left aligned, and this writer cannot measure a
+      // string, so centring is arithmetic.
+      double width = 0.6 * size * Math.Max(1, text?.Length ?? 1);
       return (
         ox + (cx * scale) - (width / 2.0),
-        oy + (cy * scale) - (0.717 * size / 2.0),
+        oy + (cy * scale) - (0.616 * size / 2.0),
         size);
     }
 
@@ -457,29 +436,187 @@
         : (cx / (3.0 * twiceArea), cy / (3.0 * twiceArea));
     }
 
-    /// <summary>A dark part colour needs a light number on top of it; the palette holds both.</summary>
-    private static bool NeedsLightInk((byte R, byte G, byte B) colour)
-      => ((0.299 * colour.R) + (0.587 * colour.G) + (0.114 * colour.B)) < 140.0;
+    /// <summary>
+    /// Whether the point is on the part's MATERIAL: inside the outline and inside none of its holes.
+    /// <para>
+    /// Reads raw <c>Points</c>, the same coordinates the drawing and <see cref="Centroid"/> use. The
+    /// solution has three point-in-polygon routines already and none of them fits here: two are private
+    /// to the viewer control, and the public one adds <c>OffsetX/OffsetY</c>, which this report never
+    /// applies anywhere. Those offsets happen to be null today, so borrowing it would be right by luck,
+    /// and would put a number where the shape is not the day one of them is set.
+    /// </para>
+    /// </summary>
+    private static bool OnMaterial(INfp poly, double x, double y)
+    {
+      if (poly == null || !ContourContains(poly.Points, x, y))
+      {
+        return false;
+      }
+
+      if (poly.Children != null)
+      {
+        foreach (var hole in poly.Children)
+        {
+          // Guarded exactly as the drawing guards it: a hole too small to be drawn is not on the paper,
+          // so it takes no material away and the number must not dodge it.
+          if (hole?.Points != null && hole.Points.Length >= 3 && ContourContains(hole.Points, x, y))
+          {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    /// <summary>Even-odd ray casting across one closed ring.</summary>
+    private static bool ContourContains(SvgPoint[] pts, double x, double y)
+    {
+      if (pts == null || pts.Length < 3)
+      {
+        return false;
+      }
+
+      bool inside = false;
+      for (int i = 0, j = pts.Length - 1; i < pts.Length; j = i++)
+      {
+        if (((pts[i].Y > y) != (pts[j].Y > y))
+          && (x < (((pts[j].X - pts[i].X) * (y - pts[i].Y)) / (pts[j].Y - pts[i].Y)) + pts[i].X))
+        {
+          inside = !inside;
+        }
+      }
+
+      return inside;
+    }
+
+    /// <summary>
+    /// The material point furthest from any edge, hole edges included, and how far that is. Sampled,
+    /// not solved: a grid over the bounding box, then a few rounds of halving the step around the best
+    /// sample.
+    /// <para>
+    /// A wall thinner than the grid spacing can be stepped straight over, so a miss retries four times
+    /// finer before giving up. A room of zero means nothing was found and the caller keeps what it had,
+    /// which is the anchor this report has always used.
+    /// </para>
+    /// </summary>
+    private static (double X, double Y, double Room) RoomiestMaterialPoint(INfp poly)
+    {
+      // Read ONCE. MinX and its three siblings are a LINQ pass over every point on each read
+      // (NoFitPolygon.cs:96), so leaving them in a loop condition walks the whole part per probe.
+      double minX = poly.MinX;
+      double maxX = poly.MaxX;
+      double minY = poly.MinY;
+      double maxY = poly.MaxY;
+      double w = maxX - minX;
+      double h = maxY - minY;
+      if (w <= 0 || h <= 0)
+      {
+        return (0, 0, 0);
+      }
+
+      foreach (int divisions in new[] { 64, 256 })
+      {
+        double step = Math.Max(w, h) / divisions;
+        var best = (X: 0.0, Y: 0.0, Room: 0.0);
+        for (double x = minX + (step / 2.0); x < maxX; x += step)
+        {
+          for (double y = minY + (step / 2.0); y < maxY; y += step)
+          {
+            Consider(poly, x, y, ref best);
+          }
+        }
+
+        if (best.Room <= 0)
+        {
+          continue;
+        }
+
+        // Walk in on the winner: its eight neighbours at half the step, six times over.
+        for (int round = 0; round < 6; round++)
+        {
+          step /= 2.0;
+          for (int dx = -1; dx <= 1; dx++)
+          {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+              if (dx != 0 || dy != 0)
+              {
+                Consider(poly, best.X + (dx * step), best.Y + (dy * step), ref best);
+              }
+            }
+          }
+        }
+
+        return best;
+      }
+
+      return (0, 0, 0);
+    }
+
+    private static void Consider(INfp poly, double x, double y, ref (double X, double Y, double Room) best)
+    {
+      if (!OnMaterial(poly, x, y))
+      {
+        return;
+      }
+
+      double room = Clearance(poly, x, y);
+      if (room > best.Room)
+      {
+        best = (x, y, room);
+      }
+    }
+
+    /// <summary>Distance from the point to the nearest edge, of the outline or of any hole.</summary>
+    private static double Clearance(INfp poly, double x, double y)
+    {
+      double best = EdgeDistance(poly.Points, x, y);
+      if (poly.Children != null)
+      {
+        foreach (var hole in poly.Children)
+        {
+          if (hole?.Points != null && hole.Points.Length >= 3)
+          {
+            best = Math.Min(best, EdgeDistance(hole.Points, x, y));
+          }
+        }
+      }
+
+      return best;
+    }
+
+    private static double EdgeDistance(SvgPoint[] pts, double x, double y)
+    {
+      double best = double.MaxValue;
+      for (int i = 0, j = pts.Length - 1; i < pts.Length; j = i++)
+      {
+        best = Math.Min(best, PointSegmentDistance(x, y, pts[j].X, pts[j].Y, pts[i].X, pts[i].Y));
+      }
+
+      return best;
+    }
+
+    private static double PointSegmentDistance(double px, double py, double ax, double ay, double bx, double by)
+    {
+      double dx = bx - ax;
+      double dy = by - ay;
+      double length2 = (dx * dx) + (dy * dy);
+      double t = length2 <= 0 ? 0 : ((((px - ax) * dx) + ((py - ay) * dy)) / length2);
+      t = Math.Max(0, Math.Min(1, t));
+      double qx = ax + (t * dx);
+      double qy = ay + (t * dy);
+      return Math.Sqrt(((px - qx) * (px - qx)) + ((py - qy) * (py - qy)));
+    }
 
     private static string Trunc(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "~";
 
     private static string Num(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
 
-    /// <summary>One page's content stream: text, lines, rectangles and filled polygons.</summary>
-    private sealed class PageContent
+    /// <summary>One page's content stream: text, lines, rectangles and polygon outlines.</summary>
+    private sealed class PageContent : IPageCanvas
     {
       private readonly StringBuilder sb = new StringBuilder();
-
-      public void SetFill(double r, double g, double b)
-      {
-        this.sb.AppendLine(FormattableString.Invariant($"{r:0.###} {g:0.###} {b:0.###} rg"));
-      }
-
-      public void FillRect(double x, double y, double w, double h, double r, double g, double b)
-      {
-        this.sb.AppendLine(FormattableString.Invariant(
-          $"{r:0.###} {g:0.###} {b:0.###} rg {x:0.##} {y:0.##} {w:0.##} {h:0.##} re f 0 0 0 rg"));
-      }
 
       public void Text(double x, double y, double size, bool bold, string text)
       {
@@ -499,9 +636,14 @@
           $"{lineWidth:0.##} w 0.15 0.15 0.15 RG {x:0.##} {y:0.##} {w:0.##} {h:0.##} re S"));
       }
 
-      /// <summary>Part outline (its part-type colour, or aluminum-gray when uncoloured) or hole (white
-      /// fill), always stroked.</summary>
-      public void Polygon(IEnumerable<(double X, double Y)> pts, bool fill, bool holeFill = false, (byte R, byte G, byte B)? fillColour = null, bool close = true)
+      /// <summary>
+      /// A part or hole ring, closed and stroked in near-black. There is no fill: taking no fill
+      /// argument is what makes a filled part impossible rather than merely unintended, and it is why
+      /// a part nested inside another's hole can no longer be painted out by the part around it.
+      /// <para>An engraved arc or scribe line is a path and not a ring, so it asks not to be closed:
+      /// closing it would draw a straight run back to where it started that is not on the part.</para>
+      /// </summary>
+      public void Polygon(IEnumerable<(double X, double Y)> pts, bool close = true)
       {
         bool first = true;
         foreach (var (x, y) in pts)
@@ -515,18 +657,9 @@
           return;
         }
 
-        // The trailing "0 0 0 rg" restores the text fill color — without it every Text() drawn after
-        // a polygon inherits the part/hole fill (white holes made whole part lists invisible).
-        // Part fill (its type's colour, else aluminum-gray) + near-black outline, matching the app.
-        string partRg = fillColour.HasValue
-          ? FormattableString.Invariant($"{fillColour.Value.R / 255.0:0.###} {fillColour.Value.G / 255.0:0.###} {fillColour.Value.B / 255.0:0.###}")
-          : "0.71 0.72 0.74";
-        string paint = fill ? partRg + " rg b" : holeFill ? "1 1 1 rg b" : "s";
-
-        // An engraved arc or a scribe line is a path, not a shape: closing it would draw a straight run
-        // back to where it started that is not on the part.
-        string shut = close ? "h " : string.Empty;
-        this.sb.AppendLine(FormattableString.Invariant($"{shut}0.5 w 0.15 0.15 0.15 RG {paint} 0 0 0 rg"));
+        // "s" closes and strokes without touching the fill colour, so the trailing "0 0 0 rg" is only
+        // there to keep the text fill black for any Text() that follows.
+        this.sb.AppendLine((close ? "h " : string.Empty) + "0.5 w 0.15 0.15 0.15 RG s 0 0 0 rg");
       }
 
       public byte[] ToBytes()
@@ -542,8 +675,8 @@
     }
 
     /// <summary>
-    /// Minimal PDF assembler: fixed Letter-portrait pages, Helvetica + Helvetica-Bold (standard-14
-    /// fonts every viewer ships — nothing embedded), uncompressed content streams, exact xref.
+    /// Minimal PDF assembler: fixed Letter-landscape pages, Courier + Courier-Bold (standard-14 fonts
+    /// every viewer ships, so nothing is embedded), uncompressed content streams, exact xref.
     /// </summary>
     private sealed class MiniPdf
     {
@@ -562,8 +695,8 @@
         {
           Latin1("<< /Type /Catalog /Pages 2 0 R >>"),
           Latin1($"<< /Type /Pages /Count {n} /Kids [{string.Join(" ", Enumerable.Range(0, n).Select(i => $"{6 + (2 * i)} 0 R"))}] >>"),
-          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"),
-          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"),
+          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>"),
+          Latin1("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>"),
         };
 
         foreach (var stream in this.pageStreams)

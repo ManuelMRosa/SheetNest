@@ -84,7 +84,8 @@
       set
       {
         SetProperty(nameof(Quantity), () => detailLoadInfo.Quantity, v => detailLoadInfo.Quantity = v, value);
-        OnPropertyChanged(nameof(NestedInfo));
+        OnPropertyChanged(nameof(RequiredCount));
+        OnPropertyChanged(nameof(RemainingCount));
       }
     }
 
@@ -94,7 +95,8 @@
       set
       {
         SetProperty(nameof(Extra), () => detailLoadInfo.Extra, v => detailLoadInfo.Extra = v, value);
-        OnPropertyChanged(nameof(NestedInfo));
+        OnPropertyChanged(nameof(RequiredCount));
+        OnPropertyChanged(nameof(RemainingCount));
       }
     }
 
@@ -104,7 +106,8 @@
       set
       {
         SetProperty(nameof(MirrorQuantity), () => detailLoadInfo.MirrorQuantity, v => detailLoadInfo.MirrorQuantity = v, value);
-        OnPropertyChanged(nameof(NestedInfo));
+        OnPropertyChanged(nameof(RequiredCount));
+        OnPropertyChanged(nameof(RemainingCount));
       }
     }
 
@@ -123,16 +126,21 @@
         {
           nestedCount = value;
           OnPropertyChanged(nameof(NestedCount));
-          OnPropertyChanged(nameof(NestedInfo));
+          OnPropertyChanged(nameof(RemainingCount));
         }
       }
     }
 
     /// <summary>
-    /// Gets the always-visible "Available" indicator: copies still left to nest / total requested
-    /// (quantity + spares + mirrored). No result: "30/30"; a nest that placed 26: "4/30".
+    /// Gets how many copies the job asks for: the quantity, the spares and the mirrored copies.
     /// </summary>
-    public string NestedInfo => $"{System.Math.Max(0, Quantity + Extra + MirrorQuantity - nestedCount)}/{Quantity + Extra + MirrorQuantity}";
+    public int RequiredCount => Quantity + Extra + MirrorQuantity;
+
+    /// <summary>
+    /// Gets how many copies are still to nest: what is required less what the on-screen nest placed. Never
+    /// below zero, because a nest that placed more than was asked leaves nothing to do, not a negative amount.
+    /// </summary>
+    public int RemainingCount => System.Math.Max(0, RequiredCount - nestedCount);
 
     public int Rotations
     {
@@ -296,7 +304,10 @@
     {
       get
       {
-        var n = this.nfp;
+        // The part card reads this before anything else asks for the geometry, so an unloaded part has to
+        // start its own load here; Nfp raises SizeLabel again once it lands. Only while it is missing: Nfp
+        // raises SizeLabel on EVERY read, so going through it each time would reload the part forever.
+        var n = this.nfp ?? this.Nfp;
         if (n == null || n.Length < 2)
         {
           return string.Empty;

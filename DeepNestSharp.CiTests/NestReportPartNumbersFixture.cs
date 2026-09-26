@@ -12,64 +12,30 @@
   using Xunit;
 
   /// <summary>
-  /// The report numbers every distinct part from 1 and prints that number on each of its copies in the
-  /// sheet drawing, so an operator can read a number off a cut piece and find its row. The number is
-  /// therefore only worth anything if it means the SAME part everywhere it appears.
+  /// Each layout page numbers its parts from 1 and prints that number on each of their copies in the
+  /// sheet drawing, so an operator can read a number off the drawing and find its row in the list on the
+  /// same page. The number is therefore only worth anything if it means the SAME part everywhere it
+  /// appears on that page.
+  /// <para>
+  /// That a second layout starts again from 1, and that Num Off counts one sheet, is checked on the
+  /// printed bytes in <see cref="NestReportLayoutFixture"/>.
+  /// </para>
   /// </summary>
   public class NestReportPartNumbersFixture
   {
-    [Fact]
-    public void NumbersRunFromOneAndFollowTheOrderTheTableIsPrintedIn()
-    {
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (SheetOf(("few.dxf", 1), ("many.dxf", 3), ("some.dxf", 2)), 1, "A"),
-      };
-
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
-
-      totals.Select(t => t.Number).Should().Equal(new[] { 1, 2, 3 }, "the table reads 1, 2, 3 down the page");
-      totals.Select(t => t.File).Should().Equal(
-        new[] { "many.dxf", "some.dxf", "few.dxf" },
-        "the rows stay ordered by quantity, so the numbers follow that order");
-      totals.Select(t => t.Qty).Should().Equal(new[] { 3, 2, 1 });
-    }
-
     /// <summary>
-    /// The one that makes the feature work. A part cut on two different layouts is one part with one
-    /// mark; numbering each page on its own would print a 1 on layout A and a 2 on layout B for the
-    /// same drawing, and every mark made from the report would be wrong.
+    /// Names in natural order, the way a file listing shows them. These three separate it from both
+    /// orders it could be mistaken for: plain text order puts p103 first, and largest quantity first,
+    /// which the report used before, puts p88 first.
     /// </summary>
     [Fact]
-    public void APartOnTwoLayoutsGetsOneNumberAndItsQuantityAddsUp()
+    public void NumbersRunFromOneInNaturalNameOrder()
     {
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (SheetOf(("bracket.dxf", 2)), 1, "A"),
-        (SheetOf(("bracket.dxf", 1), ("plate.dxf", 1)), 1, "B"),
-      };
+      var parts = NestReportPdf.NumberedParts(SheetOf(("p103.dxf", 1), ("p88.dxf", 3), ("p9.dxf", 2)));
 
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
-
-      totals.Should().HaveCount(2, "two drawings, whatever they are spread across");
-      var bracket = totals.Single(t => t.File == "bracket.dxf");
-      bracket.Number.Should().Be(1);
-      bracket.Qty.Should().Be(3, "two on the first layout and one on the second");
-    }
-
-    /// <summary>A layout cut several times produces its parts several times over.</summary>
-    [Fact]
-    public void CuttingALayoutMoreThanOnceMultipliesTheQuantityButNotTheNumbers()
-    {
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (SheetOf(("bracket.dxf", 2)), 5, "A"),
-      };
-
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
-
-      totals.Should().ContainSingle().Which.Qty.Should().Be(10);
-      totals[0].Number.Should().Be(1);
+      parts.Select(t => t.File).Should().Equal(new[] { "p9.dxf", "p88.dxf", "p103.dxf" });
+      parts.Select(t => t.Number).Should().Equal(new[] { 1, 2, 3 }, "the list reads 1, 2, 3 down the page");
+      parts.Select(t => t.Qty).Should().Equal(new[] { 2, 3, 1 });
     }
 
     /// <summary>
@@ -85,16 +51,12 @@
         Part("bracket.dxf", 20, 0),
         Mirrored(Part("bracket.dxf", 40, 0)),
       };
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
-      {
-        (Sheet(placements), 1, "A"),
-      };
 
-      var totals = NestReportPdf.NumberedPartTotals(layouts);
+      var parts = NestReportPdf.NumberedParts(Sheet(placements));
 
-      totals.Should().HaveCount(2);
-      totals.Select(t => t.File).Should().BeEquivalentTo(new[] { "bracket.dxf", "bracket.dxf (mirrored)" });
-      totals.Select(t => t.Number).Should().Equal(new[] { 1, 2 });
+      parts.Select(t => t.File).Should().Equal(new[] { "bracket.dxf", "bracket.dxf (mirrored)" });
+      parts.Select(t => t.Number).Should().Equal(new[] { 1, 2 });
+      parts.Select(t => t.Qty).Should().Equal(new[] { 2, 1 });
     }
 
     /// <summary>
@@ -110,8 +72,8 @@
       var (x, y, size) = NestReportPdf.NumberLabel(shape, "7", ox: 0, oy: 0, scale: 1);
 
       // Recover the centre the label was built around: Text() is given the baseline's left end.
-      double centreX = x + (0.556 * size * "7".Length / 2.0);
-      double centreY = y + (0.717 * size / 2.0);
+      double centreX = x + (0.6 * size * "7".Length / 2.0);
+      double centreY = y + (0.616 * size / 2.0);
 
       Inside(shape, centreX, centreY).Should().BeTrue("the number belongs on the part it names");
       Inside(shape, 5, 5).Should().BeFalse("and the bounding-box centre, which is what this replaces, is not");
@@ -130,6 +92,122 @@
       var (_, _, size) = NestReportPdf.NumberLabel(shape, "1", ox: 0, oy: 0, scale: 1);
 
       size.Should().BeApproximately(expected, 1e-9);
+    }
+
+    /// <summary>
+    /// A ring's area centroid is its own HOLE, not its material. That matters because the nester parks
+    /// other parts inside big cutouts, so a number left on the centroid lands on top of the number of
+    /// whatever is nested in there and neither can be read. The number belongs on the material band.
+    /// </summary>
+    [Fact]
+    public void OnASquareFrameTheNumberSitsOnTheBandAndNotInTheCutout()
+    {
+      INfp frame = Poly("frame.dxf", (0, 0), (20, 0), (20, 20), (0, 20));
+      INfp cutout = Poly("cutout", (5, 5), (15, 5), (15, 15), (5, 15));
+      frame.Children.Add(cutout);
+
+      var (centreX, centreY, size) = LabelCentre(frame, "7");
+
+      Inside(cutout, 10, 10).Should().BeTrue("the centroid, which is what this replaces, is in the hole");
+      Inside(frame, centreX, centreY).Should().BeTrue("the number belongs on the part it names");
+      Inside(cutout, centreX, centreY).Should().BeFalse("and not in the cutout, where another part goes");
+      size.Should().BeApproximately(4.0, 1e-9, "a 5 wide band only has room for the smallest number");
+    }
+
+    /// <summary>
+    /// The same, on the shape that actually comes out of the DXF reader: arcs are tessellated at 6
+    /// degrees at most, so a circle arrives as 60 points and a ring as two of them.
+    /// </summary>
+    [Fact]
+    public void OnACircularRingTheNumberSitsOnTheBandAndNotInTheBore()
+    {
+      INfp ring = Circle("ring.dxf", 40, 40, 30);
+      INfp bore = Circle("bore", 40, 40, 15);
+      ring.Children.Add(bore);
+
+      var (centreX, centreY, size) = LabelCentre(ring, "7");
+
+      Inside(bore, 40, 40).Should().BeTrue("the centroid, which is what this replaces, is in the bore");
+      Inside(ring, centreX, centreY).Should().BeTrue("the number belongs on the ring");
+      Inside(bore, centreX, centreY).Should().BeFalse("and not in the bore");
+      size.Should().BeLessThan(
+        12.0,
+        "sized to the 15 wide band, not to the 60 wide outer circle, which would clamp at the maximum");
+      size.Should().BeGreaterThanOrEqualTo(4.0);
+    }
+
+    /// <summary>
+    /// The size has to follow the MATERIAL, not the bounding box. This ring is picked so the answer is
+    /// known on paper: a 100 square with a 60 square hole leaves a 20 wide band, and the roomiest spot
+    /// is not the middle of that band but the CORNER POCKET, where a circle can touch two outer edges
+    /// and the hole's corner at once. It sits at 20*sqrt(2)/(1+sqrt(2)) = 11.716, so the number is
+    /// 2*11.716*0.42 = 9.84 points: below the 12 the bounding box would demand, above the 8.4 the band
+    /// midline would give, and clear of the 4 floor. One number that separates all three.
+    /// <para>
+    /// The whole glyph is checked, not just its centre, because a number that straddles the hole edge
+    /// is still unreadable.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void OnARingTheNumberIsSizedToTheMaterialBandNotTheBoundingBox()
+    {
+      INfp plate = Poly("plate.dxf", (0, 0), (100, 0), (100, 100), (0, 100));
+      INfp window = Poly("window", (20, 20), (80, 20), (80, 80), (20, 80));
+      plate.Children.Add(window);
+
+      var (x, y, size) = NestReportPdf.NumberLabel(plate, "7", ox: 0, oy: 0, scale: 1);
+
+      size.Should().BeApproximately(
+        9.84,
+        0.15,
+        "the number is sized to the 20 wide band's roomiest corner, not to the 100 wide plate");
+
+      double right = x + (0.6 * size);
+      double top = y + (0.616 * size);
+      foreach (var (cx, cy) in new[] { (x, y), (right, y), (x, top), (right, top) })
+      {
+        Inside(plate, cx, cy).Should().BeTrue("every corner of the number sits on the plate");
+        Inside(window, cx, cy).Should().BeFalse("and none of it hangs over the hole");
+      }
+    }
+
+    /// <summary>
+    /// The narrow scope, pinned. A part whose centroid IS on the material must come back with the
+    /// number it has always had, to the last decimal, holes or no holes. This one has a hole, so it
+    /// proves the search is skipped because the centroid works and not because there was nothing to
+    /// look at. If a later change widens the slow path to everyone, this is what says so.
+    /// </summary>
+    [Fact]
+    public void APartWhoseCentroidIsOnMaterialKeepsExactlyTheNumberItAlreadyHad()
+    {
+      INfp plate = Poly("plate.dxf", (0, 0), (100, 0), (100, 100), (0, 100));
+      plate.Children.Add(Poly("hole", (5, 5), (15, 5), (15, 15), (5, 15)));
+
+      var (x, y, size) = NestReportPdf.NumberLabel(plate, "7", ox: 0, oy: 0, scale: 1);
+
+      size.Should().BeApproximately(12.0, 1e-9, "0.42 of the 100 side, clamped at the ceiling");
+      x.Should().BeApproximately(50.0 - (0.6 * 12.0 / 2.0), 1e-9);
+      y.Should().BeApproximately(50.0 - (0.616 * 12.0 / 2.0), 1e-9);
+    }
+
+    /// <summary>
+    /// A band too thin for even the smallest number still gets one. That is a decision, not an
+    /// oversight: a part with no number is a part the operator cannot mark, so the number goes on the
+    /// material at the 4 point floor and is allowed to graze the outline. The ANCHOR is on the
+    /// material; the glyph around it is not checked, because here it deliberately overhangs.
+    /// </summary>
+    [Fact]
+    public void OnARingTooThinForTheSmallestDigitTheNumberStillGoesOnTheMaterial()
+    {
+      INfp plate = Poly("thin.dxf", (0, 0), (100, 0), (100, 100), (0, 100));
+      INfp window = Poly("window", (1, 1), (99, 1), (99, 99), (1, 99));
+      plate.Children.Add(window);
+
+      var (centreX, centreY, size) = LabelCentre(plate, "7");
+
+      size.Should().BeApproximately(4.0, 1e-9, "a 1 wide band has room for nothing bigger than the floor");
+      Inside(plate, centreX, centreY).Should().BeTrue("the number still belongs on the part");
+      Inside(window, centreX, centreY).Should().BeFalse("and still not in the hole another part goes in");
     }
 
     /// <summary>
@@ -157,7 +235,7 @@
         Occurrences(pdf, "/F2 4 Tf").Should().Be(
           6,
           "four parts drawn on the first layout page and two on the second, each with its number");
-        pdf.Should().Contain("(No.) Tj", "the table needs the column the drawing refers to");
+        pdf.Should().MatchRegex(@"\(Item Part Name +Num Off\) Tj", "the table needs the column the drawing refers to");
         pdf.Should().Contain("(1) Tj").And.Contain("(2) Tj");
       }
       finally
@@ -193,6 +271,26 @@
       }
 
       return inside;
+    }
+
+    /// <summary>The centre the label was built around: Text() is given the baseline's left end.</summary>
+    private static (double X, double Y, double Size) LabelCentre(INfp shape, string text)
+    {
+      var (x, y, size) = NestReportPdf.NumberLabel(shape, text, ox: 0, oy: 0, scale: 1);
+      return (x + (0.6 * size * text.Length / 2.0), y + (0.616 * size / 2.0), size);
+    }
+
+    /// <summary>A circle as the DXF reader delivers one: 60 points, its 6 degree tessellation floor.</summary>
+    private static INfp Circle(string name, double cx, double cy, double radius)
+    {
+      var pts = new List<SvgPoint>();
+      for (int i = 0; i < 60; i++)
+      {
+        double a = i * 2 * Math.PI / 60.0;
+        pts.Add(new SvgPoint(cx + (radius * Math.Cos(a)), cy + (radius * Math.Sin(a))));
+      }
+
+      return new NoFitPolygon(pts) { Name = name };
     }
 
     private static INfp Poly(string name, params (double X, double Y)[] points)

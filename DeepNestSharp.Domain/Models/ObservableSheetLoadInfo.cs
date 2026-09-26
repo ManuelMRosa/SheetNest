@@ -26,18 +26,14 @@
       set
       {
         SetProperty(nameof(Quantity), () => sheetLoadInfo.Quantity, v => sheetLoadInfo.Quantity = v, value);
-        OnPropertyChanged(nameof(NestedInfo));
+        OnPropertyChanged(nameof(TotalCount));
       }
     }
 
     public bool Unlimited
     {
       get => sheetLoadInfo.Unlimited;
-      set
-      {
-        SetProperty(nameof(Unlimited), () => sheetLoadInfo.Unlimited, v => sheetLoadInfo.Unlimited = v, value);
-        OnPropertyChanged(nameof(NestedInfo));
-      }
+      set => SetProperty(nameof(Unlimited), () => sheetLoadInfo.Unlimited, v => sheetLoadInfo.Unlimited = v, value);
     }
 
     public int Width
@@ -61,19 +57,18 @@
         {
           nestedCount = value;
           OnPropertyChanged(nameof(NestedCount));
-          OnPropertyChanged(nameof(NestedInfo));
+          OnPropertyChanged(nameof(TotalCount));
         }
       }
     }
 
     /// <summary>
-    /// Gets the always-visible "Available" indicator (Quantity Available):
-    /// sheets of this size still available / total. The row's Quantity is already deducted while a
-    /// result is on screen, so it IS the available count — no result: "31/31"; nest used 28: "3/31".
-    /// <para>An unlimited size has no available count to show, so it says so and reports what the nest
-    /// took instead; showing its stored Quantity there would read as a stock level it does not have.</para>
+    /// Gets how many sheets of this size the job has in all. The row's Quantity is already deducted while a
+    /// result is on screen, so it IS the available count, and the total adds back what the nest used: with
+    /// no result 31, all available; after a nest that used 28, still 31, with 3 available.
+    /// <para>An unlimited size has no stock level, so its card says Unlimited instead of this.</para>
     /// </summary>
-    public string NestedInfo => Unlimited ? $"Unlimited · {nestedCount} used" : $"{Quantity}/{Quantity + nestedCount}";
+    public int TotalCount => Quantity + nestedCount;
 
     public SheetLoadInfo Item => this.sheetLoadInfo;
   }

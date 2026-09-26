@@ -7,8 +7,8 @@ namespace DeepNestSharp
   using DeepNestLib.Placement;
 
   /// <summary>
-  /// One colour per part type, shared by the nest viewer and the PDF report so the screen and the paper can
-  /// never disagree about which part is which.
+  /// One colour per part type for the nest viewer and the parts list. The PDF report does NOT use these:
+  /// it prints in black and white and tells parts apart by number, not by colour.
   /// <para>The key is the part's FILE NAME plus whether it is mirrored - not <c>IPartPlacement.Source</c>,
   /// which counts populations rather than types (a row with a mirrored quantity produces two of them, and
   /// excluded rows shift the rest). It is the same key the report already groups its part totals by, so a
