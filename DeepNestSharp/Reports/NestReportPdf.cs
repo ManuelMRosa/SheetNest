@@ -7,8 +7,6 @@
   using System.Linq;
   using System.Text;
   using System.Text.RegularExpressions;
-  using System.Windows;
-  using System.Windows.Media;
   using DeepNestLib;
   using DeepNestLib.Placement;
 
@@ -18,19 +16,13 @@
   /// below them and the sheet drawn to scale on the right, every part numbered to its row.
   /// Self-contained minimal PDF writer (vector lines + Courier text is all a report needs): no external
   /// PDF library, nothing to license.
-  /// <para>
-  /// The same page is also painted on screen, by <see cref="RenderPage"/>, laid out by the same
-  /// <see cref="DrawPage"/>: identical to the paper except that it has no paper, so the sheet is the only white
-  /// thing on it.
-  /// </para>
   /// </summary>
   public static class NestReportPdf
   {
     internal const string SettingHeading = "SETTING INFORMATION";
     internal const string PartsHeading = "NEST PARTS LIST";
 
-    /// <summary>The report page, in points: US Letter landscape. The viewer that shows the same page on
-    /// screen reads these rather than repeating them.</summary>
+    /// <summary>The report page, in points: US Letter landscape.</summary>
     internal const double PageW = 792;
 
     /// <summary>The report page's height in points; see <see cref="PageW"/>.</summary>
@@ -48,8 +40,8 @@
     internal static readonly string PartListHeader = $"{"Item",4} {"Part Name",-NameWidth} {"Num Off",7}";
 
     /// <summary>
-    /// The four things a report page is drawn with. The PDF writes them into a content stream and the screen
-    /// paints them; both are driven by <see cref="DrawPage"/>, so the two cannot drift apart.
+    /// The four things a report page is drawn with, written into the page's content stream by
+    /// <see cref="DrawPage"/>.
     /// </summary>
     private interface IPageCanvas
     {
@@ -105,41 +97,6 @@
     }
 
     /// <summary>
-    /// One page of the report for the screen: the page the PDF prints for that layout, laid out by the same
-    /// <see cref="DrawPage"/> in the PDF's own points (792 by 612), but without the paper. It is meant to lie on
-    /// the viewer's grey, where the sheet is the only white thing on it. Frozen.
-    /// </summary>
-    public static DrawingImage RenderPage(
-      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
-      int index,
-      string drawingName,
-      int unplacedCount,
-      string units = "in")
-      => RenderPage(layouts, index, drawingName, unplacedCount, units, DateTime.Now);
-
-    /// <summary>As the public overload, stamped with a given time instead of now, so a test can compare whole
-    /// pages.</summary>
-    internal static DrawingImage RenderPage(
-      IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
-      int index,
-      string drawingName,
-      int unplacedCount,
-      string units,
-      DateTime now)
-    {
-      if (layouts == null || layouts.Count == 0)
-      {
-        throw new InvalidOperationException("Nothing to report. Run a nest first.");
-      }
-
-      var page = new WpfPage();
-      DrawPage(page, layouts, index, drawingName, now, unplacedCount, units);
-      var image = new DrawingImage(page.Finish());
-      image.Freeze();
-      return image;
-    }
-
-    /// <summary>
     /// The settings of one layout's page, in the two groups the page prints them in: what the job and its
     /// sheet are, then what cutting this layout amounts to. Each line is a label and its value, padded so the
     /// colons line up.
@@ -191,7 +148,7 @@
     /// in both directions.</summary>
     internal static double DrawingScale(double sheetW, double sheetH) => Math.Min(BoxW / sheetW, BoxH / sheetH);
 
-    /// <summary>Lays out the page of one layout, for whichever canvas is given: the PDF or the screen.</summary>
+    /// <summary>Lays out the page of one layout on the given canvas.</summary>
     private static void DrawPage(
       IPageCanvas c,
       IReadOnlyList<(ISheetPlacement Sheet, int Count, string Name)> layouts,
@@ -695,86 +652,6 @@
       private static string Escape(string s)
       {
         return s.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
-      }
-    }
-
-    /// <summary>
-    /// A page painted for the screen, in the PDF's own coordinates: points, origin at the bottom left, Y up.
-    /// WPF draws Y down, so every point is flipped against the page height, and text is set on its baseline,
-    /// which is where the PDF puts it. The inks and line widths are the PDF's; Courier New stands in for the
-    /// PDF's Courier and shares its 0.6 em advance, so the padded columns line up the same.
-    /// <para>
-    /// There is no paper. The page lies on the viewer's grey and only the sheet is filled, in white, so the
-    /// nest is the one white thing on screen.
-    /// </para>
-    /// </summary>
-    private sealed class WpfPage : IPageCanvas
-    {
-      // The PDF strokes lines in 0.35 grey and the sheet border and outlines in 0.15 grey.
-      private static readonly Brush LineInk = Frozen(new SolidColorBrush(Color.FromRgb(0x59, 0x59, 0x59)));
-      private static readonly Brush OutlineInk = Frozen(new SolidColorBrush(Color.FromRgb(0x26, 0x26, 0x26)));
-      private static readonly Typeface Regular = new Typeface(new FontFamily("Courier New"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-      private static readonly Typeface Bold = new Typeface(new FontFamily("Courier New"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
-
-      private readonly DrawingGroup drawing = new DrawingGroup();
-      private readonly DrawingContext dc;
-
-      public WpfPage()
-      {
-        this.dc = this.drawing.Open();
-
-        // No paper, but the page is still marked out, invisibly: a drawing is only as big as what is in it, and
-        // without this the image would shrink to its contents and nothing would sit where the PDF puts it.
-        this.dc.DrawRectangle(Brushes.Transparent, null, new System.Windows.Rect(0, 0, PageW, PageH));
-      }
-
-      public void Text(double x, double y, double size, bool bold, string text)
-      {
-        var formatted = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, bold ? Bold : Regular, size, Brushes.Black, 1.0);
-        this.dc.DrawText(formatted, new Point(x, PageH - y - formatted.Baseline));
-      }
-
-      public void Line(double x1, double y1, double x2, double y2, double width)
-      {
-        this.dc.DrawLine(new Pen(LineInk, width), new Point(x1, PageH - y1), new Point(x2, PageH - y2));
-      }
-
-      /// <summary>The sheet: the one thing on the page that is filled, and filled white.</summary>
-      public void Rect(double x, double y, double w, double h, double lineWidth)
-      {
-        this.dc.DrawRectangle(Brushes.White, new Pen(OutlineInk, lineWidth), new System.Windows.Rect(x, PageH - y - h, w, h));
-      }
-
-      public void Polygon(IEnumerable<(double X, double Y)> pts)
-      {
-        var points = pts.Select(p => new Point(p.X, PageH - p.Y)).ToList();
-        if (points.Count == 0)
-        {
-          return;
-        }
-
-        var geometry = new StreamGeometry();
-        using (var ctx = geometry.Open())
-        {
-          ctx.BeginFigure(points[0], isFilled: false, isClosed: true);
-          ctx.PolyLineTo(points.Skip(1).ToList(), isStroked: true, isSmoothJoin: true);
-        }
-
-        geometry.Freeze();
-        this.dc.DrawGeometry(null, new Pen(OutlineInk, 0.5), geometry);
-      }
-
-      /// <summary>Closes the page for drawing and hands it over.</summary>
-      public Drawing Finish()
-      {
-        this.dc.Close();
-        return this.drawing;
-      }
-
-      private static Brush Frozen(SolidColorBrush brush)
-      {
-        brush.Freeze();
-        return brush;
       }
     }
 

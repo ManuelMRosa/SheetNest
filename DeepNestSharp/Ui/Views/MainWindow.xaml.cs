@@ -1306,7 +1306,6 @@
       this.nestsList.SelectedIndex = cards.Count == 0 ? -1 : Math.Max(0, Math.Min(this.dxfViewer.SheetIndex, cards.Count - 1));
       this.syncingNests = false;
       this.nestsEmptyHint.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-      this.RefreshNestReport(); // a report on screen follows the result, and the units its sizes are in
     }
 
     /// <summary>Picking a nest card puts that layout in the viewer.</summary>
@@ -1319,7 +1318,7 @@
     }
 
     /// <summary>The viewer can change layout by itself, undoing an edit made on another one, and the selected
-    /// card has to follow it, and so does a report page on screen.</summary>
+    /// card has to follow it.</summary>
     private void SelectShownNest()
     {
       if (this.nestsList == null || this.nestsList.Items.Count == 0)
@@ -1330,85 +1329,6 @@
       this.syncingNests = true;
       this.nestsList.SelectedIndex = Math.Max(0, Math.Min(this.dxfViewer.SheetIndex, this.nestsList.Items.Count - 1));
       this.syncingNests = false;
-      this.RefreshNestReport();
-    }
-
-    /// <summary>True while a nest's report page is shown in place of the nest drawing.</summary>
-    private bool showingNestReport;
-
-    /// <summary>
-    /// Right-click, Nest report: this nest's report page takes the nest's place on screen, laid out exactly as the
-    /// PDF prints it but on the viewer's grey, so the sheet is the only white thing on it. It is only for looking
-    /// at: it makes no file and edits nothing, so unlike saving the PDF it does not refuse a nest with parts still
-    /// in red.
-    /// </summary>
-    private void OnNestReportPreview(object sender, RoutedEventArgs e)
-    {
-      if (!((sender as FrameworkElement)?.DataContext is NestCard card))
-      {
-        return;
-      }
-
-      this.nestsList.SelectedIndex = card.Index; // the report shows the nest that was right-clicked
-      this.ShowNestReport(true);
-    }
-
-    private void OnCloseNestReport(object sender, RoutedEventArgs e) => this.ShowNestReport(false);
-
-    /// <summary>Esc leaves the report for the nest. Only then: any other time the key belongs to whatever has
-    /// the focus.</summary>
-    private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
-    {
-      if (this.showingNestReport && e.Key == Key.Escape)
-      {
-        this.ShowNestReport(false);
-        e.Handled = true;
-      }
-    }
-
-    /// <summary>
-    /// Swaps the nest for its report page, or back. The viewer is hidden, not removed, so its zoom, position and
-    /// edit mode are all still there when the nest comes back; and while hidden it takes no clicks or keys, which
-    /// is what keeps the report look-only.
-    /// </summary>
-    private void ShowNestReport(bool show)
-    {
-      this.showingNestReport = show;
-      this.reportView.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-      this.viewerFrame.Visibility = show ? Visibility.Hidden : Visibility.Visible;
-      this.RefreshNestReport();
-    }
-
-    /// <summary>Draws the report page of the nest the list has selected. With no nest left to report on, the
-    /// nest view comes back by itself.</summary>
-    private void RefreshNestReport()
-    {
-      if (!this.showingNestReport)
-      {
-        return;
-      }
-
-      var plan = this.dxfViewer.GetProductionPlan();
-      if (plan.Count == 0)
-      {
-        this.ShowNestReport(false);
-        return;
-      }
-
-      this.reportPage.Source = Reports.NestReportPdf.RenderPage(
-        plan,
-        Math.Max(0, Math.Min(this.dxfViewer.SheetIndex, plan.Count - 1)),
-        this.ReportDrawingName(),
-        ViewModel.NestMonitorViewModel?.SelectedItem?.UnplacedParts?.Count ?? 0,
-        this.unitsMm ? "mm" : "in");
-    }
-
-    /// <summary>The job's name on the report. The PDF takes it from the file it is saved as; on screen nothing
-    /// is saved, so the saved project's name stands in, or "nest report", the name the save dialog proposes.</summary>
-    private string ReportDrawingName()
-    {
-      string project = (ViewModel.ActiveDocument as NestProjectViewModel)?.FilePath;
-      return string.IsNullOrWhiteSpace(project) ? "nest report" : System.IO.Path.GetFileNameWithoutExtension(project);
     }
 
     /// <summary>One palette entry as the popup's swatch grid shows it.</summary>
