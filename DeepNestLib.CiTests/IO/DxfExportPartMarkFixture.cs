@@ -153,7 +153,7 @@
 
     /// <summary>
     /// A block of text says which way it reads TWICE: in its angle and in its X-axis direction vector,
-    /// and a reader that finds both follows the vector. Turning the part without turning the vector
+    /// and a reader that finds both goes by whichever comes last. Turning the part without turning the vector
     /// leaves the mark lying the way it was drawn, off the part and sometimes off the sheet. Checking
     /// the angle alone passes while that happens, because the angle is what the screen reads.
     /// </summary>
@@ -168,6 +168,52 @@
       mark.XAxisDirection.X.Should().BeApproximately(0, 1e-6, "a quarter turn leaves the words running up the sheet");
       mark.XAxisDirection.Y.Should().BeApproximately(1, 1e-6);
       mark.InsertionPoint.X.Should().BeApproximately(-0.5, 1e-6, "and the mark still lands with its part");
+      mark.InsertionPoint.Y.Should().BeApproximately(8, 1e-6);
+    }
+
+    /// <summary>
+    /// A CAD that finds the angle and the direction vector both goes by the LAST one it reads, and the
+    /// library writes a column block after the angle whose own code 50 is the column count, zero. The
+    /// sheet is R2000, which has no columns, so that zero is read as the angle and every mark comes out
+    /// lying flat. The library reads its own file back fine, so this reads the raw codes as a CAD does.
+    /// </summary>
+    [Fact]
+    public async Task ABlockMarkOnATurnedPartIsNotTurnedBackByItsColumnCount()
+    {
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: false, mtext: true, rotation: 90);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      string[] lines = File.ReadAllLines(outPath);
+      var codes = new List<(int Code, string Value)>();
+      for (int i = 0; i + 1 < lines.Length; i += 2)
+      {
+        codes.Add((int.Parse(lines[i].Trim()), lines[i + 1].Trim()));
+      }
+
+      int start = codes.FindIndex(c => c.Code == 0 && c.Value == "MTEXT");
+      start.Should().BeGreaterThan(-1, "the mark comes out as a block of text");
+      var mark = codes.Skip(start + 1).TakeWhile(c => c.Code != 0).ToList();
+      double lastAngle = double.Parse(mark.Last(c => c.Code == 50).Value, System.Globalization.CultureInfo.InvariantCulture);
+      lastAngle.Should().BeApproximately(90, 1e-6, "the last angle a CAD reads is the one it draws the mark at");
+      mark.Should().NotContain(c => c.Code == 75, "an R2000 file has no text columns");
+    }
+
+    /// <summary>
+    /// Taking the column block out must leave the rest of the mark as the library wrote it.
+    /// </summary>
+    [Fact]
+    public async Task ABlockMarkWithoutItsColumnBlockStillReadsBack()
+    {
+      var (sheetPlacement, outPath) = this.BuildPlacement(mirrored: false, mtext: true, rotation: 90);
+
+      await new DxfExporter().Export(outPath, sheetPlacement, false, false);
+
+      DxfMText mark = DxfFile.Load(outPath).Entities.OfType<DxfMText>().Single();
+      mark.Text.Should().NotBeNullOrEmpty();
+      mark.RotationAngle.Should().BeApproximately(90, 1e-6);
+      mark.XAxisDirection.Y.Should().BeApproximately(1, 1e-6);
+      mark.InsertionPoint.X.Should().BeApproximately(-0.5, 1e-6);
       mark.InsertionPoint.Y.Should().BeApproximately(8, 1e-6);
     }
 

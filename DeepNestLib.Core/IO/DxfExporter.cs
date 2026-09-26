@@ -38,7 +38,7 @@
         return;
       }
 
-      await Task.Run(() => dxf.Save(path, true)).ConfigureAwait(false);
+      await Task.Run(() => DxfR2000Writer.Save(dxf, path)).ConfigureAwait(false);
     }
 
     public async Task Export(Stream stream, ISheetPlacement sheetPlacement, bool doMergeLines, bool differentiateChildren)
@@ -48,7 +48,7 @@
         DxfFile dxf = GenerateCommonLineDxfFile(sheetPlacement, differentiateChildren);
         if (dxf.Entities.Count > 0)
         {
-          await Task.Run(() => dxf.Save(stream, true)).ConfigureAwait(false);
+          await Task.Run(() => DxfR2000Writer.Save(dxf, stream)).ConfigureAwait(false);
         }
 
         return;
@@ -68,7 +68,7 @@
       {
         await Task.Run(() =>
         {
-          dxf.Save(stream, true);
+          DxfR2000Writer.Save(dxf, stream);
           //dxf.Save(@"C:\Temp\DeepnestSharp.dxf");
         }).ConfigureAwait(false);
       }
@@ -99,11 +99,11 @@
             {
               if (dxfexports.Count() == 1)
               {
-                dxf.Save(fi.FullName, true);
+                DxfR2000Writer.Save(dxf, fi.FullName);
               }
               else
               {
-                dxf.Save($"{fi.FullName.Substring(0, fi.FullName.Length - 4)}{id}.dxf", true);
+                DxfR2000Writer.Save(dxf, $"{fi.FullName.Substring(0, fi.FullName.Length - 4)}{id}.dxf");
               }
             }).ConfigureAwait(false);
           }
@@ -486,7 +486,7 @@
               dxfMText.RotationAngle = blockAngle;
 
               // A block of text says which way it reads twice, in its angle and in its X-axis direction
-              // vector, and a reader that finds both follows the vector. Turning the part without turning
+              // vector, and a reader that finds both goes by the last one. Turning the part without turning
               // the vector leaves the mark lying the way it was drawn, off the part and sometimes off the
               // sheet; the angle alone is what the screen reads, so it looks right there while it is not.
               double blockRadians = GeometryUtil.ToRadians(blockAngle);
