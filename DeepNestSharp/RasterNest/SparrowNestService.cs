@@ -2973,6 +2973,41 @@
       var candidates = new List<DirectCandidate>();
       var unsupportedCurvedPairs = new HashSet<(int A, int B)>();
       double minimumCommonSpan = Math.Max(2.0 * commonLineGap, 8.0 * geometryTolerance);
+
+      // Where two facing edges overlap once B has slid tangentShift along A, as fractions of each edge.
+      // The candidates ask it of positions they propose; the cycle pickup asks it again of where the
+      // parts actually ended up, because the tree moves them.
+      bool TryOverlap(
+        DirectEdge ea,
+        DirectEdge eb,
+        double tangentShift,
+        out double edgeAStart,
+        out double edgeAEnd,
+        out double edgeBStart,
+        out double edgeBEnd,
+        out double overlapLength)
+      {
+        edgeAStart = edgeAEnd = edgeBStart = edgeBEnd = 0;
+        double b0 = ((eb.Ax - ea.Ax) * ea.Ux) + ((eb.Ay - ea.Ay) * ea.Uy);
+        double b1 = ((eb.Bx - ea.Ax) * ea.Ux) + ((eb.By - ea.Ay) * ea.Uy);
+        double overlapStart = Math.Max(0, Math.Min(b0, b1) + tangentShift);
+        double overlapEnd = Math.Min(ea.Length, Math.Max(b0, b1) + tangentShift);
+        overlapLength = overlapEnd - overlapStart;
+        double bDenominator = b1 - b0;
+        if (overlapLength + geometryTolerance < minimumCommonSpan || Math.Abs(bDenominator) <= geometryTolerance)
+        {
+          return false;
+        }
+
+        double bParameter0 = (overlapStart - tangentShift - b0) / bDenominator;
+        double bParameter1 = (overlapEnd - tangentShift - b0) / bDenominator;
+        edgeAStart = Math.Clamp(overlapStart / ea.Length, 0, 1);
+        edgeAEnd = Math.Clamp(overlapEnd / ea.Length, 0, 1);
+        edgeBStart = Math.Clamp(Math.Min(bParameter0, bParameter1), 0, 1);
+        edgeBEnd = Math.Clamp(Math.Max(bParameter0, bParameter1), 0, 1);
+        return true;
+      }
+
       reportStage("candidates");
       for (int a = 0; a < n; a++)
       {
@@ -3062,26 +3097,12 @@
                       continue;
                     }
 
-                    double overlapStart = Math.Max(0, bLow + tangentShift);
-                    double overlapEnd = Math.Min(ea.Length, bHigh + tangentShift);
-                    double overlapLength = overlapEnd - overlapStart;
-                    if (overlapLength + geometryTolerance < minimumCommonSpan)
+                    if (!TryOverlap(ea, eb, tangentShift, out double edgeAStart, out double edgeAEnd,
+                      out double edgeBStart, out double edgeBEnd, out double overlapLength))
                     {
                       continue;
                     }
 
-                    double bDenominator = b1 - b0;
-                    if (Math.Abs(bDenominator) <= geometryTolerance)
-                    {
-                      continue;
-                    }
-
-                    double bParameter0 = (overlapStart - tangentShift - b0) / bDenominator;
-                    double bParameter1 = (overlapEnd - tangentShift - b0) / bDenominator;
-                    double edgeAStart = Math.Clamp(overlapStart / ea.Length, 0, 1);
-                    double edgeAEnd = Math.Clamp(overlapEnd / ea.Length, 0, 1);
-                    double edgeBStart = Math.Clamp(Math.Min(bParameter0, bParameter1), 0, 1);
-                    double edgeBEnd = Math.Clamp(Math.Max(bParameter0, bParameter1), 0, 1);
                     string key = FormattableString.Invariant(
                       $"{a}:{ea.Pose}:{ea.Index}:{edgeAStart:F9}:{edgeAEnd:F9}|{b}:{eb.Pose}:{eb.Index}:{edgeBStart:F9}:{edgeBEnd:F9}|{shiftX / geometryTolerance:F0}:{shiftY / geometryTolerance:F0}");
                     if (!candidateKeys.Add(key))
@@ -3469,21 +3490,43 @@
         // A tree can pull a cycle's last two faces to CommonLineGap as a side effect (the fourth edge of
         // a 2x2 grid). Record every such deliberately proposed full edge before clearance validation, so
         // no tight contact is ever present without the CommonEdge that authorises it.
+        // The candidate's overlap was measured where the parts stood before the tree moved them, and the
+        // tree slides each part by its own amount. Along a row pulled together under one long edge that
+        // drift grows part by part, and a seam placed where the part used to be fails the gap check at
+        // its ends, so it is measured again from where the two parts are now.
         foreach (DirectCandidate edge in candidates)
         {
           cancel.ThrowIfCancellationRequested();
           if (groups[edge.A] <= 0
               || groups[edge.A] != groups[edge.B]
               || poses[edge.A] != edge.PoseA
-              || poses[edge.B] != edge.PoseB
-              || !SpanAvailable(
-                DirectBoundaryKey.Create(edge.A, edge.EdgeA, edge.SpanA),
-                edge.EdgeAStart,
-                edge.EdgeAEnd)
-              || !SpanAvailable(
-                DirectBoundaryKey.Create(edge.B, edge.EdgeB, edge.SpanB),
-                edge.EdgeBStart,
-                edge.EdgeBEnd))
+              || poses[edge.B] != edge.PoseB)
+          {
+            continue;
+          }
+
+          double edgeAStart = edge.EdgeAStart;
+          double edgeAEnd = edge.EdgeAEnd;
+          double edgeBStart = edge.EdgeBStart;
+          double edgeBEnd = edge.EdgeBEnd;
+          if (edge.SpanA == null)
+          {
+            DirectPlacementOption optionA = optionsByPart[edge.A][edge.PoseA];
+            DirectPlacementOption optionB = optionsByPart[edge.B][edge.PoseB];
+            DirectEdge ea = optionA.Edges.First(e => e.Index == edge.EdgeA);
+            DirectEdge eb = optionB.Edges.First(e => e.Index == edge.EdgeB);
+            double driftX = (all[edge.B].X - optionB.X) - (all[edge.A].X - optionA.X);
+            double driftY = (all[edge.B].Y - optionB.Y) - (all[edge.A].Y - optionA.Y);
+            if (!TryOverlap(ea, eb, (driftX * ea.Ux) + (driftY * ea.Uy),
+              out edgeAStart, out edgeAEnd, out edgeBStart, out edgeBEnd, out _))
+            {
+              continue;
+            }
+          }
+
+          DirectBoundaryKey keyA = DirectBoundaryKey.Create(edge.A, edge.EdgeA, edge.SpanA);
+          DirectBoundaryKey keyB = DirectBoundaryKey.Create(edge.B, edge.EdgeB, edge.SpanB);
+          if (!SpanAvailable(keyA, edgeAStart, edgeAEnd) || !SpanAvailable(keyB, edgeBStart, edgeBEnd))
           {
             continue;
           }
@@ -3493,22 +3536,16 @@
             edge.EdgeA,
             all[edge.B],
             edge.EdgeB,
-            edge.EdgeAStart,
-            edge.EdgeAEnd,
-            edge.EdgeBStart,
-            edge.EdgeBEnd,
+            edgeAStart,
+            edgeAEnd,
+            edgeBStart,
+            edgeBEnd,
             edge.SpanA,
             edge.SpanB);
           if (TryCreateCommonEdgeRecord(intent, commonLineGap, geometryTolerance, out _, sourceCatalogs))
           {
-            OccupySpan(
-              DirectBoundaryKey.Create(edge.A, edge.EdgeA, edge.SpanA),
-              edge.EdgeAStart,
-              edge.EdgeAEnd);
-            OccupySpan(
-              DirectBoundaryKey.Create(edge.B, edge.EdgeB, edge.SpanB),
-              edge.EdgeBStart,
-              edge.EdgeBEnd);
+            OccupySpan(keyA, edgeAStart, edgeAEnd);
+            OccupySpan(keyB, edgeBStart, edgeBEnd);
             intents.Add(intent);
           }
         }
