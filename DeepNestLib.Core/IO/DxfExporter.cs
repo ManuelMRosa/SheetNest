@@ -225,7 +225,7 @@
       return OffsetToNest(allEntities, offsetdistance, rotation, mirror);
     }
 
-    private static List<DxfEntity> OffsetToNest(IList<DxfEntity> dxfEntities, DxfPoint offset, double rotationAngle, bool mirror)
+    internal static List<DxfEntity> OffsetToNest(IList<DxfEntity> dxfEntities, DxfPoint offset, double rotationAngle, bool mirror)
     {
       var result = new List<DxfEntity>();
       List<DxfPoint> tmpPts;
@@ -326,6 +326,14 @@
               transformedMajorAxis.X,
               transformedMajorAxis.Y,
               transformedMajorAxis.Z);
+            if (mirror && Math.Abs(dxfEllipse.EndParameter - dxfEllipse.StartParameter - (2 * Math.PI)) > 1e-9)
+            {
+              // The minor axis follows the major one anticlockwise, so a reflected ellipse runs its parameter
+              // the other way: t becomes -t and the ends swap, or a mirrored part cuts the other half.
+              double s = dxfEllipse.StartParameter, en = dxfEllipse.EndParameter;
+              dxfEllipse.StartParameter = ((-en % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+              dxfEllipse.EndParameter = ((-s % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+            }
 
             result.Add(dxfEllipse);
             break;

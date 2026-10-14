@@ -322,9 +322,15 @@
               double ratio = Math.Abs(ellipse.MinorAxisRatio);
               double from = ellipse.StartParameter;
               double to = ellipse.EndParameter;
-              if (to <= from)
+              if (Math.Abs(to - from) < 1e-12)
               {
                 to = from + (2 * Math.PI); // a full ellipse, which is also what an unset sweep means
+              }
+              else if (to < from)
+              {
+                // The sweep runs anticlockwise through zero, as an arc's does: 5.5 to 0.8 is the short
+                // piece across the major axis, not a whole ellipse.
+                to += 2 * Math.PI;
               }
 
               double ellipseStep = ArcStepDegrees(major) * Math.PI / 180.0;
