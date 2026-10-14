@@ -562,6 +562,16 @@
     {
       List<(DxfEntity Entity, LineElement LineElement)> allLineElements = GetAllLineElements(approximations);
 
+      // Every step used to look at EVERY element still unchained, then sort them, so a drawing's cost grew with
+      // the square of its segments: a perforated sheet of 1393 holes and 88 000 segments took four minutes to
+      // open. The endpoints go in a grid of cells a little wider than the closing gap instead, so a step only
+      // looks at its own neighbourhood. The choice is the one the scan made: nearest within the gap, and of
+      // equals the one earliest in the list (the scan's sort was stable), so every drawing chains as before.
+      var endpoints = new EndpointGrid(allLineElements);
+      var used = new bool[allLineElements.Count];
+      int remaining = allLineElements.Count;
+      int firstUnused = 0;
+
       PointF prior = default;
       List<PointF> newContourPoints = new List<PointF>();
       var newContourEntities = new HashSet<DxfEntity>();
@@ -583,27 +593,36 @@
         newContourCurved = new List<bool>();
       }
 
-      while (allLineElements.Any())
+      while (remaining > 0)
       {
         if (newContourPoints.Count == 0)
         {
-          var toStart = allLineElements.First().LineElement;
+          while (used[firstUnused])
+          {
+            firstUnused++;
+          }
+
+          var toStart = allLineElements[firstUnused].LineElement;
           newContourPoints.Add(toStart.Start);
           prior = toStart.End;
           newContourPoints.Add(prior);
           newContourCurved.Add(toStart.Curved);
-          newContourEntities.Add(allLineElements.First().Entity);
-          allLineElements.RemoveAt(0);
+          newContourEntities.Add(allLineElements[firstUnused].Entity);
+          used[firstUnused] = true;
+          remaining--;
         }
         else
         {
-          if (!TryGetAnotherPoint(prior, allLineElements, out (DxfEntity Entity, LineElement LineElement) next))
+          int nextIndex = endpoints.Nearest(prior, allLineElements, used);
+          if (nextIndex < 0)
           {
             CloseContour();
           }
           else
           {
-            allLineElements.Remove(next);
+            var next = allLineElements[nextIndex];
+            used[nextIndex] = true;
+            remaining--;
             newContourEntities.Add(next.Entity);
             prior = EndIsClosest(prior, next) ? next.LineElement.End : next.LineElement.Start;
             newContourPoints.Add(prior);
@@ -637,19 +656,78 @@
       return next.LineElement.Start.DistTo(prior) < next.LineElement.End.DistTo(prior);
     }
 
-    private static bool TryGetAnotherPoint(PointF prior, List<(DxfEntity Entity, LineElement LineElement)> allLineElements, out (DxfEntity Entity, LineElement LineElement) next)
+    /// <summary>Both endpoints of every element, bucketed in square cells a little wider than
+    /// <see cref="ClosingThreshold"/>: anything that close to a point is in its cell or one of the eight
+    /// around it.</summary>
+    private sealed class EndpointGrid
     {
-      var match = allLineElements.Select(candidate => (candidate, MinDistance(prior, candidate)))
-                       .Where(o => o.Item2 <= ClosingThreshold)
-                       .OrderBy(o => o.Item2).FirstOrDefault();
-      if (match != default)
+      private const double Cell = ClosingThreshold * 1.01;
+      private readonly Dictionary<(long X, long Y), List<int>> cells = new Dictionary<(long X, long Y), List<int>>();
+
+      public EndpointGrid(List<(DxfEntity Entity, LineElement LineElement)> elements)
       {
-        next = match.candidate;
-        return true;
+        for (int i = 0; i < elements.Count; i++)
+        {
+          this.Add(elements[i].LineElement.Start, i);
+          this.Add(elements[i].LineElement.End, i);
+        }
       }
 
-      next = default;
-      return false;
+      /// <summary>The unused element nearest <paramref name="prior"/> within the closing gap, the earliest
+      /// in the list among equals; -1 when there is none.</summary>
+      public int Nearest(PointF prior, List<(DxfEntity Entity, LineElement LineElement)> elements, bool[] used)
+      {
+        var (cx, cy) = Key(prior);
+        int best = -1;
+        double bestD = double.MaxValue;
+        for (long x = cx - 1; x <= cx + 1; x++)
+        {
+          for (long y = cy - 1; y <= cy + 1; y++)
+          {
+            if (!this.cells.TryGetValue((x, y), out var list))
+            {
+              continue;
+            }
+
+            foreach (int i in list)
+            {
+              if (used[i])
+              {
+                continue;
+              }
+
+              double d = MinDistance(prior, elements[i]);
+              if (d <= ClosingThreshold && (d < bestD || (d == bestD && i < best)))
+              {
+                bestD = d;
+                best = i;
+              }
+            }
+          }
+        }
+
+        return best;
+      }
+
+      private static (long X, long Y) Key(PointF p)
+        => ((long)Math.Floor(p.X / Cell), (long)Math.Floor(p.Y / Cell));
+
+      private void Add(PointF p, int index)
+      {
+        // A point that is not a number is never within the gap of anything, as the scan found too.
+        if (float.IsNaN(p.X) || float.IsNaN(p.Y) || float.IsInfinity(p.X) || float.IsInfinity(p.Y))
+        {
+          return;
+        }
+
+        var key = Key(p);
+        if (!this.cells.TryGetValue(key, out var list))
+        {
+          this.cells[key] = list = new List<int>(2);
+        }
+
+        list.Add(index);
+      }
     }
 
     private static double MinDistance(PointF prior, (DxfEntity Entity, LineElement LineElement) candidate)

@@ -82,7 +82,11 @@ namespace DeepNestLib.IO
         }
       }
 
-      if (segments.Count < 2 || HasAmbiguousJunction(segments, tolerance))
+      // Every endpoint in a grid of cells as wide as the tolerance, so "which ends coincide with this one" looks
+      // at nine cells instead of the whole sheet. Both checks below scanned every segment for every end, and
+      // a sheet of arc-drawn parts has tens of thousands of them.
+      var grid = new EndGrid(segments, tolerance);
+      if (segments.Count < 2 || HasAmbiguousJunction(segments, grid, tolerance))
       {
         return false;
       }
@@ -104,11 +108,15 @@ namespace DeepNestLib.IO
         DxfPoint current = seed.End;
         while (true)
         {
+          // The first unused segment in list order with an end on the current point, its start before its end:
+          // what the scan over every segment found, taken from the grid.
           Segment next = null;
           bool reversed = false;
-          foreach (var s in segments)
+          int nextIndex = int.MaxValue;
+          foreach (int i in grid.Near(current))
           {
-            if (s.Used)
+            var s = segments[i];
+            if (s.Used || i >= nextIndex)
             {
               continue;
             }
@@ -116,15 +124,14 @@ namespace DeepNestLib.IO
             if (Coincide(s.Start, current, tolerance))
             {
               next = s;
+              nextIndex = i;
               reversed = false;
-              break;
             }
-
-            if (Coincide(s.End, current, tolerance))
+            else if (Coincide(s.End, current, tolerance))
             {
               next = s;
+              nextIndex = i;
               reversed = true;
-              break;
             }
           }
 
@@ -159,9 +166,17 @@ namespace DeepNestLib.IO
         return false;
       }
 
-      foreach (var ent in consumed)
+      if (entities is List<DxfEntity> list)
       {
-        entities.Remove(ent);
+        var gone = new HashSet<DxfEntity>(consumed, ReferenceEqualityComparer.Instance);
+        list.RemoveAll(gone.Contains);
+      }
+      else
+      {
+        foreach (var ent in consumed)
+        {
+          entities.Remove(ent);
+        }
       }
 
       foreach (var poly in polylines)
@@ -173,23 +188,28 @@ namespace DeepNestLib.IO
     }
 
     /// <summary>True when any junction joins 3+ segment ends — chaining there would be a guess.</summary>
-    private static bool HasAmbiguousJunction(List<Segment> segments, double tolerance)
+    private static bool HasAmbiguousJunction(List<Segment> segments, EndGrid grid, double tolerance)
     {
-      var ends = new List<DxfPoint>(segments.Count * 2);
-      foreach (var s in segments)
+      for (int si = 0; si < segments.Count; si++)
       {
-        ends.Add(s.Start);
-        ends.Add(s.End);
-      }
-
-      for (int i = 0; i < ends.Count; i++)
-      {
-        int matches = 0;
-        for (int j = 0; j < ends.Count; j++)
+        foreach (bool atStart in new[] { true, false })
         {
-          if (i != j && Coincide(ends[i], ends[j], tolerance))
+          DxfPoint end = atStart ? segments[si].Start : segments[si].End;
+          // Every OTHER end that coincides with this one - a segment's own far end included, as when every end
+          // was compared with every end.
+          int matches = 0;
+          foreach (int sj in grid.Near(end))
           {
-            matches++;
+            if (!(sj == si && atStart) && Coincide(end, segments[sj].Start, tolerance))
+            {
+              matches++;
+            }
+
+            if (!(sj == si && !atStart) && Coincide(end, segments[sj].End, tolerance))
+            {
+              matches++;
+            }
+
             if (matches >= 2)
             {
               return true;
@@ -199,6 +219,66 @@ namespace DeepNestLib.IO
       }
 
       return false;
+    }
+
+    /// <summary>Segment indices by the cells their ends fall in; <see cref="Near"/> yields each segment with
+    /// an end in the 3 x 3 cells around a point once, in no particular order.</summary>
+    private sealed class EndGrid
+    {
+      private readonly double cell;
+      private readonly Dictionary<(long X, long Y), List<int>> cells = new Dictionary<(long X, long Y), List<int>>();
+
+      public EndGrid(List<Segment> segments, double tolerance)
+      {
+        this.cell = tolerance * 1.01;
+        for (int i = 0; i < segments.Count; i++)
+        {
+          this.Add(segments[i].Start, i);
+          var endKey = this.Key(segments[i].End);
+          if (endKey != this.Key(segments[i].Start))
+          {
+            this.Add(segments[i].End, i);
+          }
+        }
+      }
+
+      public IEnumerable<int> Near(DxfPoint p)
+      {
+        var (cx, cy) = this.Key(p);
+        var seen = new HashSet<int>();
+        for (long x = cx - 1; x <= cx + 1; x++)
+        {
+          for (long y = cy - 1; y <= cy + 1; y++)
+          {
+            if (this.cells.TryGetValue((x, y), out var list))
+            {
+              foreach (int i in list)
+              {
+                if (seen.Add(i))
+                {
+                  yield return i;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      private (long X, long Y) Key(DxfPoint p)
+        => (double.IsFinite(p.X) && double.IsFinite(p.Y))
+          ? ((long)Math.Floor(p.X / this.cell), (long)Math.Floor(p.Y / this.cell))
+          : (long.MinValue, long.MinValue);
+
+      private void Add(DxfPoint p, int index)
+      {
+        var key = this.Key(p);
+        if (!this.cells.TryGetValue(key, out var list))
+        {
+          this.cells[key] = list = new List<int>(2);
+        }
+
+        list.Add(index);
+      }
     }
 
     private static bool Coincide(DxfPoint a, DxfPoint b, double tolerance)
