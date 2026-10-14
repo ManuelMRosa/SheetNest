@@ -76,5 +76,23 @@
                    .Excluding(o => o.CreatedAt));
       //.ExcludingProperties());
     }
+
+    [Fact]
+    public void ShouldWriteEachPartsGeometryOnce()
+    {
+      var nfp = new NoFitPolygon() { Points = new SvgPoint[] { new SvgPoint(0, 0), new SvgPoint(1, 0), new SvgPoint(1, 1), new SvgPoint(0, 1), } };
+      var partPlacementList = new List<IPartPlacement>() { new PartPlacement(nfp) { X = 11, Y = 22 } };
+      var sheet = Sheet.NewSheet(1, 100, 200);
+      var sheetPlacement = new SheetPlacement(PlacementTypeEnum.Gravity, sheet, partPlacementList, 121, new TestSvgNestConfig().ClipperScale);
+      var sheetPlacementsCollection = new SheetPlacementCollection();
+      sheetPlacementsCollection.Add(sheetPlacement);
+      var nestResult = new NestResult(1, sheetPlacementsCollection, new List<INfp>(), sheetPlacement.PlacementType, 1234, 4321);
+
+      var json = nestResult.ToJson();
+
+      // Computed members of the sheet are rebuilt on load; written out they doubled a saved project.
+      json.Should().NotContain("PolygonsForExport").And.NotContain("\"Hull\"");
+      NestResult.FromJson(json).UsedSheets[0].PartPlacements[0].X.Should().Be(11);
+    }
   }
 }
