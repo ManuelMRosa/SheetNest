@@ -115,61 +115,50 @@ namespace DeepNestSharp
     /// <summary>Packs a colour for storing in the project.</summary>
     public static int ToRgb((byte R, byte G, byte B) colour) => (colour.R << 16) | (colour.G << 8) | colour.B;
 
+    /// <summary>How pale the middle of the sheet gets: the share of white mixed into a part's colour there.</summary>
+    private const double MiddleLight = 0.45;
+
     /// <summary>
-    /// The anodised finish a part is drawn with on the sheet and in the parts list: lit from the top left, a
-    /// faint sheen across the middle, a little shade at the far corner. Every stop is the part's own colour
-    /// mixed with white or with black, so the colour still says which part it is.
-    /// <para>The shade is held back, for two reasons. The near-black outline is what separates two touching
-    /// parts of the same type, and the engraving is drawn in it too, so no stop may come out darker than the
-    /// darkest colour the palette already uses - or than the part's own colour, when its owner chose a darker
-    /// one. And darkening drifts a colour towards the ones that mean a state: pink shaded much more than this
-    /// turns towards the invalid-position red, and green towards the remnant green. So the light does the
-    /// work and the shade only finishes it.</para>
+    /// The finish parts are drawn with: the sheet lit like a strip of metal with the light along its middle.
+    /// At the left and right edges a part shows its full colour, and the colour pales towards the middle,
+    /// quickly at first and then levelling off, the way light falls across a rounded surface. It is one light
+    /// for the whole sheet, so the same part reads a little paler in the middle than at the edges.
+    /// <para>Every stop is the part's colour mixed with white, never with black. The near-black outline that
+    /// separates two touching parts of the same type, and the engraving drawn in it, need a fill no darker
+    /// than the colour itself; and darkening drifts a colour towards the ones that mean a state.</para>
     /// </summary>
-    public static IReadOnlyList<(double Offset, (byte R, byte G, byte B) Colour)> AnodizedStops((byte R, byte G, byte B) colour)
+    public static IReadOnlyList<(double Offset, (byte R, byte G, byte B) Colour)> SheetLightStops((byte R, byte G, byte B) colour)
     {
-      double floor = Math.Min(Luminance(colour), Palette.Min(Luminance));
-      double shade = 0.08;
-      while (shade > 0 && Luminance(Mix(colour, (0, 0, 0), shade)) < floor)
+      const int Steps = 10;
+      var stops = new List<(double Offset, (byte R, byte G, byte B) Colour)>(Steps + 1);
+      for (int i = 0; i <= Steps; i++)
       {
-        shade -= 0.01;
+        double offset = i / (double)Steps;
+        stops.Add((offset, Mix(colour, (0xFF, 0xFF, 0xFF), MiddleLight * Math.Sin(Math.PI * offset))));
       }
 
-      return new[]
-      {
-        (0.00, Mix(colour, (0xFF, 0xFF, 0xFF), 0.40)),
-        (0.40, colour),
-        (0.55, Mix(colour, (0xFF, 0xFF, 0xFF), 0.15)),
-        (0.70, colour),
-        (1.00, Mix(colour, (0, 0, 0), Math.Max(0, shade))),
-      };
+      return stops;
     }
 
-    /// <summary>The finish as a frozen brush. Its gradient runs corner to corner of whatever it fills, so every
-    /// part carries its own and one brush serves every part of a type.</summary>
-    public static System.Windows.Media.Brush AnodizedBrush((byte R, byte G, byte B) colour)
+    /// <summary>The finish as a frozen brush. Given the sheet's width it is laid across the sheet, so every
+    /// part on it shares the one light; without one it spans whatever it fills, which is how a lone part's
+    /// thumbnail is drawn.</summary>
+    public static System.Windows.Media.Brush SheetLightBrush((byte R, byte G, byte B) colour, double sheetWidth = 0)
     {
       var stops = new System.Windows.Media.GradientStopCollection();
-      foreach (var (offset, (r, g, b)) in AnodizedStops(colour))
+      foreach (var (offset, (r, g, b)) in SheetLightStops(colour))
       {
         stops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromRgb(r, g, b), offset));
       }
 
-      var brush = new System.Windows.Media.LinearGradientBrush(stops, new System.Windows.Point(0, 0), new System.Windows.Point(1, 1));
+      var brush = sheetWidth > 0
+        ? new System.Windows.Media.LinearGradientBrush(stops, new System.Windows.Point(0, 0), new System.Windows.Point(sheetWidth, 0))
+        {
+          MappingMode = System.Windows.Media.BrushMappingMode.Absolute,
+        }
+        : new System.Windows.Media.LinearGradientBrush(stops, new System.Windows.Point(0, 0), new System.Windows.Point(1, 0));
       brush.Freeze();
       return brush;
-    }
-
-    /// <summary>Relative luminance, the measure of how light a colour looks against black.</summary>
-    internal static double Luminance((byte R, byte G, byte B) c)
-    {
-      static double Linear(byte v)
-      {
-        double s = v / 255.0;
-        return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
-      }
-
-      return (0.2126 * Linear(c.R)) + (0.7152 * Linear(c.G)) + (0.0722 * Linear(c.B));
     }
 
     private static (byte R, byte G, byte B) Mix((byte R, byte G, byte B) from, (byte R, byte G, byte B) to, double t)

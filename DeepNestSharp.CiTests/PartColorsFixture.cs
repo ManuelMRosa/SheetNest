@@ -198,15 +198,15 @@ namespace DeepNestSharp.CiTests
       PartColors.ColourKeyFor(Placement(null)).Should().Be("(part)");
     }
 
-    /// <summary>The anodised finish is light on the part's own colour: mixed with white or black, never turned
-    /// into another hue, or the thumbnail beside it in the parts list would stop naming it.</summary>
+    /// <summary>The sheet light is light on the part's own colour, never another hue, or the thumbnail beside
+    /// it in the parts list would stop naming it.</summary>
     [Fact]
-    public void TheAnodizedFinishKeepsThePartsColour()
+    public void TheSheetLightKeepsThePartsColour()
     {
       for (int i = 0; i < PartColors.PaletteLength; i++)
       {
         var colour = PartColors.PaletteAt(i);
-        foreach (var (offset, stop) in PartColors.AnodizedStops(colour))
+        foreach (var (offset, stop) in PartColors.SheetLightStops(colour))
         {
           HueGap(Hue(stop), Hue(colour)).Should().BeLessThan(
             4, $"the stop at {offset} ({Hex(stop)}) has left the hue of {Hex(colour)}");
@@ -214,51 +214,56 @@ namespace DeepNestSharp.CiTests
       }
     }
 
-    /// <summary>What makes it read as metal: lit at one corner, no lighter than the colour at the other.</summary>
+    /// <summary>What makes it read as a lit sheet: the full colour at both edges, palest in the middle, and
+    /// the same on either side of it.</summary>
     [Fact]
-    public void TheAnodizedFinishIsLitFromOneCornerAndShadedAtTheOther()
+    public void TheSheetLightIsFullColourAtTheEdgesAndPalestInTheMiddle()
     {
       for (int i = 0; i < PartColors.PaletteLength; i++)
       {
         var colour = PartColors.PaletteAt(i);
-        var stops = PartColors.AnodizedStops(colour);
+        var stops = PartColors.SheetLightStops(colour);
 
-        Luminance(stops.First().Colour).Should().BeGreaterThan(Luminance(colour), $"{Hex(colour)} is lit from the first corner");
-        Luminance(stops.Last().Colour).Should().BeLessOrEqualTo(Luminance(colour), $"{Hex(colour)} is shaded at the last");
+        stops.First().Colour.Should().Be(colour, $"{Hex(colour)} shows its full colour at the left edge");
+        stops.Last().Colour.Should().Be(colour, $"{Hex(colour)} shows its full colour at the right edge");
+        stops.OrderByDescending(s => Luminance(s.Colour)).First().Offset.Should().BeApproximately(
+          0.5, 1e-9, $"{Hex(colour)} is palest in the middle of the sheet");
+        for (int s = 0; s < stops.Count; s++)
+        {
+          stops[s].Colour.Should().Be(stops[stops.Count - 1 - s].Colour, $"{Hex(colour)} is lit the same on both halves");
+        }
       }
     }
 
     /// <summary>
     /// The near-black outline is what separates two touching parts of the same type, and the engraving is
-    /// drawn in it too. A shaded corner darker than anything the palette already shows would swallow both,
-    /// so no stop goes below the darkest palette colour - or below a darker colour its owner chose.
+    /// drawn in it too. Nothing in the light may come out darker than the part's colour, or it swallows both;
+    /// a dark colour somebody picked is held to the same rule.
     /// </summary>
     [Fact]
-    public void TheShadeNeverHidesTheBlackOutline()
+    public void TheSheetLightNeverDarkensAPart()
     {
-      double darkest = Enumerable.Range(0, PartColors.PaletteLength).Min(i => Luminance(PartColors.PaletteAt(i)));
       var colours = Enumerable.Range(0, PartColors.PaletteLength).Select(PartColors.PaletteAt)
         .Append(((byte)0x30, (byte)0x20, (byte)0x60)); // a dark indigo somebody picked
 
       foreach (var colour in colours)
       {
-        double floor = Math.Min(darkest, Luminance(colour));
-        foreach (var (offset, stop) in PartColors.AnodizedStops(colour))
+        foreach (var (offset, stop) in PartColors.SheetLightStops(colour))
         {
           Luminance(stop).Should().BeGreaterOrEqualTo(
-            floor - 1e-9, $"the stop at {offset} ({Hex(stop)}) of {Hex(colour)} is darker than the outline can show against");
+            Luminance(colour) - 1e-9, $"the stop at {offset} ({Hex(stop)}) is darker than {Hex(colour)}");
         }
       }
     }
 
-    /// <summary>The same rule as the palette itself: no part of the finish may look like a state.</summary>
+    /// <summary>The same rule as the palette itself: no part of the light may look like a state.</summary>
     [Fact]
-    public void NoAnodizedShadeIsMistakableForAViewerState()
+    public void NoSheetLightStopIsMistakableForAViewerState()
     {
       for (int i = 0; i < PartColors.PaletteLength; i++)
       {
         var colour = PartColors.PaletteAt(i);
-        foreach (var (offset, stop) in PartColors.AnodizedStops(colour))
+        foreach (var (offset, stop) in PartColors.SheetLightStops(colour))
         {
           foreach (var reserved in Reserved)
           {
