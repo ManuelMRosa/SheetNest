@@ -148,14 +148,10 @@
       var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)), dim / (outline ? 40.0 : 60.0));
       pen.Freeze();
 
-      // Filled: the part's own colour, opaque, exactly as the viewer paints it on the sheet. Outline: nothing,
-      // the way the printed report draws a part; the list shows the colour as a square beside it instead.
-      SolidColorBrush fill = null;
-      if (!outline)
-      {
-        fill = new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
-        fill.Freeze();
-      }
+      // Filled: the part's own colour in the same anodised finish the viewer paints it with on the sheet.
+      // Outline: nothing, the way the printed report draws a part; the list shows the colour as a square
+      // beside it instead.
+      Brush fill = outline ? null : PartColors.AnodizedBrush(colour);
 
       var drawing = new GeometryDrawing(fill, pen, g);
 

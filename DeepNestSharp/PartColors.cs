@@ -115,6 +115,69 @@ namespace DeepNestSharp
     /// <summary>Packs a colour for storing in the project.</summary>
     public static int ToRgb((byte R, byte G, byte B) colour) => (colour.R << 16) | (colour.G << 8) | colour.B;
 
+    /// <summary>
+    /// The anodised finish a part is drawn with on the sheet and in the parts list: lit from the top left, a
+    /// faint sheen across the middle, a little shade at the far corner. Every stop is the part's own colour
+    /// mixed with white or with black, so the colour still says which part it is.
+    /// <para>The shade is held back, for two reasons. The near-black outline is what separates two touching
+    /// parts of the same type, and the engraving is drawn in it too, so no stop may come out darker than the
+    /// darkest colour the palette already uses - or than the part's own colour, when its owner chose a darker
+    /// one. And darkening drifts a colour towards the ones that mean a state: pink shaded much more than this
+    /// turns towards the invalid-position red, and green towards the remnant green. So the light does the
+    /// work and the shade only finishes it.</para>
+    /// </summary>
+    public static IReadOnlyList<(double Offset, (byte R, byte G, byte B) Colour)> AnodizedStops((byte R, byte G, byte B) colour)
+    {
+      double floor = Math.Min(Luminance(colour), Palette.Min(Luminance));
+      double shade = 0.08;
+      while (shade > 0 && Luminance(Mix(colour, (0, 0, 0), shade)) < floor)
+      {
+        shade -= 0.01;
+      }
+
+      return new[]
+      {
+        (0.00, Mix(colour, (0xFF, 0xFF, 0xFF), 0.40)),
+        (0.40, colour),
+        (0.55, Mix(colour, (0xFF, 0xFF, 0xFF), 0.15)),
+        (0.70, colour),
+        (1.00, Mix(colour, (0, 0, 0), Math.Max(0, shade))),
+      };
+    }
+
+    /// <summary>The finish as a frozen brush. Its gradient runs corner to corner of whatever it fills, so every
+    /// part carries its own and one brush serves every part of a type.</summary>
+    public static System.Windows.Media.Brush AnodizedBrush((byte R, byte G, byte B) colour)
+    {
+      var stops = new System.Windows.Media.GradientStopCollection();
+      foreach (var (offset, (r, g, b)) in AnodizedStops(colour))
+      {
+        stops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromRgb(r, g, b), offset));
+      }
+
+      var brush = new System.Windows.Media.LinearGradientBrush(stops, new System.Windows.Point(0, 0), new System.Windows.Point(1, 1));
+      brush.Freeze();
+      return brush;
+    }
+
+    /// <summary>Relative luminance, the measure of how light a colour looks against black.</summary>
+    internal static double Luminance((byte R, byte G, byte B) c)
+    {
+      static double Linear(byte v)
+      {
+        double s = v / 255.0;
+        return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+      }
+
+      return (0.2126 * Linear(c.R)) + (0.7152 * Linear(c.G)) + (0.0722 * Linear(c.B));
+    }
+
+    private static (byte R, byte G, byte B) Mix((byte R, byte G, byte B) from, (byte R, byte G, byte B) to, double t)
+    {
+      static byte Channel(byte a, byte b, double t) => (byte)Math.Round(a + ((b - a) * t));
+      return (Channel(from.R, to.R, t), Channel(from.G, to.G, t), Channel(from.B, to.B, t));
+    }
+
     /// <summary>The colour for one placement. A job with a single part type is coloured too - seeing grey
     /// would just look broken - so the classic fill is only for a part the map has never heard of.</summary>
     public static (byte R, byte G, byte B) For(IReadOnlyDictionary<string, (byte R, byte G, byte B)> map, IPartPlacement placement)

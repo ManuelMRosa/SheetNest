@@ -198,6 +198,110 @@ namespace DeepNestSharp.CiTests
       PartColors.ColourKeyFor(Placement(null)).Should().Be("(part)");
     }
 
+    /// <summary>The anodised finish is light on the part's own colour: mixed with white or black, never turned
+    /// into another hue, or the thumbnail beside it in the parts list would stop naming it.</summary>
+    [Fact]
+    public void TheAnodizedFinishKeepsThePartsColour()
+    {
+      for (int i = 0; i < PartColors.PaletteLength; i++)
+      {
+        var colour = PartColors.PaletteAt(i);
+        foreach (var (offset, stop) in PartColors.AnodizedStops(colour))
+        {
+          HueGap(Hue(stop), Hue(colour)).Should().BeLessThan(
+            4, $"the stop at {offset} ({Hex(stop)}) has left the hue of {Hex(colour)}");
+        }
+      }
+    }
+
+    /// <summary>What makes it read as metal: lit at one corner, no lighter than the colour at the other.</summary>
+    [Fact]
+    public void TheAnodizedFinishIsLitFromOneCornerAndShadedAtTheOther()
+    {
+      for (int i = 0; i < PartColors.PaletteLength; i++)
+      {
+        var colour = PartColors.PaletteAt(i);
+        var stops = PartColors.AnodizedStops(colour);
+
+        Luminance(stops.First().Colour).Should().BeGreaterThan(Luminance(colour), $"{Hex(colour)} is lit from the first corner");
+        Luminance(stops.Last().Colour).Should().BeLessOrEqualTo(Luminance(colour), $"{Hex(colour)} is shaded at the last");
+      }
+    }
+
+    /// <summary>
+    /// The near-black outline is what separates two touching parts of the same type, and the engraving is
+    /// drawn in it too. A shaded corner darker than anything the palette already shows would swallow both,
+    /// so no stop goes below the darkest palette colour - or below a darker colour its owner chose.
+    /// </summary>
+    [Fact]
+    public void TheShadeNeverHidesTheBlackOutline()
+    {
+      double darkest = Enumerable.Range(0, PartColors.PaletteLength).Min(i => Luminance(PartColors.PaletteAt(i)));
+      var colours = Enumerable.Range(0, PartColors.PaletteLength).Select(PartColors.PaletteAt)
+        .Append(((byte)0x30, (byte)0x20, (byte)0x60)); // a dark indigo somebody picked
+
+      foreach (var colour in colours)
+      {
+        double floor = Math.Min(darkest, Luminance(colour));
+        foreach (var (offset, stop) in PartColors.AnodizedStops(colour))
+        {
+          Luminance(stop).Should().BeGreaterOrEqualTo(
+            floor - 1e-9, $"the stop at {offset} ({Hex(stop)}) of {Hex(colour)} is darker than the outline can show against");
+        }
+      }
+    }
+
+    /// <summary>The same rule as the palette itself: no part of the finish may look like a state.</summary>
+    [Fact]
+    public void NoAnodizedShadeIsMistakableForAViewerState()
+    {
+      for (int i = 0; i < PartColors.PaletteLength; i++)
+      {
+        var colour = PartColors.PaletteAt(i);
+        foreach (var (offset, stop) in PartColors.AnodizedStops(colour))
+        {
+          foreach (var reserved in Reserved)
+          {
+            Distance(stop, reserved).Should().BeGreaterThan(
+              75, $"the stop at {offset} ({Hex(stop)}) of {Hex(colour)} is too close to the reserved {Hex(reserved)}");
+          }
+        }
+      }
+    }
+
+    /// <summary>Relative luminance: how light a colour looks against black.</summary>
+    private static double Luminance((byte R, byte G, byte B) c)
+    {
+      static double Linear(byte v)
+      {
+        double s = v / 255.0;
+        return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+      }
+
+      return (0.2126 * Linear(c.R)) + (0.7152 * Linear(c.G)) + (0.0722 * Linear(c.B));
+    }
+
+    /// <summary>HSV hue in degrees.</summary>
+    private static double Hue((byte R, byte G, byte B) c)
+    {
+      double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+      double max = Math.Max(r, Math.Max(g, b));
+      double delta = max - Math.Min(r, Math.Min(g, b));
+      if (delta <= 0)
+      {
+        return 0;
+      }
+
+      double h = max == r ? ((g - b) / delta) % 6 : max == g ? ((b - r) / delta) + 2 : ((r - g) / delta) + 4;
+      return ((h * 60) + 360) % 360;
+    }
+
+    private static double HueGap(double a, double b)
+    {
+      double gap = Math.Abs(a - b) % 360;
+      return Math.Min(gap, 360 - gap);
+    }
+
     /// <summary>HSV saturation: how far the colour is from a grey of the same brightness.</summary>
     private static double Saturation((byte R, byte G, byte B) c)
     {

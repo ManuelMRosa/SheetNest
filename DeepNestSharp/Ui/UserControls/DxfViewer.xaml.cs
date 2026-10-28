@@ -1201,13 +1201,10 @@
 
       if (!this.partBrushes.TryGetValue(key, out Brush brush))
       {
-        var (r, g, b) = this.PartColours[key];
-
         // OPAQUE on purpose. The classic fill was translucent, and any colour drawn that way blends a
         // quarter of the near-white sheet into itself and comes out pastel - which is what made the first
-        // attempt at this look grey.
-        brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
+        // attempt at this look grey. The anodised finish keeps that: every stop is opaque.
+        brush = PartColors.AnodizedBrush(this.PartColours[key]);
         this.partBrushes[key] = brush;
       }
 
