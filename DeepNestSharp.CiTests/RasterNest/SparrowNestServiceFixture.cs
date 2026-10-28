@@ -192,7 +192,7 @@
       int side = (int)Math.Ceiling(maxExtent * 3);
       var stock = new List<(int, int, int)> { (side, side, 1) };
 
-      // rotations = 36 == "Free" → the service omits allowed_orientations, so sparrow rotates continuously.
+      // rotations = 36 == "Free" → the service asks for continuous rotation, so sparrow rotates to any angle.
       var result = SparrowNestService.Nest(parts, stock, 36, 1.0, 0.5, 8, exe, out string err);
 
       result.Should().NotBeNull($"nest must return a result (err={err})");
@@ -313,7 +313,7 @@
       var stock = new List<(int, int, int)> { (side, side, 1) };
 
       // rotations = 1002 == "0°+90°" (RotationCodes.RotZeroAnd90) → the service must emit
-      // allowed_orientations=[0,90], so sparrow may only place parts at 0° or 90°.
+      // discrete angles [0,90], so sparrow may only place parts at 0° or 90°.
       var result = SparrowNestService.Nest(parts, stock, 1002, 1.0, 0.5, 8, exe, out string err);
 
       result.Should().NotBeNull($"nest must return a result (err={err})");

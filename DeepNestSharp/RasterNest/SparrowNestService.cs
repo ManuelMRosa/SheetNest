@@ -5072,9 +5072,9 @@
 
     private static string BuildJaguaJson(string name, double stripHeight, List<Loaded> batch, Dictionary<int, int> batchQty)
     {
-      // jagua requires item ids to be consecutive starting at 0, so use the batch INDEX as the id (not
-      // the global Source, which is sparse once priority ordering drops parts from a batch). MapAndCompact
-      // translates the index back to the real Source via this same `batch` list.
+      // Use the batch INDEX as the id (not the global Source, which is sparse once priority ordering drops
+      // parts from a batch). MapAndCompact translates the index back to the real Source via this same
+      // `batch` list.
       var items = batch.Select((p, idx) =>
       {
         var pts = p.Dilated.Points;
@@ -5090,20 +5090,18 @@
           data.Add(new[] { pts[i].X, pts[i].Y });
         }
 
-        // Omit allowed_orientations entirely for "Free" parts → jagua treats it as RotationRange::Continuous
-        // and sparrow rotates to any angle (denser). Restricted parts keep their discrete angle set.
-        var item = new Dictionary<string, object>
+        // "Free" parts rotate continuously, so sparrow turns them to any angle (denser). Restricted parts
+        // keep their discrete angle set. jagua wants this stated for every item; leaving it out is an error.
+        object rotation = p.Continuous
+          ? new { mode = "continuous" }
+          : new { mode = "discrete", angles = p.Angles.Select(a => (double)a).ToArray() };
+        return new Dictionary<string, object>
         {
           ["id"] = idx,
           ["demand"] = batchQty[p.Source],
+          ["orientation"] = new { rotation },
           ["shape"] = new { type = "simple_polygon", data },
         };
-        if (!p.Continuous)
-        {
-          item["allowed_orientations"] = p.Angles.Select(a => (double)a).ToArray();
-        }
-
-        return item;
       }).ToArray();
 
       return JsonSerializer.Serialize(new { name, strip_height = stripHeight, items });
