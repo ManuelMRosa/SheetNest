@@ -151,13 +151,35 @@
         throw new ArgumentException($"'{fullFilename}' has no geometry to nest - it holds only text, dimensions or other annotation.");
       }
 
-      s.AddRangeContour(ConnectElements(approximations));
-      if (s.Outers.Any(z => z.Points.Count < 3))
+      LocalContour<DxfEntity>[] contours = ConnectElements(approximations);
+      var open = contours.Where(z => z.Points.Count < 3).ToList();
+      if (open.Count > 0)
       {
-        throw new Exception("Too few points");
+        throw OpenLines(fullFilename, open);
       }
 
+      s.AddRangeContour(contours);
       return s;
+    }
+
+    /// <summary>
+    /// A line that closes no shape, said in words the operator can act on: how many, which layer, and
+    /// what to do about it. What a flat pattern carries as bend lines lands here when the bend layer is
+    /// in a cutting colour, and "Too few points" told the operator neither what was wrong nor where.
+    /// </summary>
+    private static ArgumentException OpenLines(string fullFilename, IList<LocalContour<DxfEntity>> open)
+    {
+      var layers = open
+        .SelectMany(c => c.Entities)
+        .Select(e => string.IsNullOrWhiteSpace(e.Layer) ? "0" : e.Layer.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+      string where = layers.Count == 1 ? $"layer {layers[0]}" : $"layers {string.Join(", ", layers)}";
+
+      return open.Count == 1
+        ? new ArgumentException($"'{fullFilename}' has an open line on {where}. Every line that is cut has to close a shape, and this one does not. Delete it, or draw it in yellow to have it marked on the part instead.")
+        : new ArgumentException($"'{fullFilename}' has {open.Count} open lines on {where}. Every line that is cut has to close a shape, and these do not. Delete them, or draw them in yellow to have them marked on the part instead.");
     }
 
     private static ArgumentException UnmeasurableGeometry(DxfEntity ent)
