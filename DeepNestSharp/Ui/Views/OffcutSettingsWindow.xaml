@@ -1,8 +1,9 @@
 ﻿<Window x:Class="DeepNestSharp.Ui.Views.OffcutSettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:SheetNest.Localization;assembly=SheetNest.Localization"
         xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
-        Title="Offcut"
+        Title="{x:Static loc:Strings.Offcut_Title}"
         FontFamily="Tahoma" FontSize="11"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterOwner"
@@ -34,18 +35,18 @@
   <StackPanel Margin="14">
 
     <CheckBox x:Name="enableCheck"
-              Content="Cut the leftover off as a rectangular offcut"
+              Content="{x:Static loc:Strings.Offcut_Enable}"
               Checked="OnEnableToggled" Unchecked="OnEnableToggled"
-              ToolTip="Measures the free area the nest left on the last sheet and adds a cut line so it comes away as a reusable rectangle. It never moves a part: the nest is already finished by the time this is worked out, so turning it on cannot change where anything is placed." />
+              ToolTip="{x:Static loc:Strings.Offcut_EnableTip}" />
 
     <StackPanel x:Name="detailsPanel" Margin="0,10,0,0">
 
-      <TextBlock Text="Remnant position" FontWeight="Bold" Margin="0,0,0,6" />
+      <TextBlock Text="{x:Static loc:Strings.Offcut_RemnantPosition}" FontWeight="Bold" Margin="0,0,0,6" />
 
       <StackPanel Orientation="Horizontal">
 
         <RadioButton x:Name="endRadio" GroupName="offcutDir" Margin="0,0,10,0" VerticalContentAlignment="Top"
-                     ToolTip="A full strip at the end of the sheet's long side: the classic remnant.">
+                     ToolTip="{x:Static loc:Strings.Offcut_EndTip}">
           <Border Style="{StaticResource OffcutCardBorder}">
             <StackPanel>
               <Canvas Width="96" Height="56">
@@ -57,13 +58,13 @@
                 <Rectangle Canvas.Left="66" Canvas.Top="2" Width="28" Height="52" Fill="#1A2E7D32" />
                 <Line X1="62" Y1="2" X2="62" Y2="54" Stroke="#000000" StrokeThickness="2.5" />
               </Canvas>
-              <TextBlock Text="End of sheet" HorizontalAlignment="Center" Margin="0,4,0,0" />
+              <TextBlock Text="{x:Static loc:Strings.Offcut_End}" HorizontalAlignment="Center" Margin="0,4,0,0" />
             </StackPanel>
           </Border>
         </RadioButton>
 
         <RadioButton x:Name="sideRadio" GroupName="offcutDir" Margin="0,0,10,0" VerticalContentAlignment="Top"
-                     ToolTip="A full strip along the sheet's short side.">
+                     ToolTip="{x:Static loc:Strings.Offcut_SideTip}">
           <Border Style="{StaticResource OffcutCardBorder}">
             <StackPanel>
               <Canvas Width="96" Height="56">
@@ -74,13 +75,13 @@
                 <Rectangle Canvas.Left="2" Canvas.Top="2" Width="92" Height="20" Fill="#1A2E7D32" />
                 <Line X1="2" Y1="26" X2="94" Y2="26" Stroke="#000000" StrokeThickness="2.5" />
               </Canvas>
-              <TextBlock Text="Side of sheet" HorizontalAlignment="Center" Margin="0,4,0,0" />
+              <TextBlock Text="{x:Static loc:Strings.Offcut_Side}" HorizontalAlignment="Center" Margin="0,4,0,0" />
             </StackPanel>
           </Border>
         </RadioButton>
 
         <RadioButton x:Name="bothRadio" GroupName="offcutDir" Margin="0,0,10,0" VerticalContentAlignment="Top"
-                     ToolTip="When the nest left room on both sides, the leftover comes away as two rectangles (guillotine cuts, so no cut ever splits a remnant in two).">
+                     ToolTip="{x:Static loc:Strings.Offcut_BothTip}">
           <Border Style="{StaticResource OffcutCardBorder}">
             <StackPanel>
               <Canvas Width="96" Height="56">
@@ -92,13 +93,13 @@
                 <Line X1="58" Y1="2" X2="58" Y2="54" Stroke="#000000" StrokeThickness="2.5" />
                 <Line X1="2" Y1="22" X2="58" Y2="22" Stroke="#000000" StrokeThickness="2.5" />
               </Canvas>
-              <TextBlock Text="Both (L-shaped)" HorizontalAlignment="Center" Margin="0,4,0,0" />
+              <TextBlock Text="{x:Static loc:Strings.Offcut_Both}" HorizontalAlignment="Center" Margin="0,4,0,0" />
             </StackPanel>
           </Border>
         </RadioButton>
 
         <RadioButton x:Name="autoRadio" GroupName="offcutDir" VerticalContentAlignment="Top"
-                     ToolTip="Weighs End, Side and Both against the layout the nest produced and keeps whichever frees the most material.">
+                     ToolTip="{x:Static loc:Strings.Offcut_AutoTip}">
           <Border Style="{StaticResource OffcutCardBorder}">
             <StackPanel>
               <Canvas Width="96" Height="56">
@@ -111,7 +112,7 @@
                   <TextBlock Text="AUTO" Foreground="White" FontWeight="Bold" FontSize="9" />
                 </Border>
               </Canvas>
-              <TextBlock Text="Auto (best remnant)" HorizontalAlignment="Center" Margin="0,4,0,0" />
+              <TextBlock Text="{x:Static loc:Strings.Offcut_Auto}" HorizontalAlignment="Center" Margin="0,4,0,0" />
             </StackPanel>
           </Border>
         </RadioButton>
@@ -137,7 +138,7 @@
              as 0.197 and then SAVE that on OK - the default would corrode just by opening the window. -->
         <xctk:DoubleUpDown Grid.Row="0" Grid.Column="1" x:Name="spacingUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
                            Minimum="0" Increment="0.05" FormatString="0.####"
-                           ToolTip="Gap kept between the packed parts and the offcut cut line (drawing units)." />
+                           ToolTip="{x:Static loc:Strings.Offcut_SpacingTip}" />
 
         <!-- The size a remnant has to come out at to be worth cutting off, stated the way a
              remnant cutoff does. Every one of these is 0 by default and 0 means "no opinion", so an
@@ -145,40 +146,40 @@
         <TextBlock x:Name="minXLabel" Grid.Row="1" Grid.Column="0" Text="Minimum X size (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
         <xctk:DoubleUpDown Grid.Row="1" Grid.Column="1" x:Name="minXUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
                            Minimum="0" Increment="0.5" FormatString="0.###"
-                           ToolTip="Narrowest remnant worth separating. Below this the sheet is left uncut. 0 = automatic (5% of the sheet's side)." />
+                           ToolTip="{x:Static loc:Strings.Offcut_MinXTip}" />
 
         <TextBlock x:Name="minYLabel" Grid.Row="2" Grid.Column="0" Text="Minimum Y size (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
         <xctk:DoubleUpDown Grid.Row="2" Grid.Column="1" x:Name="minYUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
                            Minimum="0" Increment="0.5" FormatString="0.###"
-                           ToolTip="Shortest remnant worth separating. 0 = automatic (5% of the sheet's side)." />
+                           ToolTip="{x:Static loc:Strings.Offcut_MinYTip}" />
 
         <TextBlock x:Name="maxXLabel" Grid.Row="3" Grid.Column="0" Text="Maximum X size (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
         <xctk:DoubleUpDown Grid.Row="3" Grid.Column="1" x:Name="maxXUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
                            Minimum="0" Increment="0.5" FormatString="0.###"
-                           ToolTip="Widest remnant still worth cutting off. Bigger than this and it is not a remnant but very nearly a sheet, so nothing is cut and the sheet is kept whole. 0 = no limit." />
+                           ToolTip="{x:Static loc:Strings.Offcut_MaxXTip}" />
 
         <TextBlock x:Name="maxYLabel" Grid.Row="4" Grid.Column="0" Text="Maximum Y size (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
         <xctk:DoubleUpDown Grid.Row="4" Grid.Column="1" x:Name="maxYUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
                            Minimum="0" Increment="0.5" FormatString="0.###"
-                           ToolTip="Tallest remnant still worth cutting off. 0 = no limit." />
+                           ToolTip="{x:Static loc:Strings.Offcut_MaxYTip}" />
 
         <TextBlock x:Name="edgeOverlapLabel" Grid.Row="5" Grid.Column="0" Text="Edge overlap (in):" VerticalAlignment="Center" Margin="0,0,10,0" />
         <xctk:DoubleUpDown Grid.Row="5" Grid.Column="1" x:Name="edgeOverlapUpDown" Width="80" HorizontalAlignment="Left"
                            Minimum="0" Increment="0.05" FormatString="0.####"
-                           ToolTip="How far the cut runs PAST the sheet edge at each end, so the remnant comes away instead of hanging on by a bridge at the corners. 0 = flush with the edge." />
+                           ToolTip="{x:Static loc:Strings.Offcut_EdgeOverlapTip}" />
       </Grid>
 
       <!-- Inside detailsPanel on purpose: it sits next to what it restores, and the panel's IsEnabled
            already follows the enable checkbox, so the button greys out with everything else for free. -->
-      <Button x:Name="resetButton" Style="{DynamicResource ModernButton}" Content="Reset to defaults"
+      <Button x:Name="resetButton" Style="{DynamicResource ModernButton}" Content="{x:Static loc:Strings.Offcut_ResetDefaults}"
               HorizontalAlignment="Right" Margin="0,10,0,0" Padding="10,3" Click="OnResetDefaults"
-              ToolTip="Puts the six numbers above back to the recommended figures for this drawing's units. The remnant position and the enable tick are left alone." />
+              ToolTip="{x:Static loc:Strings.Offcut_ResetDefaultsTip}" />
 
     </StackPanel>
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-      <Button Style="{DynamicResource PrimaryButton}" Content="OK" Width="90" FontSize="13" Padding="0,6" Margin="0,0,8,0" IsDefault="True" Click="OnOk" />
-      <Button Style="{DynamicResource ModernButton}" Content="Cancel" Width="80" IsCancel="True" />
+      <Button Style="{DynamicResource PrimaryButton}" Content="{x:Static loc:Strings.Common_OK}" Width="90" FontSize="13" Padding="0,6" Margin="0,0,8,0" IsDefault="True" Click="OnOk" />
+      <Button Style="{DynamicResource ModernButton}" Content="{x:Static loc:Strings.Common_Cancel}" Width="80" IsCancel="True" />
     </StackPanel>
   </StackPanel>
 </Window>

@@ -2,6 +2,7 @@ namespace DeepNestSharp.CiTests
 {
   using System;
   using System.Collections.Generic;
+  using System.Globalization;
   using System.IO;
   using System.Linq;
   using System.Text;
@@ -10,6 +11,7 @@ namespace DeepNestSharp.CiTests
   using DeepNestLib.Placement;
   using DeepNestSharp.Reports;
   using FluentAssertions;
+  using SheetNest.Localization;
   using Xunit;
 
   /// <summary>
@@ -105,15 +107,94 @@ namespace DeepNestSharp.CiTests
       Line(WriteAndRead("job.pdf", unplacedCount: 2), @"PARTS NOT PLACED +: 2").Should().Be(2, "on every page, so none can be read alone as the whole job");
     }
 
+    /// <summary>The page in Spanish: every label and heading in it, and the numbers the same as in English.</summary>
+    [Fact]
+    public void ASpanishPageIsSetInSpanish()
+    {
+      string pdf = InSpanish(() => WriteAndRead("trabajo.pdf", unplacedCount: 2, new DateTime(2026, 10, 29, 14, 5, 0)));
+
+      Line(pdf, "DATOS DEL ANIDADO").Should().Be(2);
+      Line(pdf, "LISTA DE PIEZAS DEL ANIDADO").Should().Be(2);
+      Line(pdf, @"DISTRIBUCIÓN +: 1 de 2").Should().Be(1);
+      Line(pdf, @"TAMAÑO DE LÁMINA +: 200 x 100 in").Should().Be(1);
+      Line(pdf, @"APROVECHAMIENTO +: \d+\.\d%").Should().Be(2, "numbers keep the decimal point they print in English");
+      Line(pdf, @"PIEZAS SIN COLOCAR +: 2").Should().Be(2);
+      Line(pdf, @"FECHA +: jue\.? 29 oct\.? 2026 14:05:00").Should().Be(2, "day and month names in Spanish");
+      Line(pdf, @" Pos Nombre de pieza +Cant\.").Should().Be(2, "the item column is four wide, so Pos is padded on the left");
+    }
+
+    /// <summary>
+    /// The labels are as long as the language makes them, so the colons line up under the longest label of
+    /// the report's language, and a full line still ends before the sheet drawing.
+    /// </summary>
+    [Fact]
+    public void ASpanishPageKeepsItsColonsInOneColumnInsideTheTextColumn()
+    {
+      var (job, cut) = InSpanish(() => NestReportPdf.SettingLines(
+        Layouts(), 0, new string('N', 60), new DateTime(2026, 10, 29, 14, 5, 0), unplacedCount: 2, "in"));
+      var lines = job.Concat(cut).ToList();
+
+      lines.Should().Contain(l => l.StartsWith("PIEZAS SIN COLOCAR", StringComparison.Ordinal), "the longest Spanish label is printed");
+      lines.Select(l => l.IndexOf(" : ", StringComparison.Ordinal)).Distinct().Should().ContainSingle("every colon sits in one column");
+      lines.Should().OnlyContain(l => l.Length <= NestReportPdf.TextColumnChars, "a line must end before the sheet drawing");
+    }
+
+    /// <summary>The report is written in Latin-1: a language it cannot set is printed in English, not as question marks.</summary>
+    [Fact]
+    public void ALanguageThePdfCannotSetFallsBackToEnglish()
+    {
+      NestReportPdf.Printable("TAMAÑO DE LÁMINA", "SHEET SIZE").Should().Be("TAMAÑO DE LÁMINA", "accented Latin letters print");
+      NestReportPdf.Printable("РАЗМЕР ЛИСТА", "SHEET SIZE").Should().Be("SHEET SIZE", "Cyrillic would print as question marks");
+    }
+
     /// <summary>How many times one whole line of text, matched by the pattern, is set on the paper.</summary>
     private static int Line(string pdf, string pattern)
       => Regex.Matches(pdf, @"\(" + pattern + @"\) Tj").Count;
+
+    private static T InSpanish<T>(Func<T> write)
+    {
+      var before = Strings.Culture;
+      Strings.Culture = CultureInfo.GetCultureInfo("es");
+      try
+      {
+        return write();
+      }
+      finally
+      {
+        Strings.Culture = before;
+      }
+    }
+
+    private static string WriteAndRead(string fileName, int unplacedCount, DateTime? now = null)
+    {
+      var layouts = Layouts();
+      string dir = Path.Combine(Path.GetTempPath(), $"sheetnest-layout-{Guid.NewGuid():N}");
+      Directory.CreateDirectory(dir);
+      try
+      {
+        string path = Path.Combine(dir, fileName);
+        if (now.HasValue)
+        {
+          NestReportPdf.Write(path, layouts, unplacedCount, "in", now.Value);
+        }
+        else
+        {
+          NestReportPdf.Write(path, layouts, unplacedCount);
+        }
+
+        return Encoding.GetEncoding(28591).GetString(File.ReadAllBytes(path));
+      }
+      finally
+      {
+        Directory.Delete(dir, recursive: true);
+      }
+    }
 
     /// <summary>
     /// Two layouts on different sheets. The first carries two brackets and a washer with a hole and is cut
     /// three times; the second carries one bracket and is cut once.
     /// </summary>
-    private static string WriteAndRead(string fileName, int unplacedCount)
+    private static List<(ISheetPlacement Sheet, int Count, string Name)> Layouts()
     {
       var washer = Poly("washer.dxf", (0, 0), (10, 0), (10, 10), (0, 10));
       washer.Children.Add(new NoFitPolygon(new List<SvgPoint>
@@ -132,24 +213,11 @@ namespace DeepNestSharp.CiTests
         new PartPlacement(Poly("bracket.dxf", (0, 0), (10, 0), (10, 10), (0, 10))) { X = 0, Y = 0, Source = 0 },
       };
 
-      var layouts = new List<(ISheetPlacement Sheet, int Count, string Name)>
+      return new List<(ISheetPlacement Sheet, int Count, string Name)>
       {
         (new SheetPlacement(PlacementTypeEnum.Gravity, Sheet.NewSheet(1, 200, 100), first, 0, false), 3, "A"),
         (new SheetPlacement(PlacementTypeEnum.Gravity, Sheet.NewSheet(2, 120, 60), second, 0, false), 1, "B"),
       };
-
-      string dir = Path.Combine(Path.GetTempPath(), $"sheetnest-layout-{Guid.NewGuid():N}");
-      Directory.CreateDirectory(dir);
-      try
-      {
-        string path = Path.Combine(dir, fileName);
-        NestReportPdf.Write(path, layouts, unplacedCount);
-        return Encoding.GetEncoding(28591).GetString(File.ReadAllBytes(path));
-      }
-      finally
-      {
-        Directory.Delete(dir, recursive: true);
-      }
     }
 
     private static INfp Poly(string name, params (double X, double Y)[] points)

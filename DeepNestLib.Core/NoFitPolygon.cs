@@ -13,12 +13,13 @@
   using DeepNestLib.Placement;
   using IxMilia.Dxf;
   using IxMilia.Dxf.Entities;
+  using SheetNest.Localization;
 
   public class NoFitPolygon : PolygonBase, INfp, IHiddenNfp, IStringify
   {
     // 2D only on purpose: 3D (STEP/IGES) imports go through File > Import 3D, which probes the
     // sheet thickness and asks for the K-factor before unfolding.
-    public const string FileDialogFilter = "AutoCad Drawing Exchange Format (*.dxf)|*.dxf|DeepNest Polygon (*.dnpoly)|*.dnpoly|All files (*.*)|*.*";
+    public static string FileDialogFilter => Strings.Files_PartFilter;
     private double rotation;
 
     // Per segment, whether it is a chord the parser cut a curve into rather than an edge the drawing

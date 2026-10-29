@@ -1,0 +1,47 @@
+name: Translation
+description: Suggest a better wording, report a mistranslation, or offer to translate SheetNest into a new language.
+title: "[Translation] "
+labels: ["translation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping translate SheetNest. No programming is needed for any of this.
+        If you are comfortable editing a file, you can also send the change as a pull request: see the
+        [translation guide](https://github.com/ManuelMRosa/SheetNest/blob/main/Localization/README.md).
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is this about?
+      options:
+        - A text in an existing language reads wrong or could be better
+        - I would like to translate SheetNest into a new language
+    validations:
+      required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: "e.g. Español, Français, Deutsch"
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where does the text appear?
+      description: The window, menu, button or message it is on.
+      placeholder: "e.g. Settings > Advanced Settings, the Common Line Cutting group"
+  - type: textarea
+    id: current
+    attributes:
+      label: Current text
+      description: As SheetNest shows it now. A screenshot helps.
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested text
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Why the new wording reads better or, for a new language, what you need to get started.

@@ -9,6 +9,7 @@
   using DeepNestLib.IO;
   using DeepNestLib.NestProject;
   using Microsoft.VisualStudio.Threading;
+  using SheetNest.Localization;
 
   public class ObservableDetailLoadInfo : ObservablePropertyObject, IWrapper<IDetailLoadInfo, DetailLoadInfo>, IDetailLoadInfo
   {
@@ -262,25 +263,25 @@
         // unconfirmed legacy value stays quiet.
         string cc = detailLoadInfo.EffectiveCommonCutting switch
         {
-          CommonCuttingMode.Unrestricted => "common line · ",
-          CommonCuttingMode.SamePart => "common line (same part) · ",
+          CommonCuttingMode.Unrestricted => Strings.Part_CommonLine + " · ",
+          CommonCuttingMode.SamePart => Strings.Part_CommonLineSamePart + " · ",
           _ => string.Empty,
         };
-        string spacing = cc + (detailLoadInfo.Spacing < 0 ? "spacing: default"
-          : $"spacing {detailLoadInfo.Spacing:0.###}");
+        string spacing = cc + (detailLoadInfo.Spacing < 0 ? Strings.Part_SpacingDefault
+          : string.Format(Strings.Part_SpacingFormat, detailLoadInfo.Spacing));
         string rot = detailLoadInfo.Rotations switch
         {
-          1 => "as drawn",
+          1 => Strings.Part_RotAsDrawn,
           2 => "0/180°",
-          4 => "4-way",
-          1001 => "90° only",   // orientation permission codes (see RotationCodes.PermittedSet)
+          4 => Strings.Part_Rot4Way,
+          1001 => Strings.Part_Rot90Only,   // orientation permission codes (see RotationCodes.PermittedSet)
           1002 => "0°+90°",
           1003 => "90°+270°",
-          8 => "45° steps",     // NOT free: the engine gets eight discrete angles, and calling this "free"
+          8 => Strings.Part_Rot45Steps,     // NOT free: the engine gets eight discrete angles, and calling this "free"
                                 // here and in the picker is how a user came to report free rotation broken
-          36 => "free",
-          > 4 => "rot: other",
-          _ => "job default",   // -1, and it follows Settings > Advanced Settings
+          36 => Strings.Part_RotFree,
+          > 4 => Strings.Part_RotOther,
+          _ => Strings.Part_RotJobDefault,   // -1, and it follows Settings > Advanced Settings
         };
         return $"{spacing} · {rot}";
       }

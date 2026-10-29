@@ -13,6 +13,7 @@
   using DeepNestSharp.Domain.Models;
   using DeepNestSharp.Domain.ViewModels;
   using DeepNestSharp.RasterNest;
+  using SheetNest.Localization;
 
   public partial class MainWindow : Window
   {
@@ -142,6 +143,7 @@
       // with an empty Sheets tab because each launch is usually a different job — sheet stock
       // belongs to (and travels with) each saved .dnest project.
       var session = SessionState.Load();
+      this.BuildLanguageMenu(LanguagePreference.Read());
       (this.sessionCommonLineGapInches, this.sessionCommonLineMaxClusterParts) =
         CommonLinePreferencesFrom(session);
       cfg.CommonLineGapInches = this.sessionCommonLineGapInches;
@@ -282,11 +284,11 @@
           return;
         }
 
-        string name = string.IsNullOrWhiteSpace(originalPath) ? "an unsaved project" : System.IO.Path.GetFileName(originalPath);
-        string when = string.IsNullOrWhiteSpace(savedAt) ? string.Empty : $" (autosaved {savedAt})";
+        string name = string.IsNullOrWhiteSpace(originalPath) ? Strings.Main_RecoverUnsavedName : System.IO.Path.GetFileName(originalPath);
+        string when = string.IsNullOrWhiteSpace(savedAt) ? string.Empty : string.Format(Strings.Main_RecoverWhenFormat, savedAt);
         var answer = ViewModel.MessageService.DisplayOkCancel(
-          $"SheetNest closed unexpectedly with unsaved changes in {name}{when}.\n\nRecover the autosaved project?",
-          "Recovery",
+          string.Format(Strings.Msg_RecoverAutosave, name, when),
+          Strings.Msg_RecoveryTitle,
           DeepNestLib.MessageBoxIcon.Information);
         if (answer == DeepNestLib.MessageBoxResult.OK)
         {
@@ -332,7 +334,7 @@
     private void ShowUpdateNotice(Version latest, string url)
     {
       this.updateUrl = url;
-      this.updateNotice.Text = $"Update available: {latest.ToString(3)}";
+      this.updateNotice.Text = string.Format(Strings.Main_UpdateAvailableFormat, latest.ToString(3));
       this.updateNotice.Visibility = Visibility.Visible;
     }
 
@@ -352,8 +354,8 @@
       catch
       {
         ViewModel.MessageService.DisplayMessageBox(
-          "Could not open the browser. You can send feedback at:\nhttps://github.com/ManuelMRosa/SheetNest/issues",
-          "Send Feedback",
+          Strings.Msg_FeedbackNoBrowser,
+          Strings.Msg_SendFeedbackTitle,
           DeepNestLib.MessageBoxIcon.Information);
       }
     }
@@ -374,8 +376,8 @@
         if (result == null)
         {
           ViewModel.MessageService.DisplayMessageBox(
-            "Could not check for updates. Check your internet connection.",
-            "Check for Updates",
+            Strings.Msg_UpdateCheckFailed,
+            Strings.Msg_CheckUpdatesTitle,
             DeepNestLib.MessageBoxIcon.Information);
           return;
         }
@@ -383,16 +385,16 @@
         if (!UpdateChecker.IsNewer(result.Value.Latest, current))
         {
           ViewModel.MessageService.DisplayMessageBox(
-            $"You are up to date (SheetNest {current.ToString(3)}).",
-            "Check for Updates",
+            string.Format(Strings.Msg_UpToDateFormat, current.ToString(3)),
+            Strings.Msg_CheckUpdatesTitle,
             DeepNestLib.MessageBoxIcon.Information);
           return;
         }
 
         this.ShowUpdateNotice(result.Value.Latest, result.Value.Url);
         var answer = ViewModel.MessageService.DisplayOkCancel(
-          $"SheetNest {result.Value.Latest.ToString(3)} is available (you have {current.ToString(3)}).\n\nOpen the download page?",
-          "Check for Updates",
+          string.Format(Strings.Msg_UpdateAvailableFormat, result.Value.Latest.ToString(3), current.ToString(3)),
+          Strings.Msg_CheckUpdatesTitle,
           DeepNestLib.MessageBoxIcon.Information);
         if (answer == DeepNestLib.MessageBoxResult.OK)
         {
@@ -402,7 +404,7 @@
       catch (Exception ex)
       {
         Mouse.OverrideCursor = null;
-        ViewModel.MessageService.DisplayMessageBox(ex.Message, "Check for Updates", DeepNestLib.MessageBoxIcon.Stop);
+        ViewModel.MessageService.DisplayMessageBox(ex.Message, Strings.Msg_CheckUpdatesTitle, DeepNestLib.MessageBoxIcon.Stop);
       }
     }
 
@@ -460,7 +462,7 @@
         .ToList();
       if (recents.Count == 0)
       {
-        this.recentProjectsMenu.Items.Add(new MenuItem { Header = "(empty)", IsEnabled = false });
+        this.recentProjectsMenu.Items.Add(new MenuItem { Header = Strings.Menu_RecentEmpty, IsEnabled = false });
         return;
       }
 
@@ -550,6 +552,49 @@
       this.RefreshNestEffortMenu();
     }
 
+    /// <summary>
+    /// Settings > Language: Automatic (Windows), then every language SheetNest was built with, each in its own
+    /// words. A pick is saved at once and takes effect the next time SheetNest opens, when every window is
+    /// built in it.
+    /// </summary>
+    private void BuildLanguageMenu(string? saved)
+    {
+      var languageMenu = new MenuItem { Header = Strings.Menu_Language };
+      var choices = new List<(string Header, string? Culture)> { (Strings.Menu_LanguageAutomatic, null) };
+      choices.AddRange(Languages.Available(AppContext.BaseDirectory).Select(c => (Languages.DisplayName(c), (string?)c.Name)));
+      foreach (var (header, culture) in choices)
+      {
+        var item = new MenuItem
+        {
+          Header = header,
+          IsCheckable = true,
+          IsChecked = string.Equals(culture ?? string.Empty, saved ?? string.Empty, StringComparison.OrdinalIgnoreCase),
+        };
+        item.Click += (_, __) => this.OnLanguageChosen(languageMenu, item, culture);
+        languageMenu.Items.Add(item);
+      }
+
+      this.settingsMenu.Items.Add(new Separator());
+      this.settingsMenu.Items.Add(languageMenu);
+    }
+
+    private void OnLanguageChosen(MenuItem languageMenu, MenuItem chosen, string? culture)
+    {
+      // A checkable item toggles itself on click, so the ticks are put back from the choice.
+      foreach (var item in languageMenu.Items.OfType<MenuItem>())
+      {
+        item.IsChecked = ReferenceEquals(item, chosen);
+      }
+
+      if (string.Equals(LanguagePreference.Read() ?? string.Empty, culture ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+      {
+        return;
+      }
+
+      LanguagePreference.Write(culture);
+      ViewModel.MessageService.DisplayMessageBox(Strings.Msg_LanguageNextStart, Strings.Menu_Language, DeepNestLib.MessageBoxIcon.Information);
+    }
+
     /// <summary>The arrow half of the NEST split button. Anchored under the button so the menu reads as
     /// belonging to it rather than appearing at the pointer.</summary>
     private void OnNestEffortMenu(object sender, RoutedEventArgs e)
@@ -596,18 +641,15 @@
 
       string name = this.nestEffort switch
       {
-        DeepNestSharp.RasterNest.NestEffort.Normal => "Normal",
-        DeepNestSharp.RasterNest.NestEffort.Best => "Best",
-        _ => "Fast",
+        DeepNestSharp.RasterNest.NestEffort.Normal => Strings.Main_EffortNameNormal,
+        DeepNestSharp.RasterNest.NestEffort.Best => Strings.Main_EffortNameBest,
+        _ => Strings.Main_EffortNameFast,
       };
 
       // Says what it actually buys. It reads as "how long you wait", but what it changes is how TIGHTLY
       // the parts end up packed — and on a common-line job that tightness is what decides whether the
       // last part of a row gets to share its cut or sits on its own at the normal gap.
-      this.nestEffortButton.ToolTip =
-        $"Nesting effort: {name}. It buys a TIGHTER pack, not more parts: the parts that fit are found "
-        + "almost at once and the rest of the search squeezes them together. On a common-line job that is "
-        + "what lets the last part of a row share its cut instead of standing alone.";
+      this.nestEffortButton.ToolTip = string.Format(Strings.Main_EffortTipFormat, name);
     }
 
     private void OnOffcutSettings(object sender, RoutedEventArgs e)
@@ -870,7 +912,7 @@
       {
         var answer = MessageBox.Show(
           this,
-          "You have a nest result. Save the project before closing?",
+          Strings.Msg_SaveBeforeClosing,
           "SheetNest",
           MessageBoxButton.YesNoCancel,
           MessageBoxImage.Question);
@@ -974,7 +1016,7 @@
 
       if (this.userSheetPresets.Count > 0)
       {
-        menu.Items.Add(new MenuItem { Header = "My sheets", IsEnabled = false, FontWeight = FontWeights.Bold });
+        menu.Items.Add(new MenuItem { Header = Strings.Main_MySheets, IsEnabled = false, FontWeight = FontWeights.Bold });
         foreach (var preset in this.userSheetPresets.OrderBy(p => p.H).ThenBy(p => p.W))
         {
           var size = preset;
@@ -983,7 +1025,7 @@
           menu.Items.Add(item);
         }
 
-        var removeMenu = new MenuItem { Header = "Remove from my sheets" };
+        var removeMenu = new MenuItem { Header = Strings.Main_RemoveFromMySheets };
         foreach (var preset in this.userSheetPresets.OrderBy(p => p.H).ThenBy(p => p.W))
         {
           var size = preset;
@@ -1016,7 +1058,7 @@
       }
 
       menu.Items.Add(new Separator());
-      var custom = new MenuItem { Header = "Custom size…" };
+      var custom = new MenuItem { Header = Strings.Main_CustomSize };
       custom.Click += (_, __) =>
       {
         var dialog = new AddSheetWindow(this.unitsMm) { Owner = this };
@@ -1136,7 +1178,7 @@
       {
         Filter = DeepNestLib.IO.StepUnfoldService.FileDialogFilter3D,
         Multiselect = true,
-        Title = "Import 3D (STEP / IGES)",
+        Title = Strings.Main_Import3DDialogTitle,
       };
       if (picker.ShowDialog(this) != true)
       {
@@ -1229,15 +1271,16 @@
           if (result.Skipped > 0)
           {
             ViewModel.MessageService.DisplayMessageBox(
-              $"Imported {result.Paths.Count} part(s). {result.Skipped} solid(s) were skipped (not recognized as sheet metal).",
-              "Import 3D",
+              Languages.Count(result.Paths.Count, Strings.Main_ImportedParts_One, Strings.Main_ImportedParts_Other) + " "
+              + Languages.Count(result.Skipped, Strings.Main_SkippedSolids_One, Strings.Main_SkippedSolids_Other),
+              Strings.Msg_Import3DTitle,
               DeepNestLib.MessageBoxIcon.Information);
           }
         }
         catch (DeepNestLib.IO.StepUnfoldException ex)
         {
           System.Windows.Input.Mouse.OverrideCursor = null;
-          ViewModel.MessageService.DisplayMessageBox(ex.Message, "Import 3D", DeepNestLib.MessageBoxIcon.Stop);
+          ViewModel.MessageService.DisplayMessageBox(ex.Message, Strings.Msg_Import3DTitle, DeepNestLib.MessageBoxIcon.Stop);
         }
         catch (System.Exception ex)
         {
@@ -1366,7 +1409,7 @@
           var (r, g, b) = PartColors.PaletteAt(i);
           var brush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(r, g, b));
           brush.Freeze();
-          palette.Add(new PaletteSwatch { Rgb = PartColors.ToRgb((r, g, b)), Label = $"Part {i + 1}", Brush = brush });
+          palette.Add(new PaletteSwatch { Rgb = PartColors.ToRgb((r, g, b)), Label = string.Format(Strings.Main_PaletteSwatchFormat, i + 1), Brush = brush });
         }
 
         this.partColorSwatches.ItemsSource = palette;
@@ -1548,7 +1591,7 @@
       {
         part.KFactor = oldK; // revert so Edit Part shows the value that actually produced the current flat
         part.KFactorStandard = oldStd;
-        ViewModel.MessageService.DisplayMessageBox(ex.Message, "Re-unfold", DeepNestLib.MessageBoxIcon.Stop);
+        ViewModel.MessageService.DisplayMessageBox(ex.Message, Strings.Msg_ReunfoldTitle, DeepNestLib.MessageBoxIcon.Stop);
       }
       catch (System.Exception ex)
       {
@@ -1566,7 +1609,7 @@
       var project = (ViewModel.ActiveDocument as NestProjectViewModel)?.ProjectInfo;
       if (project == null || project.DetailLoadInfos.Count == 0)
       {
-        ViewModel.MessageService.DisplayMessageBox("Open a project and add parts first.", "Nest", DeepNestLib.MessageBoxIcon.Information);
+        ViewModel.MessageService.DisplayMessageBox(Strings.Msg_AddPartsFirst, Strings.Msg_NestTitle, DeepNestLib.MessageBoxIcon.Information);
         return;
       }
 
@@ -1575,8 +1618,8 @@
       if (!ViewModel.NestMonitorViewModel.TopNestResults.IsEmpty)
       {
         ViewModel.MessageService.DisplayMessageBox(
-          "There is already a nest result. Press Clear Result first; it returns the sheets that nest used to the stock.",
-          "Nest",
+          Strings.Msg_ResultExists,
+          Strings.Msg_NestTitle,
           DeepNestLib.MessageBoxIcon.Information);
         return;
       }
@@ -1635,7 +1678,7 @@
         .ToList();
       if (sheetStock.Count == 0)
       {
-        ViewModel.MessageService.DisplayMessageBox("Add at least one sheet in the Sheets tab first.", "Nest", DeepNestLib.MessageBoxIcon.Information);
+        ViewModel.MessageService.DisplayMessageBox(Strings.Msg_AddSheetFirst, Strings.Msg_NestTitle, DeepNestLib.MessageBoxIcon.Information);
         return;
       }
 
@@ -1652,8 +1695,8 @@
       if (sparrowExe == null)
       {
         ViewModel.MessageService.DisplayMessageBox(
-          "The nesting engine (sparrow.exe) was not found. It ships next to the app; reinstall, or set the SHEETNEST_SPARROW environment variable to its path.",
-          "Nest",
+          Strings.Msg_EngineMissing,
+          Strings.Msg_NestTitle,
           DeepNestLib.MessageBoxIcon.Warning);
         return;
       }
@@ -1665,10 +1708,10 @@
       }
 
       nestCts = new System.Threading.CancellationTokenSource();
-      this.cancelNestButton.Content = "■  Cancel";
+      this.cancelNestButton.Content = Strings.Main_Cancel;
       this.cancelNestButton.IsEnabled = true;
       this.cancelNestButton.Visibility = Visibility.Visible;
-      this.nestPhaseText.Text = "Nesting…  0:00";
+      this.nestPhaseText.Text = string.Format(Strings.Main_NestingFormat, "0:00");
       this.nestPhaseText.Visibility = Visibility.Visible;
 
       // A stopwatch + timer keep the elapsed clock ticking between engine reports (the engine only reports
@@ -1686,6 +1729,7 @@
       });
 
       bool nestSucceeded = false;
+      bool nestCancelled = false;
       try
       {
         // Hidden end-to-end test hook for the crash reporter (set SHEETNEST_CRASH_TEST=1).
@@ -1724,7 +1768,7 @@
 
         if (result == null)
         {
-          ViewModel.MessageService.DisplayMessageBox(error ?? "Nest produced no result.", "Nest", DeepNestLib.MessageBoxIcon.Information);
+          ViewModel.MessageService.DisplayMessageBox(error ?? Strings.Msg_NoResult, Strings.Msg_NestTitle, DeepNestLib.MessageBoxIcon.Information);
           return;
         }
 
@@ -1787,12 +1831,13 @@
           bool anyUnlimited = project.SheetLoadInfos.Any(s => s.Unlimited);
           ViewModel.MessageService.DisplayMessageBox(
             anyUnlimited
-              ? $"{unplacedCount} part(s) do not fit on any of the sheet sizes in the Sheets tab.\n\n" +
-                "Sheets were not the limit — one of the sizes is unlimited. The part is bigger than every " +
-                "sheet it could go on, so add a bigger sheet size (or check the part's spacing and margin)."
-              : $"{unplacedCount} part(s) did not fit on the {sheetQty} available sheet(s).\n\n" +
-                "Increase the sheet Qty in the Sheets tab, tick Unlimited on a size, or add another sheet, and nest again.",
-            anyUnlimited ? "Parts do not fit" : "Not enough sheets",
+              ? Languages.Count(unplacedCount, Strings.Msg_PartsDoNotFitAnySize_One, Strings.Msg_PartsDoNotFitAnySize_Other)
+              : Languages.Count(
+                  unplacedCount,
+                  Strings.Msg_PartsDidNotFit_One,
+                  Strings.Msg_PartsDidNotFit_Other,
+                  Languages.Count(sheetQty, Strings.Msg_AvailableSheets_One, Strings.Msg_AvailableSheets_Other)),
+            anyUnlimited ? Strings.Msg_PartsDoNotFitTitle : Strings.Msg_NotEnoughSheetsTitle,
             DeepNestLib.MessageBoxIcon.Warning);
         }
       }
@@ -1802,7 +1847,8 @@
         // can also arrive WRAPPED: a Parallel.For without the token in its options bundles the
         // workers' OperationCanceledExceptions into an AggregateException (user-reported crash
         // dialog on Cancel during the tail sweep).
-        this.nestPhaseText.Text = "Nest cancelled";
+        this.nestPhaseText.Text = Strings.Main_NestCancelled;
+        nestCancelled = true;
       }
       catch (System.Exception ex)
       {
@@ -1837,27 +1883,30 @@
           string seams = SparrowNestService.DiagSeamsSnapped > 0
               || SparrowNestService.DiagSeamsGivenUp > 0
               || commonLineFallbacks.Length > 0
-            ? FormattableString.Invariant($"  ·  {SparrowNestService.DiagSeamsSnapped} shared cuts")
+            ? Languages.Count(SparrowNestService.DiagSeamsSnapped, Strings.Main_SharedCuts_One, Strings.Main_SharedCuts_Other)
               + (SparrowNestService.DiagSeamsGivenUp > 0
-                ? FormattableString.Invariant($", {SparrowNestService.DiagSeamsGivenUp} given up")
+                ? string.Format(Strings.Main_GivenUpFormat, SparrowNestService.DiagSeamsGivenUp)
                 : string.Empty)
               + (commonLineFallbacks.Length > 0
-                ? FormattableString.Invariant($", {commonLineFallbacks.Select(notice => notice.Drawing).Distinct(StringComparer.OrdinalIgnoreCase).Count()} drawing(s) kept at normal gap")
+                ? Languages.Count(
+                    commonLineFallbacks.Select(notice => notice.Drawing).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                    Strings.Main_DrawingsKept_One,
+                    Strings.Main_DrawingsKept_Other)
                 : string.Empty)
             : string.Empty;
 
-          this.nestPhaseText.Text = FormattableString.Invariant($"Nested in {elapsed}{seams}");
+          this.nestPhaseText.Text = string.Format(Strings.Main_NestedInFormat, elapsed, seams);
 
           if (commonLineFallbacks.Length > 0)
           {
             ViewModel.MessageService.DisplayMessageBox(
               CommonLineFallbackMessage(commonLineFallbacks),
-              "Common line",
+              Strings.Msg_CommonLineTitle,
               DeepNestLib.MessageBoxIcon.Warning);
           }
 
         }
-        else if (this.nestPhaseText.Text != "Nest cancelled")
+        else if (!nestCancelled)
         {
           this.nestPhaseText.Visibility = Visibility.Collapsed;
         }
@@ -1875,7 +1924,7 @@
     /// known accurately). The final time is kept on screen when the nest ends.</summary>
     private void RenderNestProgress()
     {
-      this.nestPhaseText.Text = FormattableString.Invariant($"Nesting…  {NestElapsed()}");
+      this.nestPhaseText.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture, Strings.Main_NestingFormat, NestElapsed());
     }
 
     /// <summary>Elapsed nest time as m:ss (0:00 if the stopwatch isn't running).</summary>
@@ -1902,7 +1951,7 @@
     private void OnCancelNest(object sender, RoutedEventArgs e)
     {
       // Cooperative: the engine checks the token at its phase boundaries (sub-second on real jobs).
-      this.cancelNestButton.Content = "Cancelling…";
+      this.cancelNestButton.Content = Strings.Main_Cancelling;
       this.cancelNestButton.IsEnabled = false;
       nestCts?.Cancel();
     }
@@ -1931,10 +1980,9 @@
       // Say WHICH fault, per layout. The two are not the same job: an overlap is moved apart by hand, while
       // a part inside the edge margin usually means the margin wants lowering and the nest re-running.
       int parts = unfit.Sum(u => u.Parts);
-      var where = string.Join("\n", unfit.Select(u => $"    {u.Layout}: {u.Parts} part(s){Why(u)}"));
+      var where = string.Join("\n", unfit.Select(u => $"    {u.Layout}: {Languages.Count(u.Parts, Strings.Main_UnfitParts_One, Strings.Main_UnfitParts_Other)}{Why(u)}"));
       ViewModel.MessageService.DisplayMessageBox(
-        $"{parts} part(s) are not ready to cut:\n\n{where}\n\n" +
-        "They are drawn in red. Move them clear in Edit nest and try again.",
+        Languages.Count(parts, Strings.Msg_NotReadyToCut_One, Strings.Msg_NotReadyToCut_Other, where),
         title,
         DeepNestLib.MessageBoxIcon.Stop);
       return true;
@@ -1943,10 +1991,10 @@
       {
         if (u.Overlapping > 0 && u.InMargin > 0)
         {
-          return $", {u.Overlapping} overlapping a neighbour and {u.InMargin} inside the sheet edge margin";
+          return string.Format(Strings.Main_UnfitBothFormat, u.Overlapping, u.InMargin);
         }
 
-        return u.InMargin > 0 ? ", inside the sheet edge margin" : ", overlapping a neighbour";
+        return u.InMargin > 0 ? Strings.Main_UnfitInMargin : Strings.Main_UnfitOverlapping;
       }
     }
 
@@ -1956,13 +2004,13 @@
       if (selected == null || selected.UsedSheets == null || selected.UsedSheets.Count == 0)
       {
         ViewModel.MessageService.DisplayMessageBox(
-          "Run a nest and select a result first, then save the report.",
-          "Nest report",
+          Strings.Msg_SelectResultForReport,
+          Strings.Msg_NestReportTitle,
           DeepNestLib.MessageBoxIcon.Information);
         return;
       }
 
-      if (this.RefuseWhileAnythingOverlaps("Nest report"))
+      if (this.RefuseWhileAnythingOverlaps(Strings.Msg_NestReportTitle))
       {
         return;
       }
@@ -1971,14 +2019,14 @@
       var plan = this.dxfViewer.GetProductionPlan();
       if (plan == null || plan.Count == 0)
       {
-        plan = selected.UsedSheets.Select(s => ((DeepNestLib.Placement.ISheetPlacement)s, 1, "Sheet")).ToList();
+        plan = selected.UsedSheets.Select(s => ((DeepNestLib.Placement.ISheetPlacement)s, 1, Strings.Main_ReportSheetName)).ToList();
       }
 
       var dialog = new Microsoft.Win32.SaveFileDialog
       {
-        Filter = "PDF files (*.pdf)|*.pdf",
-        FileName = "nest report.pdf",
-        Title = "Save nest report",
+        Filter = Strings.Main_PdfFilter,
+        FileName = Strings.Main_ReportFileName,
+        Title = Strings.Main_SaveReportTitle,
       };
       if (dialog.ShowDialog(this) != true)
       {
@@ -1996,8 +2044,8 @@
       catch (System.Exception ex)
       {
         ViewModel.MessageService.DisplayMessageBox(
-          $"Could not write the report: {ex.Message}",
-          "Nest report",
+          string.Format(Strings.Msg_ReportWriteFailed, ex.Message),
+          Strings.Msg_NestReportTitle,
           DeepNestLib.MessageBoxIcon.Error);
       }
     }
@@ -2008,13 +2056,13 @@
       if (selected == null || selected.UsedSheets == null || selected.UsedSheets.Count == 0)
       {
         ViewModel.MessageService.DisplayMessageBox(
-          "Run a nest and select a result first, then export.",
-          "Export DXF",
+          Strings.Msg_SelectResultForExport,
+          Strings.Msg_ExportTitle,
           DeepNestLib.MessageBoxIcon.Information);
         return;
       }
 
-      if (this.RefuseWhileAnythingOverlaps("Export DXF"))
+      if (this.RefuseWhileAnythingOverlaps(Strings.Msg_ExportTitle))
       {
         return;
       }
@@ -2156,16 +2204,17 @@
       var rows = (notices ?? Enumerable.Empty<CommonLineFallbackNotice>())
         .Where(notice => notice != null)
         .GroupBy(notice => notice.Drawing, StringComparer.OrdinalIgnoreCase)
-        .Select(group => $"    {group.Key} — {string.Join("; ", group.Select(notice => notice.Reason).Distinct(StringComparer.Ordinal))}")
+        .Select(group => string.Format(
+          Strings.Main_FallbackRowFormat,
+          group.Key,
+          string.Join("; ", group.Select(notice => notice.DisplayReason).Distinct(StringComparer.Ordinal))))
         .ToArray();
       if (rows.Length == 0)
       {
         return string.Empty;
       }
 
-      return "Common-line cutting was skipped for:\n\n"
-        + string.Join("\n", rows)
-        + "\n\nThose parts kept the normal part gap.";
+      return string.Format(Strings.Msg_CommonLineSkippedFormat, string.Join("\n", rows));
     }
 
     /// <summary>

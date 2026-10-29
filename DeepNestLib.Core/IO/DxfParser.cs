@@ -10,6 +10,7 @@
   using IxMilia.Dxf;
   using IxMilia.Dxf.Blocks;
   using IxMilia.Dxf.Entities;
+  using SheetNest.Localization;
 
   public class DxfParser
   {
@@ -148,21 +149,43 @@
       // contains no elements" tells the operator nothing about their file.
       if (!approximations.Any(kvp => kvp.Value.Count > 0))
       {
-        throw new ArgumentException($"'{fullFilename}' has no geometry to nest - it holds only text, dimensions or other annotation.");
+        throw new ArgumentException(string.Format(Strings.Dxf_MsgNoGeometryFormat, fullFilename));
       }
 
-      s.AddRangeContour(ConnectElements(approximations));
-      if (s.Outers.Any(z => z.Points.Count < 3))
+      LocalContour<DxfEntity>[] contours = ConnectElements(approximations);
+      var open = contours.Where(z => z.Points.Count < 3).ToList();
+      if (open.Count > 0)
       {
-        throw new Exception("Too few points");
+        throw OpenLines(fullFilename, open);
       }
 
+      s.AddRangeContour(contours);
       return s;
+    }
+
+    /// <summary>
+    /// A line that closes no shape, said in words the operator can act on: how many, which layer, and
+    /// what to do about it. What a flat pattern carries as bend lines lands here when the bend layer is
+    /// in a cutting colour, and "Too few points" told the operator neither what was wrong nor where.
+    /// </summary>
+    private static ArgumentException OpenLines(string fullFilename, IList<LocalContour<DxfEntity>> open)
+    {
+      var layers = open
+        .SelectMany(c => c.Entities)
+        .Select(e => string.IsNullOrWhiteSpace(e.Layer) ? "0" : e.Layer.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+      string where = layers.Count == 1 ? string.Format(Strings.Dxf_LayerFormat, layers[0]) : string.Format(Strings.Dxf_LayersFormat, string.Join(", ", layers));
+
+      return open.Count == 1
+        ? new ArgumentException(string.Format(Strings.Dxf_MsgOpenLineFormat, fullFilename, where))
+        : new ArgumentException(string.Format(Strings.Dxf_MsgOpenLinesFormat, fullFilename, open.Count, where));
     }
 
     private static ArgumentException UnmeasurableGeometry(DxfEntity ent)
     {
-      return new ArgumentException($"This drawing contains a {ent.EntityTypeString}, which SheetNest cannot measure. Explode it or redraw it as lines, arcs, polylines, ellipses or splines and import again.");
+      return new ArgumentException(string.Format(Strings.Dxf_MsgUnmeasurableFormat, ent.EntityTypeString));
     }
 
     private static Dictionary<DxfEntity, IList<LineElement>> ApproximateEntities(IEnumerable<DxfEntity> entities)
@@ -363,7 +386,7 @@
               // A part drawn as a block is not nested. Every nesting package in the trade expects the
               // blocks exploded before import, and the ones that do not say so read the part in EMPTY or
               // drop the reference in silence - a sheet that gets cut with a piece missing. Say it instead.
-              throw new ArgumentException("This file is not compatible with SheetNest: its geometry is drawn as a block (a block reference). Open it in your CAD program, explode the blocks, and save the DXF again.");
+              throw new ArgumentException(Strings.Dxf_MsgBlockReference);
             }
 
           default:
@@ -451,7 +474,7 @@
           return spline.FitPoints.Select(p => new PointF((float)p.X, (float)p.Y)).ToList();
         }
 
-        throw new ArgumentException($"This drawing contains a SPLINE whose {control.Count} control points and {knots.Count} knots do not describe a curve. Convert it to a polyline and import again.");
+        throw new ArgumentException(string.Format(Strings.Dxf_MsgBadSplineFormat, control.Count, knots.Count));
       }
 
       double first = knots[degree];

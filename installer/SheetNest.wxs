@@ -62,6 +62,12 @@
       <RegistrySearch Id="RememberDesktopShortcut" Root="HKCU" Key="Software\SheetNest" Name="DesktopShortcut" Type="raw" />
     </Property>
 
+    <!-- The language SheetNest opens in. The app reads and writes the same value (Settings > Language), so an
+         upgrade offers whatever is in use now; "auto" follows the Windows language. -->
+    <Property Id="SHEETNEST_LANGUAGE" Value="auto" Secure="yes">
+      <RegistrySearch Id="RememberLanguage" Root="HKCU" Key="Software\SheetNest" Name="Language" Type="raw" />
+    </Property>
+
     <!-- Every file of the self-contained publish output. -->
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
       <Files Include="$(var.PublishDir)\**" />
@@ -72,6 +78,7 @@
       <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
       <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" />
       <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="DesktopShortcut" Type="string" Value="[INSTALLDESKTOPSHORTCUT]" />
+      <RegistryValue Root="HKCU" Key="Software\SheetNest" Name="Language" Type="string" Value="[SHEETNEST_LANGUAGE]" />
       <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="SheetNest"
                 Description="Production sheet-metal nesting"
                 Target="[INSTALLFOLDER]SheetNest.exe" WorkingDirectory="INSTALLFOLDER" />
@@ -125,9 +132,21 @@
       <Dialog Id="OptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
         <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
         <Control Id="Title" Type="Text" X="15" Y="6" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Additional options" />
-        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose additional shortcuts." />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose the language and shortcuts." />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
-        <Control Id="DesktopShortcutCheckBox" Type="CheckBox" X="20" Y="60" Width="330" Height="17"
+        <!-- One item per translation in Localization\, named the way the app's own menu names it; a test
+             (InstallerLanguagesFixture) fails while a translation is missing here. -->
+        <Control Id="LanguageLabel" Type="Text" X="20" Y="58" Width="330" Height="10" Text="SheetNest &amp;language:" />
+        <Control Id="LanguageCombo" Type="ComboBox" X="20" Y="71" Width="200" Height="16" Property="SHEETNEST_LANGUAGE" ComboList="yes">
+          <ComboBox Property="SHEETNEST_LANGUAGE">
+            <ListItem Value="auto" Text="Automatic (Windows language)" />
+            <ListItem Value="en" Text="English" />
+            <ListItem Value="es" Text="Español" />
+          </ComboBox>
+        </Control>
+        <Control Id="LanguageHint" Type="Text" X="20" Y="91" Width="330" Height="20" NoPrefix="yes"
+                 Text="Used for menus, buttons, messages and the PDF report. You can change it later in Settings &gt; Language." />
+        <Control Id="DesktopShortcutCheckBox" Type="CheckBox" X="20" Y="120" Width="330" Height="17"
                  Property="INSTALLDESKTOPSHORTCUT" CheckBoxValue="1" Text="Create a &amp;desktop shortcut" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="&amp;Back">

@@ -12,6 +12,7 @@
   using DeepNestLib;
   using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Faithful nest viewer. Renders each placement's actual nested geometry (PlacedPart — already rotated
@@ -327,7 +328,7 @@
         string sig = Signature(sp);
         if (!bySignature.TryGetValue(sig, out var g))
         {
-          g = new SheetGroup { Representative = sp, Count = 0, Name = $"Layout {byLayout.Count + 1}", Members = new List<ISheetPlacement>() };
+          g = new SheetGroup { Representative = sp, Count = 0, Name = string.Format(Strings.Viewer_LayoutNameFormat, byLayout.Count + 1), Members = new List<ISheetPlacement>() };
           bySignature[sig] = g;
           byLayout.Add(g);
         }
@@ -426,7 +427,7 @@
 
           if (fullSheets > 0)
           {
-            this.groups.Add(new SheetGroup { Representative = densest.Sheet, Count = fullSheets, Name = "Full sheet" });
+            this.groups.Add(new SheetGroup { Representative = densest.Sheet, Count = fullSheets, Name = Strings.Viewer_FullSheet });
           }
 
           if (rem > 0)
@@ -439,7 +440,7 @@
             }
 
             var remSheet = CreateSyntheticSheet(densest.Sheet, selected);
-            this.groups.Add(new SheetGroup { Representative = remSheet, Count = 1, Name = "Remainder sheet" });
+            this.groups.Add(new SheetGroup { Representative = remSheet, Count = 1, Name = Strings.Viewer_RemainderSheet });
           }
 
           return this.groups.Count > 0;
@@ -472,7 +473,7 @@
 
         if (bestCopies >= 1)
         {
-          this.groups.Add(new SheetGroup { Representative = best.Sheet, Count = bestCopies, Name = "Full sheet" });
+          this.groups.Add(new SheetGroup { Representative = best.Sheet, Count = bestCopies, Name = Strings.Viewer_FullSheet });
           foreach (var kv in best.Comp)
           {
             remaining[kv.Key] -= kv.Value * bestCopies;
@@ -507,7 +508,7 @@
           }
 
           var sheet = CreateSyntheticSheet(fit.Sheet, selected);
-          g = new SheetGroup { Representative = sheet, Count = 0, Name = "Remainder sheet" };
+          g = new SheetGroup { Representative = sheet, Count = 0, Name = Strings.Viewer_RemainderSheet };
           remGroups[key] = g;
           this.groups.Add(g);
         }
@@ -1420,10 +1421,10 @@
       }
 
       this.hintText.Text = !this.EditMode
-        ? "scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit"
+        ? Strings.Viewer_HintView
         : this.CurrentSheetIsEditable()
-          ? "click = select part  ·  drag = move  ·  arrows = nudge  ·  type a coordinate to place it exactly  ·  overlaps show red"
-          : "this layout is a production-plan proposal, not one of the nested sheets, so it cannot be edited  ·  the sheets it stands for are the ones that get cut";
+          ? Strings.Viewer_HintEdit
+          : Strings.Viewer_HintPlanReadOnly;
     }
 
     private bool MeasureMode => this.measureToggle != null && this.measureToggle.IsChecked == true;
@@ -1457,7 +1458,7 @@
       {
         if (this.hintText != null)
         {
-          this.hintText.Text = "measure: click two points (snaps to corners)";
+          this.hintText.Text = Strings.Viewer_HintMeasureStart;
         }
       }
       else
@@ -1706,7 +1707,7 @@
 
       this.partInfo.Visibility = Visibility.Visible;
       this.partInfoName.Text = string.IsNullOrEmpty(pp.Part?.Name)
-        ? "part"
+        ? Strings.Viewer_PartFallbackName
         : System.IO.Path.GetFileName(pp.Part.Name);
 
       // Don't fight the operator for a field they are typing in, unless they just cancelled.
@@ -1754,7 +1755,7 @@
       string unit = this.UnitsMm ? "mm" : "in";
       return gap >= cap
         ? string.Empty
-        : $"gap {gap.ToString("0.###", CultureInfo.CurrentCulture)} {unit}";
+        : string.Format(Strings.Viewer_GapFormat, gap.ToString("0.###", CultureInfo.CurrentCulture), unit);
     }
 
     /// <summary>
@@ -1963,7 +1964,7 @@
 
       if (unreadable && this.hintText != null)
       {
-        this.hintText.Text = "that is not a number I can read  ·  the part has been left where it was";
+        this.hintText.Text = Strings.Viewer_HintUnreadableNumber;
       }
     }
 
@@ -2001,7 +2002,7 @@
           this.UpdateMeasureScale();
           if (this.hintText != null)
           {
-            this.hintText.Text = "measure: click the second point";
+            this.hintText.Text = Strings.Viewer_HintMeasureSecond;
           }
         }
         else
@@ -2014,7 +2015,7 @@
           double d = (p - this.measureA.Value).Length; // Y-flip invariant → drawing units
           if (this.hintText != null)
           {
-            this.hintText.Text = $"distance: {d:0.000} {(this.UnitsMm ? "mm" : "in")}  ·  click to measure again";
+            this.hintText.Text = string.Format(Strings.Viewer_DistanceAgainFormat, d, this.UnitsMm ? "mm" : "in");
           }
         }
 
@@ -2079,7 +2080,7 @@
           double d = (mp - this.measureA.Value).Length;
           if (this.hintText != null)
           {
-            this.hintText.Text = $"distance: {d:0.000} {(this.UnitsMm ? "mm" : "in")}";
+            this.hintText.Text = string.Format(Strings.Viewer_DistanceFormat, d, this.UnitsMm ? "mm" : "in");
           }
         }
 
@@ -2994,7 +2995,7 @@
     {
       if (this.hintText != null)
       {
-        this.hintText.Text = "common-line cluster parts are locked  ·  re-nest to change their position";
+        this.hintText.Text = Strings.Viewer_HintCommonLineLocked;
       }
     }
 
@@ -3749,10 +3750,12 @@
       bool anythingToUndo = this.undoStack.Count > this.editEntryDepth;
       var answer = System.Windows.MessageBox.Show(
         Window.GetWindow(this),
-        $"{unfit.All.Count} part(s) on this layout are not fit to cut{Why()}.\n\n" +
-        "They are drawn in red. Move them clear before leaving the editor.\n\n" +
-        (anythingToUndo ? "Undo your changes and leave anyway?" : "Leave anyway?"),
-        "Edit nest",
+        string.Format(
+          unfit.All.Count == 1 ? Strings.Viewer_MsgLeaveUnfit_One : Strings.Viewer_MsgLeaveUnfit_Other,
+          unfit.All.Count,
+          Why(),
+          anythingToUndo ? Strings.Viewer_MsgUndoAndLeave : Strings.Viewer_MsgLeaveAnyway),
+        Strings.Viewer_EditNestTitle,
         MessageBoxButton.YesNo,
         MessageBoxImage.Warning,
         System.Windows.MessageBoxResult.No);
@@ -3771,10 +3774,10 @@
       {
         if (unfit.Overlapping.Count > 0 && unfit.OutsideMargin.Count > 0)
         {
-          return $": {unfit.Overlapping.Count} overlapping a neighbour and {unfit.OutsideMargin.Count} inside the sheet edge margin";
+          return string.Format(Strings.Viewer_UnfitBothFormat, unfit.Overlapping.Count, unfit.OutsideMargin.Count);
         }
 
-        return unfit.OutsideMargin.Count > 0 ? ", inside the sheet edge margin" : ", overlapping a neighbour";
+        return unfit.OutsideMargin.Count > 0 ? Strings.Viewer_UnfitInMargin : Strings.Viewer_UnfitOverlapping;
       }
     }
 
@@ -3907,7 +3910,7 @@
         ? 0
         : this.invalid.Count(p => group.Representative.PartPlacements.Contains(p));
 
-      this.overlapCount.Text = n == 1 ? "1 part not fit to cut" : $"{n} parts not fit to cut";
+      this.overlapCount.Text = Languages.Count(n, Strings.Viewer_NotFitCount_One, Strings.Viewer_NotFitCount_Other);
       this.overlapCount.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -3933,7 +3936,7 @@
         if (found != null && found.All.Count > 0)
         {
           unfit.Add((
-            string.IsNullOrWhiteSpace(this.groups[i].Name) ? $"Layout {i + 1}" : this.groups[i].Name,
+            string.IsNullOrWhiteSpace(this.groups[i].Name) ? string.Format(Strings.Viewer_LayoutNameFormat, i + 1) : this.groups[i].Name,
             found.All.Count,
             found.Overlapping.Count,
             found.OutsideMargin.Count));

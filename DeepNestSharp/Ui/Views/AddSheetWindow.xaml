@@ -1,8 +1,9 @@
 <Window x:Class="DeepNestSharp.Ui.Views.AddSheetWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:SheetNest.Localization;assembly=SheetNest.Localization"
         xmlns:xctk="http://schemas.xceed.com/wpf/xaml/toolkit"
-        Title="Custom sheet size"
+        Title="{x:Static loc:Strings.AddSheet_Title}"
         FontFamily="Tahoma" FontSize="11"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="CenterOwner"
@@ -24,27 +25,27 @@
     </Grid.RowDefinitions>
 
     <TextBlock x:Name="headerText" Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,10"
-               Text="Sheet size in inches (width = the long side)." Foreground="{StaticResource Brush.TextMuted}" />
+               Text="{x:Static loc:Strings.AddSheet_HeaderInches}" Foreground="{StaticResource Brush.TextMuted}" />
 
-    <TextBlock x:Name="widthLabel" Grid.Row="1" Grid.Column="0" Text="Width (in)" VerticalAlignment="Center" Margin="0,0,10,6" />
+    <TextBlock x:Name="widthLabel" Grid.Row="1" Grid.Column="0" Text="{x:Static loc:Strings.AddSheet_WidthIn}" VerticalAlignment="Center" Margin="0,0,10,6" />
     <xctk:IntegerUpDown x:Name="widthUpDown" Grid.Row="1" Grid.Column="1" Minimum="1" Maximum="1000" Value="120" Margin="0,0,0,6" />
 
-    <TextBlock x:Name="heightLabel" Grid.Row="2" Grid.Column="0" Text="Height (in)" VerticalAlignment="Center" Margin="0,0,10,6" />
+    <TextBlock x:Name="heightLabel" Grid.Row="2" Grid.Column="0" Text="{x:Static loc:Strings.AddSheet_HeightIn}" VerticalAlignment="Center" Margin="0,0,10,6" />
     <xctk:IntegerUpDown x:Name="heightUpDown" Grid.Row="2" Grid.Column="1" Minimum="1" Maximum="1000" Value="60" Margin="0,0,0,6" />
 
-    <TextBlock Grid.Row="3" Grid.Column="0" Text="Quantity" VerticalAlignment="Center" Margin="0,0,10,6" />
+    <TextBlock Grid.Row="3" Grid.Column="0" Text="{x:Static loc:Strings.AddSheet_Quantity}" VerticalAlignment="Center" Margin="0,0,10,6" />
     <xctk:IntegerUpDown x:Name="qtyUpDown" Grid.Row="3" Grid.Column="1" Minimum="1" Maximum="10000" Value="1" Margin="0,0,0,6" />
 
-    <CheckBox x:Name="unlimitedCheck" Grid.Row="4" Grid.Column="1" Content="Unlimited" Margin="0,0,0,6"
+    <CheckBox x:Name="unlimitedCheck" Grid.Row="4" Grid.Column="1" Content="{x:Static loc:Strings.AddSheet_Unlimited}" Margin="0,0,0,6"
               Checked="OnUnlimitedChanged" Unchecked="OnUnlimitedChanged"
-              ToolTip="There is as much of this size as the job needs, so the nest keeps taking sheets until every part is placed. Quantity is ignored while this is ticked (it keeps its value for when you untick it)." />
+              ToolTip="{x:Static loc:Strings.AddSheet_UnlimitedTip}" />
 
-    <CheckBox x:Name="rememberCheck" Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="Remember as preset" Margin="0,4,0,0"
-              ToolTip="Save this size under &quot;My sheets&quot; in the Add Sheet menu." />
+    <CheckBox x:Name="rememberCheck" Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Content="{x:Static loc:Strings.AddSheet_RememberPreset}" Margin="0,4,0,0"
+              ToolTip="{x:Static loc:Strings.AddSheet_RememberPresetTip}" />
 
     <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-      <Button x:Name="okButton" Style="{StaticResource PrimaryButton}" Content="Add" Width="88" FontSize="13" Padding="0,6" Margin="0,0,8,0" IsDefault="True" Click="OnOk" />
-      <Button Style="{StaticResource ModernButton}" Content="Cancel" Width="80" IsCancel="True" />
+      <Button x:Name="okButton" Style="{StaticResource PrimaryButton}" Content="{x:Static loc:Strings.AddSheet_Add}" Width="88" FontSize="13" Padding="0,6" Margin="0,0,8,0" IsDefault="True" Click="OnOk" />
+      <Button Style="{StaticResource ModernButton}" Content="{x:Static loc:Strings.Common_Cancel}" Width="80" IsCancel="True" />
     </StackPanel>
   </Grid>
 </Window>

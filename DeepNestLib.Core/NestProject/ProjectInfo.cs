@@ -7,10 +7,11 @@ namespace DeepNestLib.NestProject
   using System.Text.Json.Serialization;
   using DeepNestLib.Placement;
   using Light.GuardClauses;
+  using SheetNest.Localization;
 
   public class ProjectInfo : IProjectInfo
   {
-    public const string FileDialogFilter = "DeepNest Projects (*.dnest)|*.dnest|Json (*.json)|*.json|All files (*.*)|*.*";
+    public static string FileDialogFilter => Strings.Files_ProjectFilter;
     private ISvgNestConfig config;
     private double commonLineGapInches = CommonLineDefaults.DefaultGapInches;
     private int commonLineMaxClusterParts = CommonLineDefaults.DefaultMaxClusterParts;

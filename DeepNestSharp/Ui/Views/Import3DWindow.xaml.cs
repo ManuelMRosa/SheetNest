@@ -4,6 +4,7 @@ namespace DeepNestSharp.Ui.Views
   using System.Linq;
   using System.Windows;
   using DeepNestLib.IO;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Shown when importing a 3D (STEP/IGES) file: reports the detected thickness and lets the user set
@@ -43,7 +44,7 @@ namespace DeepNestSharp.Ui.Views
       var vals = this.thicknessMm.Where(t => t > 0).ToArray();
       if (vals.Length == 0)
       {
-        this.thicknessText.Text = "Not detected";
+        this.thicknessText.Text = Strings.Import3D_NotDetected;
         return;
       }
 
@@ -55,7 +56,7 @@ namespace DeepNestSharp.Ui.Views
       var distinct = vals.Select(t => Math.Round(t * conv, digits)).Distinct().OrderBy(v => v).ToArray();
       this.thicknessText.Text = distinct.Length == 1
         ? $"{distinct[0]} {unit}"
-        : $"varies ({distinct.First()}–{distinct.Last()} {unit})";
+        : string.Format(Strings.Import3D_ThicknessVariesFormat, distinct.First(), distinct.Last(), unit);
     }
 
     private void OnOk(object sender, RoutedEventArgs e)

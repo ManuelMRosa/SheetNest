@@ -30,6 +30,7 @@ If you cut sheet metal, SheetNest helps you get the most parts out of every shee
 - **Exports cut-ready DXF.** One clean DXF per layout, parts only, so your CAM software has nothing extra to trip over. Identical sheets are grouped into a simple "cut N of this layout" plan.
 - **One-click PDF report.** One page per layout, the paper you take to the machine: the job's settings, how many sheets to cut, the parts on that sheet, and the sheet drawn to scale with every part numbered to its row. Black and white with parts as outlines, so it prints clearly on any shop printer and uses almost no toner.
 - **Works in inches or millimeters.** Switch units to match your shop, with sheets up to 6000 × 2000 mm.
+- **Speaks your language.** English and Spanish, following your Windows language or picked in Settings > Language. Translations come from people who use SheetNest, and adding one takes no programming: [help translate](Localization/README.md).
 - **Keeps your work safe.** Autosave and crash recovery, a backup copy on every save, a Recent Projects list, and double-click a project file to open it right where you left off. Each saved project remembers its own sheet stock and its finished nest.
 - **Free and open.** No account, no subscription, no license key. Open-source software you can just use.
 
@@ -56,4 +57,4 @@ SheetNest is open-source software released under the MIT License. See [LICENSE](
 
 SheetNest bundles an offline 3D-unfolding engine built from open-source software (FreeCAD and the SheetMetal workbench under the GNU LGPL, and NetworkX under the BSD license). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list, licenses and sources.
 
-Building from source? See [BUILDING.md](BUILDING.md).
+Building from source? See [BUILDING.md](BUILDING.md). Want to translate SheetNest, report a problem or send a change? See [CONTRIBUTING.md](CONTRIBUTING.md).

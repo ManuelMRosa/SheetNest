@@ -1,6 +1,7 @@
 namespace DeepNestSharp.Ui.Views
 {
   using System.Windows;
+  using SheetNest.Localization;
 
   /// <summary>Small dialog for a custom stock sheet size (the Add Sheet menu's "Custom size…").</summary>
   public partial class AddSheetWindow : Window
@@ -16,9 +17,9 @@ namespace DeepNestSharp.Ui.Views
       InitializeComponent();
       if (unitsMm)
       {
-        this.headerText.Text = "Sheet size in millimeters (width = the long side).";
-        this.widthLabel.Text = "Width (mm)";
-        this.heightLabel.Text = "Height (mm)";
+        this.headerText.Text = Strings.AddSheet_HeaderMillimeters;
+        this.widthLabel.Text = Strings.AddSheet_WidthMm;
+        this.heightLabel.Text = Strings.AddSheet_HeightMm;
         this.widthUpDown.Maximum = 25000;
         this.heightUpDown.Maximum = 25000;
         this.widthUpDown.Value = 3000;
@@ -29,8 +30,8 @@ namespace DeepNestSharp.Ui.Views
     /// <summary>Reuses the dialog to EDIT an existing stock row: pre-filled values, edit wording.</summary>
     public void PrefillForEdit(int width, int height, int quantity, bool unlimited = false)
     {
-      this.Title = "Edit sheet";
-      this.okButton.Content = "OK";
+      this.Title = Strings.AddSheet_EditTitle;
+      this.okButton.Content = Strings.Common_OK;
       this.widthUpDown.Value = width;
       this.heightUpDown.Value = height;
       this.qtyUpDown.Value = quantity;

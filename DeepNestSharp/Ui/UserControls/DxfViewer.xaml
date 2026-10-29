@@ -1,6 +1,7 @@
 <UserControl x:Class="DeepNestSharp.Ui.UserControls.DxfViewer"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:SheetNest.Localization;assembly=SheetNest.Localization"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d"
@@ -24,7 +25,7 @@
       </Canvas.RenderTransform>
     </Canvas>
     <TextBlock x:Name="emptyHint"
-               Text="Run a nest to see the result here."
+               Text="{x:Static loc:Strings.Viewer_EmptyHint}"
                Foreground="#EFEFEF" FontSize="14"
                HorizontalAlignment="Center" VerticalAlignment="Center" />
     <!-- This also carries the MEASURE readout, and pale grey text put it somewhere between hard to read on
@@ -32,7 +33,7 @@
          fills the view. Same classic gray panel as the edit bar, so it reads over either. -->
     <Border Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,2"
             IsHitTestVisible="False" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
-      <TextBlock x:Name="hintText" Text="scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit"
+      <TextBlock x:Name="hintText" Text="{x:Static loc:Strings.Viewer_HintView}"
                  Foreground="#101010" FontSize="11" />
     </Border>
 
@@ -41,28 +42,28 @@
     <Border x:Name="editBar" Background="#C0C0C0" BorderBrush="#404040" BorderThickness="1" CornerRadius="0" Padding="5,3"
             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Visibility="Collapsed">
       <StackPanel Orientation="Horizontal">
-        <ToggleButton x:Name="editToggle" Content="&#9995; Edit nest" Padding="8,3" FontWeight="SemiBold"
+        <ToggleButton x:Name="editToggle" Content="{x:Static loc:Strings.Viewer_EditNest}" Padding="8,3" FontWeight="SemiBold"
                       Checked="OnEditModeChanged" Unchecked="OnEditModeChanged"
-                      ToolTip="Manual nesting: click a part to select it, drag to move, rotate with the buttons. Dragging may leave a part on top of another while you rearrange: it turns red, and the export refuses until nothing is red. Hold Alt as you drop to slide it against its neighbour instead. The arrow keys will not push a properly placed part into a neighbour, but they do move one that is already red, so you can walk it clear. Edits apply to every copy of this layout and flow into the DXF export." />
+                      ToolTip="{x:Static loc:Strings.Viewer_EditNestTip}" />
         <Button x:Name="undoBtn" Content="&#8630;" Margin="6,0,0,0" Padding="8,3" FontSize="14" IsEnabled="False"
-                Click="OnUndoClick" ToolTip="Undo (Ctrl+Z)" />
+                Click="OnUndoClick" ToolTip="{x:Static loc:Strings.Viewer_UndoTip}" />
         <Button x:Name="redoBtn" Content="&#8631;" Margin="3,0,0,0" Padding="8,3" FontSize="14" IsEnabled="False"
-                Click="OnRedoClick" ToolTip="Redo (Ctrl+Y)" />
+                Click="OnRedoClick" ToolTip="{x:Static loc:Strings.Viewer_RedoTip}" />
         <StackPanel x:Name="rotateButtons" Orientation="Horizontal" Visibility="Collapsed">
-          <Button Content="&#8634; 90" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw90" ToolTip="Rotate selected part 90° counter-clockwise" />
-          <Button Content="&#8635; 90" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw90" ToolTip="Rotate selected part 90° clockwise" />
-          <Button Content="&#8634; 5" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw5" ToolTip="Rotate selected part 5° counter-clockwise" />
-          <Button Content="&#8635; 5" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw5" ToolTip="Rotate selected part 5° clockwise" />
-          <Button Content="&#8646; Mirror" Margin="10,0,0,0" Padding="6,3" Click="OnMirror"
-                  ToolTip="Mirror the selected part (left ↔ right hand). The DXF export reflects it too, so the cut part is really mirrored, not just on screen." />
+          <Button Content="&#8634; 90" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw90" ToolTip="{x:Static loc:Strings.Viewer_RotateCcw90Tip}" />
+          <Button Content="&#8635; 90" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw90" ToolTip="{x:Static loc:Strings.Viewer_RotateCw90Tip}" />
+          <Button Content="&#8634; 5" Margin="6,0,0,0" Padding="6,3" Click="OnRotateCcw5" ToolTip="{x:Static loc:Strings.Viewer_RotateCcw5Tip}" />
+          <Button Content="&#8635; 5" Margin="3,0,0,0" Padding="6,3" Click="OnRotateCw5" ToolTip="{x:Static loc:Strings.Viewer_RotateCw5Tip}" />
+          <Button Content="{x:Static loc:Strings.Viewer_Mirror}" Margin="10,0,0,0" Padding="6,3" Click="OnMirror"
+                  ToolTip="{x:Static loc:Strings.Viewer_MirrorTip}" />
         </StackPanel>
         <!-- On a full sheet the part left on top of another can be off screen, so say so in words. -->
         <TextBlock x:Name="overlapCount" Margin="12,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"
                    Foreground="#B00000" Visibility="Collapsed"
-                   ToolTip="Parts overlapping a neighbour or hanging off the sheet. Export refuses while any remain." />
-        <ToggleButton x:Name="measureToggle" Content="Measure" Margin="12,0,0,0" Padding="8,3" FontWeight="SemiBold"
+                   ToolTip="{x:Static loc:Strings.Viewer_OverlapCountTip}" />
+        <ToggleButton x:Name="measureToggle" Content="{x:Static loc:Strings.Viewer_Measure}" Margin="12,0,0,0" Padding="8,3" FontWeight="SemiBold"
                       Checked="OnMeasureModeChanged" Unchecked="OnMeasureModeChanged"
-                      ToolTip="Measure a distance: click two points on the drawing; the length shows below (in the drawing's units). Use it to verify a 3D-unfolded part's size / K-factor." />
+                      ToolTip="{x:Static loc:Strings.Viewer_MeasureTip}" />
       </StackPanel>
     </Border>
 
@@ -81,21 +82,21 @@
         <TextBox x:Name="partX" Width="62" FontSize="11" VerticalAlignment="Center"
                  KeyDown="OnPartFieldKey" LostKeyboardFocus="OnPartFieldCommit"
                  GotKeyboardFocus="OnPartFieldFocus" PreviewMouseLeftButtonDown="OnPartFieldClick"
-                 ToolTip="Left edge of the part, in sheet coordinates. Type a value and press Enter." />
+                 ToolTip="{x:Static loc:Strings.Viewer_PartXTip}" />
         <TextBlock Text="Y" Foreground="#101010" FontSize="11" VerticalAlignment="Center" Margin="8,0,3,0" />
         <TextBox x:Name="partY" Width="62" FontSize="11" VerticalAlignment="Center"
                  KeyDown="OnPartFieldKey" LostKeyboardFocus="OnPartFieldCommit"
                  GotKeyboardFocus="OnPartFieldFocus" PreviewMouseLeftButtonDown="OnPartFieldClick"
-                 ToolTip="Bottom edge of the part, in sheet coordinates. Type a value and press Enter." />
+                 ToolTip="{x:Static loc:Strings.Viewer_PartYTip}" />
         <TextBlock Text="&#8735;" Foreground="#101010" FontSize="13" VerticalAlignment="Center" Margin="8,0,3,0" />
         <TextBox x:Name="partAngle" Width="46" FontSize="11" VerticalAlignment="Center"
                  KeyDown="OnPartFieldKey" LostKeyboardFocus="OnPartFieldCommit"
                  GotKeyboardFocus="OnPartFieldFocus" PreviewMouseLeftButtonDown="OnPartFieldClick"
-                 ToolTip="Angle in degrees. Type a value and press Enter." />
+                 ToolTip="{x:Static loc:Strings.Viewer_PartAngleTip}" />
         <!-- Measured when the part comes to rest, not on every mouse move: the exact distance between two
              outlines is a search, and a drag asks hundreds of questions per second already. -->
         <TextBlock x:Name="partGap" Foreground="#101010" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"
-                   ToolTip="Distance from this part to its nearest neighbour, measured when it comes to rest." />
+                   ToolTip="{x:Static loc:Strings.Viewer_PartGapTip}" />
       </StackPanel>
     </Border>
   </Grid>

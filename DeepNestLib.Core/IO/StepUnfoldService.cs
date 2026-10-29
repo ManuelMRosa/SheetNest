@@ -7,6 +7,7 @@ namespace DeepNestLib.IO
   using System.IO;
   using System.Linq;
   using System.Text;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Raised when a 3D model cannot be unfolded to a flat pattern. The message is user-facing.
@@ -35,8 +36,7 @@ namespace DeepNestLib.IO
     private static readonly string[] StepExtensions = { ".step", ".stp", ".iges", ".igs" };
 
     /// <summary>Open-file-dialog filter listing only the 3D formats (STEP/IGES).</summary>
-    public const string FileDialogFilter3D =
-      "STEP / IGES 3D (*.step;*.stp;*.iges;*.igs)|*.step;*.stp;*.iges;*.igs|All files (*.*)|*.*";
+    public static string FileDialogFilter3D => Strings.Step_Filter3D;
 
     /// <summary>K-factor used for the bend allowance (developed length). Persisted by the host.</summary>
     public static double KFactor { get; set; } = 0.40;
@@ -225,7 +225,7 @@ namespace DeepNestLib.IO
         }
         catch (Exception ex)
         {
-          throw new StepUnfoldException($"Could not start the unfold engine (FreeCAD):\n{freecad}\n\n{ex.Message}", ex);
+          throw new StepUnfoldException(string.Format(Strings.Step_MsgCouldNotStartFormat, freecad, ex.Message), ex);
         }
 
         proc.BeginOutputReadLine();
@@ -242,7 +242,7 @@ namespace DeepNestLib.IO
             // ignore
           }
 
-          throw new StepUnfoldException($"FreeCAD timed out ({TimeoutMs / 1000} s).");
+          throw new StepUnfoldException(string.Format(Strings.Step_MsgTimedOutFormat, TimeoutMs / 1000));
         }
 
         proc.WaitForExit(); // ensure async output buffers are flushed
@@ -277,7 +277,7 @@ namespace DeepNestLib.IO
 
       if (line == null)
       {
-        throw new StepUnfoldException("FreeCAD returned no result.\n\n" + Tail(stderr.ToString()));
+        throw new StepUnfoldException(string.Format(Strings.Step_MsgNoResultFormat, Tail(stderr.ToString())));
       }
 
       return line;
@@ -298,7 +298,7 @@ namespace DeepNestLib.IO
           var paths = seg[3].Split('|').Select(p => p.Trim()).Where(p => p.Length > 0 && File.Exists(p)).ToList();
           if (paths.Count == 0)
           {
-            throw new StepUnfoldException("The unfold reported success but produced no flat pattern.");
+            throw new StepUnfoldException(Strings.Step_MsgNoFlatPattern);
           }
 
           return (paths, total < paths.Count ? paths.Count : total);
@@ -307,7 +307,7 @@ namespace DeepNestLib.IO
 
       var fail = payload.Split(new[] { ':' }, 3);
       var reason = fail.Length >= 3 ? fail[2] : payload;
-      throw new StepUnfoldException("Could not unfold the 3D part.\n\n" + reason);
+      throw new StepUnfoldException(string.Format(Strings.Step_MsgCouldNotUnfoldFormat, reason));
     }
 
     /// <summary>Analyzes a 3D file WITHOUT unfolding: returns the solid count and per-solid thickness (mm, 0 if unknown).</summary>
@@ -325,7 +325,7 @@ namespace DeepNestLib.IO
       if (!payload.StartsWith("OK:", StringComparison.Ordinal))
       {
         var seg0 = payload.Split(new[] { ':' }, 3);
-        throw new StepUnfoldException("Could not analyze the 3D model.\n\n" + (seg0.Length >= 3 ? seg0[2] : payload));
+        throw new StepUnfoldException(string.Format(Strings.Step_MsgCouldNotAnalyzeFormat, seg0.Length >= 3 ? seg0[2] : payload));
       }
 
       var seg = payload.Split(new[] { ':' }, 3); // OK, count, "t1|t2|..."
@@ -367,9 +367,7 @@ namespace DeepNestLib.IO
         return detectedFreeCad;
       }
 
-      throw new StepUnfoldException(
-        "Unfold engine (FreeCAD) not found.\n" +
-        "Reinstall SheetNest (it bundles FreeCAD) or install FreeCAD from freecad.org.");
+      throw new StepUnfoldException(Strings.Step_MsgEngineNotFound);
     }
 
     private static string DetectInstalledFreeCad()
@@ -422,7 +420,7 @@ namespace DeepNestLib.IO
         return alt;
       }
 
-      throw new StepUnfoldException("unfold_macro.py not found next to SheetNest.");
+      throw new StepUnfoldException(Strings.Step_MsgMacroNotFound);
     }
 
     private static void TryDelete(string path)

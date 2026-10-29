@@ -15,6 +15,7 @@
   using DeepNestSharp.Domain.Services;
   using Microsoft.Toolkit.Mvvm.ComponentModel;
   using Microsoft.Toolkit.Mvvm.Input;
+  using SheetNest.Localization;
 
   public abstract class MainViewModel : ObservableRecipient, IMainViewModel
   {
@@ -319,7 +320,7 @@
     {
       if (fileToClose.IsDirty)
       {
-        var res = messageService.DisplayYesNoCancel(string.Format("Save changes for file '{0}'?", fileToClose.FileName), "DeepNestSharp", MessageBoxIcon.Question);
+        var res = messageService.DisplayYesNoCancel(string.Format(Strings.Project_MsgSaveChangesFormat, fileToClose.FileName), "DeepNestSharp", MessageBoxIcon.Question);
         if (res == MessageBoxResult.Cancel)
         {
           return;
@@ -346,7 +347,7 @@
         var parts = sheetPlacement.PartPlacements.Select(o => o.Part).ToList();
         if (parts.ContainsDxfs() && parts.ContainsSvgs())
         {
-          MessageService.DisplayMessageBox("It's not possible to export when your parts were a mix of Svg's and Dxf's.", "DeepNestPort: Not Implemented", MessageBoxIcon.Information);
+          MessageService.DisplayMessageBox(Strings.Project_MsgMixedSvgDxf, "DeepNestPort: Not Implemented", MessageBoxIcon.Information);
         }
         else
         {
@@ -365,7 +366,7 @@
       }
       catch (Exception ex)
       {
-        MessageService.DisplayMessageBox(ex.Message, "Error Saving", MessageBoxIcon.Exclamation);
+        MessageService.DisplayMessageBox(ex.Message, Strings.Project_ErrorSavingTitle, MessageBoxIcon.Exclamation);
       }
     }
 
@@ -459,7 +460,7 @@
         return false;
       }
 
-      this.MessageService.DisplayMessageBox($"Unable to locate {filePath}.", "File Missing", MessageBoxIcon.Information);
+      this.MessageService.DisplayMessageBox(string.Format(Strings.Project_MsgUnableToLocateFormat, filePath), Strings.Project_FileMissingTitle, MessageBoxIcon.Information);
       locatedFilePath = string.Empty;
       return false;
     }
@@ -476,7 +477,7 @@
       }
 
       var answer = MessageService.DisplayYesNoCancel(
-        "You have a nest result. Save the project first?",
+        Strings.Project_MsgSaveResultFirst,
         "SheetNest",
         MessageBoxIcon.Question);
       if (answer == MessageBoxResult.Yes)

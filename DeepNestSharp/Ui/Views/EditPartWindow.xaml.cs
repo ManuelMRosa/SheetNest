@@ -4,6 +4,7 @@
   using System.Windows.Media;
   using DeepNestLib.NestProject;
   using DeepNestSharp.Ui.Converters;
+  using SheetNest.Localization;
 
   /// <summary>
   /// "Edit Part" dialog: part file + preview, required/extra quantity, per-part permitted
@@ -38,16 +39,16 @@
       if (ShowsCommonCuttingSelector(part))
       {
         this.commonCuttingGroup.Visibility = Visibility.Visible;
-        this.commonCuttingCombo.Items.Add("None");
-        this.commonCuttingCombo.Items.Add("Unrestricted (compatible parts)");
-        this.commonCuttingCombo.Items.Add("Same part");
+        this.commonCuttingCombo.Items.Add(Strings.EditPart_CommonCuttingNone);
+        this.commonCuttingCombo.Items.Add(Strings.EditPart_CommonCuttingUnrestricted);
+        this.commonCuttingCombo.Items.Add(Strings.EditPart_CommonCuttingSamePart);
         this.commonCuttingCombo.SelectedIndex = (int)part.EffectiveCommonCutting;
         this.commonCuttingCombo.SelectionChanged += (_, __) => this.commonCuttingSelectionChanged = true;
 
         if (!part.DirectCommonCuttingEnabled
             && part.CommonCutting != CommonCuttingMode.None)
         {
-          this.commonCuttingHint.Text = "A saved legacy common-cutting mode is inactive. Choose a mode to confirm it for this direct DXF/STEP part.";
+          this.commonCuttingHint.Text = Strings.EditPart_LegacyCommonCuttingHint;
           this.commonCuttingHint.Visibility = Visibility.Visible;
         }
       }
@@ -72,7 +73,7 @@
         this.rotationSelector.Rotations = UserControls.RotationSelector.InheritsJob;
         if (poly != null && IsRotationSymmetric(poly))
         {
-          this.geoHint.Text = "Detected rotation-symmetric shape (circle/square): turning it can't improve the nest, so \"As drawn\" saves the search.";
+          this.geoHint.Text = Strings.EditPart_SymmetricShapeHint;
           this.geoHint.Visibility = Visibility.Visible;
         }
       }
@@ -82,9 +83,11 @@
       // spacing setting can change them. Warn loudly instead of nesting garbage silently.
       if (poly != null && LooksLikeNestedSheet(poly))
       {
-        this.warnHint.Text = $"⚠ This DXF looks like a FULL NESTED SHEET ({(poly.Children?.Count ?? 0)} shapes inside a "
-          + $"{poly.MaxX - poly.MinX:0.#}×{poly.MaxY - poly.MinY:0.#} frame), not a single part. SheetNest imports each DXF "
-          + "as ONE part, and the gaps between the inner shapes come from the original drawing. Export each part as its own DXF instead.";
+        this.warnHint.Text = string.Format(
+          Strings.EditPart_NestedSheetWarningFormat,
+          poly.Children?.Count ?? 0,
+          poly.MaxX - poly.MinX,
+          poly.MaxY - poly.MinY);
         this.warnHint.Visibility = Visibility.Visible;
       }
 
@@ -147,7 +150,7 @@
     {
       if (thicknessMm <= 0)
       {
-        return "n/a";
+        return Strings.EditPart_NotAvailable;
       }
 
       return inch
@@ -239,25 +242,25 @@
       // 1 = highest priority (nested first), 10 = lowest.
       if (priority <= 1)
       {
-        return "Highest";
+        return Strings.EditPart_PriorityHighest;
       }
 
       if (priority <= 3)
       {
-        return "High";
+        return Strings.EditPart_PriorityHigh;
       }
 
       if (priority <= 6)
       {
-        return "Normal";
+        return Strings.EditPart_PriorityNormal;
       }
 
       if (priority <= 9)
       {
-        return "Low";
+        return Strings.EditPart_PriorityLow;
       }
 
-      return "Lowest";
+      return Strings.EditPart_PriorityLowest;
     }
 
     private void OnOk(object sender, RoutedEventArgs e)

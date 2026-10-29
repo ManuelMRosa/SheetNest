@@ -1,6 +1,7 @@
 ﻿namespace DeepNestSharp
 {
   using System;
+  using System.Globalization;
   using System.IO;
   using System.Text;
   using System.Windows;
@@ -12,6 +13,7 @@
   using DeepNestSharp.Ui.Views;
   using Microsoft.Extensions.DependencyInjection;
   using Microsoft.Extensions.Hosting;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Interaction logic for App.xaml.
@@ -49,6 +51,12 @@
         CrashReporter.Save(e.Exception, "task");
         e.SetObserved();
       };
+
+      // Before any window exists: every text is read from the translation when its window is built.
+      Languages.Apply(Languages.Resolve(
+        LanguagePreference.Read(),
+        CultureInfo.CurrentUICulture,
+        Languages.Available(AppContext.BaseDirectory)));
 
       host = new HostBuilder()
            .ConfigureServices((hostContext, services) =>
@@ -113,14 +121,14 @@
                 else
                 {
                   var message = new StringBuilder();
-                  message.AppendLine($"Unable to load {fileInfo.Name}");
-                  message.AppendLine("Files supported include: ");
-                  message.AppendLine("  DeepNest Project (*.dnest)");
-                  message.AppendLine("  DeepNest Result (*.dnr)");
-                  message.AppendLine("  DeepNest Sheet Placement (*.dnsp)");
-                  message.AppendLine("  AutoCad Drawing Exchange Format (*.dxf) and ");
-                  message.AppendLine("  DeepNest Polygon (*.dnpoly).");
-                  message.AppendLine("  3D sheet metal (*.step, *.stp, *.iges, *.igs)");
+                  message.AppendLine(string.Format(Strings.App_MsgUnableToLoadFormat, fileInfo.Name));
+                  message.AppendLine(Strings.App_MsgFilesSupported);
+                  message.AppendLine(Strings.App_FileTypeProject);
+                  message.AppendLine(Strings.App_FileTypeResult);
+                  message.AppendLine(Strings.App_FileTypeSheetPlacement);
+                  message.AppendLine(Strings.App_FileTypeDxf);
+                  message.AppendLine(Strings.App_FileTypePolygon);
+                  message.AppendLine(Strings.App_FileType3D);
                   if (MessageBox.Show(message.ToString(), "DeepNest", MessageBoxButton.OKCancel) == System.Windows.MessageBoxResult.Cancel)
                   {
                     Application.Current.MainWindow.Close();

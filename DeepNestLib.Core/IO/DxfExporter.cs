@@ -9,6 +9,7 @@
   using DeepNestLib.Placement;
   using IxMilia.Dxf;
   using IxMilia.Dxf.Entities;
+  using SheetNest.Localization;
 
   public class DxfExporter : ExporterBase, IExport
   {
@@ -17,7 +18,7 @@
     public const string CutOuterLayer = "03_CUT_OUTER";
     public const string OffcutLayer = "04_OFFCUT";
 
-    public override string SaveFileDialogFilter => "Dxf files (*.dxf)|*.dxf";
+    public override string SaveFileDialogFilter => Strings.Export_DxfFilter;
 
     public override async Task Export(
       string path,
@@ -188,7 +189,7 @@
           }
           catch
           {
-            throw new FileNotFoundException($"The file {polygon.Name} could not be loaded. When exporting the original files that generated the nest are used for precision, instead of the copies rotated and manipulated potentially many times during the nest; degrading potentially their accuracy. It would be possible to load and store the original files but that'd take some effort...");
+            throw new FileNotFoundException(string.Format(Strings.Export_MsgSourceNotLoadedFormat, polygon.Name));
           }
         }
 
@@ -528,7 +529,7 @@
           case DxfEntityType.Vertex:
           case DxfEntityType.WipeOut:
           case DxfEntityType.XLine:
-            throw new ArgumentException("unsupported entity type: " + entity.EntityType);
+            throw new ArgumentException(string.Format(Strings.Export_MsgUnsupportedEntityFormat, entity.EntityType));
         }
       }
 
@@ -730,7 +731,7 @@
         {
           if (!boundary.IsClosed || boundary.Points.Count < 3)
           {
-            throw new CommonLineValidationException("CUT_INNER contains an open or degenerate cluster contour.");
+            throw new CommonLineValidationException(Strings.Export_MsgCutInnerOpenCluster);
           }
 
           var polyline = new DxfLwPolyline(boundary.Points.Select((point, index) => new DxfLwPolylineVertex
@@ -755,7 +756,7 @@
         {
           if (!boundary.IsClosed || boundary.Points.Count < 3)
           {
-            throw new CommonLineValidationException("CUT_OUTER contains an open or degenerate cluster contour.");
+            throw new CommonLineValidationException(Strings.Export_MsgCutOuterOpenCluster);
           }
 
           var polyline = new DxfLwPolyline(boundary.Points.Select((point, index) => new DxfLwPolylineVertex
@@ -779,7 +780,7 @@
             double dy = common.End.Y - common.Start.Y;
             if (Math.Sqrt((dx * dx) + (dy * dy)) <= sheetPlacement.GeometryTolerance)
             {
-              throw new CommonLineValidationException("COMMON_LINE contains a zero-length or tiny segment.");
+              throw new CommonLineValidationException(Strings.Export_MsgCommonLineTinySegment);
             }
 
             dxf.Entities.Add(new DxfLine(
@@ -796,7 +797,7 @@
             || common.Radius <= sheetPlacement.GeometryTolerance
             || Math.Abs(common.SweepRadians) * common.Radius <= sheetPlacement.GeometryTolerance)
           {
-            throw new CommonLineValidationException("COMMON_LINE contains an invalid or unsupported exact curve.");
+            throw new CommonLineValidationException(Strings.Export_MsgCommonLineBadCurve);
           }
 
           double sweep = common.SweepRadians;
@@ -875,7 +876,7 @@
       if (!supported)
       {
         throw new CommonLineValidationException(
-          $"Part {partId} has outside source geometry the common-line cluster cannot preserve exactly.");
+          string.Format(Strings.Export_MsgOuterSourceUnsupportedFormat, partId));
       }
     }
 
@@ -897,7 +898,7 @@
           || !source.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase))
         {
           throw new FileNotFoundException(
-            $"The file {source} could not be loaded for validated common-line export.");
+            string.Format(Strings.Export_MsgSourceNotLoadedForCommonLineFormat, source));
         }
 
         string path = Path.GetFullPath(source);
@@ -910,7 +911,7 @@
           catch (Exception ex)
           {
             throw new FileNotFoundException(
-              $"The file {source} could not be loaded for validated common-line export.",
+              string.Format(Strings.Export_MsgSourceNotLoadedForCommonLineFormat, source),
               ex);
           }
         }
@@ -936,7 +937,7 @@
             StringComparison.Ordinal))
           {
             throw new CommonLineValidationException(
-              $"Source DXF '{snapshot.Path}' changed during common-line export; export was cancelled.");
+              string.Format(Strings.Export_MsgSourceChangedFormat, snapshot.Path));
           }
         }
         catch (CommonLineValidationException)
@@ -946,7 +947,7 @@
         catch (Exception)
         {
           throw new CommonLineValidationException(
-            $"Source DXF '{snapshot.Path}' changed or became unavailable during common-line export.");
+            string.Format(Strings.Export_MsgSourceUnavailableFormat, snapshot.Path));
         }
       }
     }
@@ -986,7 +987,7 @@
       }
       catch
       {
-        throw new FileNotFoundException($"The file {source} could not be loaded for validated common-line export.");
+        throw new FileNotFoundException(string.Format(Strings.Export_MsgSourceNotLoadedForCommonLineFormat, source));
       }
 
       // SheetPlacement coordinates are local to their sheet. Sheet.Id is identity metadata, not a
@@ -997,7 +998,7 @@
       {
         if (contour is not LocalContour<DxfEntity> cast)
         {
-          throw new CommonLineValidationException("A DXF contour could not be reconstructed for common-line export.");
+          throw new CommonLineValidationException(Strings.Export_MsgContourNotRebuilt);
         }
 
         List<DxfEntity> transformed = OffsetToNest(
@@ -1016,7 +1017,7 @@
     {
       if (entities == null || entities.Count == 0)
       {
-        throw new CommonLineValidationException($"{layer} contains an empty contour.");
+        throw new CommonLineValidationException(string.Format(Strings.Export_MsgEmptyContourFormat, layer));
       }
 
       if (entities.Count == 1)
@@ -1047,13 +1048,13 @@
         }
         catch
         {
-          throw new CommonLineValidationException($"{layer} could not be rebuilt as a closed contour.");
+          throw new CommonLineValidationException(string.Format(Strings.Export_MsgNotRebuiltClosedFormat, layer));
         }
       }
 
       if (entities.Count != 1 || !IsClosedCutEntity(entities[0], geometryTolerance))
       {
-        throw new CommonLineValidationException($"{layer} contains geometry that is not completely closed.");
+        throw new CommonLineValidationException(string.Format(Strings.Export_MsgNotClosedFormat, layer));
       }
 
       entities[0].Layer = layer;
@@ -1273,13 +1274,13 @@
           if (!IsClosedCutEntity(entity, geometryTolerance))
           {
             throw new CommonLineValidationException(
-              $"{entity.Layer} contains an open, non-finite, tiny, or otherwise invalid entity.");
+              string.Format(Strings.Export_MsgInvalidCutEntityFormat, entity.Layer));
           }
 
           if (entity.Layer == CutOuterLayer
             && IsSelfIntersectingCutOuter(entity, geometryTolerance))
           {
-            throw new CommonLineValidationException("CUT_OUTER contains a self-intersecting contour.");
+            throw new CommonLineValidationException(Strings.Export_MsgCutOuterSelfIntersecting);
           }
         }
         else if (entity.Layer == CommonLineLayer)
@@ -1295,7 +1296,7 @@
               || length <= geometryTolerance)
             {
               throw new CommonLineValidationException(
-                "COMMON_LINE contains a non-finite, zero-length, or tiny LINE entity.");
+                Strings.Export_MsgCommonLineBadLine);
             }
           }
           else if (entity is DxfArc arc)
@@ -1306,14 +1307,14 @@
               || !double.IsFinite(arc.EndAngle))
             {
               throw new CommonLineValidationException(
-                "COMMON_LINE contains a non-finite ARC center, radius, or angle.");
+                Strings.Export_MsgCommonLineBadArcValues);
             }
 
             double rawSweep = arc.EndAngle - arc.StartAngle;
             if (!double.IsFinite(rawSweep))
             {
               throw new CommonLineValidationException(
-                "COMMON_LINE contains ARC angles whose sweep is non-finite.");
+                Strings.Export_MsgCommonLineArcSweep);
             }
 
             double sweep = rawSweep % 360D;
@@ -1328,7 +1329,7 @@
               || !double.IsFinite(arcLength)
               || arcLength <= geometryTolerance)
             {
-              throw new CommonLineValidationException("COMMON_LINE contains a zero-length or invalid ARC.");
+              throw new CommonLineValidationException(Strings.Export_MsgCommonLineBadArc);
             }
           }
           else if (entity is DxfCircle circle)
@@ -1338,14 +1339,14 @@
               || circle.Radius <= geometryTolerance)
             {
               throw new CommonLineValidationException(
-                "COMMON_LINE contains a non-finite, zero-length, or invalid CIRCLE.");
+                Strings.Export_MsgCommonLineBadCircle);
             }
           }
           else if (entity is DxfLwPolyline lightweight)
           {
             if (lightweight.Vertices.Count < 2)
             {
-              throw new CommonLineValidationException("COMMON_LINE contains a degenerate LWPOLYLINE.");
+              throw new CommonLineValidationException(Strings.Export_MsgCommonLineDegeneratePolyline);
             }
 
             int segmentCount = lightweight.IsClosed
@@ -1364,14 +1365,14 @@
                 || !double.IsFinite(start.Bulge)
                 || Math.Sqrt((dx * dx) + (dy * dy)) <= geometryTolerance)
               {
-                throw new CommonLineValidationException("COMMON_LINE contains an invalid or tiny LWPOLYLINE segment.");
+                throw new CommonLineValidationException(Strings.Export_MsgCommonLineBadPolylineSegment);
               }
             }
           }
           else
           {
             throw new CommonLineValidationException(
-              "COMMON_LINE contains an entity other than LINE, circular LWPOLYLINE, ARC, or CIRCLE.");
+              Strings.Export_MsgCommonLineOtherEntity);
           }
         }
       }

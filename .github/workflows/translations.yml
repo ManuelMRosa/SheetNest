@@ -1,0 +1,26 @@
+name: Translations
+
+# Checks every translation on the pull request that changes it, so a contributor sees right away whether a
+# placeholder was lost or a key no longer exists. A text left untranslated is fine: it shows in English.
+on:
+  pull_request:
+    paths:
+      - "Localization/**"
+  push:
+    branches: [main]
+    paths:
+      - "Localization/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 6.0.x
+      - name: Check the translations
+        run: dotnet test DeepNestLib.CiTests/DeepNestLib.CiTests.csproj -c Release --filter "FullyQualifiedName~TranslationFixture" --logger "console;verbosity=detailed"

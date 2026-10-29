@@ -625,6 +625,73 @@
       DxfColorRoles.RoleOf(mark, DxfLayerColors.Of(drawing)).Should().Be(DxfColorRole.PartMark);
     }
 
+    /// <summary>
+    /// A bend line in a cutting colour, the way a flat pattern comes out of a 3D model: one line across
+    /// the part, ending on its outline. It closes no shape, so there is nothing to cut it out as, and the
+    /// drawing was turned away with "Too few points", which tells the operator neither what is wrong nor
+    /// where to look.
+    /// </summary>
+    [Fact]
+    public async System.Threading.Tasks.Task ABendLineInACutColourSaysWhatItIsAndWhere()
+    {
+      string path = WriteFlatPattern(bendColour: Red);
+
+      try
+      {
+        System.Func<System.Threading.Tasks.Task> load = () => DxfParser.LoadDxfFile(path);
+
+        (await load.Should().ThrowAsync<ArgumentException>()).WithMessage("*an open line on layer BEND.*yellow*");
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
+    /// <summary>The way out the message offers: the same bend line in yellow is marked on the part, and
+    /// the part loads as its outline and its hole. Passes on the old code too; it guards the advice, not
+    /// the fix.</summary>
+    [Fact]
+    public async System.Threading.Tasks.Task ABendLineInYellowTravelsAsAMark()
+    {
+      string path = WriteFlatPattern(bendColour: Yellow);
+
+      try
+      {
+        IRawDetail part = await DxfParser.LoadDxfFile(path);
+
+        part.Outers.Should().HaveCount(2, "the outline and the hole; the bend line is marked, not cut");
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
+    /// <summary>A part with a hole and a bend line across it, each on its own layer and taking its colour
+    /// from it. The bend line ends on the outline away from its corners, as it does in a flat pattern,
+    /// so nothing joins it to the outline.</summary>
+    private static string WriteFlatPattern(int bendColour)
+    {
+      var file = new DxfFile();
+      file.Header.Version = DxfAcadVersion.R2000;
+      file.Layers.Add(new DxfLayer("PROFILE", DxfColor.FromIndex(White)));
+      file.Layers.Add(new DxfLayer("BEND", DxfColor.FromIndex((byte)bendColour)));
+
+      var corners = new[] { new DxfPoint(0, 0, 0), new DxfPoint(100, 0, 0), new DxfPoint(100, 50, 0), new DxfPoint(0, 50, 0) };
+      for (int i = 0; i < corners.Length; i++)
+      {
+        file.Entities.Add(OnLayer(new DxfLine(corners[i], corners[(i + 1) % corners.Length]), "PROFILE"));
+      }
+
+      file.Entities.Add(OnLayer(new DxfCircle(new DxfPoint(70, 25, 0), 5), "PROFILE"));
+      file.Entities.Add(OnLayer(new DxfLine(new DxfPoint(30, 0, 0), new DxfPoint(30, 50, 0)), "BEND"));
+
+      string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".dxf");
+      file.Save(path);
+      return path;
+    }
+
     private static DxfPolyline Rectangle(double x, double y, double width, double height)
     {
       return new DxfPolyline(new[]
