@@ -1885,7 +1885,11 @@
 
       internal double TotalTravel { get; private set; }
 
-      internal int PoseChanges => this.poses.Count(pose => pose > 0);
+      // Counted once: a state's poses never change after Include returns it, and the beam's sort asks
+      // for this on nearly every comparison.
+      private int poseChanges = -1;
+
+      internal int PoseChanges => this.poseChanges >= 0 ? this.poseChanges : (this.poseChanges = this.poses.Count(pose => pose > 0));
 
       internal bool HasSamePoses(DirectPlanState other)
       {
@@ -3323,6 +3327,11 @@
       // parts' exact boundaries are the same in every plan. Keeping them for the whole search, instead of
       // tessellating all of them again for each plan, is what lets the forest afford a large sheet.
       var edgeFreeBoundaries = new CommonEdgeClearance.BoundaryCache(maxEntries: (4 * n) + 64);
+
+      // And the parts an edge touches, keyed on those edges too: the forest re-applies a growing tree, so most
+      // of its parts come back at the same pose with the same edges plan after plan. Bounded at about seventy
+      // megabytes of a curved part's boundaries per racing seed.
+      var edgeBoundaries = new CommonEdgeClearance.BoundaryCache(maxEntries: 1024, keyIncidentEdges: true);
       bool TryApplyPlan(
         IReadOnlyList<DirectCandidate> plan,
         bool validateTopology,
@@ -3649,9 +3658,10 @@
         reportStage("clearance");
         // Both judgements below are of the SAME `intents`, so they may share exact boundaries: only the
         // poses can differ between them, and the cache is keyed on the pose. It must NOT outlive this
-        // plan, because a different edge set tessellates the same part differently; parts no edge touches
-        // go to the search-wide cache instead, since nothing about an edge set reaches their boundary.
-        var planBoundaries = new CommonEdgeClearance.BoundaryCache(edgeFreeBoundaries);
+        // plan, because a different edge set tessellates the same part differently. In practice it holds
+        // nothing: parts no edge touches go to the search-wide cache, since nothing about an edge set reaches
+        // their boundary, and parts an edge does touch go to the one keyed on those edges as well.
+        var planBoundaries = new CommonEdgeClearance.BoundaryCache(edgeFreeBoundaries, edgeAware: edgeBoundaries);
         bool layoutValid = DirectLayoutIsValid(
           all,
           intents,

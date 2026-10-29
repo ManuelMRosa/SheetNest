@@ -1493,23 +1493,61 @@ namespace DeepNestSharp.RasterNest
       BoundaryCache cache,
       IDictionary<string, DxfContourCatalog> sourceCatalogs)
     {
-      if (cache.EdgeFree != null
-        && !(commonEdges ?? Array.Empty<EdgeReference>()).Any(edge => ReferenceEquals(edge.PartA, part) || ReferenceEquals(edge.PartB, part)))
+      cache = CacheFor(part, commonEdges, cache);
+      string poseKey = cache.Key(part, tolerance, commonEdges);
+      if (TryCachedBoundary(cache, poseKey, part, commonEdges, tolerance, sourceCatalogs, out BoundaryGeometry cached))
       {
-        cache = cache.EdgeFree;
-      }
-
-      string poseKey = cache.Key(part, tolerance);
-      if (cache.TryGet(poseKey, out BoundaryGeometry cached))
-      {
-        if (VerifyBoundaryCache)
-        {
-          AssertBoundaryMatches(cached, part, commonEdges, tolerance, sourceCatalogs, poseKey);
-        }
-
         return cached;
       }
 
+      BoundaryGeometry geometry = BuildBoundary(part, commonEdges, tolerance, sourceCatalogs);
+      cache.Store(poseKey, geometry);
+      return geometry;
+    }
+
+    /// <summary>Which cache holds this part's boundary: a search-wide one when the caller has one for its case
+    /// (no edge touching it, or one keyed on the edges that do), else the cache handed in.</summary>
+    private static BoundaryCache CacheFor(IPartPlacement part, IReadOnlyList<EdgeReference> commonEdges, BoundaryCache cache)
+    {
+      if (cache.EdgeFree == null && cache.EdgeAware == null)
+      {
+        return cache;
+      }
+
+      bool touched = (commonEdges ?? Array.Empty<EdgeReference>()).Any(edge => ReferenceEquals(edge.PartA, part) || ReferenceEquals(edge.PartB, part));
+      return touched ? cache.EdgeAware ?? cache : cache.EdgeFree ?? cache;
+    }
+
+    private static bool TryCachedBoundary(
+      BoundaryCache cache,
+      string poseKey,
+      IPartPlacement part,
+      IReadOnlyList<EdgeReference> commonEdges,
+      double tolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs,
+      out BoundaryGeometry cached)
+    {
+      if (!cache.TryGet(poseKey, out cached))
+      {
+        return false;
+      }
+
+      if (VerifyBoundaryCache)
+      {
+        AssertBoundaryMatches(cached, part, commonEdges, tolerance, sourceCatalogs, poseKey);
+      }
+
+      return true;
+    }
+
+    /// <summary>A part's boundary from scratch. Pure: it reads the part, the edges and the drawings and writes
+    /// nothing shared, so several can be built on different cores at once.</summary>
+    private static BoundaryGeometry BuildBoundary(
+      IPartPlacement part,
+      IReadOnlyList<EdgeReference> commonEdges,
+      double tolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs)
+    {
       List<BoundarySegment> segments = BoundarySegments(
         part,
         commonEdges,
@@ -1517,9 +1555,7 @@ namespace DeepNestSharp.RasterNest
         sourceCatalogs,
         out bool exactBoundaryInvalid,
         out double approximationError);
-      var geometry = new BoundaryGeometry(exactBoundaryInvalid, segments, approximationError);
-      cache.Store(poseKey, geometry);
-      return geometry;
+      return new BoundaryGeometry(exactBoundaryInvalid, segments, approximationError);
     }
 
     private static List<BoundarySegment> BoundarySegments(
@@ -2736,21 +2772,33 @@ namespace DeepNestSharp.RasterNest
       private readonly Dictionary<string, BoundaryGeometry> values = new(StringComparer.Ordinal);
       private readonly Dictionary<INfp, int> geometryIds = new(ReferenceEqualityComparer.Instance);
       private readonly int maxEntries;
+      private readonly bool keyIncidentEdges;
 
       /// <param name="edgeFree">Where to keep the boundaries of parts no common edge touches, when the
       /// caller has a cache that outlives this one. Such a boundary reads nothing from the edge set (no
       /// relationship catalog, no recorded split, no resolved span), only the pose, so it stays good across
       /// every edge set a search tries; that is the one exception to the rule above.</param>
+      /// <param name="edgeAware">Where to keep the boundaries of parts an edge DOES touch, when the caller has
+      /// a cache that outlives this one and keys them on those edges as well (see
+      /// <paramref name="keyIncidentEdges"/>).</param>
       /// <param name="maxEntries">Emptied when it reaches this many, so a long search cannot hoard them.</param>
-      internal BoundaryCache(BoundaryCache edgeFree = null, int maxEntries = int.MaxValue)
+      /// <param name="keyIncidentEdges">Puts in the key everything the boundary reads from the edges that
+      /// touch the part: which side it is on, its edge index and parameters, the recorded span and the
+      /// catalog. With that in the key the edge set no longer has to hold still, so the cache can last a
+      /// whole search; that is the rule above, kept by the key instead of by the lifetime.</param>
+      internal BoundaryCache(BoundaryCache edgeFree = null, int maxEntries = int.MaxValue, BoundaryCache edgeAware = null, bool keyIncidentEdges = false)
       {
         this.EdgeFree = edgeFree;
+        this.EdgeAware = edgeAware;
         this.maxEntries = maxEntries;
+        this.keyIncidentEdges = keyIncidentEdges;
       }
 
       internal BoundaryCache EdgeFree { get; }
 
-      internal string Key(IPartPlacement part, double tolerance)
+      internal BoundaryCache EdgeAware { get; }
+
+      internal string Key(IPartPlacement part, double tolerance, IReadOnlyList<EdgeReference> commonEdges = null)
       {
         if (!this.geometryIds.TryGetValue(part.Part, out int id))
         {
@@ -2765,6 +2813,40 @@ namespace DeepNestSharp.RasterNest
         Number(part.Rotation);
         key.Append(part.IsMirrored).Append('|');
         Number(tolerance);
+        if (this.keyIncidentEdges)
+        {
+          foreach (EdgeReference edge in commonEdges ?? Array.Empty<EdgeReference>())
+          {
+            bool onA = ReferenceEquals(edge.PartA, part);
+            if (!onA && !ReferenceEquals(edge.PartB, part))
+            {
+              continue;
+            }
+
+            key.Append(onA ? "A|" : "B|");
+            Number(onA ? edge.EdgeAIndex : edge.EdgeBIndex);
+            Number(onA ? edge.EdgeAStart : edge.EdgeBStart);
+            Number(onA ? edge.EdgeAEnd : edge.EdgeBEnd);
+            CommonBoundarySpan span = onA ? edge.SpanA : edge.SpanB;
+            if (span == null)
+            {
+              key.Append("none|");
+            }
+            else
+            {
+              Number(span.ContourIndex);
+              Number(span.PrimitiveIndex);
+              Number(span.StartParameter);
+              Number(span.EndParameter);
+              key.Append(span.SourceFingerprint).Append('|').Append(span.ContourFingerprint).Append('|');
+            }
+
+            DxfContourCatalog catalog = onA ? edge.CatalogA : edge.CatalogB;
+            key.Append(catalog == null ? "-" : catalog.SourceName).Append('|')
+              .Append(catalog?.SourceFingerprint).Append('|');
+          }
+        }
+
         return key.ToString();
 
         void Number(double value)
