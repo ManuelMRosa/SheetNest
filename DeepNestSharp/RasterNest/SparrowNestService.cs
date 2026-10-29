@@ -621,6 +621,7 @@
         // The sheet is judged by the rule that decides whether it may be cut, before it is handed over.
         // Whatever fails goes back in the pool and lands on the next sheet, so no layout ever leaves here
         // that the app would paint red. See DeferUnfit for why this is not the same as trusting the pack.
+        var deferClock = Stopwatch.StartNew();
         int deferred = DeferUnfit(
           bestPlacements,
           bestPlacedBySrc,
@@ -631,6 +632,7 @@
           margin,
           commonLineGap,
           geometryTolerance);
+        NestDiagnostics.AddElapsed("body.defer-unfit", deferClock);
         if (bestPlacements.Count == 0)
         {
           break; // nothing on this sheet survived the check, so another sheet of it would fare no better
@@ -679,6 +681,7 @@
 
       // Cloning and hole filling are intentionally incapable of moving a cluster, but the persisted
       // metadata is safety-critical: prove that assumption on the exact final layouts before ids/export.
+      var finalClock = Stopwatch.StartNew();
       for (int sheetIndex = 0; sheetIndex < sheetLayouts.Count; sheetIndex++)
       {
         for (int placementIndex = 0; placementIndex < sheetLayouts[sheetIndex].Count; placementIndex++)
@@ -720,6 +723,8 @@
         }
       }
 
+      NestDiagnostics.AddElapsed("body.final-validation", finalClock);
+      finalClock.Restart();
       var collection = new SheetPlacementCollection();
       int id = 0;
       for (int i = 0; i < sheetLayouts.Count; i++)
@@ -777,6 +782,7 @@
         collection.Add(sheetPlacement);
       }
 
+      NestDiagnostics.AddElapsed("body.records-and-resolve", finalClock);
       var unplaced = new List<INfp>();
       foreach (var kv in pool)
       {
@@ -1221,7 +1227,9 @@
             if (wSt[j].HasValue)
             {
               var (ex, ey) = Extent(wPl[j]);
+              var lengthClock = Stopwatch.StartNew();
               double sharedLength = CommonLineLength(wEdges[j], commonLineGap, geometryTolerance, capturedSources);
+              NestDiagnostics.AddElapsed("wave.common-line-length", lengthClock);
               winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, sharedLength, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wEdges[j], wFallbacks[j]));
               lock (DiagCandidates)
               {
@@ -1345,7 +1353,9 @@
         ShareKey = ccById.TryGetValue(pp.Source, out var sk) ? sk.ShareKey : 0,
         CommonCuttingDomain = ccById.TryGetValue(pp.Source, out var domain) ? domain.CommonCuttingDomain : string.Empty,
       }).ToList();
+      var stageClock = Stopwatch.StartNew();
       RasterCompact.Compact(compactItems, sheetWin, sheetHin, margin, cancel: cancel);
+      NestDiagnostics.AddElapsed("map.compact-1", stageClock);
       for (int k = 0; k < all.Count; k++)
       {
         all[k].X = compactItems[k].X;
@@ -1356,6 +1366,7 @@
       double[] baselineX = baselinePlacements.Select(p => p.X).ToArray();
       double[] baselineY = baselinePlacements.Select(p => p.Y).ToArray();
       double[] baselineRotation = baselinePlacements.Select(p => p.Rotation).ToArray();
+      stageClock.Restart();
       DirectCommonLineSnapResult direct = SnapDirectCommonLineEdges(
         all,
         directRulesById,
@@ -1370,6 +1381,7 @@
         cancel,
         sourceCatalogs,
         diagnosticLabel: diagnosticLabel);
+      NestDiagnostics.AddElapsed("map.planner", stageClock);
 
       // Once an intentional graph exists, compact each connected component as one rigid body. Internal
       // edges keep CommonLineGap while every external pair still sees its ordinary EffSpacing.
@@ -1397,6 +1409,7 @@
           }
         }
 
+        stageClock.Restart();
         RasterCompact.Compact(
           compactItems,
           sheetWin,
@@ -1405,18 +1418,24 @@
           groups: direct.Groups,
           cancel: cancel,
           commonLineGap: commonLineGap);
+        NestDiagnostics.AddElapsed("map.compact-2", stageClock);
         for (int k = 0; k < all.Count; k++)
         {
           all[k].X = compactItems[k].X;
           all[k].Y = compactItems[k].Y;
         }
 
+        stageClock.Restart();
         bool recordsStillValid = direct.Edges.All(edge => TryCreateCommonEdgeRecord(
           edge,
           commonLineGap,
           geometryTolerance,
           out _, sourceCatalogs));
+        NestDiagnostics.AddElapsed("map.check-records", stageClock);
+        stageClock.Restart();
         bool toolingStillValid = OutlinesClearEveryone(all, outlineById, null);
+        NestDiagnostics.AddElapsed("map.check-outlines", stageClock);
+        stageClock.Restart();
         bool layoutStillValid = DirectLayoutIsValid(
           all,
           direct.Edges,
@@ -1430,6 +1449,8 @@
           out _,
           cancel,
           sourceCatalogs);
+        NestDiagnostics.AddElapsed("map.check-layout", stageClock);
+        stageClock.Restart();
         bool topologyStillValid = CommonLineTopologyIsValid(
           all,
           direct.Edges,
@@ -1440,6 +1461,7 @@
           out string topologyFailure,
           cancel,
           sourceCatalogs);
+        NestDiagnostics.AddElapsed("map.check-topology", stageClock);
         if (!recordsStillValid
             || !toolingStillValid
             || !layoutStillValid
@@ -1863,7 +1885,11 @@
 
       internal double TotalTravel { get; private set; }
 
-      internal int PoseChanges => this.poses.Count(pose => pose > 0);
+      // Counted once: a state's poses never change after Include returns it, and the beam's sort asks
+      // for this on nearly every comparison.
+      private int poseChanges = -1;
+
+      internal int PoseChanges => this.poseChanges >= 0 ? this.poseChanges : (this.poseChanges = this.poses.Count(pose => pose > 0));
 
       internal bool HasSamePoses(DirectPlanState other)
       {
@@ -3245,6 +3271,8 @@
       candidates.AddRange(globallyRankedCandidates
         .Take(proposalLimit)
         .Select(ranked => ranked.Candidate));
+      NestDiagnostics.Add("plan.runs");
+      NestDiagnostics.Add("plan.candidates", candidates.Count);
 
       HashSet<(int A, int B)> AcceptedPairIndexes(
         IReadOnlyList<CommonEdgeIntent> acceptedIntents)
@@ -3291,7 +3319,40 @@
         return result;
       }
 
+      // Which part of the search is asking, so the diagnostics can tell the beam's finalists from the
+      // fallback forest, which validates the whole sheet once per candidate it accepts.
+      string applyPhase = "finalist";
+
+      // Every plan the search tries leaves most parts where they started and touched by no edge, and those
+      // parts' exact boundaries are the same in every plan. Keeping them for the whole search, instead of
+      // tessellating all of them again for each plan, is what lets the forest afford a large sheet.
+      var edgeFreeBoundaries = new CommonEdgeClearance.BoundaryCache(maxEntries: (4 * n) + 64);
+
+      // And the parts an edge touches, keyed on those edges too: the forest re-applies a growing tree, so most
+      // of its parts come back at the same pose with the same edges plan after plan. Bounded at about seventy
+      // megabytes of a curved part's boundaries per racing seed.
+      var edgeBoundaries = new CommonEdgeClearance.BoundaryCache(maxEntries: 1024, keyIncidentEdges: true);
       bool TryApplyPlan(
+        IReadOnlyList<DirectCandidate> plan,
+        bool validateTopology,
+        out List<CommonEdgeIntent> intents,
+        out int[] groups,
+        out DirectPlanFailure failure,
+        out string failureReason)
+      {
+        var applyClock = Stopwatch.StartNew();
+        bool applied = TryApplyPlanCore(plan, validateTopology, out intents, out groups, out failure, out failureReason);
+        NestDiagnostics.Add("apply." + applyPhase);
+        NestDiagnostics.AddElapsed("apply." + applyPhase, applyClock);
+        if (!applied)
+        {
+          NestDiagnostics.Add("apply." + applyPhase + ".fail." + failure);
+        }
+
+        return applied;
+      }
+
+      bool TryApplyPlanCore(
         IReadOnlyList<DirectCandidate> plan,
         bool validateTopology,
         out List<CommonEdgeIntent> intents,
@@ -3563,7 +3624,7 @@
         // mixed job with zero CommonEdges: walk the untouched neighbour clear first, the same bounded,
         // fully-reverified way DeferUnfit already does for the final sheet, and only give up the
         // candidate if no safe spot exists. A component member is never the one that moves here.
-        bool TryNudgeConflictingNeighbor(PlacementAcceptance.Unfit conflict)
+        bool TryNudgeConflictingNeighbor(PlacementAcceptance.Unfit conflict, CommonEdgeClearance.BoundaryCache boundaries)
         {
           if (conflict == null || conflict.OutsideMargin.Count > 0 || conflict.Overlapping.Count != 2)
           {
@@ -3590,10 +3651,18 @@
             margin,
             commonLineGap,
             geometryTolerance,
-            sourceCatalogs);
+            sourceCatalogs,
+            boundaries,
+            verdictCache);
         }
 
         reportStage("clearance");
+        // Both judgements below are of the SAME `intents`, so they may share exact boundaries: only the
+        // poses can differ between them, and the cache is keyed on the pose. It must NOT outlive this
+        // plan, because a different edge set tessellates the same part differently. In practice it holds
+        // nothing: parts no edge touches go to the search-wide cache, since nothing about an edge set reaches
+        // their boundary, and parts an edge does touch go to the one keyed on those edges as well.
+        var planBoundaries = new CommonEdgeClearance.BoundaryCache(edgeFreeBoundaries, edgeAware: edgeBoundaries);
         bool layoutValid = DirectLayoutIsValid(
           all,
           intents,
@@ -3607,8 +3676,9 @@
           out PlacementAcceptance.Unfit layoutConflict,
           cancel,
           sourceCatalogs,
-          verdictCache);
-        if (!layoutValid && TryNudgeConflictingNeighbor(layoutConflict))
+          verdictCache,
+          planBoundaries);
+        if (!layoutValid && TryNudgeConflictingNeighbor(layoutConflict, planBoundaries))
         {
           layoutValid = DirectLayoutIsValid(
             all,
@@ -3623,7 +3693,8 @@
             out _,
             cancel,
             sourceCatalogs,
-            verdictCache);
+            verdictCache,
+            planBoundaries);
         }
 
         if (!layoutValid)
@@ -3839,7 +3910,8 @@
           }
         }
 
-        projectedFootprints.Clear();
+        // A state's plan never changes once Include has returned it, so neither does its footprint: the
+        // states carried over from the last step keep theirs instead of recomputing it on every comparison.
         expanded.Sort(ComparePlanStates);
 
         // Pure score truncation can discard the as-yet-empty branch while a long early candidate is
@@ -3884,6 +3956,13 @@
 
         nextBeam.Sort(ComparePlanStates);
         beam = nextBeam;
+
+        // Keep only the footprints of the states still in the beam; the rest will never be compared again.
+        var survivors = new HashSet<DirectPlanState>(beam);
+        foreach (DirectPlanState dropped in projectedFootprints.Keys.Where(state => !survivors.Contains(state)).ToList())
+        {
+          projectedFootprints.Remove(dropped);
+        }
       }
 
       projectedFootprints.Clear();
@@ -3935,6 +4014,7 @@
 
       // Validate first, rank on committed common-line length before footprint, then apply the winner once
       // more. Every candidate still proves fit, clearance and topology within this same sheet.
+      applyPhase = "finalist-winner";
       if (bestFinalist != null
           && TryApplyCutFirstPlan(
             bestFinalist.Plan,
@@ -4095,6 +4175,7 @@
         _ = TryAddToForest(candidate);
       }
 
+      applyPhase = "optimistic";
       if (tree.Count > 0
           && TryApplyCutFirstPlan(
             tree,
@@ -4114,6 +4195,7 @@
       // the complete cluster boundary after every accepted prefix is quadratic work on dense jobs, so do
       // that strict check once for the resulting plan. If it exposes a topology-only failure, rebuild with
       // strict prefix validation to retain the planner's candidate-by-candidate recovery behaviour.
+      applyPhase = "forest-lenient";
       BuildIncrementalForest(validateTopology: false);
 
       if (tree.Count == 0)
@@ -4123,6 +4205,7 @@
         return result;
       }
 
+      applyPhase = "forest-lenient-final";
       if (TryApplyCutFirstPlan(
             tree,
             true,
@@ -4141,6 +4224,7 @@
       // and retry strictly so a bad relationship is rejected without hiding a later valid alternative.
       givenUpPairs.Clear();
       topologyFailuresByPair.Clear();
+      applyPhase = "forest-strict";
       BuildIncrementalForest(validateTopology: true);
       if (tree.Count == 0)
       {
@@ -4149,6 +4233,7 @@
         return result;
       }
 
+      applyPhase = "forest-strict-final";
       if (!TryApplyCutFirstPlan(
             tree,
             true,
@@ -4205,7 +4290,8 @@
       out PlacementAcceptance.Unfit unfit,
       CancellationToken cancel = default,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
-      CommonEdgeClearance.PairVerdictCache verdictCache = null)
+      CommonEdgeClearance.PairVerdictCache verdictCache = null,
+      CommonEdgeClearance.BoundaryCache boundaries = null)
     {
       // Sparrow is a strip packer and is offered more than a sheetful on purpose, so some of what it
       // returns hangs past the sheet and is dropped by the cull in MapAndCompact. Those parts are not
@@ -4225,7 +4311,8 @@
         ClearanceEdges(intents),
         commonLineGap,
         geometryTolerance,
-        stopAtFirst: true, cancel: cancel, sourceCatalogs: sourceCatalogs, verdictCache: verdictCache);
+        stopAtFirst: true, cancel: cancel, sourceCatalogs: sourceCatalogs, verdictCache: verdictCache,
+        boundaries: boundaries);
       string conflicts = string.Join(", ", unfit.Overlapping.Select(
         placement => $"source={placement.Source} at {placement.X:F3},{placement.Y:F3}"));
       failureReason = unfit.OutsideMargin.Count > 0
@@ -4626,7 +4713,9 @@
       double margin,
       double commonLineGap,
       double geometryTolerance,
-      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
+      CommonEdgeClearance.BoundaryCache boundaries = null,
+      CommonEdgeClearance.PairVerdictCache verdictCache = null)
     {
       double clearance = placements
         .Where(p => !ReferenceEquals(p, victim))
@@ -4645,7 +4734,7 @@
       // neighbours' boundaries is the expensive part and none of it depends on where the victim is
       // being tried, so it is shared across the whole search instead of redone per position per pair.
       var probe = new CommonEdgeClearance.ProbeContext(
-        ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, sourceCatalogs);
+        ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, sourceCatalogs, boundaries, verdictCache);
 
       foreach (double step in new[] { 0.002, 0.01, 0.05, 0.2, 0.5, 1.0 })
       {
@@ -5072,9 +5161,9 @@
 
     private static string BuildJaguaJson(string name, double stripHeight, List<Loaded> batch, Dictionary<int, int> batchQty)
     {
-      // jagua requires item ids to be consecutive starting at 0, so use the batch INDEX as the id (not
-      // the global Source, which is sparse once priority ordering drops parts from a batch). MapAndCompact
-      // translates the index back to the real Source via this same `batch` list.
+      // Use the batch INDEX as the id (not the global Source, which is sparse once priority ordering drops
+      // parts from a batch). MapAndCompact translates the index back to the real Source via this same
+      // `batch` list.
       var items = batch.Select((p, idx) =>
       {
         var pts = p.Dilated.Points;
@@ -5090,20 +5179,18 @@
           data.Add(new[] { pts[i].X, pts[i].Y });
         }
 
-        // Omit allowed_orientations entirely for "Free" parts → jagua treats it as RotationRange::Continuous
-        // and sparrow rotates to any angle (denser). Restricted parts keep their discrete angle set.
-        var item = new Dictionary<string, object>
+        // "Free" parts rotate continuously, so sparrow turns them to any angle (denser). Restricted parts
+        // keep their discrete angle set. jagua wants this stated for every item; leaving it out is an error.
+        object rotation = p.Continuous
+          ? new { mode = "continuous" }
+          : new { mode = "discrete", angles = p.Angles.Select(a => (double)a).ToArray() };
+        return new Dictionary<string, object>
         {
           ["id"] = idx,
           ["demand"] = batchQty[p.Source],
+          ["orientation"] = new { rotation },
           ["shape"] = new { type = "simple_polygon", data },
         };
-        if (!p.Continuous)
-        {
-          item["allowed_orientations"] = p.Angles.Select(a => (double)a).ToArray();
-        }
-
-        return item;
       }).ToArray();
 
       return JsonSerializer.Serialize(new { name, strip_height = stripHeight, items });

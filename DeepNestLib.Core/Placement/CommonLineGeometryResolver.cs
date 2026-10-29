@@ -755,6 +755,18 @@ namespace DeepNestLib.Placement
       double tolerance,
       CancellationToken cancel = default)
     {
+      // Two rings whose boxes are further apart than the tolerance cannot meet: every segment of one is then
+      // outside the tolerance box of every segment of the other, which is the first thing the segment test
+      // checks and skips on. Answering that here, once per pair, spares the segment-by-segment walk for the
+      // many rings of a large cluster that lie nowhere near each other.
+      (double MinX, double MinY, double MaxX, double MaxY) boxA = RingBox(a);
+      (double MinX, double MinY, double MaxX, double MaxY) boxB = RingBox(b);
+      if (boxB.MaxX < boxA.MinX - tolerance || boxB.MinX > boxA.MaxX + tolerance
+        || boxB.MaxY < boxA.MinY - tolerance || boxB.MinY > boxA.MaxY + tolerance)
+      {
+        return false;
+      }
+
       for (int i = 0; i < a.Count; i++)
       {
         cancel.ThrowIfCancellationRequested();
@@ -767,6 +779,23 @@ namespace DeepNestLib.Placement
       }
 
       return false;
+    }
+
+    private static (double MinX, double MinY, double MaxX, double MaxY) RingBox(IReadOnlyList<CommonLinePoint> ring)
+    {
+      double minX = double.PositiveInfinity;
+      double minY = double.PositiveInfinity;
+      double maxX = double.NegativeInfinity;
+      double maxY = double.NegativeInfinity;
+      for (int i = 0; i < ring.Count; i++)
+      {
+        minX = Math.Min(minX, ring[i].X);
+        minY = Math.Min(minY, ring[i].Y);
+        maxX = Math.Max(maxX, ring[i].X);
+        maxY = Math.Max(maxY, ring[i].Y);
+      }
+
+      return (minX, minY, maxX, maxY);
     }
 
     private static bool SegmentIntersectsRing(
@@ -1216,7 +1245,7 @@ namespace DeepNestLib.Placement
       string path;
       try
       {
-        path = Path.GetFullPath(sourceName);
+        path = FullSourcePath(sourceName);
       }
       catch (Exception ex)
       {
@@ -1232,6 +1261,19 @@ namespace DeepNestLib.Placement
       sourceCatalogs[path] = catalog;
       return catalog;
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> FullSourcePaths =
+      new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// <see cref="Path.GetFullPath(string)"/>, remembered for a path that is already fully qualified: for one
+    /// of those the answer does not depend on the current directory, and validating a busy sheet asks it for
+    /// the same drawing many thousands of times. A relative name is resolved afresh every time, as before.
+    /// </summary>
+    private static string FullSourcePath(string sourceName)
+      => Path.IsPathFullyQualified(sourceName)
+        ? FullSourcePaths.GetOrAdd(sourceName, Path.GetFullPath)
+        : Path.GetFullPath(sourceName);
 
     private static SourceOuterDefinition GetSourceOuter(
       IPartPlacement placement,

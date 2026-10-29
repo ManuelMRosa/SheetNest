@@ -1,22 +1,22 @@
-From 4f7ddcaa761a239e13ac19a3e3f198644c7595f2 Mon Sep 17 00:00:00 2001
+From efe44c78693c469476a3ce8e16a02f46b9de5a0d Mon Sep 17 00:00:00 2001
 From: SheetNest <noreply@sheetnest.io>
-Date: Sat, 25 Jul 2026 16:48:14 -0400
-Subject: [PATCH] Make the search reproducible: iteration budget, fixed worker
- count, failure-based compression decay
+Date: Wed, 28 Oct 2026 16:22:03 -0400
+Subject: [PATCH] Make the search reproducible: iteration budget, failure-based
+ compression decay
 
 ---
- src/main.rs                 | 78 +++++++++++++++++++++++++++-------
- src/util/io.rs              |  8 ++++
+ src/cli.rs                  | 60 +++++++++++++++++++++------
+ src/util/io.rs              |  4 ++
  src/util/iter_terminator.rs | 83 +++++++++++++++++++++++++++++++++++++
  src/util/mod.rs             |  3 ++
- 4 files changed, 156 insertions(+), 16 deletions(-)
- create mode 100755 src/util/iter_terminator.rs
+ 4 files changed, 137 insertions(+), 13 deletions(-)
+ create mode 100644 src/util/iter_terminator.rs
 
-diff --git a/src/main.rs b/src/main.rs
-index 0e73962..8e2a4b9 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -17,12 +17,20 @@ use anyhow::{bail, Result};
+diff --git a/src/cli.rs b/src/cli.rs
+index 9a6c699..399d2a3 100644
+--- a/src/cli.rs
++++ b/src/cli.rs
+@@ -17,6 +17,7 @@ use anyhow::{bail, Result};
  use rand::rngs::Xoshiro256PlusPlus;
  use sparrow::consts::{DEFAULT_COMPRESS_TIME_RATIO, DEFAULT_EXPLORE_TIME_RATIO, DEFAULT_FAIL_DECAY_RATIO_CMPR, DEFAULT_MAX_CONSEQ_FAILS_EXPL, LOG_LEVEL_FILTER_DEBUG, LOG_LEVEL_FILTER_RELEASE};
  use sparrow::util::ctrlc_terminator::CtrlCTerminator;
@@ -24,32 +24,7 @@ index 0e73962..8e2a4b9 100644
  use sparrow::util::svg_exporter::SvgExporter;
  
  pub const OUTPUT_DIR: &str = "output";
- 
- pub const LIVE_DIR: &str = "data/live";
- 
-+/// Separator worker threads. This is part of the SEARCH, not just of how fast it runs: every worker
-+/// owns an RNG seeded from the master and the best of their competing proposals is kept, so a different
-+/// worker count explores a different sequence and lands on a different layout. It is therefore a
-+/// constant — deriving it from the machine's core count (as this build used to, via
-+/// `available_parallelism().clamp(3, 12)`) means the same job nests differently on different machines.
-+pub const N_WORKERS: usize = 8;
-+
- fn main() -> Result<()>{
-     let mut config = DEFAULT_SPARROW_CONFIG;
- 
-@@ -34,6 +42,11 @@ fn main() -> Result<()>{
-     }
- 
-     let args = MainCli::parse();
-+
-+    let n_workers = args.workers.unwrap_or(N_WORKERS).max(1);
-+    config.expl_cfg.separator_config.n_workers = n_workers;
-+    config.cmpr_cfg.separator_config.n_workers = n_workers;
-+
-     let input_file_path = &args.input;
-     let (explore_dur, compress_dur) = match (args.global_time, args.exploration, args.compression) {
-         (Some(gt), None, None) => {
-@@ -43,7 +56,9 @@ fn main() -> Result<()>{
+@@ -43,7 +44,9 @@ pub fn run() -> Result<()>{
              (Duration::from_secs(et), Duration::from_secs(ct))
          },
          (None, None, None) => {
@@ -60,10 +35,10 @@ index 0e73962..8e2a4b9 100644
              (Duration::from_secs(600).mul_f32(DEFAULT_EXPLORE_TIME_RATIO), Duration::from_secs(600).mul_f32(DEFAULT_COMPRESS_TIME_RATIO))
          },
          _ => bail!("invalid cli pattern (clap should have caught this)"),
-@@ -55,11 +70,22 @@ fn main() -> Result<()>{
-         config.cmpr_cfg.shrink_decay = ShrinkDecayStrategy::FailureBased(DEFAULT_FAIL_DECAY_RATIO_CMPR);
+@@ -56,8 +59,19 @@ pub fn run() -> Result<()>{
          warn!("[MAIN] early termination enabled!");
      }
+     args.apply_config_overrides(&mut config);
 +    if args.max_iterations.is_some() {
 +        // The compression phase's default decay reads the clock: its shrink step is
 +        // `range.0 + (elapsed / time_limit) * range`, so how hard it compresses depends on how busy the
@@ -72,52 +47,30 @@ index 0e73962..8e2a4b9 100644
 +        // is the deterministic equivalent, so a deterministic budget always implies it.
 +        config.cmpr_cfg.shrink_decay = ShrinkDecayStrategy::FailureBased(DEFAULT_FAIL_DECAY_RATIO_CMPR);
 +    }
-     if let Some(arg_rng_seed) = args.rng_seed {
-         config.rng_seed = Some(arg_rng_seed as usize);
-     }
  
 -    info!("[MAIN] configured to explore for {}s and compress for {}s", explore_dur.as_secs(), compress_dur.as_secs());
 +    match args.max_iterations {
-+        Some(n) => info!("[MAIN] deterministic mode: {} termination checks, {} workers", n, n_workers),
-+        None => info!("[MAIN] configured to explore for {}s and compress for {}s, {} workers", explore_dur.as_secs(), compress_dur.as_secs(), n_workers),
++        Some(n) => info!("[MAIN] deterministic mode: {} termination checks, {} workers", n, config.expl_cfg.separator_config.n_workers),
++        None => info!("[MAIN] configured to explore for {}s and compress for {}s, {} workers", explore_dur.as_secs(), compress_dur.as_secs(), config.expl_cfg.separator_config.n_workers),
 +    }
  
      let rng = match config.rng_seed {
          Some(seed) => {
-@@ -85,7 +111,7 @@ fn main() -> Result<()>{
-     );
- 
-     info!("[MAIN] loaded instance {} with #{} items", ext_instance.name, instance.total_item_qty());
--    
-+
-     let mut svg_exporter = {
-         let final_svg_path = Some(format!("{OUTPUT_DIR}/final_{}.svg", ext_instance.name));
- 
-@@ -98,25 +124,45 @@ fn main() -> Result<()>{
-             true => Some(format!("{LIVE_DIR}/.live_solution.svg")),
-             false => None
-         };
--        
-+
-         SvgExporter::new(
-             final_svg_path,
-             intermediate_svg_dir,
-             live_svg_path
+@@ -104,17 +118,37 @@ pub fn run() -> Result<()>{
          )
      };
--    
+     
 -    let mut ctrlc_terminator = CtrlCTerminator::new();
 -
 -    let solution = optimize(
--        instance.clone(),
+-        instance,
 -        rng,
 -        &mut svg_exporter,
 -        &mut ctrlc_terminator,
 -        &config.expl_cfg,
 -        &config.cmpr_cfg,
 -        initial_solution.as_ref()
--    );
-+
+-    )?;
 +    // With --max-iterations the outer loops are cut on a counter rather than on elapsed time, which is
 +    // the only non-reproducible input the search has; the same instance and seed then always produce the
 +    // same solution. Without it the original wall-clock behaviour is kept.
@@ -127,52 +80,48 @@ index 0e73962..8e2a4b9 100644
 +            let compress = total.saturating_sub(explore);
 +            let mut terminator = IterTerminator::new(vec![explore, compress]);
 +            optimize(
-+                instance.clone(),
++                instance,
 +                rng,
 +                &mut svg_exporter,
 +                &mut terminator,
 +                &config.expl_cfg,
 +                &config.cmpr_cfg,
 +                initial_solution.as_ref()
-+            )
++            )?
 +        }
 +        None => {
 +            let mut terminator = CtrlCTerminator::new();
 +            optimize(
-+                instance.clone(),
++                instance,
 +                rng,
 +                &mut svg_exporter,
 +                &mut terminator,
 +                &config.expl_cfg,
 +                &config.cmpr_cfg,
 +                initial_solution.as_ref()
-+            )
++            )?
 +        }
 +    };
  
      let json_path = format!("{OUTPUT_DIR}/final_{}.json", ext_instance.name);
      let json_output = ExtSPOutput {
 diff --git a/src/util/io.rs b/src/util/io.rs
-index 5897188..149a986 100644
+index 24de81f..7c6a139 100644
 --- a/src/util/io.rs
 +++ b/src/util/io.rs
-@@ -34,6 +34,14 @@ pub struct MainCli {
- 
+@@ -37,6 +37,10 @@ pub struct MainCli {
      #[arg(short = 's', long, help = "Fixed seed for the random number generator")]
      pub rng_seed: Option<u64>,
-+
+ 
 +    /// Deterministic stop: a fixed number of termination checks instead of a wall-clock deadline.
 +    #[arg(long, help = "Stop after N termination checks instead of on the clock (reproducible)")]
 +    pub max_iterations: Option<usize>,
 +
-+    /// Separator worker threads. Part of the search, so it must match across machines to reproduce a run.
-+    #[arg(long, help = "Number of separator worker threads")]
-+    pub workers: Option<usize>,
- }
- 
- #[derive(Serialize, Deserialize, Clone)]
+     /// Number of worker threads used by the separator
+     #[arg(long)]
+     pub workers: Option<NonZeroUsize>,
 diff --git a/src/util/iter_terminator.rs b/src/util/iter_terminator.rs
-new file mode 100755
+new file mode 100644
 index 0000000..bb13111
 --- /dev/null
 +++ b/src/util/iter_terminator.rs
@@ -261,10 +210,10 @@ index 0000000..bb13111
 +    }
 +}
 diff --git a/src/util/mod.rs b/src/util/mod.rs
-index 645d757..91584da 100644
+index 2a85fe8..4e87125 100644
 --- a/src/util/mod.rs
 +++ b/src/util/mod.rs
-@@ -8,3 +8,6 @@ pub mod terminator;
+@@ -7,3 +7,6 @@ pub mod terminator;
  
  #[cfg(not(target_arch = "wasm32"))]
  pub mod ctrlc_terminator;
@@ -272,5 +221,5 @@ index 645d757..91584da 100644
 +#[cfg(not(target_arch = "wasm32"))]
 +pub mod iter_terminator;
 -- 
-2.53.0
+2.53.0.windows.2
 

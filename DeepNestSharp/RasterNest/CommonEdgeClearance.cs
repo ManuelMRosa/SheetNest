@@ -20,6 +20,15 @@ namespace DeepNestSharp.RasterNest
   {
     private const int MaxExactBoundarySegments = 131072;
 
+    /// <summary>
+    /// Set SHEETNEST_CLEARANCE_EQUIV=1 to make every boundary-cache HIT rebuild the boundary from scratch
+    /// and assert the two agree bit for bit. It exists because a stale boundary is not a slow answer, it
+    /// is a wrong clearance verdict, and the pure-managed fixtures all use two or three parts and never
+    /// vary the edge set between passes, which is the only condition that can expose a bad key.
+    /// </summary>
+    private static readonly bool VerifyBoundaryCache =
+      Environment.GetEnvironmentVariable("SHEETNEST_CLEARANCE_EQUIV") == "1";
+
     internal readonly struct EdgeReference
     {
       internal EdgeReference(
@@ -97,7 +106,9 @@ namespace DeepNestSharp.RasterNest
       double geometryTolerance,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
     {
-      if (a?.PlacedPart == null || b?.PlacedPart == null)
+      INfp placedA = a?.PlacedPart;
+      INfp placedB = b?.PlacedPart;
+      if (placedA == null || placedB == null)
       {
         return false;
       }
@@ -107,7 +118,7 @@ namespace DeepNestSharp.RasterNest
       double numericalTol = Math.Max(PlacementCollision.PlacementNoise, geometryTol);
       if (clearance <= 0)
       {
-        return PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver);
+        return PlacementCollision.TooClose(placedA, placedB, clearance, sliver);
       }
 
       IReadOnlyList<EdgeReference> valid = commonEdges == null || commonEdges.Count == 0
@@ -116,13 +127,15 @@ namespace DeepNestSharp.RasterNest
       return TooCloseWithValidEdges(
         a,
         b,
+        placedA,
+        placedB,
         clearance,
         sliver,
         valid,
         commonLineGap,
         geometryTol,
         numericalTol,
-        new Dictionary<IPartPlacement, BoundaryGeometry>(),
+        new BoundaryCache(),
         sourceCatalogs: sourceCatalogs);
     }
 
@@ -134,46 +147,138 @@ namespace DeepNestSharp.RasterNest
     /// </summary>
     internal sealed class ProbeContext
     {
-      private readonly Dictionary<IPartPlacement, BoundaryGeometry> boundaries = new Dictionary<IPartPlacement, BoundaryGeometry>();
+      private readonly BoundaryCache boundaries;
       private readonly IReadOnlyList<EdgeReference> valid;
       private readonly double commonLineGap;
       private readonly double geometryTol;
       private readonly double numericalTol;
       private readonly IDictionary<string, DxfContourCatalog> sourceCatalogs;
+      private readonly Dictionary<IPartPlacement, ProbePart> parts = new(ReferenceEqualityComparer.Instance);
+      private readonly Dictionary<IPartPlacement, bool> exactParts = new(ReferenceEqualityComparer.Instance);
 
+      /// <param name="boundaries">A cache built against this same edge set, when the caller has one: a plan
+      /// that nudges a neighbour has already tessellated every part it is about to be checked against.</param>
       internal ProbeContext(
         IReadOnlyList<EdgeReference> commonEdges,
         double commonLineGap,
         double geometryTolerance,
-        IDictionary<string, DxfContourCatalog> sourceCatalogs)
+        IDictionary<string, DxfContourCatalog> sourceCatalogs,
+        BoundaryCache boundaries = null,
+        PairVerdictCache verdictCache = null)
       {
+        this.boundaries = boundaries ?? new BoundaryCache();
         this.commonLineGap = commonLineGap;
         this.geometryTol = Math.Max(0, geometryTolerance);
         this.numericalTol = Math.Max(PlacementCollision.PlacementNoise, this.geometryTol);
         this.sourceCatalogs = sourceCatalogs;
         this.valid = commonEdges == null || commonEdges.Count == 0
           ? Array.Empty<EdgeReference>()
-          : ValidEdges(commonEdges, commonLineGap, this.geometryTol, sourceCatalogs);
+          : ValidEdges(commonEdges, commonLineGap, this.geometryTol, sourceCatalogs, verdictCache);
       }
 
       /// <summary>
-      /// Forgets one part's cached boundary, which the caller MUST do every time it moves that part. The
-      /// cache is keyed on the placement OBJECT, and a part that moves is the same object at a new
-      /// position, so a stale entry would answer for where it used to be and the probe would accept a
-      /// position that is not actually clear.
+      /// Announces that the caller moved a part. Now a no-op, and deliberately kept as one: the boundary
+      /// cache is keyed on the POSE, so a moved part simply asks a different question and cannot be
+      /// answered by the entry for where it used to be. It used to be mandatory, because the cache was
+      /// keyed on the placement OBJECT and a stale entry would have let the probe accept a position that
+      /// is not actually clear. Callers still announce moves so that the contract survives a future key
+      /// change, and so the invariant stays written down where the probe can see it.
       /// </summary>
       internal void Moved(IPartPlacement placement)
       {
-        if (placement != null)
+        _ = placement;
+      }
+
+      private static bool Same(double left, double right)
+        => BitConverter.DoubleToInt64Bits(left) == BitConverter.DoubleToInt64Bits(right);
+
+      /// <summary>The part's placed outline and box, and its boundary once asked for, as of where it stands
+      /// now. Each entry carries the pose and geometry it was read at, so a part that has moved since is
+      /// read again rather than answered for where it used to be.</summary>
+      private ProbePart Part(IPartPlacement part)
+      {
+        if (part == null)
         {
-          this.boundaries.Remove(placement);
+          return null;
         }
+
+        if (this.parts.TryGetValue(part, out ProbePart known)
+          && ReferenceEquals(known.Geometry, part.Part)
+          && Same(known.X, part.X)
+          && Same(known.Y, part.Y)
+          && Same(known.Rotation, part.Rotation)
+          && known.IsMirrored == part.IsMirrored)
+        {
+          return known;
+        }
+
+        INfp placed = part.PlacedPart;
+        var fresh = new ProbePart
+        {
+          Geometry = part.Part,
+          X = part.X,
+          Y = part.Y,
+          Rotation = part.Rotation,
+          IsMirrored = part.IsMirrored,
+          Placed = placed,
+        };
+        if (placed != null)
+        {
+          fresh.MinX = placed.MinX;
+          fresh.MinY = placed.MinY;
+          fresh.MaxX = placed.MaxX;
+          fresh.MaxY = placed.MaxY;
+        }
+
+        this.parts[part] = fresh;
+        return fresh;
+      }
+
+      /// <summary>Whether the part is measured exactly. That depends on the edge set and the part's drawing,
+      /// never on where it stands, and both hold still for as long as the probe lives.</summary>
+      private bool IsExact(IPartPlacement part)
+      {
+        if (!this.exactParts.TryGetValue(part, out bool exact))
+        {
+          this.exactParts[part] = exact = HasExactBoundary(part, this.valid, this.sourceCatalogs);
+        }
+
+        return exact;
+      }
+
+      private sealed class ProbePart
+      {
+        internal INfp Geometry { get; set; }
+
+        internal double X { get; set; }
+
+        internal double Y { get; set; }
+
+        internal double Rotation { get; set; }
+
+        internal bool IsMirrored { get; set; }
+
+        internal INfp Placed { get; set; }
+
+        internal double MinX { get; set; }
+
+        internal double MinY { get; set; }
+
+        internal double MaxX { get; set; }
+
+        internal double MaxY { get; set; }
+
+        internal BoundaryGeometry Boundary { get; set; }
       }
 
       /// <summary>The same verdict <see cref="TooClose"/> gives, on the shared resolution.</summary>
       internal bool TooClose(IPartPlacement a, IPartPlacement b, double normalClearance, double sliver)
       {
-        if (a?.PlacedPart == null || b?.PlacedPart == null)
+        ProbePart partA = this.Part(a);
+        ProbePart partB = this.Part(b);
+        INfp placedA = partA?.Placed;
+        INfp placedB = partB?.Placed;
+        if (placedA == null || placedB == null)
         {
           return false;
         }
@@ -181,12 +286,41 @@ namespace DeepNestSharp.RasterNest
         double clearance = Math.Max(0, normalClearance);
         if (clearance <= 0)
         {
-          return PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver);
+          return PlacementCollision.TooClose(placedA, placedB, clearance, sliver);
+        }
+
+        // The opening of EvaluatePair for a pair whose outline boxes already clear the clearance, as in
+        // FindUnfit: forty eight positions against every neighbour are mostly against parts nowhere near.
+        if (PlacementCollision.BoxesApart(
+          partA.MinX, partA.MinY, partA.MaxX, partA.MaxY,
+          partB.MinX, partB.MinY, partB.MaxX, partB.MaxY,
+          clearance))
+        {
+          if (!this.IsExact(a) && !this.IsExact(b))
+          {
+            return false;
+          }
+
+          BoundaryGeometry aBoundary = partA.Boundary ??= GetBoundaryGeometry(a, this.valid, this.numericalTol, this.boundaries, this.sourceCatalogs);
+          BoundaryGeometry bBoundary = partB.Boundary ??= GetBoundaryGeometry(b, this.valid, this.numericalTol, this.boundaries, this.sourceCatalogs);
+          if (aBoundary.Invalid || bBoundary.Invalid)
+          {
+            return true;
+          }
+
+          double required = Math.Max(0, clearance - Math.Max(Math.Max(0, sliver), this.numericalTol));
+          required += aBoundary.ApproximationError + bBoundary.ApproximationError;
+          if (!aBoundary.Bounds.MayBeWithin(bBoundary.Bounds, required))
+          {
+            return false;
+          }
         }
 
         return TooCloseWithValidEdges(
           a,
           b,
+          placedA,
+          placedB,
           clearance,
           sliver,
           this.valid,
@@ -201,13 +335,15 @@ namespace DeepNestSharp.RasterNest
     private static bool TooCloseWithValidEdges(
       IPartPlacement a,
       IPartPlacement b,
+      INfp placedA,
+      INfp placedB,
       double clearance,
       double sliver,
       IReadOnlyList<EdgeReference> valid,
       double commonLineGap,
       double geometryTol,
       double numericalTol,
-      IDictionary<IPartPlacement, BoundaryGeometry> boundaryCache,
+      BoundaryCache boundaryCache,
       CancellationToken cancel = default,
       PairVerdictCache verdictCache = null,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
@@ -219,7 +355,7 @@ namespace DeepNestSharp.RasterNest
         return cached;
       }
 
-      bool result = EvaluatePair(a, b, clearance, sliver, valid, commonLineGap, geometryTol,
+      bool result = EvaluatePair(a, b, placedA, placedB, clearance, sliver, valid, commonLineGap, geometryTol,
         numericalTol, boundaryCache, cancel, sourceCatalogs);
       if (key != null)
       {
@@ -232,27 +368,31 @@ namespace DeepNestSharp.RasterNest
     private static bool EvaluatePair(
       IPartPlacement a,
       IPartPlacement b,
+      INfp placedA,
+      INfp placedB,
       double clearance,
       double sliver,
       IReadOnlyList<EdgeReference> valid,
       double commonLineGap,
       double geometryTol,
       double numericalTol,
-      IDictionary<IPartPlacement, BoundaryGeometry> boundaryCache,
+      BoundaryCache boundaryCache,
       CancellationToken cancel,
       IDictionary<string, DxfContourCatalog> sourceCatalogs)
     {
+      placedA ??= a.PlacedPart;
+      placedB ??= b.PlacedPart;
       bool connected = AreConnected(a, b, valid);
       bool hasExactBoundary = HasExactBoundary(a, valid, sourceCatalogs)
         || HasExactBoundary(b, valid, sourceCatalogs);
       if (!connected && !hasExactBoundary)
       {
-        return PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver);
+        return PlacementCollision.TooClose(placedA, placedB, clearance, sliver);
       }
 
       // A common-line record only relaxes CLEARANCE. It never authorises material overlap. This also
       // catches containment, which a boundary-distance-only test cannot see.
-      if (PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, 0, numericalTol))
+      if (PlacementCollision.TooClose(placedA, placedB, 0, numericalTol))
       {
         return true;
       }
@@ -261,7 +401,7 @@ namespace DeepNestSharp.RasterNest
       // placements. A source-backed curve needs the exact cached bounds below: a convex arc can extend
       // beyond its coarse NFP chord by more than GeometryTolerance.
       if (!hasExactBoundary
-        && !PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver))
+        && !PlacementCollision.TooClose(placedA, placedB, clearance, sliver))
       {
         return false;
       }
@@ -302,6 +442,7 @@ namespace DeepNestSharp.RasterNest
           }
         }
       }
+
 
       // A rounded corner can be tessellated into an arbitrary number of short chords. Treat the
       // below-clearance cells that are topologically connected to a recorded seam endpoint as one
@@ -425,22 +566,105 @@ namespace DeepNestSharp.RasterNest
       bool stopAtFirst = false,
       CancellationToken cancel = default,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
-      PairVerdictCache verdictCache = null)
+      PairVerdictCache verdictCache = null,
+      BoundaryCache boundaries = null)
     {
       cancel.ThrowIfCancellationRequested();
+      var clock = System.Diagnostics.Stopwatch.StartNew();
+      NestDiagnostics.Add("unfit.calls");
+      NestDiagnostics.Add("unfit.pairs", (long)placements.Count * (placements.Count - 1) / 2);
       var unfit = new PlacementAcceptance.Unfit();
       sliverBetween ??= (a, b) => PlacementCollision.PlacementNoise;
       double geometryTol = Math.Max(0, geometryTolerance);
       double numericalTol = Math.Max(PlacementCollision.PlacementNoise, geometryTol);
+      var partClock = System.Diagnostics.Stopwatch.StartNew();
       IReadOnlyList<EdgeReference> valid = commonEdges == null || commonEdges.Count == 0
         ? Array.Empty<EdgeReference>()
-        : ValidEdges(commonEdges, commonLineGap, geometryTol, sourceCatalogs);
-      var boundaryCache = new Dictionary<IPartPlacement, BoundaryGeometry>();
+        : ValidEdges(commonEdges, commonLineGap, geometryTol, sourceCatalogs, verdictCache);
+      NestDiagnostics.AddElapsed("unfit.valid-edges", partClock);
+
+      // A caller that judges the SAME edge set more than once may hand in its own cache so the exact
+      // boundaries survive between calls; tessellating them is about a quarter of this stage. Passing one
+      // that was built against a DIFFERENT edge set is the one way to get a wrong answer here, so the
+      // caller owns the lifetime and drops it with the plan it belongs to.
+      var boundaryCache = boundaries ?? new BoundaryCache();
+
+      // IPartPlacement.PlacedPart is `Part.Shift(this)`: a FRESH clone of the whole polygon on every
+      // read, and NoFitPolygon.AddPoint resizes the point array once per point while building it. This
+      // loop used to read it five times per pair before any geometry ran, so a 27 part sheet rebuilt
+      // roughly seventeen hundred polygons per pass and did it again on every pass. Shift each placement
+      // once and carry the result down.
+      var placed = new INfp[placements.Count];
+      for (int i = 0; i < placements.Count; i++)
+      {
+        placed[i] = placements[i]?.PlacedPart;
+      }
+
+
+      // Each outline's box and whether the part is measured exactly, read once per placement: INfp.MinX
+      // and its siblings scan every point on each read, and HasExactBoundary walks every edge.
+      var boxes = new (double MinX, double MinY, double MaxX, double MaxY)[placements.Count];
+      var exact = new bool[placements.Count];
+      for (int i = 0; i < placements.Count; i++)
+      {
+        if (placed[i] != null)
+        {
+          boxes[i] = (placed[i].MinX, placed[i].MinY, placed[i].MaxX, placed[i].MaxY);
+          exact[i] = valid.Count > 0 && HasExactBoundary(placements[i], valid, sourceCatalogs);
+        }
+      }
+
+
+      // A pair whose outlines' boxes already clear the normal clearance gets the answer EvaluatePair would
+      // give it, without building a cache key first: on a large sheet that is nearly every pair, and the key
+      // cost more than the answer and churned the cache until it emptied itself thousands of times a nest.
+      // This repeats EvaluatePair's own opening steps for exactly such a pair and nothing else, so no verdict
+      // can change: an ordinary pair is clear; an exactly measured one is too close if a boundary is invalid,
+      // and clear if the exact boxes clear the distance EvaluatePair would demand. Anything nearer than that
+      // still goes the long way, through the cache.
+      // Within one call no placement moves, so the boundary the cache would hand back for it is the same
+      // every time it is asked; ask once per placement instead of building a pose key per pair.
+      var boundaryOf = new BoundaryGeometry[placements.Count];
+      BoundaryGeometry BoundaryAt(int index)
+        => boundaryOf[index] ??= GetBoundaryGeometry(placements[index], valid, numericalTol, boundaryCache, sourceCatalogs);
+
+      bool? FarPairVerdict(int i, int j, double clearance, double sliver)
+      {
+        var (aMinX, aMinY, aMaxX, aMaxY) = boxes[i];
+        var (bMinX, bMinY, bMaxX, bMaxY) = boxes[j];
+        if (!PlacementCollision.BoxesApart(aMinX, aMinY, aMaxX, aMaxY, bMinX, bMinY, bMaxX, bMaxY, clearance))
+        {
+          return null;
+        }
+
+        if (!exact[i] && !exact[j])
+        {
+          return false;
+        }
+
+        BoundaryGeometry aBoundary = BoundaryAt(i);
+        BoundaryGeometry bBoundary = BoundaryAt(j);
+        if (aBoundary.Invalid || bBoundary.Invalid)
+        {
+          return true;
+        }
+
+        double required = Math.Max(0, clearance - Math.Max(Math.Max(0, sliver), numericalTol));
+        required += aBoundary.ApproximationError + bBoundary.ApproximationError;
+        return aBoundary.Bounds.MayBeWithin(bBoundary.Bounds, required) ? null : false;
+      }
+
+      void FinishTiming()
+      {
+        NestDiagnostics.AddElapsed("unfit", clock);
+      }
+
       for (int i = 0; i < placements.Count; i++)
       {
         cancel.ThrowIfCancellationRequested();
         IPartPlacement a = placements[i];
-        if (a?.PlacedPart == null)
+        INfp placedA = placed[i];
+        if (placedA == null)
         {
           continue;
         }
@@ -451,6 +675,7 @@ namespace DeepNestSharp.RasterNest
           unfit.All.Add(a);
           if (stopAtFirst)
           {
+            FinishTiming();
             return unfit;
           }
         }
@@ -458,14 +683,17 @@ namespace DeepNestSharp.RasterNest
         for (int j = i + 1; j < placements.Count; j++)
         {
           IPartPlacement b = placements[j];
-          double clearance = b?.PlacedPart == null ? 0 : Math.Max(0, normalClearanceBetween(a, b));
-          double sliver = b?.PlacedPart == null ? 0 : sliverBetween(a, b);
-          if (b?.PlacedPart != null
+          INfp placedB = placed[j];
+          double clearance = placedB == null ? 0 : Math.Max(0, normalClearanceBetween(a, b));
+          double sliver = placedB == null ? 0 : sliverBetween(a, b);
+          if (placedB != null
             && (clearance <= 0 || valid.Count == 0
-              ? PlacementCollision.TooClose(a.PlacedPart, b.PlacedPart, clearance, sliver)
-              : TooCloseWithValidEdges(
+              ? PlacementCollision.TooClose(placedA, placedB, clearance, sliver)
+              : FarPairVerdict(i, j, clearance, sliver) ?? TooCloseWithValidEdges(
                 a,
                 b,
+                placedA,
+                placedB,
                 clearance,
                 sliver,
                 valid,
@@ -483,12 +711,14 @@ namespace DeepNestSharp.RasterNest
             unfit.All.Add(b);
             if (stopAtFirst)
             {
+              FinishTiming();
               return unfit;
             }
           }
         }
       }
 
+      FinishTiming();
       return unfit;
     }
 
@@ -496,10 +726,12 @@ namespace DeepNestSharp.RasterNest
       IReadOnlyList<EdgeReference> commonEdges,
       double commonLineGap,
       double tolerance,
-      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
+      PairVerdictCache memo = null)
     {
       var result = new List<EdgeReference>(commonEdges.Count);
       sourceCatalogs ??= new Dictionary<string, DxfContourCatalog>(StringComparer.OrdinalIgnoreCase);
+      var existence = new Dictionary<string, bool>(StringComparer.Ordinal);
       foreach (EdgeReference edge in commonEdges)
       {
         if (edge.PartA == null || edge.PartB == null)
@@ -507,49 +739,137 @@ namespace DeepNestSharp.RasterNest
           continue;
         }
 
-        if (edge.SpanA != null || edge.SpanB != null)
+        // A search judges the same edges at the same poses over and over; resolving each one against its
+        // source drawing again every time was a third of the clearance stage on a busy sheet.
+        string memoKey = memo?.EdgeKey(edge, commonLineGap, tolerance);
+        EdgeReference? validated = null;
+        if (memoKey == null || !memo.TryGetEdge(memoKey, out validated))
         {
-          if (edge.SpanA == null
-            || edge.SpanB == null)
+          validated = ValidateEdge(edge, commonLineGap, tolerance, sourceCatalogs, existence);
+          if (memoKey != null)
           {
-            continue;
+            memo.StoreEdge(memoKey, validated);
           }
+        }
 
-          bool sourceAddressed = edge.SpanA.ContourIndex >= 0 && edge.SpanB.ContourIndex >= 0;
-          if (!sourceAddressed)
-          {
-            if (edge.SpanA.ContourIndex >= 0
-              || edge.SpanB.ContourIndex >= 0
-              || !CommonLineGeometryResolver.TryCreateCommonEdge(
-                edge.PartA,
-                edge.SpanA,
-                edge.PartB,
-                edge.SpanB,
-                commonLineGap,
-                tolerance,
-                out _, sourceCatalogs))
-            {
-              continue;
-            }
+        if (validated.HasValue)
+        {
+          result.Add(validated.Value);
+        }
+      }
 
-            result.Add(edge);
-            continue;
-          }
+      return new PreparedEdges(result);
+    }
 
-          if (!TryResolveExact(
+    /// <summary>One edge's record checked against its source, or null when it does not hold.</summary>
+    private static EdgeReference? ValidateEdge(
+      EdgeReference edge,
+      double commonLineGap,
+      double tolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs,
+      IDictionary<string, bool> existence = null)
+    {
+      if (edge.SpanA != null || edge.SpanB != null)
+      {
+        if (edge.SpanA == null
+          || edge.SpanB == null)
+        {
+          return null;
+        }
+
+        bool sourceAddressed = edge.SpanA.ContourIndex >= 0 && edge.SpanB.ContourIndex >= 0;
+        if (!sourceAddressed)
+        {
+          if (edge.SpanA.ContourIndex >= 0
+            || edge.SpanB.ContourIndex >= 0
+            || !CommonLineGeometryResolver.TryCreateCommonEdge(
               edge.PartA,
               edge.SpanA,
+              edge.PartB,
+              edge.SpanB,
+              commonLineGap,
+              tolerance,
+              out _, sourceCatalogs))
+          {
+            return null;
+          }
+
+          return edge;
+        }
+
+        if (!TryResolveExact(
+            edge.PartA,
+            edge.SpanA,
+            sourceCatalogs,
+            tolerance,
+            out DxfResolvedBoundarySpan resolvedA,
+            out DxfContourCatalog catalogA, existence)
+          || !TryResolveExact(
+            edge.PartB,
+            edge.SpanB,
+            sourceCatalogs,
+            tolerance,
+            out DxfResolvedBoundarySpan resolvedB,
+            out DxfContourCatalog catalogB, existence)
+          || !DxfCommonLineSpanResolver.TryCreateCenterCurve(
+            resolvedA,
+            resolvedB,
+            commonLineGap,
+            tolerance,
+            out _,
+            out _))
+        {
+          return null;
+        }
+
+        return new EdgeReference(
+          edge.PartA,
+          edge.EdgeAIndex,
+          edge.PartB,
+          edge.EdgeBIndex,
+          edge.EdgeAStart,
+          edge.EdgeAEnd,
+          edge.EdgeBStart,
+          edge.EdgeBEnd,
+          edge.SpanA,
+          edge.SpanB,
+          resolvedA,
+          resolvedB,
+          catalogA,
+          catalogB);
+      }
+
+      if (CommonLineGeometryResolver.TryCreateCommonEdge(
+        edge.PartA,
+        edge.EdgeAIndex,
+        edge.EdgeAStart,
+        edge.EdgeAEnd,
+        edge.PartB,
+        edge.EdgeBIndex,
+        edge.EdgeBStart,
+        edge.EdgeBEnd,
+        commonLineGap,
+        tolerance,
+        out CommonEdge validated, sourceCatalogs))
+      {
+        bool exactSource = validated.SpanA?.ContourIndex >= 0
+          && validated.SpanB?.ContourIndex >= 0;
+        if (exactSource)
+        {
+          if (!TryResolveExact(
+              edge.PartA,
+              validated.SpanA,
               sourceCatalogs,
               tolerance,
               out DxfResolvedBoundarySpan resolvedA,
-              out DxfContourCatalog catalogA)
+              out DxfContourCatalog catalogA, existence)
             || !TryResolveExact(
               edge.PartB,
-              edge.SpanB,
+              validated.SpanB,
               sourceCatalogs,
               tolerance,
               out DxfResolvedBoundarySpan resolvedB,
-              out DxfContourCatalog catalogB)
+              out DxfContourCatalog catalogB, existence)
             || !DxfCommonLineSpanResolver.TryCreateCenterCurve(
               resolvedA,
               resolvedB,
@@ -558,10 +878,10 @@ namespace DeepNestSharp.RasterNest
               out _,
               out _))
           {
-            continue;
+            return null;
           }
 
-          result.Add(new EdgeReference(
+          return new EdgeReference(
             edge.PartA,
             edge.EdgeAIndex,
             edge.PartB,
@@ -570,81 +890,20 @@ namespace DeepNestSharp.RasterNest
             edge.EdgeAEnd,
             edge.EdgeBStart,
             edge.EdgeBEnd,
-            edge.SpanA,
-            edge.SpanB,
+            validated.SpanA,
+            validated.SpanB,
             resolvedA,
             resolvedB,
             catalogA,
-            catalogB));
-          continue;
+            catalogB);
         }
-
-        if (CommonLineGeometryResolver.TryCreateCommonEdge(
-          edge.PartA,
-          edge.EdgeAIndex,
-          edge.EdgeAStart,
-          edge.EdgeAEnd,
-          edge.PartB,
-          edge.EdgeBIndex,
-          edge.EdgeBStart,
-          edge.EdgeBEnd,
-          commonLineGap,
-          tolerance,
-          out CommonEdge validated, sourceCatalogs))
+        else
         {
-          bool exactSource = validated.SpanA?.ContourIndex >= 0
-            && validated.SpanB?.ContourIndex >= 0;
-          if (exactSource)
-          {
-            if (!TryResolveExact(
-                edge.PartA,
-                validated.SpanA,
-                sourceCatalogs,
-                tolerance,
-                out DxfResolvedBoundarySpan resolvedA,
-                out DxfContourCatalog catalogA)
-              || !TryResolveExact(
-                edge.PartB,
-                validated.SpanB,
-                sourceCatalogs,
-                tolerance,
-                out DxfResolvedBoundarySpan resolvedB,
-                out DxfContourCatalog catalogB)
-              || !DxfCommonLineSpanResolver.TryCreateCenterCurve(
-                resolvedA,
-                resolvedB,
-                commonLineGap,
-                tolerance,
-                out _,
-                out _))
-            {
-              continue;
-            }
-
-            result.Add(new EdgeReference(
-              edge.PartA,
-              edge.EdgeAIndex,
-              edge.PartB,
-              edge.EdgeBIndex,
-              edge.EdgeAStart,
-              edge.EdgeAEnd,
-              edge.EdgeBStart,
-              edge.EdgeBEnd,
-              validated.SpanA,
-              validated.SpanB,
-              resolvedA,
-              resolvedB,
-              catalogA,
-              catalogB));
-          }
-          else
-          {
-            result.Add(edge);
-          }
+          return edge;
         }
       }
 
-      return new PreparedEdges(result);
+      return null;
     }
 
     private static bool TryResolveExact(
@@ -653,7 +912,8 @@ namespace DeepNestSharp.RasterNest
       IDictionary<string, DxfContourCatalog> sourceCatalogs,
       double endpointTolerance,
       out DxfResolvedBoundarySpan resolved,
-      out DxfContourCatalog sourceCatalog)
+      out DxfContourCatalog sourceCatalog,
+      IDictionary<string, bool> existence = null)
     {
       resolved = null;
       sourceCatalog = null;
@@ -666,8 +926,20 @@ namespace DeepNestSharp.RasterNest
 
       try
       {
-        string path = Path.GetFullPath(sourceName);
-        if (!File.Exists(path))
+        string path = FullSourcePath(sourceName);
+
+        // Asked once per drawing for the whole set of edges being checked, not twice per edge: a file
+        // system call per span was a fifth of validating a busy sheet's edges.
+        if (existence == null || !existence.TryGetValue(path, out bool exists))
+        {
+          exists = File.Exists(path);
+          if (existence != null)
+          {
+            existence[path] = exists;
+          }
+        }
+
+        if (!exists)
         {
           return false;
         }
@@ -689,6 +961,18 @@ namespace DeepNestSharp.RasterNest
         return false;
       }
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> FullSourcePaths =
+      new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// <see cref="Path.GetFullPath(string)"/>, remembered for a path that is already fully qualified: for one
+    /// of those the answer does not depend on the current directory. A relative name is resolved afresh.
+    /// </summary>
+    private static string FullSourcePath(string sourceName)
+      => Path.IsPathFullyQualified(sourceName)
+        ? FullSourcePaths.GetOrAdd(sourceName, Path.GetFullPath)
+        : Path.GetFullPath(sourceName);
 
     /// <summary>
     /// Search-local memoization for immutable pose geometries. Keys use exact (not quantized) values,
@@ -724,15 +1008,98 @@ namespace DeepNestSharp.RasterNest
         if (this.values.Count >= 8192)
         {
           this.values.Clear();
+          NestDiagnostics.Add("verdict-cache.clears");
         }
 
         this.values[key] = result;
       }
 
+      private readonly Dictionary<string, EdgeReference?> validatedEdges = new(StringComparer.Ordinal);
+      private readonly Dictionary<IPartPlacement, int> placementIds = new(ReferenceEqualityComparer.Instance);
+
+      internal bool TryGetEdge(string key, out EdgeReference? validated) => this.validatedEdges.TryGetValue(key, out validated);
+
+      internal void StoreEdge(string key, EdgeReference? validated)
+      {
+        if (this.validatedEdges.Count >= 65536)
+        {
+          this.validatedEdges.Clear();
+        }
+
+        this.validatedEdges[key] = validated;
+      }
+
+      /// <summary>
+      /// Everything one edge's validation reads: which two placement OBJECTS it joins (the record it hands
+      /// back points at them, so a part that merely looks the same is not the same answer), their drawings
+      /// and poses, the record's own indices, parameters and spans, and the gap and tolerance.
+      /// </summary>
+      internal string EdgeKey(EdgeReference edge, double gap, double tolerance)
+      {
+        var key = new StringBuilder(256);
+        Number(gap);
+        Number(tolerance);
+        Placement(edge.PartA);
+        Placement(edge.PartB);
+        Number(edge.EdgeAIndex);
+        Number(edge.EdgeBIndex);
+        Number(edge.EdgeAStart);
+        Number(edge.EdgeAEnd);
+        Number(edge.EdgeBStart);
+        Number(edge.EdgeBEnd);
+        Span(edge.SpanA);
+        Span(edge.SpanB);
+        return key.ToString();
+
+        void Number(double value)
+        {
+          Span<char> bits = stackalloc char[16];
+          _ = BitConverter.DoubleToInt64Bits(value).TryFormat(bits, out int written, "X16", CultureInfo.InvariantCulture);
+          key.Append(bits.Slice(0, written)).Append('|');
+        }
+
+        void Placement(IPartPlacement part)
+        {
+          if (!this.placementIds.TryGetValue(part, out int placementId))
+          {
+            this.placementIds[part] = placementId = this.placementIds.Count;
+          }
+
+          if (!this.geometryIds.TryGetValue(part.Part, out int geometryId))
+          {
+            this.geometryIds[part.Part] = geometryId = this.geometryIds.Count;
+          }
+
+          Number(placementId);
+          Number(geometryId);
+          Number(part.X);
+          Number(part.Y);
+          Number(part.Rotation);
+          key.Append(part.IsMirrored).Append('|');
+        }
+
+        void Span(CommonBoundarySpan span)
+        {
+          key.Append(span == null ? "none|" : "span|");
+          if (span == null)
+          {
+            return;
+          }
+
+          Number(span.ContourIndex);
+          Number(span.PrimitiveIndex);
+          Number(span.StartParameter);
+          Number(span.EndParameter);
+          key.Append(span.SourceFingerprint).Append('|').Append(span.ContourFingerprint).Append('|');
+        }
+      }
+
       internal string Key(IPartPlacement a, IPartPlacement b, IReadOnlyList<EdgeReference> edges,
         double clearance, double sliver, double gap, double tolerance, double numericalTolerance)
       {
-        var key = new StringBuilder();
+        // Sized for the usual pair (five settings, two parts, a couple of incident edges) so the builder
+        // does not grow through half a dozen reallocations on every single lookup.
+        var key = new StringBuilder(512);
         Number(clearance);
         Number(sliver);
         Number(gap);
@@ -763,7 +1130,19 @@ namespace DeepNestSharp.RasterNest
 
         return key.ToString();
 
-        void Number(double value) => key.Append(value.ToString("R", CultureInfo.InvariantCulture)).Append('|');
+        // The raw bits, not "R". Round-trip formatting is the most expensive double-to-text path in .NET
+        // and it ran dozens of times per lookup, on hits as well as misses, which is what made this cache
+        // slow even at a 74% hit rate. Bits identify a double at least as precisely as "R" does: equal
+        // bits give equal text and vice versa, the one difference being that distinct NaN payloads stay
+        // distinct here where "R" collapsed them. Distinguishing MORE can only cost a recomputation; it
+        // can never return a cached verdict for a pose that is not the one asked about.
+        void Number(double value)
+        {
+          Span<char> bits = stackalloc char[16];
+          _ = BitConverter.DoubleToInt64Bits(value).TryFormat(bits, out int written, "X16", CultureInfo.InvariantCulture);
+          key.Append(bits.Slice(0, written)).Append('|');
+        }
+
         void Part(IPartPlacement part)
         {
           if (!this.geometryIds.TryGetValue(part.Part, out int id))
@@ -1078,15 +1457,31 @@ namespace DeepNestSharp.RasterNest
       IReadOnlyList<EdgeReference> commonEdges,
       IDictionary<string, DxfContourCatalog> sourceCatalogs)
     {
-      DxfContourCatalog[] relationshipCatalogs = (commonEdges ?? Array.Empty<EdgeReference>())
-        .Select(reference => ExactCatalogFor(reference, part))
-        .Where(catalog => catalog != null)
-        .GroupBy(catalog => catalog.SourceName, StringComparer.OrdinalIgnoreCase)
-        .Select(group => group.First())
-        .ToArray();
-      if (relationshipCatalogs.Length > 0)
+      // The first catalog of each drawing, in the order the edges list them: what a GroupBy on the source
+      // name followed by First() returns, without building a lookup for every boundary of a busy sheet.
+      List<DxfContourCatalog> relationshipCatalogs = null;
+      HashSet<string> seenSources = null;
+      bool seenUnnamed = false;
+      foreach (EdgeReference reference in commonEdges ?? Array.Empty<EdgeReference>())
       {
-        return relationshipCatalogs;
+        DxfContourCatalog relationshipCatalog = ExactCatalogFor(reference, part);
+        if (relationshipCatalog == null)
+        {
+          continue;
+        }
+
+        bool first = relationshipCatalog.SourceName == null
+          ? !seenUnnamed && (seenUnnamed = true)
+          : (seenSources ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase)).Add(relationshipCatalog.SourceName);
+        if (first)
+        {
+          (relationshipCatalogs ??= new List<DxfContourCatalog>()).Add(relationshipCatalog);
+        }
+      }
+
+      if (relationshipCatalogs != null)
+      {
+        return relationshipCatalogs.ToArray();
       }
 
       if (string.IsNullOrWhiteSpace(part?.Part?.Name)
@@ -1096,7 +1491,7 @@ namespace DeepNestSharp.RasterNest
         return Array.Empty<DxfContourCatalog>();
       }
 
-      string source = Path.GetFullPath(part.Part.Name);
+      string source = FullSourcePath(part.Part.Name);
       return sourceCatalogs.TryGetValue(source, out DxfContourCatalog catalog)
         ? new[] { catalog }
         : Array.Empty<DxfContourCatalog>();
@@ -1123,14 +1518,64 @@ namespace DeepNestSharp.RasterNest
       IPartPlacement part,
       IReadOnlyList<EdgeReference> commonEdges,
       double tolerance,
-      IDictionary<IPartPlacement, BoundaryGeometry> cache,
+      BoundaryCache cache,
       IDictionary<string, DxfContourCatalog> sourceCatalogs)
     {
-      if (cache.TryGetValue(part, out BoundaryGeometry cached))
+      cache = CacheFor(part, commonEdges, cache);
+      string poseKey = cache.Key(part, tolerance, commonEdges);
+      if (TryCachedBoundary(cache, poseKey, part, commonEdges, tolerance, sourceCatalogs, out BoundaryGeometry cached))
       {
         return cached;
       }
 
+      BoundaryGeometry geometry = BuildBoundary(part, commonEdges, tolerance, sourceCatalogs);
+      cache.Store(poseKey, geometry);
+      return geometry;
+    }
+
+    /// <summary>Which cache holds this part's boundary: a search-wide one when the caller has one for its case
+    /// (no edge touching it, or one keyed on the edges that do), else the cache handed in.</summary>
+    private static BoundaryCache CacheFor(IPartPlacement part, IReadOnlyList<EdgeReference> commonEdges, BoundaryCache cache)
+    {
+      if (cache.EdgeFree == null && cache.EdgeAware == null)
+      {
+        return cache;
+      }
+
+      bool touched = (commonEdges ?? Array.Empty<EdgeReference>()).Any(edge => ReferenceEquals(edge.PartA, part) || ReferenceEquals(edge.PartB, part));
+      return touched ? cache.EdgeAware ?? cache : cache.EdgeFree ?? cache;
+    }
+
+    private static bool TryCachedBoundary(
+      BoundaryCache cache,
+      string poseKey,
+      IPartPlacement part,
+      IReadOnlyList<EdgeReference> commonEdges,
+      double tolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs,
+      out BoundaryGeometry cached)
+    {
+      if (!cache.TryGet(poseKey, out cached))
+      {
+        return false;
+      }
+
+      if (VerifyBoundaryCache)
+      {
+        AssertBoundaryMatches(cached, part, commonEdges, tolerance, sourceCatalogs, poseKey);
+      }
+
+      return true;
+    }
+
+    /// <summary>A part's boundary from scratch. Pure: it reads the part, the edges and the drawings and writes
+    /// nothing shared, so several can be built on different cores at once.</summary>
+    private static BoundaryGeometry BuildBoundary(
+      IPartPlacement part,
+      IReadOnlyList<EdgeReference> commonEdges,
+      double tolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs)
+    {
       List<BoundarySegment> segments = BoundarySegments(
         part,
         commonEdges,
@@ -1138,9 +1583,7 @@ namespace DeepNestSharp.RasterNest
         sourceCatalogs,
         out bool exactBoundaryInvalid,
         out double approximationError);
-      var geometry = new BoundaryGeometry(exactBoundaryInvalid, segments, approximationError);
-      cache[part] = geometry;
-      return geometry;
+      return new BoundaryGeometry(exactBoundaryInvalid, segments, approximationError);
     }
 
     private static List<BoundarySegment> BoundarySegments(
@@ -1386,6 +1829,7 @@ namespace DeepNestSharp.RasterNest
           .ToArray();
         int aggregateSegments = 0;
         double targetSagitta = Math.Max(tolerance, PlacementCollision.PlacementNoise) / 8D;
+        var sampled = new List<(DxfSourcePrimitive Primitive, DxfResolvedBoundarySpan Resolved, double[] Ordered)>(contour.Primitives.Count);
         foreach (DxfSourcePrimitive primitive in contour.Primitives)
         {
           CommonBoundarySpan fullSpan = DxfCommonLineSpanResolver.CreateSpan(
@@ -1446,6 +1890,15 @@ namespace DeepNestSharp.RasterNest
           }
 
           aggregateSegments += ordered.Length - 1;
+          sampled.Add((primitive, resolved, ordered));
+        }
+
+        // Sized once, to the exact count. Grown by doubling, a curved part's list ended on an array past
+        // the large-object threshold, and a busy nest rebuilds these boundaries tens of thousands of times:
+        // that churn, and the full collections it set off, was most of the time this stage took.
+        result = new List<BoundarySegment>(aggregateSegments);
+        foreach (var (primitive, resolved, ordered) in sampled)
+        {
           for (int parameterIndex = 0; parameterIndex + 1 < ordered.Length; parameterIndex++)
           {
             double from = ordered[parameterIndex];
@@ -2330,7 +2783,184 @@ namespace DeepNestSharp.RasterNest
     /// exact source geometry could not be rebuilt; that fails closed rather than falling back to the
     /// coarser nesting polygon, which is the very approximation the reduced gap was granted against.
     /// </summary>
-    private sealed class BoundaryGeometry
+    /// <summary>
+    /// Memoized exact boundaries for ONE fixed set of common edges.
+    /// <para>Keyed on the POSE, not on the placement object. A part that moves is the same object at a new
+    /// position, so an object key can answer for where it used to be; that hazard is what
+    /// <see cref="ProbeContext.Moved"/> existed to paper over, and a pose key removes it by construction.</para>
+    /// <para>⚠️ The edge set is deliberately NOT in the key, because an instance is never allowed to
+    /// outlive the edge list it was built against. The boundary DOES depend on that list in three places
+    /// (which catalog <see cref="ExactCatalogs"/> picks, the split parameters recorded spans insert into
+    /// the tessellation, and the resolved spans the non-exact path reads), so sharing one of these across
+    /// two different edge sets would hand back a boundary for the wrong drawing. Callers create one per
+    /// applied plan and drop it with the plan.</para>
+    /// </summary>
+    internal sealed class BoundaryCache
+    {
+      private readonly Dictionary<string, BoundaryGeometry> values = new(StringComparer.Ordinal);
+      private readonly Dictionary<INfp, int> geometryIds = new(ReferenceEqualityComparer.Instance);
+      private readonly int maxEntries;
+      private readonly bool keyIncidentEdges;
+
+      /// <param name="edgeFree">Where to keep the boundaries of parts no common edge touches, when the
+      /// caller has a cache that outlives this one. Such a boundary reads nothing from the edge set (no
+      /// relationship catalog, no recorded split, no resolved span), only the pose, so it stays good across
+      /// every edge set a search tries; that is the one exception to the rule above.</param>
+      /// <param name="edgeAware">Where to keep the boundaries of parts an edge DOES touch, when the caller has
+      /// a cache that outlives this one and keys them on those edges as well (see
+      /// <paramref name="keyIncidentEdges"/>).</param>
+      /// <param name="maxEntries">Emptied when it reaches this many, so a long search cannot hoard them.</param>
+      /// <param name="keyIncidentEdges">Puts in the key everything the boundary reads from the edges that
+      /// touch the part: which side it is on, its edge index and parameters, the recorded span and the
+      /// catalog. With that in the key the edge set no longer has to hold still, so the cache can last a
+      /// whole search; that is the rule above, kept by the key instead of by the lifetime.</param>
+      internal BoundaryCache(BoundaryCache edgeFree = null, int maxEntries = int.MaxValue, BoundaryCache edgeAware = null, bool keyIncidentEdges = false)
+      {
+        this.EdgeFree = edgeFree;
+        this.EdgeAware = edgeAware;
+        this.maxEntries = maxEntries;
+        this.keyIncidentEdges = keyIncidentEdges;
+      }
+
+      internal BoundaryCache EdgeFree { get; }
+
+      internal BoundaryCache EdgeAware { get; }
+
+      internal string Key(IPartPlacement part, double tolerance, IReadOnlyList<EdgeReference> commonEdges = null)
+      {
+        if (!this.geometryIds.TryGetValue(part.Part, out int id))
+        {
+          this.geometryIds[part.Part] = id = this.geometryIds.Count;
+        }
+
+        var key = new StringBuilder(96);
+        Number(id);
+        Number(part.Id);
+        Number(part.X);
+        Number(part.Y);
+        Number(part.Rotation);
+        key.Append(part.IsMirrored).Append('|');
+        Number(tolerance);
+        if (this.keyIncidentEdges)
+        {
+          foreach (EdgeReference edge in commonEdges ?? Array.Empty<EdgeReference>())
+          {
+            bool onA = ReferenceEquals(edge.PartA, part);
+            if (!onA && !ReferenceEquals(edge.PartB, part))
+            {
+              continue;
+            }
+
+            key.Append(onA ? "A|" : "B|");
+            Number(onA ? edge.EdgeAIndex : edge.EdgeBIndex);
+            Number(onA ? edge.EdgeAStart : edge.EdgeBStart);
+            Number(onA ? edge.EdgeAEnd : edge.EdgeBEnd);
+            CommonBoundarySpan span = onA ? edge.SpanA : edge.SpanB;
+            if (span == null)
+            {
+              key.Append("none|");
+            }
+            else
+            {
+              Number(span.ContourIndex);
+              Number(span.PrimitiveIndex);
+              Number(span.StartParameter);
+              Number(span.EndParameter);
+              key.Append(span.SourceFingerprint).Append('|').Append(span.ContourFingerprint).Append('|');
+            }
+
+            DxfContourCatalog catalog = onA ? edge.CatalogA : edge.CatalogB;
+            key.Append(catalog == null ? "-" : catalog.SourceName).Append('|')
+              .Append(catalog?.SourceFingerprint).Append('|');
+          }
+        }
+
+        return key.ToString();
+
+        void Number(double value)
+        {
+          Span<char> bits = stackalloc char[16];
+          _ = BitConverter.DoubleToInt64Bits(value).TryFormat(bits, out int written, "X16", CultureInfo.InvariantCulture);
+          key.Append(bits.Slice(0, written)).Append('|');
+        }
+      }
+
+      internal bool TryGet(string key, out BoundaryGeometry geometry) => this.values.TryGetValue(key, out geometry);
+
+      internal void Store(string key, BoundaryGeometry geometry)
+      {
+        if (this.values.Count >= this.maxEntries)
+        {
+          this.values.Clear();
+        }
+
+        this.values[key] = geometry;
+      }
+    }
+
+    /// <summary>
+    /// The equivalence harness: rebuilds the boundary the long way and fails loudly if the cached answer
+    /// differs in any bit. Only runs under SHEETNEST_CLEARANCE_EQUIV=1.
+    /// </summary>
+    private static void AssertBoundaryMatches(
+      BoundaryGeometry cached,
+      IPartPlacement part,
+      IReadOnlyList<EdgeReference> commonEdges,
+      double tolerance,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs,
+      string poseKey)
+    {
+      List<BoundarySegment> fresh = BoundarySegments(
+        part,
+        commonEdges,
+        tolerance,
+        sourceCatalogs,
+        out bool freshInvalid,
+        out double freshError);
+
+      string Complaint(string what) => FormattableString.Invariant(
+        $"Cached exact boundary disagrees with a fresh one ({what}). part id={part.Id} pose=({part.X:R},{part.Y:R},{part.Rotation:R},mirrored={part.IsMirrored}) key={poseKey}. The boundary cache key is missing an input the tessellation actually reads.");
+
+      if (cached.Invalid != freshInvalid)
+      {
+        throw new InvalidOperationException(Complaint("invalid flag"));
+      }
+
+      if (BitConverter.DoubleToInt64Bits(cached.ApproximationError) != BitConverter.DoubleToInt64Bits(freshError))
+      {
+        throw new InvalidOperationException(Complaint("approximation error"));
+      }
+
+      if (cached.Segments.Count != fresh.Count)
+      {
+        throw new InvalidOperationException(Complaint($"segment count {cached.Segments.Count} vs {fresh.Count}"));
+      }
+
+      // Every field, not just the endpoints: Index and the parametric bounds drive the endpoint topology
+      // walks, and IsCurved with the curve endpoints drives the arc cap scaling. A key that lost the
+      // recorded spans would show up first as a different Index or StartParameter, not as moved geometry.
+      for (int i = 0; i < fresh.Count; i++)
+      {
+        BoundarySegment was = cached.Segments[i];
+        BoundarySegment now = fresh[i];
+        if (was.Index != now.Index
+          || was.IsCurved != now.IsCurved
+          || Differs(was.StartParameter, now.StartParameter)
+          || Differs(was.EndParameter, now.EndParameter)
+          || Differs(was.Start.X, now.Start.X) || Differs(was.Start.Y, now.Start.Y)
+          || Differs(was.End.X, now.End.X) || Differs(was.End.Y, now.End.Y)
+          || Differs(was.CurveStart.X, now.CurveStart.X) || Differs(was.CurveStart.Y, now.CurveStart.Y)
+          || Differs(was.CurveEnd.X, now.CurveEnd.X) || Differs(was.CurveEnd.Y, now.CurveEnd.Y))
+        {
+          throw new InvalidOperationException(Complaint($"segment {i}"));
+        }
+      }
+
+      static bool Differs(double left, double right)
+        => BitConverter.DoubleToInt64Bits(left) != BitConverter.DoubleToInt64Bits(right);
+    }
+
+    internal sealed class BoundaryGeometry
     {
       internal BoundaryGeometry(
         bool invalid,
@@ -2368,13 +2998,25 @@ namespace DeepNestSharp.RasterNest
 
       internal SegmentIndex(IReadOnlyList<BoundarySegment> segments)
       {
-        this.entries = segments.Select((segment, position) => (
-          Position: position,
-          MinX: Math.Min(segment.Start.X, segment.End.X),
-          MaxX: Math.Max(segment.Start.X, segment.End.X),
-          MinY: Math.Min(segment.Start.Y, segment.End.Y),
-          MaxY: Math.Max(segment.Start.Y, segment.End.Y)))
-          .OrderBy(entry => entry.MinX).ThenBy(entry => entry.Position).ToArray();
+        this.entries = new (int Position, double MinX, double MaxX, double MinY, double MaxY)[segments.Count];
+        for (int position = 0; position < segments.Count; position++)
+        {
+          BoundarySegment segment = segments[position];
+          this.entries[position] = (
+            position,
+            Math.Min(segment.Start.X, segment.End.X),
+            Math.Max(segment.Start.X, segment.End.X),
+            Math.Min(segment.Start.Y, segment.End.Y),
+            Math.Max(segment.Start.Y, segment.End.Y));
+        }
+
+        // By MinX, then by position: the same total order a LINQ OrderBy/ThenBy gave, without the
+        // allocations that made it a quarter of every boundary rebuild.
+        Array.Sort(this.entries, (left, right) =>
+        {
+          int order = left.MinX.CompareTo(right.MinX);
+          return order != 0 ? order : left.Position.CompareTo(right.Position);
+        });
         this.prefixMaxX = new double[this.entries.Length];
         double maxX = double.NegativeInfinity;
         for (int i = 0; i < this.entries.Length; i++)
@@ -2423,7 +3065,7 @@ namespace DeepNestSharp.RasterNest
       }
     }
 
-    private readonly struct SegmentBounds
+    internal readonly struct SegmentBounds
     {
       private SegmentBounds(double minX, double minY, double maxX, double maxY)
       {
