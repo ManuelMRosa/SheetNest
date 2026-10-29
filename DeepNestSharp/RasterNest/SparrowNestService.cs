@@ -3615,7 +3615,7 @@
         // mixed job with zero CommonEdges: walk the untouched neighbour clear first, the same bounded,
         // fully-reverified way DeferUnfit already does for the final sheet, and only give up the
         // candidate if no safe spot exists. A component member is never the one that moves here.
-        bool TryNudgeConflictingNeighbor(PlacementAcceptance.Unfit conflict)
+        bool TryNudgeConflictingNeighbor(PlacementAcceptance.Unfit conflict, CommonEdgeClearance.BoundaryCache boundaries)
         {
           if (conflict == null || conflict.OutsideMargin.Count > 0 || conflict.Overlapping.Count != 2)
           {
@@ -3642,7 +3642,8 @@
             margin,
             commonLineGap,
             geometryTolerance,
-            sourceCatalogs);
+            sourceCatalogs,
+            boundaries);
         }
 
         reportStage("clearance");
@@ -3666,7 +3667,7 @@
           sourceCatalogs,
           verdictCache,
           planBoundaries);
-        if (!layoutValid && TryNudgeConflictingNeighbor(layoutConflict))
+        if (!layoutValid && TryNudgeConflictingNeighbor(layoutConflict, planBoundaries))
         {
           layoutValid = DirectLayoutIsValid(
             all,
@@ -4701,7 +4702,8 @@
       double margin,
       double commonLineGap,
       double geometryTolerance,
-      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
+      CommonEdgeClearance.BoundaryCache boundaries = null)
     {
       double clearance = placements
         .Where(p => !ReferenceEquals(p, victim))
@@ -4720,7 +4722,7 @@
       // neighbours' boundaries is the expensive part and none of it depends on where the victim is
       // being tried, so it is shared across the whole search instead of redone per position per pair.
       var probe = new CommonEdgeClearance.ProbeContext(
-        ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, sourceCatalogs);
+        ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, sourceCatalogs, boundaries);
 
       foreach (double step in new[] { 0.002, 0.01, 0.05, 0.2, 0.5, 1.0 })
       {

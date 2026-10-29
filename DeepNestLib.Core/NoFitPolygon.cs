@@ -716,14 +716,17 @@
       shifted.PlacementOrder = this.PlacementOrder;
       shifted.StrictAngle = this.StrictAngle;
 
+      // Built in one array rather than through AddPoint, which grows the array by one and forgets the
+      // provenance on every point: that made each copy quadratic in its points, and PlacedPart makes one
+      // on every read. A translation moves every segment and reorders nothing, so the same flags still
+      // describe it.
+      var points = new SvgPoint[this.Length];
       for (var i = 0; i < this.Length; i++)
       {
-        shifted.AddPoint(new SvgPoint(this[i].X + x, this[i].Y + y) { Exact = this[i].Exact });
+        points[i] = new SvgPoint(this[i].X + x, this[i].Y + y) { Exact = this[i].Exact };
       }
 
-      // AddPoint forgets the provenance as it goes, which is right when a ring is being built and wrong
-      // here: a translation moves every segment and reorders nothing, so the same flags still describe
-      // it. Restored after the loop rather than before it, which is the order that actually works.
+      shifted.points = points;
       shifted.curvedSegments = this.curvedSegments;
 
       if (this.Children != null /*&& p.Children.Count*/)
