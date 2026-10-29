@@ -163,7 +163,8 @@ namespace DeepNestSharp.RasterNest
         double commonLineGap,
         double geometryTolerance,
         IDictionary<string, DxfContourCatalog> sourceCatalogs,
-        BoundaryCache boundaries = null)
+        BoundaryCache boundaries = null,
+        PairVerdictCache verdictCache = null)
       {
         this.boundaries = boundaries ?? new BoundaryCache();
         this.commonLineGap = commonLineGap;
@@ -172,7 +173,7 @@ namespace DeepNestSharp.RasterNest
         this.sourceCatalogs = sourceCatalogs;
         this.valid = commonEdges == null || commonEdges.Count == 0
           ? Array.Empty<EdgeReference>()
-          : ValidEdges(commonEdges, commonLineGap, this.geometryTol, sourceCatalogs);
+          : ValidEdges(commonEdges, commonLineGap, this.geometryTol, sourceCatalogs, verdictCache);
       }
 
       /// <summary>
@@ -730,6 +731,7 @@ namespace DeepNestSharp.RasterNest
     {
       var result = new List<EdgeReference>(commonEdges.Count);
       sourceCatalogs ??= new Dictionary<string, DxfContourCatalog>(StringComparer.OrdinalIgnoreCase);
+      var existence = new Dictionary<string, bool>(StringComparer.Ordinal);
       foreach (EdgeReference edge in commonEdges)
       {
         if (edge.PartA == null || edge.PartB == null)
@@ -743,7 +745,7 @@ namespace DeepNestSharp.RasterNest
         EdgeReference? validated = null;
         if (memoKey == null || !memo.TryGetEdge(memoKey, out validated))
         {
-          validated = ValidateEdge(edge, commonLineGap, tolerance, sourceCatalogs);
+          validated = ValidateEdge(edge, commonLineGap, tolerance, sourceCatalogs, existence);
           if (memoKey != null)
           {
             memo.StoreEdge(memoKey, validated);
@@ -764,7 +766,8 @@ namespace DeepNestSharp.RasterNest
       EdgeReference edge,
       double commonLineGap,
       double tolerance,
-      IDictionary<string, DxfContourCatalog> sourceCatalogs)
+      IDictionary<string, DxfContourCatalog> sourceCatalogs,
+      IDictionary<string, bool> existence = null)
     {
       if (edge.SpanA != null || edge.SpanB != null)
       {
@@ -800,14 +803,14 @@ namespace DeepNestSharp.RasterNest
             sourceCatalogs,
             tolerance,
             out DxfResolvedBoundarySpan resolvedA,
-            out DxfContourCatalog catalogA)
+            out DxfContourCatalog catalogA, existence)
           || !TryResolveExact(
             edge.PartB,
             edge.SpanB,
             sourceCatalogs,
             tolerance,
             out DxfResolvedBoundarySpan resolvedB,
-            out DxfContourCatalog catalogB)
+            out DxfContourCatalog catalogB, existence)
           || !DxfCommonLineSpanResolver.TryCreateCenterCurve(
             resolvedA,
             resolvedB,
@@ -859,14 +862,14 @@ namespace DeepNestSharp.RasterNest
               sourceCatalogs,
               tolerance,
               out DxfResolvedBoundarySpan resolvedA,
-              out DxfContourCatalog catalogA)
+              out DxfContourCatalog catalogA, existence)
             || !TryResolveExact(
               edge.PartB,
               validated.SpanB,
               sourceCatalogs,
               tolerance,
               out DxfResolvedBoundarySpan resolvedB,
-              out DxfContourCatalog catalogB)
+              out DxfContourCatalog catalogB, existence)
             || !DxfCommonLineSpanResolver.TryCreateCenterCurve(
               resolvedA,
               resolvedB,
@@ -909,7 +912,8 @@ namespace DeepNestSharp.RasterNest
       IDictionary<string, DxfContourCatalog> sourceCatalogs,
       double endpointTolerance,
       out DxfResolvedBoundarySpan resolved,
-      out DxfContourCatalog sourceCatalog)
+      out DxfContourCatalog sourceCatalog,
+      IDictionary<string, bool> existence = null)
     {
       resolved = null;
       sourceCatalog = null;
@@ -922,8 +926,20 @@ namespace DeepNestSharp.RasterNest
 
       try
       {
-        string path = Path.GetFullPath(sourceName);
-        if (!File.Exists(path))
+        string path = FullSourcePath(sourceName);
+
+        // Asked once per drawing for the whole set of edges being checked, not twice per edge: a file
+        // system call per span was a fifth of validating a busy sheet's edges.
+        if (existence == null || !existence.TryGetValue(path, out bool exists))
+        {
+          exists = File.Exists(path);
+          if (existence != null)
+          {
+            existence[path] = exists;
+          }
+        }
+
+        if (!exists)
         {
           return false;
         }
@@ -945,6 +961,18 @@ namespace DeepNestSharp.RasterNest
         return false;
       }
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> FullSourcePaths =
+      new System.Collections.Concurrent.ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// <see cref="Path.GetFullPath(string)"/>, remembered for a path that is already fully qualified: for one
+    /// of those the answer does not depend on the current directory. A relative name is resolved afresh.
+    /// </summary>
+    private static string FullSourcePath(string sourceName)
+      => Path.IsPathFullyQualified(sourceName)
+        ? FullSourcePaths.GetOrAdd(sourceName, Path.GetFullPath)
+        : Path.GetFullPath(sourceName);
 
     /// <summary>
     /// Search-local memoization for immutable pose geometries. Keys use exact (not quantized) values,
@@ -1463,7 +1491,7 @@ namespace DeepNestSharp.RasterNest
         return Array.Empty<DxfContourCatalog>();
       }
 
-      string source = Path.GetFullPath(part.Part.Name);
+      string source = FullSourcePath(part.Part.Name);
       return sourceCatalogs.TryGetValue(source, out DxfContourCatalog catalog)
         ? new[] { catalog }
         : Array.Empty<DxfContourCatalog>();

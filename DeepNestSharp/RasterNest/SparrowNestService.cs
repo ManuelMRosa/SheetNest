@@ -3652,7 +3652,8 @@
             commonLineGap,
             geometryTolerance,
             sourceCatalogs,
-            boundaries);
+            boundaries,
+            verdictCache);
         }
 
         reportStage("clearance");
@@ -4713,7 +4714,8 @@
       double commonLineGap,
       double geometryTolerance,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
-      CommonEdgeClearance.BoundaryCache boundaries = null)
+      CommonEdgeClearance.BoundaryCache boundaries = null,
+      CommonEdgeClearance.PairVerdictCache verdictCache = null)
     {
       double clearance = placements
         .Where(p => !ReferenceEquals(p, victim))
@@ -4732,7 +4734,7 @@
       // neighbours' boundaries is the expensive part and none of it depends on where the victim is
       // being tried, so it is shared across the whole search instead of redone per position per pair.
       var probe = new CommonEdgeClearance.ProbeContext(
-        ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, sourceCatalogs, boundaries);
+        ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, sourceCatalogs, boundaries, verdictCache);
 
       foreach (double step in new[] { 0.002, 0.01, 0.05, 0.2, 0.5, 1.0 })
       {
