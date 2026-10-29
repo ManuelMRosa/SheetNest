@@ -1,0 +1,113 @@
+# Translating SheetNest
+
+SheetNest shows its texts in your Windows language when a translation exists, and anyone can pick another one in
+**Settings > Language**. Every translation lives in this folder, one file per language. Adding a language takes no
+programming: one file and one pull request.
+
+## Languages
+
+| Language | File | Status |
+|---|---|---|
+| English | `Strings.resx` | The reference: every other file translates this one. |
+| Español | `Strings.es.resx` | Complete, kept up to date with the code. |
+
+## Add a language
+
+1. Find your language code: the two letters of standard language tags, such as `fr` (French), `de` (German),
+   `pt` (Portuguese), `it` (Italian) or `pl` (Polish). Add a region only when the translation suits one country
+   alone, as in `pt-BR`.
+2. Copy `Strings.resx` to `Strings.<code>.resx` in this folder, for example `Strings.fr.resx`.
+3. In the copy, translate the text between `<value>` and `</value>` of each entry. Leave the `name` of every
+   entry as it is. The `<comment>` lines are notes for you; you can delete them from your copy.
+4. Open a pull request. A check runs on it and tells you if anything needs fixing.
+
+All of it can be done on the GitHub website: open `Strings.resx`, copy its content, then in your fork use
+**Add file > Create new file**, paste, translate and propose the change.
+
+Nothing else is needed. The build picks up the new file, and SheetNest lists the language in
+**Settings > Language** by itself.
+
+You do not have to finish in one go. A text that is not translated yet shows in English, so a partial translation
+is already useful and others can complete it later.
+
+## Rules for each text
+
+- **Placeholders** such as `{0}`, `{1}` or `{0:0.0}` are where SheetNest puts a number or a name. Keep every one,
+  unchanged, wherever it fits in your sentence. The check fails if one is missing or altered.
+- **Pairs ending in `_One` and `_Other`** are the same text for a count of one and for any other count, such as
+  "1 sheet" and "3 sheets". Translate both.
+- **Underscores** in menu names mark the keyboard shortcut: `_File` opens with Alt+F. Put one underscore before a
+  letter of your word, and avoid a letter another menu on the same bar already uses.
+- **Comments** say where a text appears and what each placeholder holds. Read them before translating a short or
+  ambiguous text.
+- **Keep it short** on buttons, tabs and labels, because windows have fixed widths. Tooltips and messages can be
+  as long as they need to be.
+- **Report texts** (keys starting with `Report_`) are printed in a fixed-width font, and their comments give the
+  length limit. The report prints Latin letters with accents (é, ñ, ü, ç...). For a language written in another
+  alphabet the printed report stays in English for now, while the program itself is fully translated.
+- **`Report_DateFormat`** is a date pattern, not text: reorder its letters the way your language writes dates.
+- **Spaces and symbols:** keep leading spaces, `...` and symbols such as `▶` where the English has them.
+- Save the file as UTF-8.
+
+## Try your translation
+
+With the tools from [BUILDING.md](../BUILDING.md) installed, from the repository folder:
+
+```
+dotnet build DeepNestSharp/DeepNestSharp.csproj -c Release
+```
+
+Start `DeepNestSharp/bin/Release/net6.0-windows/SheetNest.exe`, choose your language in **Settings > Language**
+and open SheetNest again.
+
+To run the same check as the pull request:
+
+```
+dotnet test DeepNestLib.CiTests/DeepNestLib.CiTests.csproj -c Release --filter "FullyQualifiedName~TranslationFixture" --logger "console;verbosity=detailed"
+```
+
+Its output says, for each language, how many texts are translated and which keys are missing.
+
+## Keep a translation up to date
+
+New texts go into `Strings.resx` first and show in English until someone translates them. The check above lists
+them. Add those entries to your file with their translation. When a key disappears from `Strings.resx`, delete it
+from your file as well: no window shows it any more, and the check fails until it is gone.
+
+## Wording
+
+Use the words people in a sheet metal shop use in your language, and keep each term the same across the whole
+file. A short glossary in the pull request helps reviewers. The Spanish one:
+
+| English | Español |
+|---|---|
+| nest (verb), NEST | anidar, ANIDAR |
+| nest (a result) | anidado |
+| nest report | reporte de anidado |
+| sheet | lámina |
+| part | pieza |
+| layout | distribución |
+| common line cutting | corte común |
+| offcut | retazo |
+| utilization | aprovechamiento |
+| spacing, margin | separación, margen |
+
+## Not sure, or no time for a whole file?
+
+Open an issue with the **Translation** form to suggest a better wording for a text you saw, or to offer a new
+language and ask for help getting started.
+
+## For developers
+
+- `Strings.resx` holds the English texts. The `SheetNest.Localization.Strings` class is generated from it on every
+  build; nothing is generated by hand. Use `Strings.Key` in C#, and `{x:Static loc:Strings.Key}` in XAML with
+  `xmlns:loc="clr-namespace:SheetNest.Localization;assembly=SheetNest.Localization"`.
+- Keys read `Area_Element`: `Main_` for the main window, then `Viewer_`, `EditPart_`, `Report_` and so on.
+  Tooltips end in `Tip`, format strings in `Format`, and message box texts start with `Msg_`. Counted texts come
+  in `_One` / `_Other` pairs, picked with `Languages.Count`.
+- A new text goes into `Strings.resx` with a comment, and into `Strings.es.resx` in the same change: the tests
+  require the Spanish file to stay complete.
+- Never build a sentence out of fragments. Give translators the whole sentence with placeholders, so the word order
+  can change.
+- Only the display language changes. Numbers, drawings and project files are read and written exactly the same
+  whatever language is shown.

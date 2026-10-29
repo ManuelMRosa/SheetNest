@@ -28,6 +28,7 @@ Al retomar:
 - DeepNestSharp/RasterNest/: SparrowNestService.cs, CommonEdgeClearance.cs, RasterCompact.cs.
 - DeepNestLib.Core/: IO/ para DXF, Placement/ para geometría y CommonEdge, NestProject/ para persistencia.
 - DeepNestSharp.Domain/: modelos y configuración observable.
+- Localization/: todos los textos que ve el usuario (Strings.resx en inglés, Strings.es.resx en español) y Languages.cs (idioma al arrancar, menú Language). Un texto nuevo va a los dos resx; guía en Localization/README.md.
 - SparrowEngine/: sparrow.exe y sheetnest-sparrow.patch.
 - assets/freecad/: desplegado 3D offline.
 - DeepNestSharp.CiTests/ y DeepNestLib.CiTests/: pruebas de aplicación y núcleo.
