@@ -325,6 +325,7 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
+
       // A rounded corner can be tessellated into an arbitrary number of short chords. Treat the
       // below-clearance cells that are topologically connected to a recorded seam endpoint as one
       // local cap, rather than assuming that one chord (or one fixed travel distance) is enough.
@@ -458,9 +459,11 @@ namespace DeepNestSharp.RasterNest
       sliverBetween ??= (a, b) => PlacementCollision.PlacementNoise;
       double geometryTol = Math.Max(0, geometryTolerance);
       double numericalTol = Math.Max(PlacementCollision.PlacementNoise, geometryTol);
+      var partClock = System.Diagnostics.Stopwatch.StartNew();
       IReadOnlyList<EdgeReference> valid = commonEdges == null || commonEdges.Count == 0
         ? Array.Empty<EdgeReference>()
         : ValidEdges(commonEdges, commonLineGap, geometryTol, sourceCatalogs);
+      NestDiagnostics.AddElapsed("unfit.valid-edges", partClock);
 
       // A caller that judges the SAME edge set more than once may hand in its own cache so the exact
       // boundaries survive between calls; tessellating them is about a quarter of this stage. Passing one
@@ -479,6 +482,65 @@ namespace DeepNestSharp.RasterNest
         placed[i] = placements[i]?.PlacedPart;
       }
 
+
+      // Each outline's box and whether the part is measured exactly, read once per placement: INfp.MinX
+      // and its siblings scan every point on each read, and HasExactBoundary walks every edge.
+      var boxes = new (double MinX, double MinY, double MaxX, double MaxY)[placements.Count];
+      var exact = new bool[placements.Count];
+      for (int i = 0; i < placements.Count; i++)
+      {
+        if (placed[i] != null)
+        {
+          boxes[i] = (placed[i].MinX, placed[i].MinY, placed[i].MaxX, placed[i].MaxY);
+          exact[i] = valid.Count > 0 && HasExactBoundary(placements[i], valid, sourceCatalogs);
+        }
+      }
+
+
+      // A pair whose outlines' boxes already clear the normal clearance gets the answer EvaluatePair would
+      // give it, without building a cache key first: on a large sheet that is nearly every pair, and the key
+      // cost more than the answer and churned the cache until it emptied itself thousands of times a nest.
+      // This repeats EvaluatePair's own opening steps for exactly such a pair and nothing else, so no verdict
+      // can change: an ordinary pair is clear; an exactly measured one is too close if a boundary is invalid,
+      // and clear if the exact boxes clear the distance EvaluatePair would demand. Anything nearer than that
+      // still goes the long way, through the cache.
+      // Within one call no placement moves, so the boundary the cache would hand back for it is the same
+      // every time it is asked; ask once per placement instead of building a pose key per pair.
+      var boundaryOf = new BoundaryGeometry[placements.Count];
+      BoundaryGeometry BoundaryAt(int index)
+        => boundaryOf[index] ??= GetBoundaryGeometry(placements[index], valid, numericalTol, boundaryCache, sourceCatalogs);
+
+      bool? FarPairVerdict(int i, int j, double clearance, double sliver)
+      {
+        var (aMinX, aMinY, aMaxX, aMaxY) = boxes[i];
+        var (bMinX, bMinY, bMaxX, bMaxY) = boxes[j];
+        if (!PlacementCollision.BoxesApart(aMinX, aMinY, aMaxX, aMaxY, bMinX, bMinY, bMaxX, bMaxY, clearance))
+        {
+          return null;
+        }
+
+        if (!exact[i] && !exact[j])
+        {
+          return false;
+        }
+
+        BoundaryGeometry aBoundary = BoundaryAt(i);
+        BoundaryGeometry bBoundary = BoundaryAt(j);
+        if (aBoundary.Invalid || bBoundary.Invalid)
+        {
+          return true;
+        }
+
+        double required = Math.Max(0, clearance - Math.Max(Math.Max(0, sliver), numericalTol));
+        required += aBoundary.ApproximationError + bBoundary.ApproximationError;
+        return aBoundary.Bounds.MayBeWithin(bBoundary.Bounds, required) ? null : false;
+      }
+
+      void FinishTiming()
+      {
+        NestDiagnostics.AddElapsed("unfit", clock);
+      }
+
       for (int i = 0; i < placements.Count; i++)
       {
         cancel.ThrowIfCancellationRequested();
@@ -495,7 +557,7 @@ namespace DeepNestSharp.RasterNest
           unfit.All.Add(a);
           if (stopAtFirst)
           {
-            NestDiagnostics.AddElapsed("unfit", clock);
+            FinishTiming();
             return unfit;
           }
         }
@@ -509,7 +571,7 @@ namespace DeepNestSharp.RasterNest
           if (placedB != null
             && (clearance <= 0 || valid.Count == 0
               ? PlacementCollision.TooClose(placedA, placedB, clearance, sliver)
-              : TooCloseWithValidEdges(
+              : FarPairVerdict(i, j, clearance, sliver) ?? TooCloseWithValidEdges(
                 a,
                 b,
                 placedA,
@@ -531,14 +593,14 @@ namespace DeepNestSharp.RasterNest
             unfit.All.Add(b);
             if (stopAtFirst)
             {
-              NestDiagnostics.AddElapsed("unfit", clock);
+              FinishTiming();
               return unfit;
             }
           }
         }
       }
 
-      NestDiagnostics.AddElapsed("unfit", clock);
+      FinishTiming();
       return unfit;
     }
 
@@ -1457,6 +1519,7 @@ namespace DeepNestSharp.RasterNest
           .ToArray();
         int aggregateSegments = 0;
         double targetSagitta = Math.Max(tolerance, PlacementCollision.PlacementNoise) / 8D;
+        var sampled = new List<(DxfSourcePrimitive Primitive, DxfResolvedBoundarySpan Resolved, double[] Ordered)>(contour.Primitives.Count);
         foreach (DxfSourcePrimitive primitive in contour.Primitives)
         {
           CommonBoundarySpan fullSpan = DxfCommonLineSpanResolver.CreateSpan(
@@ -1517,6 +1580,15 @@ namespace DeepNestSharp.RasterNest
           }
 
           aggregateSegments += ordered.Length - 1;
+          sampled.Add((primitive, resolved, ordered));
+        }
+
+        // Sized once, to the exact count. Grown by doubling, a curved part's list ended on an array past
+        // the large-object threshold, and a busy nest rebuilds these boundaries tens of thousands of times:
+        // that churn, and the full collections it set off, was most of the time this stage took.
+        result = new List<BoundarySegment>(aggregateSegments);
+        foreach (var (primitive, resolved, ordered) in sampled)
+        {
           for (int parameterIndex = 0; parameterIndex + 1 < ordered.Length; parameterIndex++)
           {
             double from = ordered[parameterIndex];
@@ -2548,13 +2620,25 @@ namespace DeepNestSharp.RasterNest
 
       internal SegmentIndex(IReadOnlyList<BoundarySegment> segments)
       {
-        this.entries = segments.Select((segment, position) => (
-          Position: position,
-          MinX: Math.Min(segment.Start.X, segment.End.X),
-          MaxX: Math.Max(segment.Start.X, segment.End.X),
-          MinY: Math.Min(segment.Start.Y, segment.End.Y),
-          MaxY: Math.Max(segment.Start.Y, segment.End.Y)))
-          .OrderBy(entry => entry.MinX).ThenBy(entry => entry.Position).ToArray();
+        this.entries = new (int Position, double MinX, double MaxX, double MinY, double MaxY)[segments.Count];
+        for (int position = 0; position < segments.Count; position++)
+        {
+          BoundarySegment segment = segments[position];
+          this.entries[position] = (
+            position,
+            Math.Min(segment.Start.X, segment.End.X),
+            Math.Max(segment.Start.X, segment.End.X),
+            Math.Min(segment.Start.Y, segment.End.Y),
+            Math.Max(segment.Start.Y, segment.End.Y));
+        }
+
+        // By MinX, then by position: the same total order a LINQ OrderBy/ThenBy gave, without the
+        // allocations that made it a quarter of every boundary rebuild.
+        Array.Sort(this.entries, (left, right) =>
+        {
+          int order = left.MinX.CompareTo(right.MinX);
+          return order != 0 ? order : left.Position.CompareTo(right.Position);
+        });
         this.prefixMaxX = new double[this.entries.Length];
         double maxX = double.NegativeInfinity;
         for (int i = 0; i < this.entries.Length; i++)

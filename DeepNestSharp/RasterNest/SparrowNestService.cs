@@ -3330,6 +3330,11 @@
         bool applied = TryApplyPlanCore(plan, validateTopology, out intents, out groups, out failure, out failureReason);
         NestDiagnostics.Add("apply." + applyPhase);
         NestDiagnostics.AddElapsed("apply." + applyPhase, applyClock);
+        if (!applied)
+        {
+          NestDiagnostics.Add("apply." + applyPhase + ".fail." + failure);
+        }
+
         return applied;
       }
 
@@ -3887,7 +3892,8 @@
           }
         }
 
-        projectedFootprints.Clear();
+        // A state's plan never changes once Include has returned it, so neither does its footprint: the
+        // states carried over from the last step keep theirs instead of recomputing it on every comparison.
         expanded.Sort(ComparePlanStates);
 
         // Pure score truncation can discard the as-yet-empty branch while a long early candidate is
@@ -3932,6 +3938,13 @@
 
         nextBeam.Sort(ComparePlanStates);
         beam = nextBeam;
+
+        // Keep only the footprints of the states still in the beam; the rest will never be compared again.
+        var survivors = new HashSet<DirectPlanState>(beam);
+        foreach (DirectPlanState dropped in projectedFootprints.Keys.Where(state => !survivors.Contains(state)).ToList())
+        {
+          projectedFootprints.Remove(dropped);
+        }
       }
 
       projectedFootprints.Clear();

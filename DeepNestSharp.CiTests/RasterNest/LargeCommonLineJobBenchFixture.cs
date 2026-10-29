@@ -103,6 +103,16 @@ namespace DeepNestSharp.CiTests.RasterNest
       {
         this.output.WriteLine("SEED: " + timing);
       }
+
+      foreach (string failure in SparrowNestService.DiagDirectFailures)
+      {
+        this.output.WriteLine("FAILURE: " + failure);
+      }
+
+      foreach (var notice in SparrowNestService.DiagCommonLineFallbacks)
+      {
+        this.output.WriteLine("FALLBACK: " + notice.Reason);
+      }
     }
 
     /// <summary>Every placement and every shared cut, so two runs that differ anywhere differ here.</summary>
