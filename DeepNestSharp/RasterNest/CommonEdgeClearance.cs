@@ -428,6 +428,9 @@ namespace DeepNestSharp.RasterNest
       PairVerdictCache verdictCache = null)
     {
       cancel.ThrowIfCancellationRequested();
+      var clock = System.Diagnostics.Stopwatch.StartNew();
+      NestDiagnostics.Add("unfit.calls");
+      NestDiagnostics.Add("unfit.pairs", (long)placements.Count * (placements.Count - 1) / 2);
       var unfit = new PlacementAcceptance.Unfit();
       sliverBetween ??= (a, b) => PlacementCollision.PlacementNoise;
       double geometryTol = Math.Max(0, geometryTolerance);
@@ -451,6 +454,7 @@ namespace DeepNestSharp.RasterNest
           unfit.All.Add(a);
           if (stopAtFirst)
           {
+            NestDiagnostics.AddElapsed("unfit", clock);
             return unfit;
           }
         }
@@ -483,12 +487,14 @@ namespace DeepNestSharp.RasterNest
             unfit.All.Add(b);
             if (stopAtFirst)
             {
+              NestDiagnostics.AddElapsed("unfit", clock);
               return unfit;
             }
           }
         }
       }
 
+      NestDiagnostics.AddElapsed("unfit", clock);
       return unfit;
     }
 
@@ -724,6 +730,7 @@ namespace DeepNestSharp.RasterNest
         if (this.values.Count >= 8192)
         {
           this.values.Clear();
+          NestDiagnostics.Add("verdict-cache.clears");
         }
 
         this.values[key] = result;

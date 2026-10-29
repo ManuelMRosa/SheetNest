@@ -621,6 +621,7 @@
         // The sheet is judged by the rule that decides whether it may be cut, before it is handed over.
         // Whatever fails goes back in the pool and lands on the next sheet, so no layout ever leaves here
         // that the app would paint red. See DeferUnfit for why this is not the same as trusting the pack.
+        var deferClock = Stopwatch.StartNew();
         int deferred = DeferUnfit(
           bestPlacements,
           bestPlacedBySrc,
@@ -631,6 +632,7 @@
           margin,
           commonLineGap,
           geometryTolerance);
+        NestDiagnostics.AddElapsed("body.defer-unfit", deferClock);
         if (bestPlacements.Count == 0)
         {
           break; // nothing on this sheet survived the check, so another sheet of it would fare no better
@@ -679,6 +681,7 @@
 
       // Cloning and hole filling are intentionally incapable of moving a cluster, but the persisted
       // metadata is safety-critical: prove that assumption on the exact final layouts before ids/export.
+      var finalClock = Stopwatch.StartNew();
       for (int sheetIndex = 0; sheetIndex < sheetLayouts.Count; sheetIndex++)
       {
         for (int placementIndex = 0; placementIndex < sheetLayouts[sheetIndex].Count; placementIndex++)
@@ -720,6 +723,8 @@
         }
       }
 
+      NestDiagnostics.AddElapsed("body.final-validation", finalClock);
+      finalClock.Restart();
       var collection = new SheetPlacementCollection();
       int id = 0;
       for (int i = 0; i < sheetLayouts.Count; i++)
@@ -777,6 +782,7 @@
         collection.Add(sheetPlacement);
       }
 
+      NestDiagnostics.AddElapsed("body.records-and-resolve", finalClock);
       var unplaced = new List<INfp>();
       foreach (var kv in pool)
       {
@@ -1221,7 +1227,9 @@
             if (wSt[j].HasValue)
             {
               var (ex, ey) = Extent(wPl[j]);
+              var lengthClock = Stopwatch.StartNew();
               double sharedLength = CommonLineLength(wEdges[j], commonLineGap, geometryTolerance, capturedSources);
+              NestDiagnostics.AddElapsed("wave.common-line-length", lengthClock);
               winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, sharedLength, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wEdges[j], wFallbacks[j]));
               lock (DiagCandidates)
               {
@@ -1345,7 +1353,9 @@
         ShareKey = ccById.TryGetValue(pp.Source, out var sk) ? sk.ShareKey : 0,
         CommonCuttingDomain = ccById.TryGetValue(pp.Source, out var domain) ? domain.CommonCuttingDomain : string.Empty,
       }).ToList();
+      var stageClock = Stopwatch.StartNew();
       RasterCompact.Compact(compactItems, sheetWin, sheetHin, margin, cancel: cancel);
+      NestDiagnostics.AddElapsed("map.compact-1", stageClock);
       for (int k = 0; k < all.Count; k++)
       {
         all[k].X = compactItems[k].X;
@@ -1356,6 +1366,7 @@
       double[] baselineX = baselinePlacements.Select(p => p.X).ToArray();
       double[] baselineY = baselinePlacements.Select(p => p.Y).ToArray();
       double[] baselineRotation = baselinePlacements.Select(p => p.Rotation).ToArray();
+      stageClock.Restart();
       DirectCommonLineSnapResult direct = SnapDirectCommonLineEdges(
         all,
         directRulesById,
@@ -1370,6 +1381,7 @@
         cancel,
         sourceCatalogs,
         diagnosticLabel: diagnosticLabel);
+      NestDiagnostics.AddElapsed("map.planner", stageClock);
 
       // Once an intentional graph exists, compact each connected component as one rigid body. Internal
       // edges keep CommonLineGap while every external pair still sees its ordinary EffSpacing.
@@ -1397,6 +1409,7 @@
           }
         }
 
+        stageClock.Restart();
         RasterCompact.Compact(
           compactItems,
           sheetWin,
@@ -1405,18 +1418,24 @@
           groups: direct.Groups,
           cancel: cancel,
           commonLineGap: commonLineGap);
+        NestDiagnostics.AddElapsed("map.compact-2", stageClock);
         for (int k = 0; k < all.Count; k++)
         {
           all[k].X = compactItems[k].X;
           all[k].Y = compactItems[k].Y;
         }
 
+        stageClock.Restart();
         bool recordsStillValid = direct.Edges.All(edge => TryCreateCommonEdgeRecord(
           edge,
           commonLineGap,
           geometryTolerance,
           out _, sourceCatalogs));
+        NestDiagnostics.AddElapsed("map.check-records", stageClock);
+        stageClock.Restart();
         bool toolingStillValid = OutlinesClearEveryone(all, outlineById, null);
+        NestDiagnostics.AddElapsed("map.check-outlines", stageClock);
+        stageClock.Restart();
         bool layoutStillValid = DirectLayoutIsValid(
           all,
           direct.Edges,
@@ -1430,6 +1449,8 @@
           out _,
           cancel,
           sourceCatalogs);
+        NestDiagnostics.AddElapsed("map.check-layout", stageClock);
+        stageClock.Restart();
         bool topologyStillValid = CommonLineTopologyIsValid(
           all,
           direct.Edges,
@@ -1440,6 +1461,7 @@
           out string topologyFailure,
           cancel,
           sourceCatalogs);
+        NestDiagnostics.AddElapsed("map.check-topology", stageClock);
         if (!recordsStillValid
             || !toolingStillValid
             || !layoutStillValid
@@ -3245,6 +3267,8 @@
       candidates.AddRange(globallyRankedCandidates
         .Take(proposalLimit)
         .Select(ranked => ranked.Candidate));
+      NestDiagnostics.Add("plan.runs");
+      NestDiagnostics.Add("plan.candidates", candidates.Count);
 
       HashSet<(int A, int B)> AcceptedPairIndexes(
         IReadOnlyList<CommonEdgeIntent> acceptedIntents)
@@ -3291,7 +3315,25 @@
         return result;
       }
 
+      // Which part of the search is asking, so the diagnostics can tell the beam's finalists from the
+      // fallback forest, which validates the whole sheet once per candidate it accepts.
+      string applyPhase = "finalist";
       bool TryApplyPlan(
+        IReadOnlyList<DirectCandidate> plan,
+        bool validateTopology,
+        out List<CommonEdgeIntent> intents,
+        out int[] groups,
+        out DirectPlanFailure failure,
+        out string failureReason)
+      {
+        var applyClock = Stopwatch.StartNew();
+        bool applied = TryApplyPlanCore(plan, validateTopology, out intents, out groups, out failure, out failureReason);
+        NestDiagnostics.Add("apply." + applyPhase);
+        NestDiagnostics.AddElapsed("apply." + applyPhase, applyClock);
+        return applied;
+      }
+
+      bool TryApplyPlanCore(
         IReadOnlyList<DirectCandidate> plan,
         bool validateTopology,
         out List<CommonEdgeIntent> intents,
@@ -3935,6 +3977,7 @@
 
       // Validate first, rank on committed common-line length before footprint, then apply the winner once
       // more. Every candidate still proves fit, clearance and topology within this same sheet.
+      applyPhase = "finalist-winner";
       if (bestFinalist != null
           && TryApplyCutFirstPlan(
             bestFinalist.Plan,
@@ -4095,6 +4138,7 @@
         _ = TryAddToForest(candidate);
       }
 
+      applyPhase = "optimistic";
       if (tree.Count > 0
           && TryApplyCutFirstPlan(
             tree,
@@ -4114,6 +4158,7 @@
       // the complete cluster boundary after every accepted prefix is quadratic work on dense jobs, so do
       // that strict check once for the resulting plan. If it exposes a topology-only failure, rebuild with
       // strict prefix validation to retain the planner's candidate-by-candidate recovery behaviour.
+      applyPhase = "forest-lenient";
       BuildIncrementalForest(validateTopology: false);
 
       if (tree.Count == 0)
@@ -4123,6 +4168,7 @@
         return result;
       }
 
+      applyPhase = "forest-lenient-final";
       if (TryApplyCutFirstPlan(
             tree,
             true,
@@ -4141,6 +4187,7 @@
       // and retry strictly so a bad relationship is rejected without hiding a later valid alternative.
       givenUpPairs.Clear();
       topologyFailuresByPair.Clear();
+      applyPhase = "forest-strict";
       BuildIncrementalForest(validateTopology: true);
       if (tree.Count == 0)
       {
@@ -4149,6 +4196,7 @@
         return result;
       }
 
+      applyPhase = "forest-strict-final";
       if (!TryApplyCutFirstPlan(
             tree,
             true,
