@@ -24,7 +24,9 @@ namespace DeepNestSharp.CiTests.RasterNest
   /// <para>It prints a hash of the whole result, every placement and every shared cut, so a change meant
   /// only to make it faster can be held to producing the very same nest.</para>
   /// <para>Opt-in: set SHEETNEST_BENCH=1, SPARROW_EXE and SHEETNEST_HODGSON_DXF (the drawing is not in the
-  /// repo). SHEETNEST_BENCH_EFFORT picks Fast (default), Normal or Best; SHEETNEST_BENCH_QTY the copies.</para>
+  /// repo). SHEETNEST_BENCH_EFFORT picks Fast (default), Normal or Best; SHEETNEST_BENCH_QTY the copies.
+  /// SHEETNEST_BENCH_DXF="path*count;path*count" runs another job on the same sheet instead, and
+  /// SHEETNEST_BENCH_COMMONLINE=off runs it with common cutting off.</para>
   /// </remarks>
   [Collection(SparrowEngineCollection.Name)]
   public class LargeCommonLineJobBenchFixture
@@ -53,18 +55,34 @@ namespace DeepNestSharp.CiTests.RasterNest
         ? chosen
         : NestEffort.Fast;
       int quantity = int.TryParse(Environment.GetEnvironmentVariable("SHEETNEST_BENCH_QTY"), out int qty) && qty > 0 ? qty : 150;
+      bool commonLine = !string.Equals(Environment.GetEnvironmentVariable("SHEETNEST_BENCH_COMMONLINE"), "off", StringComparison.OrdinalIgnoreCase);
 
-      // What MainWindow.OnNest hands the engine for a part with common cutting on.
-      var part = new RasterPartInfo
+      // Other jobs: SHEETNEST_BENCH_DXF="path*count;path*count". Without it, the Hodgson job above.
+      var drawings = new List<(string Path, int Count)>();
+      foreach (string entry in (Environment.GetEnvironmentVariable("SHEETNEST_BENCH_DXF") ?? string.Empty)
+        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
       {
-        Path = dxf,
-        Quantity = quantity,
+        string[] fields = entry.Split('*');
+        drawings.Add((fields[0], fields.Length > 1 && int.TryParse(fields[1], out int count) ? count : 1));
+      }
+
+      if (drawings.Count == 0)
+      {
+        drawings.Add((dxf, quantity));
+      }
+
+      // What MainWindow.OnNest hands the engine for a part with common cutting on, or off.
+      var parts = drawings.Select(drawing => new RasterPartInfo
+      {
+        Path = drawing.Path,
+        Quantity = drawing.Count,
         Rotations = 4,
         Spacing = 0.25D,
-        Cc = CommonCuttingMode.Unrestricted,
-        CommonCuttingDomain = "direct",
-        RequiresMergedLines = true,
-      };
+        Cc = commonLine ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None,
+        CommonCuttingDomain = commonLine ? "direct" : string.Empty,
+        RequiresMergedLines = commonLine,
+      }).ToArray();
+      string jobName = string.Join("+", drawings.Select(d => FormattableString.Invariant($"{Path.GetFileNameWithoutExtension(d.Path)}x{d.Count}")));
 
       NestDiagnostics.Totals.Clear();
       SparrowNestService.DiagCommonLineTimings.Clear();
@@ -72,7 +90,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       long mapBefore = SparrowNestService.DiagMapMs;
       var watch = Stopwatch.StartNew();
       INestResult result = SparrowNestService.Nest(
-        new[] { part },
+        parts,
         new List<(int, int, int, bool)> { (120, 60, 1, false) },
         rotations: 4,
         spacing: 0.25D,
@@ -91,7 +109,7 @@ namespace DeepNestSharp.CiTests.RasterNest
       double shared = edges.Sum(e => Math.Sqrt(((e.End.X - e.Start.X) * (e.End.X - e.Start.X)) + ((e.End.Y - e.Start.Y) * (e.End.Y - e.Start.Y))));
 
       this.output.WriteLine(FormattableString.Invariant(
-        $"JOB: hodgson x{quantity} effort={effort} wall={watch.ElapsedMilliseconds}ms sparrowSum={SparrowNestService.DiagSparrowMs - sparrowBefore}ms mapSum={SparrowNestService.DiagMapMs - mapBefore}ms"));
+        $"JOB: {jobName} commonLine={(commonLine ? "on" : "off")} effort={effort} wall={watch.ElapsedMilliseconds}ms sparrowSum={SparrowNestService.DiagSparrowMs - sparrowBefore}ms mapSum={SparrowNestService.DiagMapMs - mapBefore}ms"));
       this.output.WriteLine(FormattableString.Invariant(
         $"RESULT: sheets={sheets.Count} placed={sheets.Sum(s => s.PartPlacements.Count)} unplaced={result.UnplacedParts.Count()} edges={edges.Count} shared={shared:F4} hash={Hash(sheets)}"));
       foreach (var total in NestDiagnostics.Totals.OrderBy(t => t.Key, StringComparer.Ordinal))
