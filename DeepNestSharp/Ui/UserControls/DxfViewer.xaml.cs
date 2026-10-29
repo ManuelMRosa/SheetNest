@@ -1199,16 +1199,15 @@
         return PartFill;
       }
 
-      if (!this.partBrushes.TryGetValue(key, out Brush brush))
+      // The light is laid across the sheet, so the brush belongs to the sheet's width as well as the part.
+      string cacheKey = FormattableString.Invariant($"{key}|{this.currentSheetW}");
+      if (!this.partBrushes.TryGetValue(cacheKey, out Brush brush))
       {
-        var (r, g, b) = this.PartColours[key];
-
         // OPAQUE on purpose. The classic fill was translucent, and any colour drawn that way blends a
         // quarter of the near-white sheet into itself and comes out pastel - which is what made the first
-        // attempt at this look grey.
-        brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        this.partBrushes[key] = brush;
+        // attempt at this look grey. The sheet light keeps that: every stop is opaque.
+        brush = PartColors.SheetLightBrush(this.PartColours[key], this.currentSheetW);
+        this.partBrushes[cacheKey] = brush;
       }
 
       return brush;

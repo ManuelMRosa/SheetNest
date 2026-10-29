@@ -198,6 +198,115 @@ namespace DeepNestSharp.CiTests
       PartColors.ColourKeyFor(Placement(null)).Should().Be("(part)");
     }
 
+    /// <summary>The sheet light is light on the part's own colour, never another hue, or the thumbnail beside
+    /// it in the parts list would stop naming it.</summary>
+    [Fact]
+    public void TheSheetLightKeepsThePartsColour()
+    {
+      for (int i = 0; i < PartColors.PaletteLength; i++)
+      {
+        var colour = PartColors.PaletteAt(i);
+        foreach (var (offset, stop) in PartColors.SheetLightStops(colour))
+        {
+          HueGap(Hue(stop), Hue(colour)).Should().BeLessThan(
+            4, $"the stop at {offset} ({Hex(stop)}) has left the hue of {Hex(colour)}");
+        }
+      }
+    }
+
+    /// <summary>What makes it read as a lit sheet: the full colour at both edges, palest in the middle, and
+    /// the same on either side of it.</summary>
+    [Fact]
+    public void TheSheetLightIsFullColourAtTheEdgesAndPalestInTheMiddle()
+    {
+      for (int i = 0; i < PartColors.PaletteLength; i++)
+      {
+        var colour = PartColors.PaletteAt(i);
+        var stops = PartColors.SheetLightStops(colour);
+
+        stops.First().Colour.Should().Be(colour, $"{Hex(colour)} shows its full colour at the left edge");
+        stops.Last().Colour.Should().Be(colour, $"{Hex(colour)} shows its full colour at the right edge");
+        stops.OrderByDescending(s => Luminance(s.Colour)).First().Offset.Should().BeApproximately(
+          0.5, 1e-9, $"{Hex(colour)} is palest in the middle of the sheet");
+        for (int s = 0; s < stops.Count; s++)
+        {
+          stops[s].Colour.Should().Be(stops[stops.Count - 1 - s].Colour, $"{Hex(colour)} is lit the same on both halves");
+        }
+      }
+    }
+
+    /// <summary>
+    /// The near-black outline is what separates two touching parts of the same type, and the engraving is
+    /// drawn in it too. Nothing in the light may come out darker than the part's colour, or it swallows both;
+    /// a dark colour somebody picked is held to the same rule.
+    /// </summary>
+    [Fact]
+    public void TheSheetLightNeverDarkensAPart()
+    {
+      var colours = Enumerable.Range(0, PartColors.PaletteLength).Select(PartColors.PaletteAt)
+        .Append(((byte)0x30, (byte)0x20, (byte)0x60)); // a dark indigo somebody picked
+
+      foreach (var colour in colours)
+      {
+        foreach (var (offset, stop) in PartColors.SheetLightStops(colour))
+        {
+          Luminance(stop).Should().BeGreaterOrEqualTo(
+            Luminance(colour) - 1e-9, $"the stop at {offset} ({Hex(stop)}) is darker than {Hex(colour)}");
+        }
+      }
+    }
+
+    /// <summary>The same rule as the palette itself: no part of the light may look like a state.</summary>
+    [Fact]
+    public void NoSheetLightStopIsMistakableForAViewerState()
+    {
+      for (int i = 0; i < PartColors.PaletteLength; i++)
+      {
+        var colour = PartColors.PaletteAt(i);
+        foreach (var (offset, stop) in PartColors.SheetLightStops(colour))
+        {
+          foreach (var reserved in Reserved)
+          {
+            Distance(stop, reserved).Should().BeGreaterThan(
+              75, $"the stop at {offset} ({Hex(stop)}) of {Hex(colour)} is too close to the reserved {Hex(reserved)}");
+          }
+        }
+      }
+    }
+
+    /// <summary>Relative luminance: how light a colour looks against black.</summary>
+    private static double Luminance((byte R, byte G, byte B) c)
+    {
+      static double Linear(byte v)
+      {
+        double s = v / 255.0;
+        return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+      }
+
+      return (0.2126 * Linear(c.R)) + (0.7152 * Linear(c.G)) + (0.0722 * Linear(c.B));
+    }
+
+    /// <summary>HSV hue in degrees.</summary>
+    private static double Hue((byte R, byte G, byte B) c)
+    {
+      double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+      double max = Math.Max(r, Math.Max(g, b));
+      double delta = max - Math.Min(r, Math.Min(g, b));
+      if (delta <= 0)
+      {
+        return 0;
+      }
+
+      double h = max == r ? ((g - b) / delta) % 6 : max == g ? ((b - r) / delta) + 2 : ((r - g) / delta) + 4;
+      return ((h * 60) + 360) % 360;
+    }
+
+    private static double HueGap(double a, double b)
+    {
+      double gap = Math.Abs(a - b) % 360;
+      return Math.Min(gap, 360 - gap);
+    }
+
     /// <summary>HSV saturation: how far the colour is from a grey of the same brightness.</summary>
     private static double Saturation((byte R, byte G, byte B) c)
     {

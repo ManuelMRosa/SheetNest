@@ -115,6 +115,58 @@ namespace DeepNestSharp
     /// <summary>Packs a colour for storing in the project.</summary>
     public static int ToRgb((byte R, byte G, byte B) colour) => (colour.R << 16) | (colour.G << 8) | colour.B;
 
+    /// <summary>How pale the middle of the sheet gets: the share of white mixed into a part's colour there.</summary>
+    private const double MiddleLight = 0.45;
+
+    /// <summary>
+    /// The finish parts are drawn with: the sheet lit like a strip of metal with the light along its middle.
+    /// At the left and right edges a part shows its full colour, and the colour pales towards the middle,
+    /// quickly at first and then levelling off, the way light falls across a rounded surface. It is one light
+    /// for the whole sheet, so the same part reads a little paler in the middle than at the edges.
+    /// <para>Every stop is the part's colour mixed with white, never with black. The near-black outline that
+    /// separates two touching parts of the same type, and the engraving drawn in it, need a fill no darker
+    /// than the colour itself; and darkening drifts a colour towards the ones that mean a state.</para>
+    /// </summary>
+    public static IReadOnlyList<(double Offset, (byte R, byte G, byte B) Colour)> SheetLightStops((byte R, byte G, byte B) colour)
+    {
+      const int Steps = 10;
+      var stops = new List<(double Offset, (byte R, byte G, byte B) Colour)>(Steps + 1);
+      for (int i = 0; i <= Steps; i++)
+      {
+        double offset = i / (double)Steps;
+        stops.Add((offset, Mix(colour, (0xFF, 0xFF, 0xFF), MiddleLight * Math.Sin(Math.PI * offset))));
+      }
+
+      return stops;
+    }
+
+    /// <summary>The finish as a frozen brush. Given the sheet's width it is laid across the sheet, so every
+    /// part on it shares the one light; without one it spans whatever it fills, which is how a lone part's
+    /// thumbnail is drawn.</summary>
+    public static System.Windows.Media.Brush SheetLightBrush((byte R, byte G, byte B) colour, double sheetWidth = 0)
+    {
+      var stops = new System.Windows.Media.GradientStopCollection();
+      foreach (var (offset, (r, g, b)) in SheetLightStops(colour))
+      {
+        stops.Add(new System.Windows.Media.GradientStop(System.Windows.Media.Color.FromRgb(r, g, b), offset));
+      }
+
+      var brush = sheetWidth > 0
+        ? new System.Windows.Media.LinearGradientBrush(stops, new System.Windows.Point(0, 0), new System.Windows.Point(sheetWidth, 0))
+        {
+          MappingMode = System.Windows.Media.BrushMappingMode.Absolute,
+        }
+        : new System.Windows.Media.LinearGradientBrush(stops, new System.Windows.Point(0, 0), new System.Windows.Point(1, 0));
+      brush.Freeze();
+      return brush;
+    }
+
+    private static (byte R, byte G, byte B) Mix((byte R, byte G, byte B) from, (byte R, byte G, byte B) to, double t)
+    {
+      static byte Channel(byte a, byte b, double t) => (byte)Math.Round(a + ((b - a) * t));
+      return (Channel(from.R, to.R, t), Channel(from.G, to.G, t), Channel(from.B, to.B, t));
+    }
+
     /// <summary>The colour for one placement. A job with a single part type is coloured too - seeing grey
     /// would just look broken - so the classic fill is only for a part the map has never heard of.</summary>
     public static (byte R, byte G, byte B) For(IReadOnlyDictionary<string, (byte R, byte G, byte B)> map, IPartPlacement placement)
