@@ -120,10 +120,6 @@
     /// <summary>How far the offcut cut runs past the sheet edge at each end; -1/0 = flush with the edge.</summary>
     public double OffcutEdgeOverlap { get; set; } = -1;
 
-    /// <summary>The language the operator picked (a culture name such as "es"); null = the Windows language.
-    /// Written when it is picked, and read once at startup.</summary>
-    public string? Language { get; set; }
-
     /// <summary>
     /// Records the values owned by the running application when it closes. Called on an already-loaded
     /// session so preferences written by their own dialogs (including offcuts) survive.

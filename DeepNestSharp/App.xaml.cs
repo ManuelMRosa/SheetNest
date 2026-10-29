@@ -54,7 +54,7 @@
 
       // Before any window exists: every text is read from the translation when its window is built.
       Languages.Apply(Languages.Resolve(
-        SessionState.Load()?.Language,
+        LanguagePreference.Read(),
         CultureInfo.CurrentUICulture,
         Languages.Available(AppContext.BaseDirectory)));
 

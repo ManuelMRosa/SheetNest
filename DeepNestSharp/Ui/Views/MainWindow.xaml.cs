@@ -143,7 +143,7 @@
       // with an empty Sheets tab because each launch is usually a different job — sheet stock
       // belongs to (and travels with) each saved .dnest project.
       var session = SessionState.Load();
-      this.BuildLanguageMenu(session?.Language);
+      this.BuildLanguageMenu(LanguagePreference.Read());
       (this.sessionCommonLineGapInches, this.sessionCommonLineMaxClusterParts) =
         CommonLinePreferencesFrom(session);
       cfg.CommonLineGapInches = this.sessionCommonLineGapInches;
@@ -586,14 +586,12 @@
         item.IsChecked = ReferenceEquals(item, chosen);
       }
 
-      var session = SessionState.Load() ?? new SessionState();
-      if (string.Equals(session.Language ?? string.Empty, culture ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+      if (string.Equals(LanguagePreference.Read() ?? string.Empty, culture ?? string.Empty, StringComparison.OrdinalIgnoreCase))
       {
         return;
       }
 
-      session.Language = culture;
-      session.Save();
+      LanguagePreference.Write(culture);
       ViewModel.MessageService.DisplayMessageBox(Strings.Msg_LanguageNextStart, Strings.Menu_Language, DeepNestLib.MessageBoxIcon.Information);
     }
 

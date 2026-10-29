@@ -111,3 +111,6 @@ language and ask for help getting started.
   can change.
 - Only the display language changes. Numbers, drawings and project files are read and written exactly the same
   whatever language is shown.
+- The installer asks which language to open in, from the list in `installer/SheetNest.wxs`. After merging a new
+  language, add its line there: `InstallerLanguagesFixture` fails until it is offered. The choice is stored in
+  `HKCU\Software\SheetNest\Language`, which Settings > Language also writes.
