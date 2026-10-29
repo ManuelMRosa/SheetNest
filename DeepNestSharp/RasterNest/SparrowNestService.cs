@@ -15,6 +15,7 @@
   using DeepNestLib.IO;
   using DeepNestLib.NestProject;
   using DeepNestLib.Placement;
+  using SheetNest.Localization;
 
   /// <summary>
   /// The nester: hands the job to the external <c>sparrow</c> engine (a native
@@ -293,7 +294,7 @@
       // actionable fail-closed result.
       if (!double.IsFinite(commonLineGap) || commonLineGap <= 0D)
       {
-        error = "Common Line Gap must be a finite positive distance in the active drawing units.";
+        error = Strings.Engine_MsgCommonLineGapInvalid;
         return null;
       }
 
@@ -301,13 +302,13 @@
           || geometryTolerance <= 0D
           || commonLineGap <= geometryTolerance)
       {
-        error = "GeometryTolerance must be finite, positive, and smaller than Common Line Gap.";
+        error = Strings.Engine_MsgGeometryToleranceInvalid;
         return null;
       }
 
       if (string.IsNullOrWhiteSpace(sparrowExePath) || !File.Exists(sparrowExePath))
       {
-        error = "Nesting engine (sparrow.exe) was not found.";
+        error = Strings.Engine_MsgEngineNotFound;
         return null;
       }
 
@@ -328,7 +329,7 @@
 
       if (sizes.Count == 0)
       {
-        error = "Add a sheet size first.";
+        error = Strings.Engine_MsgAddSheetSize;
         return null;
       }
 
@@ -502,7 +503,7 @@
           firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
-            error = "Cancelled.";
+            error = Strings.Engine_MsgCancelled;
             return null;
           }
 
@@ -666,8 +667,8 @@
       if (sheetLayouts.Count == 0)
       {
         error = firstPackError == null
-          ? "The nesting engine returned no placements."
-          : "The nesting engine returned no placements: " + firstPackError;
+          ? Strings.Engine_MsgNoPlacements
+          : string.Format(Strings.Engine_MsgNoPlacementsFormat, firstPackError);
         return null;
       }
 
@@ -714,7 +715,7 @@
                 geometryTolerance,
                 cancel))
           {
-            error = "A common-line cluster did not survive final sheet validation.";
+            error = Strings.Engine_MsgClusterFailedSheetValidation;
             return null;
           }
         }
@@ -740,7 +741,7 @@
                 geometryTolerance,
                 out CommonEdge commonEdge))
           {
-            error = "A common-line cluster changed after final placement and was rejected.";
+            error = Strings.Engine_MsgClusterChanged;
             return null;
           }
 
@@ -770,7 +771,7 @@
         }
         catch (CommonLineValidationException ex)
         {
-          error = "A common-line cluster failed final topology validation: " + ex.Message;
+          error = string.Format(Strings.Engine_MsgClusterTopologyFormat, ex.Message);
           return null;
         }
 
@@ -832,7 +833,7 @@
         {
           // A file that cannot be read stops the nest and says which one and why. Nesting the rest quietly
           // would hand the operator a sheet that is missing a part, and that gets cut before anyone counts.
-          error = $"{Path.GetFileName(part.Path)} could not be read.{Environment.NewLine}{Environment.NewLine}{ex.GetBaseException().Message}";
+          error = string.Format(Strings.Engine_MsgCannotReadFormat, Path.GetFileName(part.Path)) + Environment.NewLine + Environment.NewLine + ex.GetBaseException().Message;
           return null;
         }
 
@@ -898,7 +899,7 @@
         {
           // The same rule as a file that cannot be read. A part that yields no outline, left out quietly, is
           // neither nested nor counted as unplaced.
-          error = $"{Path.GetFileName(part.Path)} holds no shape that can be nested.";
+          error = string.Format(Strings.Engine_MsgNoShapeFormat, Path.GetFileName(part.Path));
           return null;
         }
       }
@@ -1250,15 +1251,15 @@
 
         if (cancel.IsCancellationRequested)
         {
-          error = "Cancelled.";
+          error = Strings.Engine_MsgCancelled;
           return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<CommonLineFallbackNotice>());
         }
 
         if (winners.Count == 0)
         {
           error = firstTryError == null
-            ? "The nesting engine produced no solution."
-            : "The nesting engine produced no solution: " + firstTryError;
+            ? Strings.Engine_MsgNoSolution
+            : string.Format(Strings.Engine_MsgNoSolutionFormat, firstTryError);
           return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<CommonLineFallbackNotice>());
         }
 
@@ -5449,7 +5450,7 @@
       }
       catch (Exception ex)
       {
-        error = "Could not start the nesting engine: " + ex.Message;
+        error = string.Format(Strings.Engine_MsgCouldNotStartFormat, ex.Message);
         return null;
       }
 
@@ -5489,14 +5490,14 @@
           bool exited = proc.WaitForExit(waitMs);
           if (cancel.IsCancellationRequested)
           {
-            error = "Cancelled.";
+            error = Strings.Engine_MsgCancelled;
             return null;
           }
 
           if (!exited)
           {
             TryKill(proc);
-            error = "The nesting engine timed out.";
+            error = Strings.Engine_MsgTimedOut;
             return null;
           }
         }
@@ -5504,7 +5505,7 @@
         string outFile = Path.Combine(workDir, "output", "final_job.json");
         if (!File.Exists(outFile))
         {
-          error = $"The nesting engine produced no solution (exit {proc.ExitCode}).";
+          error = string.Format(Strings.Engine_MsgNoSolutionExitFormat, proc.ExitCode);
           return null;
         }
 

@@ -3,6 +3,7 @@ namespace DeepNestSharp.Ui.Views
   using System.Windows;
   using System.Windows.Controls;
   using DeepNestLib;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Curated settings dialog (replaces the old auto-generated property grid): only the options the
@@ -156,9 +157,9 @@ namespace DeepNestSharp.Ui.Views
     private void UpdateUnitPresentation()
     {
       string unit = this.displayedUnitsMm ? "mm" : "in";
-      this.spacingLabel.Text = $"Part spacing ({unit}):";
-      this.commonLineGapLabel.Text = $"Common Line Gap ({unit}):";
-      this.marginLabel.Text = $"Sheet edge margin ({unit}):";
+      this.spacingLabel.Text = string.Format(Strings.Advanced_PartSpacingFormat, unit);
+      this.commonLineGapLabel.Text = string.Format(Strings.Advanced_CommonLineGapFormat, unit);
+      this.marginLabel.Text = string.Format(Strings.Advanced_SheetEdgeMarginFormat, unit);
       this.ShowCommonLineGap();
     }
 

@@ -31,6 +31,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Clipper.Core\Clipper.Core.csproj" />
     <ProjectReference Include="..\MinkowskiWrapper.Core\MinkowskiWrapper.Core.csproj" />
+    <ProjectReference Include="..\Localization\SheetNest.Localization.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="Settings.Designer.cs">

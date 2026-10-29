@@ -10,6 +10,7 @@
   using IxMilia.Dxf;
   using IxMilia.Dxf.Blocks;
   using IxMilia.Dxf.Entities;
+  using SheetNest.Localization;
 
   public class DxfParser
   {
@@ -148,7 +149,7 @@
       // contains no elements" tells the operator nothing about their file.
       if (!approximations.Any(kvp => kvp.Value.Count > 0))
       {
-        throw new ArgumentException($"'{fullFilename}' has no geometry to nest - it holds only text, dimensions or other annotation.");
+        throw new ArgumentException(string.Format(Strings.Dxf_MsgNoGeometryFormat, fullFilename));
       }
 
       LocalContour<DxfEntity>[] contours = ConnectElements(approximations);
@@ -175,16 +176,16 @@
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
         .ToList();
-      string where = layers.Count == 1 ? $"layer {layers[0]}" : $"layers {string.Join(", ", layers)}";
+      string where = layers.Count == 1 ? string.Format(Strings.Dxf_LayerFormat, layers[0]) : string.Format(Strings.Dxf_LayersFormat, string.Join(", ", layers));
 
       return open.Count == 1
-        ? new ArgumentException($"'{fullFilename}' has an open line on {where}. Every line that is cut has to close a shape, and this one does not. Delete it, or draw it in yellow to have it marked on the part instead.")
-        : new ArgumentException($"'{fullFilename}' has {open.Count} open lines on {where}. Every line that is cut has to close a shape, and these do not. Delete them, or draw them in yellow to have them marked on the part instead.");
+        ? new ArgumentException(string.Format(Strings.Dxf_MsgOpenLineFormat, fullFilename, where))
+        : new ArgumentException(string.Format(Strings.Dxf_MsgOpenLinesFormat, fullFilename, open.Count, where));
     }
 
     private static ArgumentException UnmeasurableGeometry(DxfEntity ent)
     {
-      return new ArgumentException($"This drawing contains a {ent.EntityTypeString}, which SheetNest cannot measure. Explode it or redraw it as lines, arcs, polylines, ellipses or splines and import again.");
+      return new ArgumentException(string.Format(Strings.Dxf_MsgUnmeasurableFormat, ent.EntityTypeString));
     }
 
     private static Dictionary<DxfEntity, IList<LineElement>> ApproximateEntities(IEnumerable<DxfEntity> entities)
@@ -385,7 +386,7 @@
               // A part drawn as a block is not nested. Every nesting package in the trade expects the
               // blocks exploded before import, and the ones that do not say so read the part in EMPTY or
               // drop the reference in silence - a sheet that gets cut with a piece missing. Say it instead.
-              throw new ArgumentException("This file is not compatible with SheetNest: its geometry is drawn as a block (a block reference). Open it in your CAD program, explode the blocks, and save the DXF again.");
+              throw new ArgumentException(Strings.Dxf_MsgBlockReference);
             }
 
           default:
@@ -473,7 +474,7 @@
           return spline.FitPoints.Select(p => new PointF((float)p.X, (float)p.Y)).ToList();
         }
 
-        throw new ArgumentException($"This drawing contains a SPLINE whose {control.Count} control points and {knots.Count} knots do not describe a curve. Convert it to a polyline and import again.");
+        throw new ArgumentException(string.Format(Strings.Dxf_MsgBadSplineFormat, control.Count, knots.Count));
       }
 
       double first = knots[degree];

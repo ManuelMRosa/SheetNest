@@ -6,6 +6,7 @@
   using System.Windows.Media;
   using DeepNestLib.Placement;
   using DeepNestSharp.Ui.Converters;
+  using SheetNest.Localization;
 
   /// <summary>
   /// One card in the Nests panel: a distinct layout of the result, how many times it is cut, how much of
@@ -45,7 +46,7 @@
         cards.Add(new NestCard
         {
           Index = i,
-          Name = $"Nest {i + 1}",
+          Name = string.Format(Strings.Card_NameFormat, i + 1),
           Sheets = count,
           Utilization = (sheet.MaterialUtilization * 100.0).ToString("0.0", CultureInfo.InvariantCulture) + "%",
           Size = $"{Num(sheet.Sheet.WidthCalculated)} × {Num(sheet.Sheet.HeightCalculated)} {units}",

@@ -4,6 +4,7 @@
   using System.Windows;
   using System.Windows.Navigation;
   using DeepNestSharp.Domain.Services;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Interaction logic for AboutDialog.xaml
@@ -13,7 +14,7 @@
     public AboutDialog()
     {
       InitializeComponent();
-      Title = $"About DeepNest# {ProcessorArchitecture}:{InformationalVersion}";
+      Title = string.Format(Strings.About_TitleFormat, ProcessorArchitecture, InformationalVersion);
       this.DataContext = this;
     }
 

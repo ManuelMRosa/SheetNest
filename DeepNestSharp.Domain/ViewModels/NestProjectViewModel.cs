@@ -11,6 +11,7 @@
   using DeepNestSharp.Ui.Models;
   using Light.GuardClauses;
   using Microsoft.Toolkit.Mvvm.Input;
+  using SheetNest.Localization;
 
   public class NestProjectViewModel : FileViewModel, INestProjectViewModel
   {
@@ -176,8 +177,8 @@
           // Add Part is 2D-only by design. 3D imports go through File > Import 3D, which probes the
           // sheet thickness and asks for the K-factor — never unfold silently with defaults here.
           this.MainViewModel.MessageService.DisplayMessageBox(
-            "To import a 3D part use File > Import 3D (STEP / IGES)... It detects the sheet thickness and lets you set the K-factor.",
-            "Add Part",
+            Strings.Project_MsgUseImport3D,
+            Strings.Project_AddPartTitle,
             DeepNestLib.MessageBoxIcon.Information);
           continue;
         }
@@ -189,7 +190,7 @@
           var reason = await Task.Run(() => DescribeLoadFailure(filePath));
           if (reason != null)
           {
-            this.MainViewModel.MessageService.DisplayMessageBox(reason, "Add Part", MessageBoxIcon.Stop);
+            this.MainViewModel.MessageService.DisplayMessageBox(reason, Strings.Project_AddPartTitle, MessageBoxIcon.Stop);
             continue;
           }
 
@@ -258,14 +259,14 @@
         var detail = new NestExecutionHelper().LoadRawDetail(new System.IO.FileInfo(filePath));
         if (detail == null || !detail.TryConvertToNfp(0, out INfp nfp) || nfp.Points.Length < 3)
         {
-          return $"{name} holds no shape that can be nested.";
+          return string.Format(Strings.Project_MsgNoShapeFormat, name);
         }
 
         return null;
       }
       catch (Exception ex)
       {
-        return $"{name} cannot be used:{Environment.NewLine}{Environment.NewLine}{ex.GetBaseException().Message}";
+        return string.Format(Strings.Project_MsgCannotUseFormat, name) + Environment.NewLine + Environment.NewLine + ex.GetBaseException().Message;
       }
     }
 

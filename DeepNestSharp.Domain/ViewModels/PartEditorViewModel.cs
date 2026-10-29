@@ -6,6 +6,7 @@
   using DeepNestSharp.Domain.Models;
   using DeepNestSharp.Ui.Docking;
   using Microsoft.Toolkit.Mvvm.Input;
+  using SheetNest.Localization;
 
   public class PartEditorViewModel : FileViewModel
   {
@@ -64,7 +65,7 @@
       var fileInfo = new FileInfo(this.FilePath);
       if (!fileInfo.Exists)
       {
-        this.MainViewModel.MessageService.DisplayMessageBox($"File not found: {this.FilePath}.", "File Not Found", MessageBoxIcon.Information);
+        this.MainViewModel.MessageService.DisplayMessageBox(string.Format(Strings.Project_MsgFileNotFoundFormat, this.FilePath), Strings.Project_FileNotFoundTitle, MessageBoxIcon.Information);
         return;
       }
 
@@ -82,7 +83,7 @@
         }
         catch (StepUnfoldException ex)
         {
-          this.MainViewModel.MessageService.DisplayMessageBox(ex.Message, "Import 3D", MessageBoxIcon.Stop);
+          this.MainViewModel.MessageService.DisplayMessageBox(ex.Message, Strings.Project_Import3DTitle, MessageBoxIcon.Stop);
         }
       }
       else

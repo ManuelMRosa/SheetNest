@@ -1,6 +1,7 @@
 namespace DeepNestSharp.RasterNest
 {
   using System;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Explains why a drawing that requested direct common-line cutting was left at the ordinary part gap.
@@ -21,6 +22,14 @@ namespace DeepNestSharp.RasterNest
     public string Drawing { get; }
 
     public string Reason { get; }
+
+    /// <summary>The reason in the operator's language. <see cref="Reason"/> stays English: the engine compares it.</summary>
+    public string DisplayReason => this.Reason switch
+    {
+      ContourFormatReason => Strings.Engine_FallbackContourFormat,
+      TopologyReason => Strings.Engine_FallbackTopology,
+      _ => this.Reason,
+    };
 
     public static string ReasonFromValidation(string validationMessage)
     {

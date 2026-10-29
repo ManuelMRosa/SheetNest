@@ -9,6 +9,7 @@
   using System.Text.RegularExpressions;
   using DeepNestLib;
   using DeepNestLib.Placement;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Writes the production nest report as a PDF: one nest sheet per DISTINCT layout, the paper the
@@ -19,8 +20,11 @@
   /// </summary>
   public static class NestReportPdf
   {
-    internal const string SettingHeading = "SETTING INFORMATION";
-    internal const string PartsHeading = "NEST PARTS LIST";
+    /// <summary>
+    /// How many Courier characters fit between the left margin and the sheet drawing: (384 - 36) points at
+    /// 6 points a character. A settings line, label and value, has to stay inside it in every language.
+    /// </summary>
+    internal const int TextColumnChars = 58;
 
     /// <summary>The report page, in points: US Letter landscape.</summary>
     internal const double PageW = 792;
@@ -33,11 +37,34 @@
     private const double BoxX = 384;
     private const double BoxW = 372;
     private const double BoxH = 528;
-    private const int LabelWidth = 17; // "SHEET UTILIZATION", the longest label
     private const int NameWidth = 40;
 
+    internal static string SettingHeading => Text(nameof(Strings.Report_SettingHeading));
+
+    internal static string PartsHeading => Text(nameof(Strings.Report_PartsHeading));
+
     /// <summary>The parts list's column heading, padded to line up with <see cref="PartRows"/>.</summary>
-    internal static readonly string PartListHeader = $"{"Item",4} {"Part Name",-NameWidth} {"Num Off",7}";
+    internal static string PartListHeader
+      => $"{Text(nameof(Strings.Report_ItemColumn)),4} {Text(nameof(Strings.Report_PartNameColumn)),-NameWidth} {Text(nameof(Strings.Report_NumOffColumn)),7}";
+
+    /// <summary>Every settings label, so the colons line up under the longest one in the report's language.</summary>
+    private static string[] SettingLabels => new[]
+    {
+      Text(nameof(Strings.Report_DrawingName)),
+      Text(nameof(Strings.Report_Layout)),
+      Text(nameof(Strings.Report_Date)),
+      Text(nameof(Strings.Report_SheetSize)),
+      Text(nameof(Strings.Report_SheetUtilization)),
+      Text(nameof(Strings.Report_NumberOfSheets)),
+      Text(nameof(Strings.Report_PartsNotPlaced)),
+    };
+
+    /// <summary>
+    /// A report text in the operator's language, or in English when that language has letters the report's
+    /// Courier cannot set: the file is written in Latin-1, and an English label beats a row of question marks.
+    /// </summary>
+    internal static string Printable(string translated, string english)
+      => translated.All(ch => ch <= 'ÿ') ? translated : english;
 
     /// <summary>
     /// The four things a report page is drawn with, written into the page's content stream by
@@ -82,7 +109,7 @@
     {
       if (layouts == null || layouts.Count == 0)
       {
-        throw new InvalidOperationException("Nothing to report. Run a nest first.");
+        throw new InvalidOperationException(Strings.Report_NothingToReport);
       }
 
       string drawingName = Path.GetFileNameWithoutExtension(path);
@@ -111,26 +138,35 @@
       string units)
     {
       var (sp, count, _) = layouts[index];
-      string Setting(string label, string value) => $"{label,-LabelWidth} : {value}";
+      int labelWidth = SettingLabels.Max(label => label.Length);
+      string Setting(string key, string value) => $"{Text(key).PadRight(labelWidth)} : {value}";
+
+      // Day and month names in the report's language while the report can print them.
+      string dateFormat = Text(nameof(Strings.Report_DateFormat));
+      string date = now.ToString(dateFormat, Strings.Culture ?? CultureInfo.CurrentUICulture);
+      if (Printable(date, string.Empty).Length == 0)
+      {
+        date = now.ToString(dateFormat, CultureInfo.InvariantCulture);
+      }
 
       var job = new List<string>
       {
-        Setting("DRAWING NAME", Trunc(drawingName, 35)),
-        Setting("LAYOUT", $"{index + 1} of {layouts.Count}"),
-        Setting("DATE", now.ToString("ddd MMM dd HH:mm:ss yyyy", CultureInfo.InvariantCulture)),
-        Setting("SHEET SIZE", $"{Num(sp.Sheet.WidthCalculated)} x {Num(sp.Sheet.HeightCalculated)} {units}"),
+        Setting(nameof(Strings.Report_DrawingName), Trunc(drawingName, 35)),
+        Setting(nameof(Strings.Report_Layout), string.Format(CultureInfo.InvariantCulture, Text(nameof(Strings.Report_LayoutOfFormat)), index + 1, layouts.Count)),
+        Setting(nameof(Strings.Report_Date), date),
+        Setting(nameof(Strings.Report_SheetSize), $"{Num(sp.Sheet.WidthCalculated)} x {Num(sp.Sheet.HeightCalculated)} {units}"),
       };
 
       var cut = new List<string>
       {
-        Setting("SHEET UTILIZATION", $"{Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}%"),
-        Setting("NUMBER OF SHEETS", count.ToString(CultureInfo.InvariantCulture)),
+        Setting(nameof(Strings.Report_SheetUtilization), $"{Util(sp).ToString("0.0", CultureInfo.InvariantCulture)}%"),
+        Setting(nameof(Strings.Report_NumberOfSheets), count.ToString(CultureInfo.InvariantCulture)),
       };
 
       if (unplacedCount > 0)
       {
         // On every page, because any one of them may be the only one somebody reads.
-        cut.Add(Setting("PARTS NOT PLACED", unplacedCount.ToString(CultureInfo.InvariantCulture)));
+        cut.Add(Setting(nameof(Strings.Report_PartsNotPlaced), unplacedCount.ToString(CultureInfo.InvariantCulture)));
       }
 
       return (job, cut);
@@ -208,7 +244,7 @@
 
       if (shown < rows.Count)
       {
-        c.Text(left, py, size, bold: false, $"     ... and {rows.Count - shown} more");
+        c.Text(left, py, size, bold: false, string.Format(CultureInfo.InvariantCulture, Text(nameof(Strings.Report_MoreFormat)), rows.Count - shown));
       }
 
       // The sheet to scale, standing on the bottom margin and centred across the drawing's room: a wide
@@ -610,6 +646,12 @@
     }
 
     private static string Trunc(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "~";
+
+    /// <summary>The report text stored under <paramref name="key"/>, printable; see <see cref="Printable"/>.</summary>
+    private static string Text(string key)
+      => Printable(
+        Strings.ResourceManager.GetString(key, Strings.Culture) ?? string.Empty,
+        Strings.ResourceManager.GetString(key, CultureInfo.InvariantCulture) ?? string.Empty);
 
     private static string Num(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
 

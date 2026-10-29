@@ -2,6 +2,7 @@ namespace DeepNestSharp.Ui.Views
 {
   using System.Windows;
   using DeepNestSharp.RasterNest;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Dedicated offcut settings dialog: the remnant position is chosen from preview cards drawn in
@@ -21,12 +22,12 @@ namespace DeepNestSharp.Ui.Views
       this.unitsMm = unitsMm;
 
       string u = unitsMm ? "mm" : "in";
-      this.spacingLabel.Text = $"Offcut spacing ({u}):";
-      this.minXLabel.Text = $"Minimum X size ({u}):";
-      this.minYLabel.Text = $"Minimum Y size ({u}):";
-      this.maxXLabel.Text = $"Maximum X size ({u}):";
-      this.maxYLabel.Text = $"Maximum Y size ({u}):";
-      this.edgeOverlapLabel.Text = $"Edge overlap ({u}):";
+      this.spacingLabel.Text = string.Format(Strings.Offcut_SpacingFormat, u);
+      this.minXLabel.Text = string.Format(Strings.Offcut_MinXFormat, u);
+      this.minYLabel.Text = string.Format(Strings.Offcut_MinYFormat, u);
+      this.maxXLabel.Text = string.Format(Strings.Offcut_MaxXFormat, u);
+      this.maxYLabel.Text = string.Format(Strings.Offcut_MaxYFormat, u);
+      this.edgeOverlapLabel.Text = string.Format(Strings.Offcut_EdgeOverlapFormat, u);
 
       this.enableCheck.IsChecked = enabled;
       switch (direction)

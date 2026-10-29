@@ -1,0 +1,1765 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="About_CompilingMinkowski" xml:space="preserve">
+    <value>Compiling minkowski.dll</value>
+    <comment>Heading.</comment>
+  </data>
+  <data name="About_Contributors" xml:space="preserve">
+    <value>Contributors</value>
+    <comment>Heading over the list of contributing projects.</comment>
+  </data>
+  <data name="About_DeepNestOriginal" xml:space="preserve">
+    <value>DeepNest - The Original</value>
+    <comment>Followed by a link to the project. Keep the project name.</comment>
+  </data>
+  <data name="About_DeepNestPortPort" xml:space="preserve">
+    <value>DeepNestPort - C# WinForms port</value>
+    <comment>Followed by a link to the project. Keep the project name.</comment>
+  </data>
+  <data name="About_DeepNestSharpPort" xml:space="preserve">
+    <value>DeepNest# - Net Core C#/Mvvm/WPF port</value>
+    <comment>Followed by a link to the project and its version. Keep the project name.</comment>
+  </data>
+  <data name="About_DxfExport" xml:space="preserve">
+    <value>(dxf export)</value>
+    <comment>After a link to a contributing project.</comment>
+  </data>
+  <data name="About_DxfImportExport" xml:space="preserve">
+    <value>DXF Import/Export:</value>
+    <comment>Followed by a link to the library.</comment>
+  </data>
+  <data name="About_GiantsQuote" xml:space="preserve">
+    <value>"If I have seen further, it is by standing upon the shoulders of giants"</value>
+    <comment>A famous quotation (Isaac Newton).</comment>
+  </data>
+  <data name="About_History1" xml:space="preserve">
+    <value>Jack and Felix have done some great work but the originals use of a remote service to translate between image formats was an issue and the Port just wasn't proving stable enough for my needs. I really needed the ability to save projects, nest results and individual sheet placements, the ability to seed subsequent nests with the results of prior nests and the ability to edit placements - to slip that last piece in to the gaps on the sheet that the algorithm just wasn't finding.</value>
+    <comment>History written by the DeepNestSharp author, in the first person.</comment>
+  </data>
+  <data name="About_History2" xml:space="preserve">
+    <value>Felix was keen to keep true to the original DeepNest code in DeepNestPort...</value>
+  </data>
+  <data name="About_History3" xml:space="preserve">
+    <value>...so DeepNestSharp was born. It completely rebuilds the UI using WPF on Net.Core and is a huge refactor which has paid some dividends but also introduced some compromises and issues, some of which may still be outstanding... let me know.</value>
+  </data>
+  <data name="About_Intro" xml:space="preserve">
+    <value>SheetNest is a fork of DeepNestSharp, adding a GPU / raster nesting engine, an industrial production plan with grouped-layout DXF export, and a streamlined operator UI. MIT licensed; full lineage below.</value>
+  </data>
+  <data name="About_MinkowskiExample" xml:space="preserve">
+    <value>Example: cl /Ox -I "D:\boost\boost_1_76_0" /LD minkowski.cc</value>
+    <comment>Translate only the first word; the rest is a command.</comment>
+  </data>
+  <data name="About_MinkowskiIntro" xml:space="preserve">
+    <value>Included are a set of minkowski.dlls that work on various Windows setups I have; AnyCpu, x86 and x64; but if you want to use the DllImport you'll likely need to build the dlls for your own setup. A lot of work has been done to ensure the native code is substitutable; and it is close but it's still experimental. Works for me, YMMV.</value>
+  </data>
+  <data name="About_MinkowskiStep1" xml:space="preserve">
+    <value>1. Replace [boost_1.76_path]with your real BOOST (1.76+) path in compile.bat</value>
+    <comment>Keep [boost_1.76_path] and compile.bat as written.</comment>
+  </data>
+  <data name="About_MinkowskiStep2" xml:space="preserve">
+    <value>2. Run compile.bat using Developer Command Prompt for Visual Studio</value>
+  </data>
+  <data name="About_MinkowskiStep3" xml:space="preserve">
+    <value>3. Copy minkowski.dll to MinkowskiDlls folder.</value>
+  </data>
+  <data name="About_MinkowskiVisualStudio" xml:space="preserve">
+    <value>If you're running in Visual Studio DeepNestLib.CiTests has a PostBuild task to copy the DLLs from there for you. Otherwise make sure the appropriate DLLs get to the DeepNestSharp.exe folder. Note there's preprocessor directives to pick the right dll dependent on which Arch you're running.</value>
+  </data>
+  <data name="About_PortToNetCore" xml:space="preserve">
+    <value>(port to Net.Core)</value>
+    <comment>After a link to a contributing project.</comment>
+  </data>
+  <data name="About_QuoteBreakAway" xml:space="preserve">
+    <value>"Hope you consider breaking away from the legacy code base because it's getting really hard to merge."</value>
+    <comment>Quotation from a GitHub discussion; the text is a link to it.</comment>
+  </data>
+  <data name="About_QuoteEntangle" xml:space="preserve">
+    <value>&gt;&gt; I think we shouldn't entangle our repositories too much</value>
+    <comment>Quoted reply in a discussion. Keep the &gt;&gt; marks.</comment>
+  </data>
+  <data name="About_QuoteTryCompatibility" xml:space="preserve">
+    <value>&gt;&gt; I'll try, but it is important to keep compatibility with the original code...</value>
+    <comment>Quoted reply in a discussion. Keep the &gt;&gt; marks.</comment>
+  </data>
+  <data name="About_SimplificationFeatures" xml:space="preserve">
+    <value>(simplification features)</value>
+    <comment>After a link to a contributing project.</comment>
+  </data>
+  <data name="About_TheOriginalDeepNest" xml:space="preserve">
+    <value>(The original DeepNest)</value>
+    <comment>After a link to a contributing project.</comment>
+  </data>
+  <data name="About_TitleFormat" xml:space="preserve">
+    <value>About DeepNest# {0}:{1}</value>
+    <comment>Window title. {0} is the processor architecture, {1} the version. Keep the name as written.</comment>
+  </data>
+  <data name="About_WinFormsPort" xml:space="preserve">
+    <value>(WinForms C# port)</value>
+    <comment>After a link to a contributing project.</comment>
+  </data>
+  <data name="AddSheet_Add" xml:space="preserve">
+    <value>Add</value>
+    <comment>Button.</comment>
+  </data>
+  <data name="AddSheet_EditTitle" xml:space="preserve">
+    <value>Edit sheet</value>
+    <comment>Dialog title when editing a sheet.</comment>
+  </data>
+  <data name="AddSheet_HeaderInches" xml:space="preserve">
+    <value>Sheet size in inches (width = the long side).</value>
+  </data>
+  <data name="AddSheet_HeaderMillimeters" xml:space="preserve">
+    <value>Sheet size in millimeters (width = the long side).</value>
+  </data>
+  <data name="AddSheet_HeightIn" xml:space="preserve">
+    <value>Height (in)</value>
+    <comment>Keep the unit symbol.</comment>
+  </data>
+  <data name="AddSheet_HeightMm" xml:space="preserve">
+    <value>Height (mm)</value>
+    <comment>Keep the unit symbol.</comment>
+  </data>
+  <data name="AddSheet_Quantity" xml:space="preserve">
+    <value>Quantity</value>
+  </data>
+  <data name="AddSheet_RememberPreset" xml:space="preserve">
+    <value>Remember as preset</value>
+    <comment>Check box.</comment>
+  </data>
+  <data name="AddSheet_RememberPresetTip" xml:space="preserve">
+    <value>Save this size under "My sheets" in the Add Sheet menu.</value>
+    <comment>"My sheets" and "Add Sheet" are the menu and button of those names in the main window.</comment>
+  </data>
+  <data name="AddSheet_Title" xml:space="preserve">
+    <value>Custom sheet size</value>
+    <comment>Dialog title when adding a sheet.</comment>
+  </data>
+  <data name="AddSheet_Unlimited" xml:space="preserve">
+    <value>Unlimited</value>
+    <comment>Check box: the sheet size has no stock limit.</comment>
+  </data>
+  <data name="AddSheet_UnlimitedTip" xml:space="preserve">
+    <value>There is as much of this size as the job needs, so the nest keeps taking sheets until every part is placed. Quantity is ignored while this is ticked (it keeps its value for when you untick it).</value>
+  </data>
+  <data name="AddSheet_WidthIn" xml:space="preserve">
+    <value>Width (in)</value>
+    <comment>Keep the unit symbol.</comment>
+  </data>
+  <data name="AddSheet_WidthMm" xml:space="preserve">
+    <value>Width (mm)</value>
+    <comment>Keep the unit symbol.</comment>
+  </data>
+  <data name="Advanced_ApplicationGroup" xml:space="preserve">
+    <value>Application</value>
+    <comment>Group box heading.</comment>
+  </data>
+  <data name="Advanced_Autosave" xml:space="preserve">
+    <value>Auto save the open project</value>
+    <comment>Check box.</comment>
+  </data>
+  <data name="Advanced_AutosaveMinutes" xml:space="preserve">
+    <value>Auto Save Time (min):</value>
+    <comment>Minutes between automatic saves. The label column is narrow; keep it short.</comment>
+  </data>
+  <data name="Advanced_AutosaveMinutesTip" xml:space="preserve">
+    <value>How often the open project is automatically saved for recovery.</value>
+  </data>
+  <data name="Advanced_AutosaveTip" xml:space="preserve">
+    <value>Periodically snapshots the open project so unsaved work can be recovered after a crash.</value>
+  </data>
+  <data name="Advanced_ClusterAuto" xml:space="preserve">
+    <value>Auto</value>
+    <comment>Cluster size choice. The list is only 70 px wide.</comment>
+  </data>
+  <data name="Advanced_ClusterManual" xml:space="preserve">
+    <value>Manual</value>
+    <comment>Cluster size choice. The list is only 70 px wide.</comment>
+  </data>
+  <data name="Advanced_ClusterModeTip" xml:space="preserve">
+    <value>Auto lets SheetNest choose a safe cluster size; Manual applies a hard part-count limit.</value>
+    <comment>"Auto" and "Manual" are the two choices of this list.</comment>
+  </data>
+  <data name="Advanced_CommonLineGapFormat" xml:space="preserve">
+    <value>Common Line Gap ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm. The distance left between two parts that share a cut. The label column is narrow; keep it short.</comment>
+  </data>
+  <data name="Advanced_CommonLineGapTip" xml:space="preserve">
+    <value>Common-line placements use the configured gap; SheetNest resolves one center cut before DXF export. The value is stored in inches and converted to the selected drawing units for display.</value>
+  </data>
+  <data name="Advanced_CommonLineGroup" xml:space="preserve">
+    <value>Common Line Cutting</value>
+    <comment>Group box heading.</comment>
+  </data>
+  <data name="Advanced_DefaultRotations" xml:space="preserve">
+    <value>Default part rotations:</value>
+  </data>
+  <data name="Advanced_DefaultRotationsTip" xml:space="preserve">
+    <value>Rotations the nester may try for parts that have not been edited. Edit Part's per-part setting always wins.</value>
+    <comment>"Edit Part" is the name of the part dialog.</comment>
+  </data>
+  <data name="Advanced_DifferentiateHoles" xml:space="preserve">
+    <value>Color-differentiate hole contours</value>
+  </data>
+  <data name="Advanced_DifferentiateHolesTip" xml:space="preserve">
+    <value>Hole (child) contours export in a distinct color so the CAM can treat them separately.</value>
+  </data>
+  <data name="Advanced_DxfExportGroup" xml:space="preserve">
+    <value>DXF export</value>
+    <comment>Group box heading.</comment>
+  </data>
+  <data name="Advanced_Inches" xml:space="preserve">
+    <value>Inches</value>
+  </data>
+  <data name="Advanced_MaxClusterParts" xml:space="preserve">
+    <value>Maximum cluster parts:</value>
+    <comment>Largest number of parts in one group that shares cuts. The label column is narrow; keep it short.</comment>
+  </data>
+  <data name="Advanced_MaxClusterPartsTip" xml:space="preserve">
+    <value>Hard maximum number of parts in one common-line cluster (2 to 500).</value>
+  </data>
+  <data name="Advanced_MergeLines" xml:space="preserve">
+    <value>Merge coincident cut lines</value>
+  </data>
+  <data name="Advanced_MergeLinesTip" xml:space="preserve">
+    <value>Legacy export option for ordinary geometry: combines coincident DXF entities. Common-line output resolves its single center cut independently before export.</value>
+  </data>
+  <data name="Advanced_Millimeters" xml:space="preserve">
+    <value>Millimeters</value>
+  </data>
+  <data name="Advanced_NestingEffort" xml:space="preserve">
+    <value>Nesting effort:</value>
+  </data>
+  <data name="Advanced_NestingEffortTip" xml:space="preserve">
+    <value>How long the nester searches each sheet. It buys a TIGHTER pack, not more parts on the sheet: the parts that fit are found almost at once, and the rest of the search is spent squeezing them together so the material left over comes back as one usable piece.</value>
+  </data>
+  <data name="Advanced_NestingGroup" xml:space="preserve">
+    <value>Nesting</value>
+    <comment>Group box heading.</comment>
+  </data>
+  <data name="Advanced_PartSpacingFormat" xml:space="preserve">
+    <value>Part spacing ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Advanced_PartSpacingTip" xml:space="preserve">
+    <value>Default gap between ordinary parts (drawing units). Edit Part can override it per part; common-line placements use the separate gap below.</value>
+  </data>
+  <data name="Advanced_ResetCluster" xml:space="preserve">
+    <value>Reset</value>
+    <comment>Button beside the cluster limit. Space is tight.</comment>
+  </data>
+  <data name="Advanced_ResetClusterTip" xml:space="preserve">
+    <value>Restore automatic common-line cluster sizing.</value>
+  </data>
+  <data name="Advanced_ResetGap" xml:space="preserve">
+    <value>Reset to Default</value>
+    <comment>Button beside the common line gap. Space is tight.</comment>
+  </data>
+  <data name="Advanced_ResetGapTip" xml:space="preserve">
+    <value>Restore the shipped common-line gap.</value>
+  </data>
+  <data name="Advanced_Rotations90" xml:space="preserve">
+    <value>90° steps</value>
+    <comment>Rotation choice: four angles 90 degrees apart. Same pattern as Rotation_45Steps.</comment>
+  </data>
+  <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
+    <value>Sheet edge margin ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm. The label column is narrow; keep it short.</comment>
+  </data>
+  <data name="Advanced_SheetEdgeMarginTip" xml:space="preserve">
+    <value>Clear border kept between every part and the sheet edge.</value>
+  </data>
+  <data name="Advanced_Title" xml:space="preserve">
+    <value>Advanced Settings</value>
+    <comment>Title of the Advanced Settings dialog.</comment>
+  </data>
+  <data name="Advanced_Units" xml:space="preserve">
+    <value>Units:</value>
+  </data>
+  <data name="Advanced_UnitsTip" xml:space="preserve">
+    <value>Drawing units for parts, sheets, spacing and margins. Match the units your DXF files are drawn in; the physical common-line gap is converted automatically.</value>
+  </data>
+  <data name="App_FileType3D" xml:space="preserve">
+    <value>  3D sheet metal (*.step, *.stp, *.iges, *.igs)</value>
+    <comment>One line of App_MsgFilesSupported's list. Keep the two leading spaces.</comment>
+  </data>
+  <data name="App_FileTypeDxf" xml:space="preserve">
+    <value>  AutoCad Drawing Exchange Format (*.dxf) and </value>
+    <comment>One line of App_MsgFilesSupported's list. Keep the two leading spaces. Ends in "and": the next line, App_FileTypePolygon, completes it.</comment>
+  </data>
+  <data name="App_FileTypePolygon" xml:space="preserve">
+    <value>  DeepNest Polygon (*.dnpoly).</value>
+    <comment>One line of App_MsgFilesSupported's list. Keep the two leading spaces.</comment>
+  </data>
+  <data name="App_FileTypeProject" xml:space="preserve">
+    <value>  DeepNest Project (*.dnest)</value>
+    <comment>One line of App_MsgFilesSupported's list. Keep the two leading spaces.</comment>
+  </data>
+  <data name="App_FileTypeResult" xml:space="preserve">
+    <value>  DeepNest Result (*.dnr)</value>
+    <comment>One line of App_MsgFilesSupported's list. Keep the two leading spaces.</comment>
+  </data>
+  <data name="App_FileTypeSheetPlacement" xml:space="preserve">
+    <value>  DeepNest Sheet Placement (*.dnsp)</value>
+    <comment>One line of App_MsgFilesSupported's list. Keep the two leading spaces.</comment>
+  </data>
+  <data name="App_MsgFilesSupported" xml:space="preserve">
+    <value>Files supported include: </value>
+    <comment>Followed by one file type per line.</comment>
+  </data>
+  <data name="App_MsgUnableToLoadFormat" xml:space="preserve">
+    <value>Unable to load {0}</value>
+    <comment>{0} is a file name. The supported types follow, one per line.</comment>
+  </data>
+  <data name="Card_NameFormat" xml:space="preserve">
+    <value>Nest {0}</value>
+    <comment>Name of a card in the Nests panel. {0} is its number in the list.</comment>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Common_Edit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Common_OK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Common_Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Crash_CopyDetails" xml:space="preserve">
+    <value>Copy details</value>
+    <comment>Button. Also named in Crash_MsgBrowserFailed.</comment>
+  </data>
+  <data name="Crash_Header" xml:space="preserve">
+    <value>SheetNest ran into a problem.</value>
+  </data>
+  <data name="Crash_LogNotWritten" xml:space="preserve">
+    <value>(the log could not be written)</value>
+    <comment>Shown in place of the log file path.</comment>
+  </data>
+  <data name="Crash_MsgBrowserFailed" xml:space="preserve">
+    <value>Could not open the browser. Use 'Copy details' and paste it into a new issue at github.com/ManuelMRosa/SheetNest/issues.</value>
+    <comment>'Copy details' is the button of that name (Crash_CopyDetails).</comment>
+  </data>
+  <data name="Crash_ReportHint" xml:space="preserve">
+    <value>Reporting this helps fix it. The button below opens your browser with a pre-filled GitHub issue - you can review everything there, and NOTHING is sent unless you submit it yourself.</value>
+  </data>
+  <data name="Crash_ReportOnGitHub" xml:space="preserve">
+    <value>Report on GitHub</value>
+    <comment>Button.</comment>
+  </data>
+  <data name="Crash_SavedTo" xml:space="preserve">
+    <value>A crash report was saved to:</value>
+    <comment>Followed on the next line by a file path.</comment>
+  </data>
+  <data name="Crash_Title" xml:space="preserve">
+    <value>SheetNest - Problem Report</value>
+    <comment>Title of the crash report window.</comment>
+  </data>
+  <data name="Dxf_LayerFormat" xml:space="preserve">
+    <value>layer {0}</value>
+    <comment>Used as the last placeholder of Dxf_MsgOpenLineFormat and Dxf_MsgOpenLinesFormat. {0} is a layer name.</comment>
+  </data>
+  <data name="Dxf_LayersFormat" xml:space="preserve">
+    <value>layers {0}</value>
+    <comment>Used as the last placeholder of Dxf_MsgOpenLineFormat and Dxf_MsgOpenLinesFormat. {0} is a comma-separated list of layer names.</comment>
+  </data>
+  <data name="Dxf_MsgBadSplineFormat" xml:space="preserve">
+    <value>This drawing contains a SPLINE whose {0} control points and {1} knots do not describe a curve. Convert it to a polyline and import again.</value>
+    <comment>{0} and {1} are counts.</comment>
+  </data>
+  <data name="Dxf_MsgBlockReference" xml:space="preserve">
+    <value>This file is not compatible with SheetNest: its geometry is drawn as a block (a block reference). Open it in your CAD program, explode the blocks, and save the DXF again.</value>
+  </data>
+  <data name="Dxf_MsgNoGeometryFormat" xml:space="preserve">
+    <value>'{0}' has no geometry to nest - it holds only text, dimensions or other annotation.</value>
+    <comment>{0} is the drawing's full path.</comment>
+  </data>
+  <data name="Dxf_MsgOpenLineFormat" xml:space="preserve">
+    <value>'{0}' has an open line on {1}. Every line that is cut has to close a shape, and this one does not. Delete it, or draw it in yellow to have it marked on the part instead.</value>
+    <comment>{0} is the drawing's full path, {1} is Dxf_LayerFormat or Dxf_LayersFormat. Yellow lines are engraved, not cut.</comment>
+  </data>
+  <data name="Dxf_MsgOpenLinesFormat" xml:space="preserve">
+    <value>'{0}' has {1} open lines on {2}. Every line that is cut has to close a shape, and these do not. Delete them, or draw them in yellow to have them marked on the part instead.</value>
+    <comment>{0} is the drawing's full path, {1} the number of open lines (always more than one), {2} is Dxf_LayerFormat or Dxf_LayersFormat.</comment>
+  </data>
+  <data name="Dxf_MsgUnmeasurableFormat" xml:space="preserve">
+    <value>This drawing contains a {0}, which SheetNest cannot measure. Explode it or redraw it as lines, arcs, polylines, ellipses or splines and import again.</value>
+    <comment>{0} is a DXF entity type name such as SOLID.</comment>
+  </data>
+  <data name="EditPart_CommonCutting" xml:space="preserve">
+    <value>Common cutting:</value>
+  </data>
+  <data name="EditPart_CommonCuttingNone" xml:space="preserve">
+    <value>None</value>
+    <comment>Common cutting choice: the part shares no cuts.</comment>
+  </data>
+  <data name="EditPart_CommonCuttingSamePart" xml:space="preserve">
+    <value>Same part</value>
+    <comment>Common cutting choice: shares cuts only with copies of itself.</comment>
+  </data>
+  <data name="EditPart_CommonCuttingTip" xml:space="preserve">
+    <value>Who this part may share a cut edge with. Full edges stay at the configured Common Line Gap and export as a cluster perimeter plus one midpoint common cut. Part spacing still applies everywhere else. Changing this choice explicitly enables common cutting for this part.</value>
+    <comment>"Common Line Gap" is the setting of that name in Advanced Settings.</comment>
+  </data>
+  <data name="EditPart_CommonCuttingUnrestricted" xml:space="preserve">
+    <value>Unrestricted (compatible parts)</value>
+    <comment>Common cutting choice: shares cuts with any compatible part. The list is 200 px wide.</comment>
+  </data>
+  <data name="EditPart_Extra" xml:space="preserve">
+    <value>Extra:</value>
+    <comment>Number of spare parts.</comment>
+  </data>
+  <data name="EditPart_ExtraTip" xml:space="preserve">
+    <value>Spare parts nested on top of the required quantity (e.g. in case one is scrapped).</value>
+  </data>
+  <data name="EditPart_InDrawingUnits" xml:space="preserve">
+    <value>in the drawing's units</value>
+    <comment>Shown after the spacing box.</comment>
+  </data>
+  <data name="EditPart_KFactor" xml:space="preserve">
+    <value>K-factor:</value>
+  </data>
+  <data name="EditPart_KFactorTip" xml:space="preserve">
+    <value>Bend-allowance K-factor. Changing it re-unfolds this part with FreeCAD (the developed length changes).</value>
+  </data>
+  <data name="EditPart_LegacyCommonCuttingHint" xml:space="preserve">
+    <value>A saved legacy common-cutting mode is inactive. Choose a mode to confirm it for this direct DXF/STEP part.</value>
+  </data>
+  <data name="EditPart_Mirrored" xml:space="preserve">
+    <value>Mirrored:</value>
+    <comment>Number of mirrored copies.</comment>
+  </data>
+  <data name="EditPart_MirroredTip" xml:space="preserve">
+    <value>Copies nested MIRRORED (X-flipped) on top of the quantities above, for left-hand/right-hand pairs. The exported DXF cuts these mirrored.</value>
+  </data>
+  <data name="EditPart_NestedSheetWarningFormat" xml:space="preserve">
+    <value>⚠ This DXF looks like a FULL NESTED SHEET ({0} shapes inside a {1:0.#}×{2:0.#} frame), not a single part. SheetNest imports each DXF as ONE part, and the gaps between the inner shapes come from the original drawing. Export each part as its own DXF instead.</value>
+    <comment>{0} is a number of shapes (always 3 or more); {1} and {2} are the frame width and height.</comment>
+  </data>
+  <data name="EditPart_NotAvailable" xml:space="preserve">
+    <value>n/a</value>
+    <comment>Shown as the thickness when it is unknown.</comment>
+  </data>
+  <data name="EditPart_Orientations" xml:space="preserve">
+    <value>Orientations permitted:</value>
+  </data>
+  <data name="EditPart_OrientationsTip" xml:space="preserve">
+    <value>Rotations the nester may apply to THIS part (e.g. restrict for grain direction).</value>
+  </data>
+  <data name="EditPart_PartFile" xml:space="preserve">
+    <value>Part file:</value>
+  </data>
+  <data name="EditPart_PartSpacing" xml:space="preserve">
+    <value>Part spacing:</value>
+  </data>
+  <data name="EditPart_PartSpacingTip" xml:space="preserve">
+    <value>Gap this part keeps to the neighbours it may NOT share a cut with (drawing units). Two parts end up (spacingA + spacingB) / 2 apart.</value>
+  </data>
+  <data name="EditPart_Priority" xml:space="preserve">
+    <value>Priority:</value>
+  </data>
+  <data name="EditPart_PriorityHigh" xml:space="preserve">
+    <value>High</value>
+    <comment>Priority level, shown as "2 (High)".</comment>
+  </data>
+  <data name="EditPart_PriorityHighest" xml:space="preserve">
+    <value>Highest</value>
+    <comment>Priority level, shown as "1 (Highest)".</comment>
+  </data>
+  <data name="EditPart_PriorityLow" xml:space="preserve">
+    <value>Low</value>
+    <comment>Priority level, shown as "8 (Low)".</comment>
+  </data>
+  <data name="EditPart_PriorityLowest" xml:space="preserve">
+    <value>Lowest</value>
+    <comment>Priority level, shown as "10 (Lowest)".</comment>
+  </data>
+  <data name="EditPart_PriorityNormal" xml:space="preserve">
+    <value>Normal</value>
+    <comment>Priority level, shown as "5 (Normal)".</comment>
+  </data>
+  <data name="EditPart_PriorityTip" xml:space="preserve">
+    <value>1 = highest priority. Higher-priority parts are nested first, so they fill the earlier sheets and are never the ones left off when material runs out.</value>
+  </data>
+  <data name="EditPart_Quantity" xml:space="preserve">
+    <value>Quantity</value>
+    <comment>Group box heading.</comment>
+  </data>
+  <data name="EditPart_Required" xml:space="preserve">
+    <value>Required:</value>
+    <comment>Number of parts.</comment>
+  </data>
+  <data name="EditPart_RequiredTip" xml:space="preserve">
+    <value>Parts needed for the job.</value>
+  </data>
+  <data name="EditPart_Settings" xml:space="preserve">
+    <value>Settings</value>
+    <comment>Group box heading.</comment>
+  </data>
+  <data name="EditPart_Standard" xml:space="preserve">
+    <value>Standard:</value>
+    <comment>Followed by a list with ANSI and DIN.</comment>
+  </data>
+  <data name="EditPart_SymmetricShapeHint" xml:space="preserve">
+    <value>Detected rotation-symmetric shape (circle/square): turning it can't improve the nest, so "As drawn" saves the search.</value>
+    <comment>"As drawn" is the rotation choice of that name (Rotation_AsDrawn); use the same words.</comment>
+  </data>
+  <data name="EditPart_Thickness" xml:space="preserve">
+    <value>Thickness:</value>
+  </data>
+  <data name="EditPart_Title" xml:space="preserve">
+    <value>Edit Part</value>
+    <comment>Title of the part dialog.</comment>
+  </data>
+  <data name="EditPart_Unfold3DGroup" xml:space="preserve">
+    <value>3D unfold (sheet metal)</value>
+    <comment>Group box heading, only for parts imported from STEP/IGES.</comment>
+  </data>
+  <data name="Engine_FallbackContourFormat" xml:space="preserve">
+    <value>outside contour format is not supported by exact Common Line geometry</value>
+    <comment>Reason a drawing kept the normal gap.</comment>
+  </data>
+  <data name="Engine_FallbackTopology" xml:space="preserve">
+    <value>common-line cluster topology was invalid</value>
+    <comment>Reason a drawing kept the normal gap.</comment>
+  </data>
+  <data name="Engine_MsgAddSheetSize" xml:space="preserve">
+    <value>Add a sheet size first.</value>
+  </data>
+  <data name="Engine_MsgCancelled" xml:space="preserve">
+    <value>Cancelled.</value>
+    <comment>The nest was stopped by the user.</comment>
+  </data>
+  <data name="Engine_MsgCannotReadFormat" xml:space="preserve">
+    <value>{0} could not be read.</value>
+    <comment>{0} is a drawing's file name. The system's error message follows on its own line.</comment>
+  </data>
+  <data name="Engine_MsgClusterChanged" xml:space="preserve">
+    <value>A common-line cluster changed after final placement and was rejected.</value>
+  </data>
+  <data name="Engine_MsgClusterFailedSheetValidation" xml:space="preserve">
+    <value>A common-line cluster did not survive final sheet validation.</value>
+  </data>
+  <data name="Engine_MsgClusterTopologyFormat" xml:space="preserve">
+    <value>A common-line cluster failed final topology validation: {0}</value>
+    <comment>{0} is the validator's technical reason.</comment>
+  </data>
+  <data name="Engine_MsgCommonLineGapInvalid" xml:space="preserve">
+    <value>Common Line Gap must be a finite positive distance in the active drawing units.</value>
+  </data>
+  <data name="Engine_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>Could not start the nesting engine: {0}</value>
+    <comment>{0} is the system's error message.</comment>
+  </data>
+  <data name="Engine_MsgEngineNotFound" xml:space="preserve">
+    <value>Nesting engine (sparrow.exe) was not found.</value>
+  </data>
+  <data name="Engine_MsgGeometryToleranceInvalid" xml:space="preserve">
+    <value>GeometryTolerance must be finite, positive, and smaller than Common Line Gap.</value>
+    <comment>GeometryTolerance and Common Line Gap are two advanced settings.</comment>
+  </data>
+  <data name="Engine_MsgNoPlacements" xml:space="preserve">
+    <value>The nesting engine returned no placements.</value>
+  </data>
+  <data name="Engine_MsgNoPlacementsFormat" xml:space="preserve">
+    <value>The nesting engine returned no placements: {0}</value>
+    <comment>{0} is the engine's own error message.</comment>
+  </data>
+  <data name="Engine_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} holds no shape that can be nested.</value>
+    <comment>{0} is a drawing's file name.</comment>
+  </data>
+  <data name="Engine_MsgNoSolution" xml:space="preserve">
+    <value>The nesting engine produced no solution.</value>
+  </data>
+  <data name="Engine_MsgNoSolutionExitFormat" xml:space="preserve">
+    <value>The nesting engine produced no solution (exit {0}).</value>
+    <comment>{0} is the engine's exit code.</comment>
+  </data>
+  <data name="Engine_MsgNoSolutionFormat" xml:space="preserve">
+    <value>The nesting engine produced no solution: {0}</value>
+    <comment>{0} is the engine's own error message.</comment>
+  </data>
+  <data name="Engine_MsgTimedOut" xml:space="preserve">
+    <value>The nesting engine timed out.</value>
+  </data>
+  <data name="Export_DxfFilter" xml:space="preserve">
+    <value>Dxf files (*.dxf)|*.dxf</value>
+    <comment>File dialog filter: translate only the text before each bar; keep every |*.ext part identical.</comment>
+  </data>
+  <data name="Export_MsgCommonLineArcSweep" xml:space="preserve">
+    <value>COMMON_LINE contains ARC angles whose sweep is non-finite.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArc" xml:space="preserve">
+    <value>COMMON_LINE contains a zero-length or invalid ARC.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArcValues" xml:space="preserve">
+    <value>COMMON_LINE contains a non-finite ARC center, radius, or angle.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCircle" xml:space="preserve">
+    <value>COMMON_LINE contains a non-finite, zero-length, or invalid CIRCLE.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCurve" xml:space="preserve">
+    <value>COMMON_LINE contains an invalid or unsupported exact curve.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadLine" xml:space="preserve">
+    <value>COMMON_LINE contains a non-finite, zero-length, or tiny LINE entity.</value>
+    <comment>LINE, ARC, CIRCLE and LWPOLYLINE are DXF entity names: keep them.</comment>
+  </data>
+  <data name="Export_MsgCommonLineBadPolylineSegment" xml:space="preserve">
+    <value>COMMON_LINE contains an invalid or tiny LWPOLYLINE segment.</value>
+  </data>
+  <data name="Export_MsgCommonLineDegeneratePolyline" xml:space="preserve">
+    <value>COMMON_LINE contains a degenerate LWPOLYLINE.</value>
+  </data>
+  <data name="Export_MsgCommonLineOtherEntity" xml:space="preserve">
+    <value>COMMON_LINE contains an entity other than LINE, circular LWPOLYLINE, ARC, or CIRCLE.</value>
+  </data>
+  <data name="Export_MsgCommonLineTinySegment" xml:space="preserve">
+    <value>COMMON_LINE contains a zero-length or tiny segment.</value>
+  </data>
+  <data name="Export_MsgContourNotRebuilt" xml:space="preserve">
+    <value>A DXF contour could not be reconstructed for common-line export.</value>
+  </data>
+  <data name="Export_MsgCutInnerOpenCluster" xml:space="preserve">
+    <value>CUT_INNER contains an open or degenerate cluster contour.</value>
+    <comment>CUT_INNER, CUT_OUTER and COMMON_LINE are DXF layer names: keep them.</comment>
+  </data>
+  <data name="Export_MsgCutOuterOpenCluster" xml:space="preserve">
+    <value>CUT_OUTER contains an open or degenerate cluster contour.</value>
+  </data>
+  <data name="Export_MsgCutOuterSelfIntersecting" xml:space="preserve">
+    <value>CUT_OUTER contains a self-intersecting contour.</value>
+  </data>
+  <data name="Export_MsgEmptyContourFormat" xml:space="preserve">
+    <value>{0} contains an empty contour.</value>
+    <comment>{0} is a DXF layer name.</comment>
+  </data>
+  <data name="Export_MsgInvalidCutEntityFormat" xml:space="preserve">
+    <value>{0} contains an open, non-finite, tiny, or otherwise invalid entity.</value>
+    <comment>{0} is a DXF layer name.</comment>
+  </data>
+  <data name="Export_MsgNotClosedFormat" xml:space="preserve">
+    <value>{0} contains geometry that is not completely closed.</value>
+    <comment>{0} is a DXF layer name.</comment>
+  </data>
+  <data name="Export_MsgNotRebuiltClosedFormat" xml:space="preserve">
+    <value>{0} could not be rebuilt as a closed contour.</value>
+    <comment>{0} is a DXF layer name.</comment>
+  </data>
+  <data name="Export_MsgOuterSourceUnsupportedFormat" xml:space="preserve">
+    <value>Part {0} has outside source geometry the common-line cluster cannot preserve exactly.</value>
+    <comment>{0} is a part number.</comment>
+  </data>
+  <data name="Export_MsgSourceChangedFormat" xml:space="preserve">
+    <value>Source DXF '{0}' changed during common-line export; export was cancelled.</value>
+    <comment>{0} is a drawing path.</comment>
+  </data>
+  <data name="Export_MsgSourceNotLoadedForCommonLineFormat" xml:space="preserve">
+    <value>The file {0} could not be loaded for validated common-line export.</value>
+    <comment>{0} is a part's drawing path.</comment>
+  </data>
+  <data name="Export_MsgSourceNotLoadedFormat" xml:space="preserve">
+    <value>The file {0} could not be loaded. When exporting the original files that generated the nest are used for precision, instead of the copies rotated and manipulated potentially many times during the nest; degrading potentially their accuracy. It would be possible to load and store the original files but that'd take some effort...</value>
+    <comment>{0} is a part's drawing path.</comment>
+  </data>
+  <data name="Export_MsgSourceUnavailableFormat" xml:space="preserve">
+    <value>Source DXF '{0}' changed or became unavailable during common-line export.</value>
+    <comment>{0} is a drawing path.</comment>
+  </data>
+  <data name="Export_MsgUnsupportedEntityFormat" xml:space="preserve">
+    <value>unsupported entity type: {0}</value>
+    <comment>{0} is a DXF entity type name.</comment>
+  </data>
+  <data name="Files_PartFilter" xml:space="preserve">
+    <value>AutoCad Drawing Exchange Format (*.dxf)|*.dxf|DeepNest Polygon (*.dnpoly)|*.dnpoly|All files (*.*)|*.*</value>
+    <comment>File dialog filter: translate only the text before each bar; keep every |*.ext part identical. DeepNest is a file format name.</comment>
+  </data>
+  <data name="Files_ProjectFilter" xml:space="preserve">
+    <value>DeepNest Projects (*.dnest)|*.dnest|Json (*.json)|*.json|All files (*.*)|*.*</value>
+    <comment>File dialog filter: translate only the text before each bar; keep every |*.ext part identical. DeepNest is a file format name.</comment>
+  </data>
+  <data name="Import3D_File" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="Import3D_Inches" xml:space="preserve">
+    <value>Inches (uncheck for millimeters)</value>
+    <comment>Check box.</comment>
+  </data>
+  <data name="Import3D_InchesTip" xml:space="preserve">
+    <value>Unit your sheets/drawings use; the unfolded flat is converted to this unit.</value>
+  </data>
+  <data name="Import3D_Intro" xml:space="preserve">
+    <value>Set the bend-allowance K-factor to match your material/machine, then unfold.</value>
+  </data>
+  <data name="Import3D_KFactor" xml:space="preserve">
+    <value>K-factor</value>
+  </data>
+  <data name="Import3D_KFactorTip" xml:space="preserve">
+    <value>Bend-allowance K-factor. Calibrate so the unfolded length matches your real flat (0.3–0.5 typical).</value>
+  </data>
+  <data name="Import3D_NotDetected" xml:space="preserve">
+    <value>Not detected</value>
+    <comment>Shown as the thickness.</comment>
+  </data>
+  <data name="Import3D_PartsDetected" xml:space="preserve">
+    <value>Parts detected</value>
+  </data>
+  <data name="Import3D_Thickness" xml:space="preserve">
+    <value>Thickness</value>
+  </data>
+  <data name="Import3D_ThicknessVariesFormat" xml:space="preserve">
+    <value>varies ({0}–{1} {2})</value>
+    <comment>Thickness when the parts differ. {0} is the smallest, {1} the largest, {2} the unit symbol (in or mm).</comment>
+  </data>
+  <data name="Import3D_Title" xml:space="preserve">
+    <value>Import 3D: unfold options</value>
+  </data>
+  <data name="Import3D_UnfoldAndAdd" xml:space="preserve">
+    <value>Unfold &amp; Add</value>
+    <comment>OK button: unfolds the 3D model and adds the flat part. The button is about 110 px wide at a larger font; keep it short.</comment>
+  </data>
+  <data name="Import3D_Units" xml:space="preserve">
+    <value>Units</value>
+  </data>
+  <data name="Main_AddPart" xml:space="preserve">
+    <value>+ Add Part</value>
+  </data>
+  <data name="Main_AddPartTip" xml:space="preserve">
+    <value>Add a part to nest (DXF).</value>
+  </data>
+  <data name="Main_AddSheet" xml:space="preserve">
+    <value>+ Add Sheet</value>
+  </data>
+  <data name="Main_AddSheetTip" xml:space="preserve">
+    <value>Add a stock sheet: pick a standard size or enter a custom one</value>
+  </data>
+  <data name="Main_AvailableFormat" xml:space="preserve">
+    <value>Available: {0}</value>
+    <comment>Sheet card. {0} is a number of sheets.</comment>
+  </data>
+  <data name="Main_Cancel" xml:space="preserve">
+    <value>■  Cancel</value>
+    <comment>Replaces the NEST button while a nest runs. Keep the square and the two spaces after it.</comment>
+  </data>
+  <data name="Main_Cancelling" xml:space="preserve">
+    <value>Cancelling…</value>
+    <comment>The Cancel button while the nest stops.</comment>
+  </data>
+  <data name="Main_CancelTip" xml:space="preserve">
+    <value>Stop the running nest</value>
+  </data>
+  <data name="Main_Clearances" xml:space="preserve">
+    <value>Clearances</value>
+    <comment>Tab with the sheet edge margin.</comment>
+  </data>
+  <data name="Main_ClearResult" xml:space="preserve">
+    <value>Clear Result</value>
+  </data>
+  <data name="Main_ClearResultTip" xml:space="preserve">
+    <value>Discard the nest result and return the sheets it used to the stock</value>
+  </data>
+  <data name="Main_Color" xml:space="preserve">
+    <value>Color</value>
+  </data>
+  <data name="Main_ColorTip" xml:space="preserve">
+    <value>Colour the selected part is drawn in</value>
+  </data>
+  <data name="Main_CustomSize" xml:space="preserve">
+    <value>Custom size…</value>
+  </data>
+  <data name="Main_DrawingsKept_One" xml:space="preserve">
+    <value>, {0} drawing kept at normal gap</value>
+    <comment>Status bar. Count is 1.</comment>
+  </data>
+  <data name="Main_DrawingsKept_Other" xml:space="preserve">
+    <value>, {0} drawings kept at normal gap</value>
+    <comment>Status bar. Count is not 1.</comment>
+  </data>
+  <data name="Main_EditPartTip" xml:space="preserve">
+    <value>Edit the selected part (quantity, orientations, priority)</value>
+  </data>
+  <data name="Main_EditSheetTip" xml:space="preserve">
+    <value>Edit the selected sheet (size and quantity)</value>
+  </data>
+  <data name="Main_EffortBest" xml:space="preserve">
+    <value>Best (slowest)</value>
+  </data>
+  <data name="Main_EffortFast" xml:space="preserve">
+    <value>Fast</value>
+    <comment>How hard the nester searches: the menu beside the NEST button.</comment>
+  </data>
+  <data name="Main_EffortNameBest" xml:space="preserve">
+    <value>Best</value>
+    <comment>Used as {0} in Main_EffortTipFormat.</comment>
+  </data>
+  <data name="Main_EffortNameFast" xml:space="preserve">
+    <value>Fast</value>
+    <comment>Used as {0} in Main_EffortTipFormat.</comment>
+  </data>
+  <data name="Main_EffortNameNormal" xml:space="preserve">
+    <value>Normal</value>
+    <comment>Used as {0} in Main_EffortTipFormat.</comment>
+  </data>
+  <data name="Main_EffortNormal" xml:space="preserve">
+    <value>Normal (default)</value>
+  </data>
+  <data name="Main_EffortTipFormat" xml:space="preserve">
+    <value>Nesting effort: {0}. It buys a TIGHTER pack, not more parts: the parts that fit are found almost at once and the rest of the search squeezes them together. On a common-line job that is what lets the last part of a row share its cut instead of standing alone.</value>
+    <comment>Tooltip of the arrow beside NEST. {0} is the effort name (Main_EffortName...).</comment>
+  </data>
+  <data name="Main_Export" xml:space="preserve">
+    <value>Export</value>
+    <comment>Toolbar button: writes the selected nest to DXF files.</comment>
+  </data>
+  <data name="Main_ExportTip" xml:space="preserve">
+    <value>Export the selected nest result to DXF</value>
+  </data>
+  <data name="Main_FallbackRowFormat" xml:space="preserve">
+    <value>    {0} — {1}</value>
+    <comment>One line of Msg_CommonLineSkippedFormat. {0} is a drawing, {1} the reason.</comment>
+  </data>
+  <data name="Main_GivenUpFormat" xml:space="preserve">
+    <value>, {0} given up</value>
+    <comment>Status bar: shared cuts that were planned and then given up.</comment>
+  </data>
+  <data name="Main_Import3DDialogTitle" xml:space="preserve">
+    <value>Import 3D (STEP / IGES)</value>
+  </data>
+  <data name="Main_ImportedParts_One" xml:space="preserve">
+    <value>Imported {0} part.</value>
+    <comment>Count is 1.</comment>
+  </data>
+  <data name="Main_ImportedParts_Other" xml:space="preserve">
+    <value>Imported {0} parts.</value>
+    <comment>Count is not 1.</comment>
+  </data>
+  <data name="Main_MySheets" xml:space="preserve">
+    <value>My sheets</value>
+    <comment>Heading of the sheet sizes the user saved, in the Add Sheet menu.</comment>
+  </data>
+  <data name="Main_Nest" xml:space="preserve">
+    <value>▶  NEST</value>
+    <comment>The main button that runs the job. Keep the triangle and the two spaces after it.</comment>
+  </data>
+  <data name="Main_NestCancelled" xml:space="preserve">
+    <value>Nest cancelled</value>
+    <comment>Status bar.</comment>
+  </data>
+  <data name="Main_NestedFormat" xml:space="preserve">
+    <value>Nested: {0}</value>
+    <comment>Part card. {0} is a number of parts.</comment>
+  </data>
+  <data name="Main_NestedInFormat" xml:space="preserve">
+    <value>Nested in {0}{1}</value>
+    <comment>Status bar after a nest. {0} is the time (m:ss), {1} the shared-cut summary or nothing.</comment>
+  </data>
+  <data name="Main_NestingFormat" xml:space="preserve">
+    <value>Nesting…  {0}</value>
+    <comment>Status bar while a nest runs. {0} is the elapsed time, m:ss.</comment>
+  </data>
+  <data name="Main_NestReport" xml:space="preserve">
+    <value>Nest report</value>
+    <comment>Toolbar button: saves the PDF report of the nest.</comment>
+  </data>
+  <data name="Main_NestReportTip" xml:space="preserve">
+    <value>Save a PDF nest report: one page per layout, with the sheet drawn to scale, its parts list and utilization</value>
+  </data>
+  <data name="Main_NestsEmpty" xml:space="preserve">
+    <value>Run a nest to see its layouts here.</value>
+  </data>
+  <data name="Main_NestsTab" xml:space="preserve">
+    <value>Nests</value>
+    <comment>Panel listing the layouts of the result.</comment>
+  </data>
+  <data name="Main_NestTip" xml:space="preserve">
+    <value>Run the nest.</value>
+  </data>
+  <data name="Main_NetAreaFormat" xml:space="preserve">
+    <value>net area {0:0.0}</value>
+    <comment>Tooltip line on a part card. {0} is the area.</comment>
+  </data>
+  <data name="Main_New" xml:space="preserve">
+    <value>New</value>
+  </data>
+  <data name="Main_NewTip" xml:space="preserve">
+    <value>Start a new nesting project</value>
+  </data>
+  <data name="Main_Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="Main_OpenTip" xml:space="preserve">
+    <value>Open an existing project</value>
+  </data>
+  <data name="Main_PaletteSwatchFormat" xml:space="preserve">
+    <value>Part {0}</value>
+    <comment>Tooltip of a colour in the part colour picker. {0} is its number.</comment>
+  </data>
+  <data name="Main_PartColour" xml:space="preserve">
+    <value>Part colour</value>
+  </data>
+  <data name="Main_PartsTab" xml:space="preserve">
+    <value>Parts</value>
+  </data>
+  <data name="Main_PdfFilter" xml:space="preserve">
+    <value>PDF files (*.pdf)|*.pdf</value>
+    <comment>File dialog filter: translate only the text before the bar.</comment>
+  </data>
+  <data name="Main_QuantityFormat" xml:space="preserve">
+    <value>Quantity: {0}</value>
+    <comment>Sheet card. {0} is a number of sheets.</comment>
+  </data>
+  <data name="Main_QuantityUnlimited" xml:space="preserve">
+    <value>Quantity: Unlimited</value>
+    <comment>Sheet card of a size with no stock limit.</comment>
+  </data>
+  <data name="Main_RecoverUnsavedName" xml:space="preserve">
+    <value>an unsaved project</value>
+    <comment>Used as {0} in Msg_RecoverAutosave.</comment>
+  </data>
+  <data name="Main_RecoverWhenFormat" xml:space="preserve">
+    <value> (autosaved {0})</value>
+    <comment>Used as {1} in Msg_RecoverAutosave. {0} is the date and time. Keep the leading space.</comment>
+  </data>
+  <data name="Main_RemainingFormat" xml:space="preserve">
+    <value>Remaining: {0}</value>
+    <comment>Part card. {0} is a number of parts.</comment>
+  </data>
+  <data name="Main_RemoveFromMySheets" xml:space="preserve">
+    <value>Remove from my sheets</value>
+  </data>
+  <data name="Main_RemovePartTip" xml:space="preserve">
+    <value>Remove the selected part</value>
+  </data>
+  <data name="Main_RemoveSheetTip" xml:space="preserve">
+    <value>Remove the selected sheet</value>
+  </data>
+  <data name="Main_ReportFileName" xml:space="preserve">
+    <value>nest report.pdf</value>
+    <comment>Suggested file name. Keep .pdf.</comment>
+  </data>
+  <data name="Main_ReportSheetName" xml:space="preserve">
+    <value>Sheet</value>
+    <comment>Name of a layout in the report when the nest has no layout names.</comment>
+  </data>
+  <data name="Main_RequiredFormat" xml:space="preserve">
+    <value>Required: {0}</value>
+    <comment>Part card. {0} is a number of parts.</comment>
+  </data>
+  <data name="Main_SaveReportTitle" xml:space="preserve">
+    <value>Save nest report</value>
+  </data>
+  <data name="Main_SharedCuts_One" xml:space="preserve">
+    <value>  ·  {0} shared cut</value>
+    <comment>Status bar, appended after the time. Keep the leading spaces and dot.</comment>
+  </data>
+  <data name="Main_SharedCuts_Other" xml:space="preserve">
+    <value>  ·  {0} shared cuts</value>
+    <comment>Status bar, appended after the time. Keep the leading spaces and dot.</comment>
+  </data>
+  <data name="Main_SheetCardTip" xml:space="preserve">
+    <value>Sheet size, width × height (width = the long side). Double-click or Edit to change it</value>
+  </data>
+  <data name="Main_SheetEdgeMargin" xml:space="preserve">
+    <value>Sheet edge margin</value>
+  </data>
+  <data name="Main_SheetEdgeMarginTip" xml:space="preserve">
+    <value>Empty border kept clear around the sheet (in the drawing's units).</value>
+  </data>
+  <data name="Main_SheetsFormat" xml:space="preserve">
+    <value>Sheets: {0}</value>
+    <comment>Nest card. {0} is how many sheets get this layout.</comment>
+  </data>
+  <data name="Main_SheetsHint" xml:space="preserve">
+    <value>width = long side · every listed sheet participates; for each sheet the nester cuts the size that fills most of itself · tick Unlimited on a size and the job takes as many of it as it needs</value>
+    <comment>Hint beside the sheet buttons. "Unlimited" is the check box in the sheet dialog.</comment>
+  </data>
+  <data name="Main_SheetsTab" xml:space="preserve">
+    <value>Sheets</value>
+  </data>
+  <data name="Main_SizeFormat" xml:space="preserve">
+    <value>Size: {0}</value>
+    <comment>Part and nest cards. {0} is a size such as 12 x 8; the unit follows it.</comment>
+  </data>
+  <data name="Main_SkippedSolids_One" xml:space="preserve">
+    <value>{0} solid was skipped (not recognized as sheet metal).</value>
+    <comment>Count is 1.</comment>
+  </data>
+  <data name="Main_SkippedSolids_Other" xml:space="preserve">
+    <value>{0} solids were skipped (not recognized as sheet metal).</value>
+    <comment>Count is not 1.</comment>
+  </data>
+  <data name="Main_StatusPlaced" xml:space="preserve">
+    <value>Placed:</value>
+    <comment>Status bar label: parts placed.</comment>
+  </data>
+  <data name="Main_StatusSheets" xml:space="preserve">
+    <value>Sheets:</value>
+    <comment>Status bar label.</comment>
+  </data>
+  <data name="Main_StatusUnplaced" xml:space="preserve">
+    <value>Unplaced:</value>
+    <comment>Status bar label: parts not placed.</comment>
+  </data>
+  <data name="Main_StatusUtilization" xml:space="preserve">
+    <value>Utilization:</value>
+    <comment>Status bar label.</comment>
+  </data>
+  <data name="Main_UnfitBothFormat" xml:space="preserve">
+    <value>, {0} overlapping a neighbour and {1} inside the sheet edge margin</value>
+    <comment>{0} and {1} are part counts.</comment>
+  </data>
+  <data name="Main_UnfitInMargin" xml:space="preserve">
+    <value>, inside the sheet edge margin</value>
+  </data>
+  <data name="Main_UnfitOverlapping" xml:space="preserve">
+    <value>, overlapping a neighbour</value>
+  </data>
+  <data name="Main_UnfitParts_One" xml:space="preserve">
+    <value>{0} part</value>
+    <comment>One line per layout in Msg_NotReadyToCut.</comment>
+  </data>
+  <data name="Main_UnfitParts_Other" xml:space="preserve">
+    <value>{0} parts</value>
+    <comment>One line per layout in Msg_NotReadyToCut.</comment>
+  </data>
+  <data name="Main_UpdateAvailableFormat" xml:space="preserve">
+    <value>Update available: {0}</value>
+    <comment>Status bar link. {0} is the new version number.</comment>
+  </data>
+  <data name="Main_UpdateNoticeTip" xml:space="preserve">
+    <value>A newer SheetNest is available. Click to open the download page.</value>
+  </data>
+  <data name="Main_UsedFormat" xml:space="preserve">
+    <value>Used: {0}</value>
+    <comment>Sheet card. {0} is a number of sheets.</comment>
+  </data>
+  <data name="Main_UtilizationFormat" xml:space="preserve">
+    <value>Utilization: {0}</value>
+    <comment>Nest card. {0} is a percentage.</comment>
+  </data>
+  <data name="Menu_About" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="Menu_AdvancedSettings" xml:space="preserve">
+    <value>Advanced Settings...</value>
+  </data>
+  <data name="Menu_CheckUpdates" xml:space="preserve">
+    <value>Check for Updates...</value>
+  </data>
+  <data name="Menu_Exit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="Menu_File" xml:space="preserve">
+    <value>_File</value>
+    <comment>Menu. The underscore marks the letter used with Alt.</comment>
+  </data>
+  <data name="Menu_Help" xml:space="preserve">
+    <value>_Help</value>
+    <comment>Menu. The underscore marks the letter used with Alt.</comment>
+  </data>
+  <data name="Menu_Import3D" xml:space="preserve">
+    <value>Import 3D (STEP / IGES)...</value>
+  </data>
+  <data name="Menu_Language" xml:space="preserve">
+    <value>Language</value>
+    <comment>Settings menu entry, and the title of its message.</comment>
+  </data>
+  <data name="Menu_LanguageAutomatic" xml:space="preserve">
+    <value>Automatic (Windows)</value>
+    <comment>Follow the Windows display language.</comment>
+  </data>
+  <data name="Menu_NewProject" xml:space="preserve">
+    <value>New Project</value>
+  </data>
+  <data name="Menu_Offcut" xml:space="preserve">
+    <value>Offcut...</value>
+    <comment>Opens the settings for cutting the leftover of the last sheet off as a remnant.</comment>
+  </data>
+  <data name="Menu_OpenProject" xml:space="preserve">
+    <value>Open Project...</value>
+  </data>
+  <data name="Menu_RecentEmpty" xml:space="preserve">
+    <value>(empty)</value>
+    <comment>Shown under Recent Projects when there are none.</comment>
+  </data>
+  <data name="Menu_RecentProjects" xml:space="preserve">
+    <value>Recent Projects</value>
+  </data>
+  <data name="Menu_Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Menu_SaveAs" xml:space="preserve">
+    <value>Save As...</value>
+  </data>
+  <data name="Menu_SendFeedback" xml:space="preserve">
+    <value>Send Feedback...</value>
+  </data>
+  <data name="Menu_SendFeedbackTip" xml:space="preserve">
+    <value>Open a pre-filled GitHub issue to suggest ideas or report problems</value>
+  </data>
+  <data name="Menu_Settings" xml:space="preserve">
+    <value>_Settings</value>
+    <comment>Menu. The underscore marks the letter used with Alt.</comment>
+  </data>
+  <data name="Msg_AddPartsFirst" xml:space="preserve">
+    <value>Open a project and add parts first.</value>
+  </data>
+  <data name="Msg_AddSheetFirst" xml:space="preserve">
+    <value>Add at least one sheet in the Sheets tab first.</value>
+  </data>
+  <data name="Msg_AvailableSheets_One" xml:space="preserve">
+    <value>the {0} available sheet</value>
+    <comment>Used as {1} in Msg_PartsDidNotFit. Count is 1.</comment>
+  </data>
+  <data name="Msg_AvailableSheets_Other" xml:space="preserve">
+    <value>the {0} available sheets</value>
+    <comment>Used as {1} in Msg_PartsDidNotFit. Count is not 1.</comment>
+  </data>
+  <data name="Msg_CheckUpdatesTitle" xml:space="preserve">
+    <value>Check for Updates</value>
+  </data>
+  <data name="Msg_CommonLineSkippedFormat" xml:space="preserve">
+    <value>Common-line cutting was skipped for:
+
+{0}
+
+Those parts kept the normal part gap.</value>
+    <comment>{0} is one line per drawing.</comment>
+  </data>
+  <data name="Msg_CommonLineTitle" xml:space="preserve">
+    <value>Common line</value>
+  </data>
+  <data name="Msg_EngineMissing" xml:space="preserve">
+    <value>The nesting engine (sparrow.exe) was not found. It ships next to the app; reinstall, or set the SHEETNEST_SPARROW environment variable to its path.</value>
+  </data>
+  <data name="Msg_ExportTitle" xml:space="preserve">
+    <value>Export DXF</value>
+  </data>
+  <data name="Msg_FeedbackNoBrowser" xml:space="preserve">
+    <value>Could not open the browser. You can send feedback at:
+https://github.com/ManuelMRosa/SheetNest/issues</value>
+  </data>
+  <data name="Msg_Import3DTitle" xml:space="preserve">
+    <value>Import 3D</value>
+  </data>
+  <data name="Msg_LanguageNextStart" xml:space="preserve">
+    <value>The language changes the next time SheetNest opens.</value>
+  </data>
+  <data name="Msg_NestReportTitle" xml:space="preserve">
+    <value>Nest report</value>
+  </data>
+  <data name="Msg_NestTitle" xml:space="preserve">
+    <value>Nest</value>
+    <comment>Title of the messages shown when NEST is pressed.</comment>
+  </data>
+  <data name="Msg_NoResult" xml:space="preserve">
+    <value>Nest produced no result.</value>
+  </data>
+  <data name="Msg_NotEnoughSheetsTitle" xml:space="preserve">
+    <value>Not enough sheets</value>
+  </data>
+  <data name="Msg_NotReadyToCut_One" xml:space="preserve">
+    <value>{0} part is not ready to cut:
+
+{1}
+
+It is drawn in red. Move it clear in Edit nest and try again.</value>
+    <comment>Count is 1. {1} lists the layouts. "Edit nest" is the viewer's button.</comment>
+  </data>
+  <data name="Msg_NotReadyToCut_Other" xml:space="preserve">
+    <value>{0} parts are not ready to cut:
+
+{1}
+
+They are drawn in red. Move them clear in Edit nest and try again.</value>
+    <comment>Count is not 1. {1} lists the layouts. "Edit nest" is the viewer's button.</comment>
+  </data>
+  <data name="Msg_PartsDidNotFit_One" xml:space="preserve">
+    <value>{0} part did not fit on {1}.
+
+Increase the sheet Qty in the Sheets tab, tick Unlimited on a size, or add another sheet, and nest again.</value>
+    <comment>Count is 1. {1} is Msg_AvailableSheets_One or _Other.</comment>
+  </data>
+  <data name="Msg_PartsDidNotFit_Other" xml:space="preserve">
+    <value>{0} parts did not fit on {1}.
+
+Increase the sheet Qty in the Sheets tab, tick Unlimited on a size, or add another sheet, and nest again.</value>
+    <comment>Count is not 1. {1} is Msg_AvailableSheets_One or _Other.</comment>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_One" xml:space="preserve">
+    <value>{0} part does not fit on any of the sheet sizes in the Sheets tab.
+
+Sheets were not the limit — one of the sizes is unlimited. The part is bigger than every sheet it could go on, so add a bigger sheet size (or check the part's spacing and margin).</value>
+    <comment>Count is 1.</comment>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_Other" xml:space="preserve">
+    <value>{0} parts do not fit on any of the sheet sizes in the Sheets tab.
+
+Sheets were not the limit — one of the sizes is unlimited. The part is bigger than every sheet it could go on, so add a bigger sheet size (or check the part's spacing and margin).</value>
+    <comment>Count is not 1.</comment>
+  </data>
+  <data name="Msg_PartsDoNotFitTitle" xml:space="preserve">
+    <value>Parts do not fit</value>
+  </data>
+  <data name="Msg_RecoverAutosave" xml:space="preserve">
+    <value>SheetNest closed unexpectedly with unsaved changes in {0}{1}.
+
+Recover the autosaved project?</value>
+    <comment>{0} is the project file name, {1} the optional autosave time (Main_RecoverWhenFormat).</comment>
+  </data>
+  <data name="Msg_RecoveryTitle" xml:space="preserve">
+    <value>Recovery</value>
+  </data>
+  <data name="Msg_ReportWriteFailed" xml:space="preserve">
+    <value>Could not write the report: {0}</value>
+    <comment>{0} is the system's error message.</comment>
+  </data>
+  <data name="Msg_ResultExists" xml:space="preserve">
+    <value>There is already a nest result. Press Clear Result first; it returns the sheets that nest used to the stock.</value>
+  </data>
+  <data name="Msg_ReunfoldTitle" xml:space="preserve">
+    <value>Re-unfold</value>
+  </data>
+  <data name="Msg_SaveBeforeClosing" xml:space="preserve">
+    <value>You have a nest result. Save the project before closing?</value>
+    <comment>Answered with Yes, No or Cancel.</comment>
+  </data>
+  <data name="Msg_SelectResultForExport" xml:space="preserve">
+    <value>Run a nest and select a result first, then export.</value>
+  </data>
+  <data name="Msg_SelectResultForReport" xml:space="preserve">
+    <value>Run a nest and select a result first, then save the report.</value>
+  </data>
+  <data name="Msg_SendFeedbackTitle" xml:space="preserve">
+    <value>Send Feedback</value>
+  </data>
+  <data name="Msg_UpdateAvailableFormat" xml:space="preserve">
+    <value>SheetNest {0} is available (you have {1}).
+
+Open the download page?</value>
+    <comment>{0} is the new version, {1} the installed one.</comment>
+  </data>
+  <data name="Msg_UpdateCheckFailed" xml:space="preserve">
+    <value>Could not check for updates. Check your internet connection.</value>
+  </data>
+  <data name="Msg_UpToDateFormat" xml:space="preserve">
+    <value>You are up to date (SheetNest {0}).</value>
+    <comment>{0} is the version number.</comment>
+  </data>
+  <data name="Offcut_Auto" xml:space="preserve">
+    <value>Auto (best remnant)</value>
+    <comment>Caption under a picture card about 96 px wide.</comment>
+  </data>
+  <data name="Offcut_AutoTip" xml:space="preserve">
+    <value>Weighs End, Side and Both against the layout the nest produced and keeps whichever frees the most material.</value>
+    <comment>End, Side and Both are the other three cards.</comment>
+  </data>
+  <data name="Offcut_Both" xml:space="preserve">
+    <value>Both (L-shaped)</value>
+    <comment>Caption under a picture card about 96 px wide.</comment>
+  </data>
+  <data name="Offcut_BothTip" xml:space="preserve">
+    <value>When the nest left room on both sides, the leftover comes away as two rectangles (guillotine cuts, so no cut ever splits a remnant in two).</value>
+  </data>
+  <data name="Offcut_EdgeOverlapFormat" xml:space="preserve">
+    <value>Edge overlap ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Offcut_EdgeOverlapTip" xml:space="preserve">
+    <value>How far the cut runs PAST the sheet edge at each end, so the remnant comes away instead of hanging on by a bridge at the corners. 0 = flush with the edge.</value>
+  </data>
+  <data name="Offcut_Enable" xml:space="preserve">
+    <value>Cut the leftover off as a rectangular offcut</value>
+    <comment>Check box.</comment>
+  </data>
+  <data name="Offcut_EnableTip" xml:space="preserve">
+    <value>Measures the free area the nest left on the last sheet and adds a cut line so it comes away as a reusable rectangle. It never moves a part: the nest is already finished by the time this is worked out, so turning it on cannot change where anything is placed.</value>
+  </data>
+  <data name="Offcut_End" xml:space="preserve">
+    <value>End of sheet</value>
+    <comment>Caption under a picture card about 96 px wide.</comment>
+  </data>
+  <data name="Offcut_EndTip" xml:space="preserve">
+    <value>A full strip at the end of the sheet's long side: the classic remnant.</value>
+  </data>
+  <data name="Offcut_MaxXFormat" xml:space="preserve">
+    <value>Maximum X size ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Offcut_MaxXTip" xml:space="preserve">
+    <value>Widest remnant still worth cutting off. Bigger than this and it is not a remnant but very nearly a sheet, so nothing is cut and the sheet is kept whole. 0 = no limit.</value>
+  </data>
+  <data name="Offcut_MaxYFormat" xml:space="preserve">
+    <value>Maximum Y size ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Offcut_MaxYTip" xml:space="preserve">
+    <value>Tallest remnant still worth cutting off. 0 = no limit.</value>
+  </data>
+  <data name="Offcut_MinXFormat" xml:space="preserve">
+    <value>Minimum X size ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Offcut_MinXTip" xml:space="preserve">
+    <value>Narrowest remnant worth separating. Below this the sheet is left uncut. 0 = automatic (5% of the sheet's side).</value>
+  </data>
+  <data name="Offcut_MinYFormat" xml:space="preserve">
+    <value>Minimum Y size ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Offcut_MinYTip" xml:space="preserve">
+    <value>Shortest remnant worth separating. 0 = automatic (5% of the sheet's side).</value>
+  </data>
+  <data name="Offcut_RemnantPosition" xml:space="preserve">
+    <value>Remnant position</value>
+    <comment>Heading over four picture cards.</comment>
+  </data>
+  <data name="Offcut_ResetDefaults" xml:space="preserve">
+    <value>Reset to defaults</value>
+  </data>
+  <data name="Offcut_ResetDefaultsTip" xml:space="preserve">
+    <value>Puts the six numbers above back to the recommended figures for this drawing's units. The remnant position and the enable tick are left alone.</value>
+  </data>
+  <data name="Offcut_Side" xml:space="preserve">
+    <value>Side of sheet</value>
+    <comment>Caption under a picture card about 96 px wide.</comment>
+  </data>
+  <data name="Offcut_SideTip" xml:space="preserve">
+    <value>A full strip along the sheet's short side.</value>
+  </data>
+  <data name="Offcut_SpacingFormat" xml:space="preserve">
+    <value>Offcut spacing ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Offcut_SpacingTip" xml:space="preserve">
+    <value>Gap kept between the packed parts and the offcut cut line (drawing units).</value>
+  </data>
+  <data name="Offcut_Title" xml:space="preserve">
+    <value>Offcut</value>
+    <comment>Title of the dialog that cuts the leftover of the last sheet off as a remnant.</comment>
+  </data>
+  <data name="Part_CommonLine" xml:space="preserve">
+    <value>common line</value>
+    <comment>Part card summary: the part may share cuts with others.</comment>
+  </data>
+  <data name="Part_CommonLineSamePart" xml:space="preserve">
+    <value>common line (same part)</value>
+    <comment>Part card summary: the part may share cuts only with copies of itself.</comment>
+  </data>
+  <data name="Part_Rot45Steps" xml:space="preserve">
+    <value>45° steps</value>
+    <comment>Part card summary: rotation option Rotation_45Steps.</comment>
+  </data>
+  <data name="Part_Rot4Way" xml:space="preserve">
+    <value>4-way</value>
+    <comment>Part card summary: rotation option Rotation_4Way.</comment>
+  </data>
+  <data name="Part_Rot90Only" xml:space="preserve">
+    <value>90° only</value>
+    <comment>Part card summary: rotation option Rotation_90Only.</comment>
+  </data>
+  <data name="Part_RotAsDrawn" xml:space="preserve">
+    <value>as drawn</value>
+    <comment>Part card summary: rotation only 0 degrees (Rotation_AsDrawn).</comment>
+  </data>
+  <data name="Part_RotFree" xml:space="preserve">
+    <value>free</value>
+    <comment>Part card summary: rotation option Rotation_Free.</comment>
+  </data>
+  <data name="Part_RotJobDefault" xml:space="preserve">
+    <value>job default</value>
+    <comment>Part card summary: rotation option Rotation_JobDefault.</comment>
+  </data>
+  <data name="Part_RotOther" xml:space="preserve">
+    <value>rot: other</value>
+    <comment>Part card summary: a rotation setting none of the options names.</comment>
+  </data>
+  <data name="Part_SpacingDefault" xml:space="preserve">
+    <value>spacing: default</value>
+    <comment>Part card summary: the part uses the job's spacing.</comment>
+  </data>
+  <data name="Part_SpacingFormat" xml:space="preserve">
+    <value>spacing {0:0.###}</value>
+    <comment>Part card summary. {0} is the part's own spacing.</comment>
+  </data>
+  <data name="Project_AddPartTitle" xml:space="preserve">
+    <value>Add Part</value>
+  </data>
+  <data name="Project_ErrorSavingTitle" xml:space="preserve">
+    <value>Error Saving</value>
+    <comment>Title of the message shown when an export or save fails.</comment>
+  </data>
+  <data name="Project_FileMissingTitle" xml:space="preserve">
+    <value>File Missing</value>
+  </data>
+  <data name="Project_FileNotFoundTitle" xml:space="preserve">
+    <value>File Not Found</value>
+  </data>
+  <data name="Project_Import3DTitle" xml:space="preserve">
+    <value>Import 3D</value>
+  </data>
+  <data name="Project_MsgCannotUseFormat" xml:space="preserve">
+    <value>{0} cannot be used:</value>
+    <comment>{0} is a drawing's file name. The reason follows on its own line.</comment>
+  </data>
+  <data name="Project_MsgFileNotFoundFormat" xml:space="preserve">
+    <value>File not found: {0}.</value>
+    <comment>{0} is a file path.</comment>
+  </data>
+  <data name="Project_MsgMixedSvgDxf" xml:space="preserve">
+    <value>It's not possible to export when your parts were a mix of Svg's and Dxf's.</value>
+  </data>
+  <data name="Project_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} holds no shape that can be nested.</value>
+    <comment>{0} is a drawing's file name.</comment>
+  </data>
+  <data name="Project_MsgSaveChangesFormat" xml:space="preserve">
+    <value>Save changes for file '{0}'?</value>
+    <comment>{0} is a file name.</comment>
+  </data>
+  <data name="Project_MsgSaveResultFirst" xml:space="preserve">
+    <value>You have a nest result. Save the project first?</value>
+  </data>
+  <data name="Project_MsgUnableToLocateFormat" xml:space="preserve">
+    <value>Unable to locate {0}.</value>
+    <comment>{0} is a file path.</comment>
+  </data>
+  <data name="Project_MsgUseImport3D" xml:space="preserve">
+    <value>To import a 3D part use File &gt; Import 3D (STEP / IGES)... It detects the sheet thickness and lets you set the K-factor.</value>
+    <comment>File &gt; Import 3D (STEP / IGES)... is the menu path: use the same words as Menu_File and Menu_Import3D.</comment>
+  </data>
+  <data name="Report_Date" xml:space="preserve">
+    <value>DATE</value>
+    <comment>PDF report label. Keep it under 19 characters: a value of up to 35 follows it on a 58-character line.</comment>
+  </data>
+  <data name="Report_DateFormat" xml:space="preserve">
+    <value>ddd MMM dd HH:mm:ss yyyy</value>
+    <comment>A .NET date format, not text: d = day, M = month, y = year, H = hour, m = minute, s = second. Reorder as your language writes dates.</comment>
+  </data>
+  <data name="Report_DrawingName" xml:space="preserve">
+    <value>DRAWING NAME</value>
+    <comment>PDF report label. Keep it under 19 characters: a value of up to 35 follows it on a 58-character line.</comment>
+  </data>
+  <data name="Report_ItemColumn" xml:space="preserve">
+    <value>Item</value>
+    <comment>PDF parts list column: the part's number. Keep it to 4 characters.</comment>
+  </data>
+  <data name="Report_Layout" xml:space="preserve">
+    <value>LAYOUT</value>
+    <comment>PDF report label. Keep it under 19 characters: a value of up to 35 follows it on a 58-character line.</comment>
+  </data>
+  <data name="Report_LayoutOfFormat" xml:space="preserve">
+    <value>{0} of {1}</value>
+    <comment>PDF report: layout {0} of {1} layouts.</comment>
+  </data>
+  <data name="Report_MoreFormat" xml:space="preserve">
+    <value>     ... and {0} more</value>
+    <comment>Last line of a parts list too long for the page. Keep the leading spaces.</comment>
+  </data>
+  <data name="Report_NothingToReport" xml:space="preserve">
+    <value>Nothing to report. Run a nest first.</value>
+  </data>
+  <data name="Report_NumberOfSheets" xml:space="preserve">
+    <value>NUMBER OF SHEETS</value>
+    <comment>PDF report label. Keep it under 19 characters: a value of up to 35 follows it on a 58-character line.</comment>
+  </data>
+  <data name="Report_NumOffColumn" xml:space="preserve">
+    <value>Num Off</value>
+    <comment>PDF parts list column: how many of the part one sheet yields. Keep it to 7 characters.</comment>
+  </data>
+  <data name="Report_PartNameColumn" xml:space="preserve">
+    <value>Part Name</value>
+    <comment>PDF parts list column. Keep it under 40 characters.</comment>
+  </data>
+  <data name="Report_PartsHeading" xml:space="preserve">
+    <value>NEST PARTS LIST</value>
+    <comment>PDF report heading.</comment>
+  </data>
+  <data name="Report_PartsNotPlaced" xml:space="preserve">
+    <value>PARTS NOT PLACED</value>
+    <comment>PDF report label. Keep it under 19 characters: a value of up to 35 follows it on a 58-character line.</comment>
+  </data>
+  <data name="Report_SettingHeading" xml:space="preserve">
+    <value>SETTING INFORMATION</value>
+    <comment>PDF report heading.</comment>
+  </data>
+  <data name="Report_SheetSize" xml:space="preserve">
+    <value>SHEET SIZE</value>
+    <comment>PDF report label. Keep it under 19 characters: a value of up to 35 follows it on a 58-character line.</comment>
+  </data>
+  <data name="Report_SheetUtilization" xml:space="preserve">
+    <value>SHEET UTILIZATION</value>
+    <comment>PDF report label. Keep it under 19 characters: a value of up to 35 follows it on a 58-character line.</comment>
+  </data>
+  <data name="Rotation_0And180Tip" xml:space="preserve">
+    <value>0° and 180°: respects material grain but can flip.</value>
+  </data>
+  <data name="Rotation_0And90Tip" xml:space="preserve">
+    <value>0° and 90° permitted.</value>
+  </data>
+  <data name="Rotation_45Steps" xml:space="preserve">
+    <value>45° steps</value>
+    <comment>Rotation option: eight angles 45 degrees apart. Very small button.</comment>
+  </data>
+  <data name="Rotation_45StepsTip" xml:space="preserve">
+    <value>Eight orientations, 45° apart. The job setting offers this too, and without it here a part could not be shown what it was really set to.</value>
+  </data>
+  <data name="Rotation_4Way" xml:space="preserve">
+    <value>4-way</value>
+    <comment>Rotation option: 0, 90, 180 and 270 degrees. Very small button.</comment>
+  </data>
+  <data name="Rotation_4WayTip" xml:space="preserve">
+    <value>All four square orientations (0 / 90 / 180 / 270°). The safe first choice on square and L shaped parts: it usually beats free rotation on those, and always costs less to search.</value>
+  </data>
+  <data name="Rotation_90And270Tip" xml:space="preserve">
+    <value>90° and 270°: always turned, either way.</value>
+  </data>
+  <data name="Rotation_90Only" xml:space="preserve">
+    <value>90° only</value>
+    <comment>Rotation option. Very small button.</comment>
+  </data>
+  <data name="Rotation_90OnlyTip" xml:space="preserve">
+    <value>Only 90°, so the part is always turned once.</value>
+  </data>
+  <data name="Rotation_AsDrawn" xml:space="preserve">
+    <value>As drawn</value>
+    <comment>Rotation option: only 0 degrees. Very small button.</comment>
+  </data>
+  <data name="Rotation_AsDrawnTip" xml:space="preserve">
+    <value>Only 0°, so the part stays exactly as drawn (respects grain).</value>
+  </data>
+  <data name="Rotation_Free" xml:space="preserve">
+    <value>Free</value>
+    <comment>Rotation option: any angle. Very small button.</comment>
+  </data>
+  <data name="Rotation_FreeTip" xml:space="preserve">
+    <value>Any angle, and NOT automatically the tightest. It wins on parts with slanted or curved edges, and loses on square or L shaped ones, which interlock exactly at right angles and gain nothing from being tilted. Measured on two real jobs: 84.3% of the block filled against 4-way's 81.6% on one, and 69.6% against 73.2% on the other. Costs about twice the search. Ignores grain.</value>
+    <comment>"4-way" is the Rotation_4Way option.</comment>
+  </data>
+  <data name="Rotation_JobDefault" xml:space="preserve">
+    <value>Job default</value>
+    <comment>Rotation option: the part follows the job's setting. Very small button.</comment>
+  </data>
+  <data name="Rotation_JobDefaultTip" xml:space="preserve">
+    <value>Whatever the job is set to, under Settings &gt; Advanced Settings. Change it there and this part follows.</value>
+  </data>
+  <data name="Step_Filter3D" xml:space="preserve">
+    <value>STEP / IGES 3D (*.step;*.stp;*.iges;*.igs)|*.step;*.stp;*.iges;*.igs|All files (*.*)|*.*</value>
+    <comment>File dialog filter: translate only the text before each bar; keep every |*.ext part identical.</comment>
+  </data>
+  <data name="Step_MsgCouldNotAnalyzeFormat" xml:space="preserve">
+    <value>Could not analyze the 3D model.
+
+{0}</value>
+    <comment>{0} is the unfold program's reason, in English.</comment>
+  </data>
+  <data name="Step_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>Could not start the unfold engine (FreeCAD):
+{0}
+
+{1}</value>
+    <comment>{0} is the program's path, {1} the system's error message.</comment>
+  </data>
+  <data name="Step_MsgCouldNotUnfoldFormat" xml:space="preserve">
+    <value>Could not unfold the 3D part.
+
+{0}</value>
+    <comment>{0} is the unfold program's reason, in English.</comment>
+  </data>
+  <data name="Step_MsgEngineNotFound" xml:space="preserve">
+    <value>Unfold engine (FreeCAD) not found.
+Reinstall SheetNest (it bundles FreeCAD) or install FreeCAD from freecad.org.</value>
+  </data>
+  <data name="Step_MsgMacroNotFound" xml:space="preserve">
+    <value>unfold_macro.py not found next to SheetNest.</value>
+  </data>
+  <data name="Step_MsgNoFlatPattern" xml:space="preserve">
+    <value>The unfold reported success but produced no flat pattern.</value>
+  </data>
+  <data name="Step_MsgNoResultFormat" xml:space="preserve">
+    <value>FreeCAD returned no result.
+
+{0}</value>
+    <comment>{0} is the last lines of the unfold program's error output.</comment>
+  </data>
+  <data name="Step_MsgTimedOutFormat" xml:space="preserve">
+    <value>FreeCAD timed out ({0} s).</value>
+    <comment>{0} is a number of seconds.</comment>
+  </data>
+  <data name="Viewer_DistanceAgainFormat" xml:space="preserve">
+    <value>distance: {0:0.000} {1}  ·  click to measure again</value>
+    <comment>Measure readout. {0} is the length, {1} the unit (in or mm).</comment>
+  </data>
+  <data name="Viewer_DistanceFormat" xml:space="preserve">
+    <value>distance: {0:0.000} {1}</value>
+    <comment>Measure readout while aiming the second point. {0} is the length, {1} the unit (in or mm).</comment>
+  </data>
+  <data name="Viewer_EditNest" xml:space="preserve">
+    <value>✋ Edit nest</value>
+    <comment>Toggle button on the viewer. Keep the hand symbol.</comment>
+  </data>
+  <data name="Viewer_EditNestTip" xml:space="preserve">
+    <value>Manual nesting: click a part to select it, drag to move, rotate with the buttons. Dragging may leave a part on top of another while you rearrange: it turns red, and the export refuses until nothing is red. Hold Alt as you drop to slide it against its neighbour instead. The arrow keys will not push a properly placed part into a neighbour, but they do move one that is already red, so you can walk it clear. Edits apply to every copy of this layout and flow into the DXF export.</value>
+  </data>
+  <data name="Viewer_EditNestTitle" xml:space="preserve">
+    <value>Edit nest</value>
+    <comment>Title of the message shown when leaving the editor with red parts.</comment>
+  </data>
+  <data name="Viewer_EmptyHint" xml:space="preserve">
+    <value>Run a nest to see the result here.</value>
+    <comment>Shown in the empty viewer before any nest.</comment>
+  </data>
+  <data name="Viewer_FullSheet" xml:space="preserve">
+    <value>Full sheet</value>
+    <comment>Production-plan layout that is cut several times, full of parts.</comment>
+  </data>
+  <data name="Viewer_GapFormat" xml:space="preserve">
+    <value>gap {0} {1}</value>
+    <comment>Distance from the selected part to its nearest neighbour. {0} is the number, {1} the unit (in or mm).</comment>
+  </data>
+  <data name="Viewer_HintCommonLineLocked" xml:space="preserve">
+    <value>common-line cluster parts are locked  ·  re-nest to change their position</value>
+  </data>
+  <data name="Viewer_HintEdit" xml:space="preserve">
+    <value>click = select part  ·  drag = move  ·  arrows = nudge  ·  type a coordinate to place it exactly  ·  overlaps show red</value>
+    <comment>Help line while editing a nest by hand. Keep the two spaces and dot between items.</comment>
+  </data>
+  <data name="Viewer_HintMeasureSecond" xml:space="preserve">
+    <value>measure: click the second point</value>
+  </data>
+  <data name="Viewer_HintMeasureStart" xml:space="preserve">
+    <value>measure: click two points (snaps to corners)</value>
+  </data>
+  <data name="Viewer_HintPlanReadOnly" xml:space="preserve">
+    <value>this layout is a production-plan proposal, not one of the nested sheets, so it cannot be edited  ·  the sheets it stands for are the ones that get cut</value>
+    <comment>Help line when the shown layout is a condensed production-plan proposal that cannot be edited.</comment>
+  </data>
+  <data name="Viewer_HintUnreadableNumber" xml:space="preserve">
+    <value>that is not a number I can read  ·  the part has been left where it was</value>
+    <comment>After typing a coordinate that cannot be read.</comment>
+  </data>
+  <data name="Viewer_HintView" xml:space="preserve">
+    <value>scroll = zoom  ·  wheel-drag = pan  ·  right-click = fit</value>
+    <comment>Mouse help in the viewer's corner. Keep the two spaces and dot between items.</comment>
+  </data>
+  <data name="Viewer_LayoutNameFormat" xml:space="preserve">
+    <value>Layout {0}</value>
+    <comment>{0} is the layout number.</comment>
+  </data>
+  <data name="Viewer_Measure" xml:space="preserve">
+    <value>Measure</value>
+    <comment>Toggle button on the edit bar.</comment>
+  </data>
+  <data name="Viewer_MeasureTip" xml:space="preserve">
+    <value>Measure a distance: click two points on the drawing; the length shows below (in the drawing's units). Use it to verify a 3D-unfolded part's size / K-factor.</value>
+  </data>
+  <data name="Viewer_Mirror" xml:space="preserve">
+    <value>⇆ Mirror</value>
+    <comment>Button on the edit bar. Keep the arrows symbol.</comment>
+  </data>
+  <data name="Viewer_MirrorTip" xml:space="preserve">
+    <value>Mirror the selected part (left ↔ right hand). The DXF export reflects it too, so the cut part is really mirrored, not just on screen.</value>
+  </data>
+  <data name="Viewer_MsgLeaveAnyway" xml:space="preserve">
+    <value>Leave anyway?</value>
+    <comment>Yes/No question at the end of Viewer_MsgLeaveUnfit.</comment>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_One" xml:space="preserve">
+    <value>{0} part on this layout is not fit to cut{1}.
+
+It is drawn in red. Move it clear before leaving the editor.
+
+{2}</value>
+    <comment>Count is 1. {1} is Viewer_UnfitBothFormat, Viewer_UnfitInMargin or Viewer_UnfitOverlapping, glued right after the words. {2} is Viewer_MsgUndoAndLeave or Viewer_MsgLeaveAnyway.</comment>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_Other" xml:space="preserve">
+    <value>{0} parts on this layout are not fit to cut{1}.
+
+They are drawn in red. Move them clear before leaving the editor.
+
+{2}</value>
+    <comment>Count is not 1. {1} is Viewer_UnfitBothFormat, Viewer_UnfitInMargin or Viewer_UnfitOverlapping, glued right after the words. {2} is Viewer_MsgUndoAndLeave or Viewer_MsgLeaveAnyway.</comment>
+  </data>
+  <data name="Viewer_MsgUndoAndLeave" xml:space="preserve">
+    <value>Undo your changes and leave anyway?</value>
+    <comment>Yes/No question at the end of Viewer_MsgLeaveUnfit.</comment>
+  </data>
+  <data name="Viewer_NotFitCount_One" xml:space="preserve">
+    <value>{0} part not fit to cut</value>
+    <comment>Red counter on the edit bar. Count is 1.</comment>
+  </data>
+  <data name="Viewer_NotFitCount_Other" xml:space="preserve">
+    <value>{0} parts not fit to cut</value>
+    <comment>Red counter on the edit bar. Count is not 1.</comment>
+  </data>
+  <data name="Viewer_OverlapCountTip" xml:space="preserve">
+    <value>Parts overlapping a neighbour or hanging off the sheet. Export refuses while any remain.</value>
+  </data>
+  <data name="Viewer_PartAngleTip" xml:space="preserve">
+    <value>Angle in degrees. Type a value and press Enter.</value>
+  </data>
+  <data name="Viewer_PartFallbackName" xml:space="preserve">
+    <value>part</value>
+    <comment>Shown as the selected part's name when it has no file name.</comment>
+  </data>
+  <data name="Viewer_PartGapTip" xml:space="preserve">
+    <value>Distance from this part to its nearest neighbour, measured when it comes to rest.</value>
+  </data>
+  <data name="Viewer_PartXTip" xml:space="preserve">
+    <value>Left edge of the part, in sheet coordinates. Type a value and press Enter.</value>
+  </data>
+  <data name="Viewer_PartYTip" xml:space="preserve">
+    <value>Bottom edge of the part, in sheet coordinates. Type a value and press Enter.</value>
+  </data>
+  <data name="Viewer_RedoTip" xml:space="preserve">
+    <value>Redo (Ctrl+Y)</value>
+  </data>
+  <data name="Viewer_RemainderSheet" xml:space="preserve">
+    <value>Remainder sheet</value>
+    <comment>Production-plan layout holding the parts left over after the full sheets.</comment>
+  </data>
+  <data name="Viewer_RotateCcw5Tip" xml:space="preserve">
+    <value>Rotate selected part 5° counter-clockwise</value>
+  </data>
+  <data name="Viewer_RotateCcw90Tip" xml:space="preserve">
+    <value>Rotate selected part 90° counter-clockwise</value>
+  </data>
+  <data name="Viewer_RotateCw5Tip" xml:space="preserve">
+    <value>Rotate selected part 5° clockwise</value>
+  </data>
+  <data name="Viewer_RotateCw90Tip" xml:space="preserve">
+    <value>Rotate selected part 90° clockwise</value>
+  </data>
+  <data name="Viewer_UndoTip" xml:space="preserve">
+    <value>Undo (Ctrl+Z)</value>
+  </data>
+  <data name="Viewer_UnfitBothFormat" xml:space="preserve">
+    <value>: {0} overlapping a neighbour and {1} inside the sheet edge margin</value>
+    <comment>Ending of Viewer_MsgLeaveUnfit. {0} and {1} are part counts.</comment>
+  </data>
+  <data name="Viewer_UnfitInMargin" xml:space="preserve">
+    <value>, inside the sheet edge margin</value>
+    <comment>Ending of Viewer_MsgLeaveUnfit.</comment>
+  </data>
+  <data name="Viewer_UnfitOverlapping" xml:space="preserve">
+    <value>, overlapping a neighbour</value>
+    <comment>Ending of Viewer_MsgLeaveUnfit.</comment>
+  </data>
+</root>

@@ -1,6 +1,7 @@
 namespace DeepNestSharp.Ui.Views
 {
   using System.Windows;
+  using SheetNest.Localization;
 
   /// <summary>
   /// Consent dialog for crash reporting: shows the saved report and offers a pre-filled GitHub
@@ -15,7 +16,7 @@ namespace DeepNestSharp.Ui.Views
       InitializeComponent();
       this.issueUrl = issueUrl;
       this.reportBox.Text = report;
-      this.logPathRun.Text = logPath ?? "(the log could not be written)";
+      this.logPathRun.Text = logPath ?? Strings.Crash_LogNotWritten;
     }
 
     private void OnReport(object sender, RoutedEventArgs e)
@@ -26,7 +27,7 @@ namespace DeepNestSharp.Ui.Views
       }
       catch
       {
-        MessageBox.Show(this, "Could not open the browser. Use 'Copy details' and paste it into a new issue at github.com/ManuelMRosa/SheetNest/issues.", "SheetNest", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(this, Strings.Crash_MsgBrowserFailed, "SheetNest", MessageBoxButton.OK, MessageBoxImage.Information);
       }
     }
 
