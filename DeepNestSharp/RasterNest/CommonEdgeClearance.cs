@@ -1253,6 +1253,12 @@ namespace DeepNestSharp.RasterNest
       BoundaryCache cache,
       IDictionary<string, DxfContourCatalog> sourceCatalogs)
     {
+      if (cache.EdgeFree != null
+        && !(commonEdges ?? Array.Empty<EdgeReference>()).Any(edge => ReferenceEquals(edge.PartA, part) || ReferenceEquals(edge.PartB, part)))
+      {
+        cache = cache.EdgeFree;
+      }
+
       string poseKey = cache.Key(part, tolerance);
       if (cache.TryGet(poseKey, out BoundaryGeometry cached))
       {
@@ -2489,6 +2495,20 @@ namespace DeepNestSharp.RasterNest
     {
       private readonly Dictionary<string, BoundaryGeometry> values = new(StringComparer.Ordinal);
       private readonly Dictionary<INfp, int> geometryIds = new(ReferenceEqualityComparer.Instance);
+      private readonly int maxEntries;
+
+      /// <param name="edgeFree">Where to keep the boundaries of parts no common edge touches, when the
+      /// caller has a cache that outlives this one. Such a boundary reads nothing from the edge set (no
+      /// relationship catalog, no recorded split, no resolved span), only the pose, so it stays good across
+      /// every edge set a search tries; that is the one exception to the rule above.</param>
+      /// <param name="maxEntries">Emptied when it reaches this many, so a long search cannot hoard them.</param>
+      internal BoundaryCache(BoundaryCache edgeFree = null, int maxEntries = int.MaxValue)
+      {
+        this.EdgeFree = edgeFree;
+        this.maxEntries = maxEntries;
+      }
+
+      internal BoundaryCache EdgeFree { get; }
 
       internal string Key(IPartPlacement part, double tolerance)
       {
@@ -2517,7 +2537,15 @@ namespace DeepNestSharp.RasterNest
 
       internal bool TryGet(string key, out BoundaryGeometry geometry) => this.values.TryGetValue(key, out geometry);
 
-      internal void Store(string key, BoundaryGeometry geometry) => this.values[key] = geometry;
+      internal void Store(string key, BoundaryGeometry geometry)
+      {
+        if (this.values.Count >= this.maxEntries)
+        {
+          this.values.Clear();
+        }
+
+        this.values[key] = geometry;
+      }
     }
 
     /// <summary>

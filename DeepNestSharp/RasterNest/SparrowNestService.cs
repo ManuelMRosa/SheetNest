@@ -3318,6 +3318,11 @@
       // Which part of the search is asking, so the diagnostics can tell the beam's finalists from the
       // fallback forest, which validates the whole sheet once per candidate it accepts.
       string applyPhase = "finalist";
+
+      // Every plan the search tries leaves most parts where they started and touched by no edge, and those
+      // parts' exact boundaries are the same in every plan. Keeping them for the whole search, instead of
+      // tessellating all of them again for each plan, is what lets the forest afford a large sheet.
+      var edgeFreeBoundaries = new CommonEdgeClearance.BoundaryCache(maxEntries: (4 * n) + 64);
       bool TryApplyPlan(
         IReadOnlyList<DirectCandidate> plan,
         bool validateTopology,
@@ -3643,8 +3648,9 @@
         reportStage("clearance");
         // Both judgements below are of the SAME `intents`, so they may share exact boundaries: only the
         // poses can differ between them, and the cache is keyed on the pose. It must NOT outlive this
-        // plan, because a different edge set tessellates the same part differently.
-        var planBoundaries = new CommonEdgeClearance.BoundaryCache();
+        // plan, because a different edge set tessellates the same part differently; parts no edge touches
+        // go to the search-wide cache instead, since nothing about an edge set reaches their boundary.
+        var planBoundaries = new CommonEdgeClearance.BoundaryCache(edgeFreeBoundaries);
         bool layoutValid = DirectLayoutIsValid(
           all,
           intents,
