@@ -58,16 +58,17 @@ Ejecutar las suites por proyecto: installer/RELEASING.md documenta que dotnet te
 
 Para pruebas nativas de Hodgson/rendimiento seguir COMMON_LINE_IMPLEMENTATION.md y comprobar las rutas del motor/DXF. SPARROW_EXE y SHEETNEST_REQUIRE_SPARROW controlan la ejecución nativa. No presentar pruebas omitidas como verificadas.
 
-## Estado observado el 2026-09-06
+## Estado observado el 2026-10-29
 
 Verificar con Git al iniciar; esta sección es una referencia fechada.
-- Rama: `seam-count-and-lead-bench`. HEAD: `953ca00`.
-- **Hay mucho trabajo SIN COMITEAR sobre HEAD.** `git status` antes de tocar nada.
-- Trabajo de esta sesión: se retiró por completo la integración con el otro programa de CAM (proyectos,
-  archivos de importación/exportación, campos persistidos y la ruta legacy del corte común con sus
-  tolerancias), y se limpió su nombre del código y de la documentación pública. Se devolvió el
-  desplazamiento de vecinos del planificador directo, que se había quitado por velocidad, y se abarató
-  en su lugar. Suites: 941 (núcleo) y 394 (aplicación), cero fallos.
+- Publicada la **1.1.12** desde `main` (`Release 1.1.12`, etiqueta `v1.1.12`). Entraron: motor sparrow 0.3.0,
+  planificador de corte común mucho más rápido con el mismo resultado, luz de lámina en las piezas, aviso de
+  líneas abiertas (#11), botones Export / Nest report, la app en español y el idioma en el instalador.
+- Idiomas: textos en `Localization/`; el idioma elegido vive en `HKCU\Software\SheetNest\Language`
+  (`auto`/`en`/`es`), lo escriben el MSI y Configuración > Idioma.
+- Suites antes de publicar: núcleo 1047 + 1 de tiempo inestable
+  (`ClipperFixture.CurrentImplementationOfScaleUpPathsShouldBeTheFastest`, falla 1 de cada 5 sin cambios),
+  app completa con el motor real 470/470.
 
 ### El corte común se valida contra DOS bancos, nunca uno
 
