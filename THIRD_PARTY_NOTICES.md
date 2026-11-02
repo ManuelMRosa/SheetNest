@@ -38,6 +38,16 @@ Corresponding source is available from the upstream projects below.
 | sparrow | 0.3.0 (upstream `c5e64b3`) | MIT | https://github.com/JeroenGar/sparrow |
 | jagua-rs | 1.0.0 | MPL-2.0 | https://github.com/JeroenGar/jagua-rs |
 
+## Native geometry core
+
+`sheetnest_core.dll`, next to `SheetNest.exe`, is SheetNest's own native geometry code. The Clipper
+polygon library is compiled into it **unmodified**; its source and license are kept in this
+repository under `native/third_party/clipper/`.
+
+| Component | Version | License | Source |
+|-----------|---------|---------|--------|
+| Clipper (C++) | 6.4.2 | Boost Software License 1.0 | https://sourceforge.net/projects/polyclipping/ |
+
 If you need the corresponding source for any bundled LGPL component, it is available from the
 upstream project links above; you may also request it through the
 [SheetNest repository](https://github.com/ManuelMRosa/SheetNest).
