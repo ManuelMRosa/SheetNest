@@ -36,6 +36,7 @@
     // Target on-screen line width in device pixels (constant at any zoom level).
     private const double StrokeScreenPx = 1.0;
     private const double OffcutCutPx = 4.0; // offcut cut line, same idea: it decides where the material is split
+    private const double ScrapCutPx = 2.0; // scrap cuts: dashed and half as heavy, so the offcut cut still stands out
 
     // Measure snap: how close (device px) the cursor must be to a vertex to snap onto it.
     private const double SnapScreenPx = 12.0;
@@ -163,6 +164,10 @@
     /// the nest ran with "Prefer rectangular offcut"; null = off); computed live from the placements
     /// each render, with the same rules the DXF export uses for the separation cut lines.</summary>
     internal RasterNest.OffcutOptions OffcutOptions { get; set; }
+
+    /// <summary>Draw the scrap cuts on every sheet (null = off); computed live from the placements with the
+    /// same <see cref="RasterNest.ScrapCutGeometry.BuildLines"/> the DXF export writes.</summary>
+    internal RasterNest.ScrapCutOptions ScrapCutOptions { get; set; }
 
     /// <summary>Re-render on demand — used by the Offcut dialog so overlay changes show without
     /// re-nesting (setting <see cref="OffcutOptions"/> alone does not redraw).</summary>
@@ -983,6 +988,7 @@
       }
 
       this.DrawOffcutOverlay(sheetPlacement, idx, w, h, stroke);
+      this.DrawScrapOverlay(sheetPlacement, h, stroke);
       this.BuildSnapPoints();
 
       // A selection can survive a re-render (undo, a settings change), so its panel has to catch up.
@@ -1081,10 +1087,10 @@
       return inside;
     }
 
-    /// <summary>Redraws the offcut cut line, which moves when the pack it measures moves.</summary>
+    /// <summary>Redraws the offcut cut line and the scrap cuts, which move when the parts move.</summary>
     private void RefreshOffcutOverlay()
     {
-      if (this.offcutShapes.Count == 0 && this.OffcutOptions == null)
+      if (this.offcutShapes.Count == 0 && this.OffcutOptions == null && this.ScrapCutOptions == null)
       {
         return;
       }
@@ -1100,6 +1106,42 @@
       if (group?.Representative?.Sheet != null)
       {
         this.DrawOffcutOverlay(group.Representative, 0, this.currentSheetW, this.currentSheetH, this.CurrentStroke);
+        this.DrawScrapOverlay(group.Representative, this.currentSheetH, this.CurrentStroke);
+      }
+    }
+
+    /// <summary>
+    /// The scrap cuts on this sheet, dashed. On the sheet that carries the offcut they stay out of the remnant,
+    /// exactly as the export writes them.
+    /// </summary>
+    private void DrawScrapOverlay(ISheetPlacement sheetPlacement, double h, double stroke)
+    {
+      if (this.ScrapCutOptions == null)
+      {
+        return;
+      }
+
+      var offcut = ReferenceEquals(sheetPlacement, this.OffcutSheet) ? this.OffcutOptions : null;
+      var lines = RasterNest.ScrapCutGeometry.BuildLines(sheetPlacement, this.ScrapCutOptions, offcut);
+      if (lines == null)
+      {
+        return;
+      }
+
+      foreach (var cut in lines)
+      {
+        var (a, b) = CutToCanvas(cut, h);
+        var line = new System.Windows.Shapes.Path
+        {
+          Data = new LineGeometry(a, b),
+          Stroke = OffcutStroke,
+          StrokeThickness = stroke * ScrapCutPx,
+          StrokeDashArray = new DoubleCollection { 3, 2 },
+          IsHitTestVisible = false,
+          Tag = ScrapCutPx,
+        };
+        this.canvas.Children.Add(line);
+        this.offcutShapes.Add(line);
       }
     }
 
