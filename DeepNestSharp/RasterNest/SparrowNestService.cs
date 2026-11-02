@@ -2490,7 +2490,7 @@
       public double Length { get; }
     }
 
-    private readonly struct DirectCandidate
+    private readonly struct DirectCandidate : IEquatable<DirectCandidate>
     {
       public DirectCandidate(
         int a,
@@ -2566,6 +2566,52 @@
         && this.EdgeAEnd >= 1.0 - 1e-9
         && this.EdgeBStart <= 1e-9
         && this.EdgeBEnd >= 1.0 - 1e-9;
+
+      // The equality the runtime gave this struct before it had its own: every field, the doubles by
+      // double.Equals (+0 equals -0, NaN equals NaN), the spans by reference, as ValueType.Equals compares a
+      // struct that holds references. The difference is speed: that did it by reflection, boxing each field,
+      // and hashed the first field alone, so every candidate of one part shared a bucket of the footprint cache.
+      public bool Equals(DirectCandidate other)
+        => this.A == other.A
+          && this.B == other.B
+          && this.PoseA == other.PoseA
+          && this.PoseB == other.PoseB
+          && this.EdgeA == other.EdgeA
+          && this.EdgeB == other.EdgeB
+          && this.EdgeAStart.Equals(other.EdgeAStart)
+          && this.EdgeAEnd.Equals(other.EdgeAEnd)
+          && this.EdgeBStart.Equals(other.EdgeBStart)
+          && this.EdgeBEnd.Equals(other.EdgeBEnd)
+          && this.Dx.Equals(other.Dx)
+          && this.Dy.Equals(other.Dy)
+          && this.Length.Equals(other.Length)
+          && this.Travel.Equals(other.Travel)
+          && object.Equals(this.SpanA, other.SpanA)
+          && object.Equals(this.SpanB, other.SpanB);
+
+      public override bool Equals(object obj) => obj is DirectCandidate other && this.Equals(other);
+
+      public override int GetHashCode()
+      {
+        var hash = default(HashCode);
+        hash.Add(this.A);
+        hash.Add(this.B);
+        hash.Add(this.PoseA);
+        hash.Add(this.PoseB);
+        hash.Add(this.EdgeA);
+        hash.Add(this.EdgeB);
+        hash.Add(this.EdgeAStart); // double's hash gives +0 and -0, and every NaN, one value, as Equals does
+        hash.Add(this.EdgeAEnd);
+        hash.Add(this.EdgeBStart);
+        hash.Add(this.EdgeBEnd);
+        hash.Add(this.Dx);
+        hash.Add(this.Dy);
+        hash.Add(this.Length);
+        hash.Add(this.Travel);
+        hash.Add(this.SpanA);
+        hash.Add(this.SpanB);
+        return hash.ToHashCode();
+      }
     }
 
     /// <summary>
