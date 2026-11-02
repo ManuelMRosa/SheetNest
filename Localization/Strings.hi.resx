@@ -1,0 +1,1507 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="About_CompilingMinkowski" xml:space="preserve">
+    <value>minkowski.dll कंपाइल करना</value>
+  </data>
+  <data name="About_Contributors" xml:space="preserve">
+    <value>योगदानकर्ता</value>
+  </data>
+  <data name="About_DeepNestOriginal" xml:space="preserve">
+    <value>DeepNest - मूल प्रोजेक्ट</value>
+  </data>
+  <data name="About_DeepNestPortPort" xml:space="preserve">
+    <value>DeepNestPort - C# WinForms पोर्ट</value>
+  </data>
+  <data name="About_DeepNestSharpPort" xml:space="preserve">
+    <value>DeepNest# - Net Core C#/Mvvm/WPF पोर्ट</value>
+  </data>
+  <data name="About_DxfExport" xml:space="preserve">
+    <value>(dxf एक्सपोर्ट)</value>
+  </data>
+  <data name="About_DxfImportExport" xml:space="preserve">
+    <value>DXF इम्पोर्ट/एक्सपोर्ट:</value>
+  </data>
+  <data name="About_GiantsQuote" xml:space="preserve">
+    <value>"अगर मैंने दूसरों से आगे देखा है, तो इसलिए कि मैं दिग्गजों के कंधों पर खड़ा हूँ"</value>
+  </data>
+  <data name="About_History1" xml:space="preserve">
+    <value>Jack और Felix ने बहुत बढ़िया काम किया है, लेकिन मूल प्रोजेक्ट इमेज फ़ॉर्मेट बदलने के लिए एक रिमोट सर्विस इस्तेमाल करता था, जो एक समस्या थी, और Port मेरी ज़रूरतों के लिए पर्याप्त स्थिर साबित नहीं हो रहा था। मुझे सच में प्रोजेक्ट, नेस्ट के रिज़ल्ट और अलग-अलग शीट प्लेसमेंट सेव करने की सुविधा चाहिए थी, पिछले नेस्ट के रिज़ल्ट से अगले नेस्ट शुरू करने की सुविधा, और प्लेसमेंट एडिट करने की सुविधा, ताकि वह आखिरी पीस शीट के उन खाली हिस्सों में डाला जा सके जिन्हें एल्गोरिदम ढूँढ ही नहीं पा रहा था।</value>
+  </data>
+  <data name="About_History2" xml:space="preserve">
+    <value>Felix, DeepNestPort में मूल DeepNest कोड के प्रति वफ़ादार रहना चाहते थे...</value>
+  </data>
+  <data name="About_History3" xml:space="preserve">
+    <value>...इसलिए DeepNestSharp का जन्म हुआ। यह Net.Core पर WPF का इस्तेमाल करके UI को पूरी तरह नए सिरे से बनाता है और यह एक बहुत बड़ा रीफ़ैक्टर है, जिसका कुछ फ़ायदा मिला है, लेकिन इससे कुछ समझौते और समस्याएँ भी आई हैं, जिनमें से कुछ शायद अब भी बाकी हैं... मुझे बताएँ।</value>
+  </data>
+  <data name="About_Intro" xml:space="preserve">
+    <value>SheetNest, DeepNestSharp का एक फ़ोर्क है, जिसमें GPU / रास्टर नेस्टिंग इंजन, ग्रुप किए गए लेआउट के DXF एक्सपोर्ट वाला एक इंडस्ट्रियल प्रोडक्शन प्लान, और ऑपरेटर के लिए आसान UI जोड़ा गया है। MIT लाइसेंस; पूरा इतिहास नीचे है।</value>
+  </data>
+  <data name="About_MinkowskiExample" xml:space="preserve">
+    <value>उदाहरण: cl /Ox -I "D:\boost\boost_1_76_0" /LD minkowski.cc</value>
+  </data>
+  <data name="About_MinkowskiIntro" xml:space="preserve">
+    <value>इसमें minkowski.dll का एक सेट शामिल है जो मेरे पास मौजूद अलग-अलग Windows सेटअप पर चलता है; AnyCpu, x86 और x64; लेकिन अगर आप DllImport इस्तेमाल करना चाहते हैं तो शायद आपको अपने सेटअप के लिए dll खुद बनानी होंगी। यह पक्का करने के लिए बहुत काम किया गया है कि नेटिव कोड बदला जा सके; यह लगभग हो चुका है, लेकिन अभी भी प्रयोगात्मक है। मेरे लिए चलता है, आपका अनुभव अलग हो सकता है।</value>
+  </data>
+  <data name="About_MinkowskiStep1" xml:space="preserve">
+    <value>1. compile.bat में [boost_1.76_path] की जगह अपना असली BOOST (1.76+) पाथ डालें</value>
+  </data>
+  <data name="About_MinkowskiStep2" xml:space="preserve">
+    <value>2. Developer Command Prompt for Visual Studio से compile.bat चलाएँ</value>
+  </data>
+  <data name="About_MinkowskiStep3" xml:space="preserve">
+    <value>3. minkowski.dll को MinkowskiDlls फ़ोल्डर में कॉपी करें।</value>
+  </data>
+  <data name="About_MinkowskiVisualStudio" xml:space="preserve">
+    <value>अगर आप Visual Studio में चला रहे हैं, तो DeepNestLib.CiTests में एक PostBuild टास्क है जो वहाँ से DLL आपके लिए कॉपी कर देता है। नहीं तो पक्का करें कि सही DLL, DeepNestSharp.exe वाले फ़ोल्डर में पहुँचें। ध्यान दें कि प्रीप्रोसेसर डायरेक्टिव हैं जो आप जिस Arch पर चला रहे हैं उसके हिसाब से सही dll चुनते हैं।</value>
+  </data>
+  <data name="About_PortToNetCore" xml:space="preserve">
+    <value>(Net.Core पर पोर्ट)</value>
+  </data>
+  <data name="About_QuoteBreakAway" xml:space="preserve">
+    <value>"उम्मीद है आप पुराने कोड बेस से अलग होने के बारे में सोचेंगे, क्योंकि इसे मर्ज करना सच में बहुत मुश्किल होता जा रहा है।"</value>
+  </data>
+  <data name="About_QuoteEntangle" xml:space="preserve">
+    <value>&gt;&gt; मुझे लगता है हमें अपनी रिपॉज़िटरी को आपस में बहुत ज़्यादा नहीं उलझाना चाहिए</value>
+  </data>
+  <data name="About_QuoteTryCompatibility" xml:space="preserve">
+    <value>&gt;&gt; मैं कोशिश करूँगा, लेकिन मूल कोड के साथ कम्पैटिबिलिटी बनाए रखना ज़रूरी है...</value>
+  </data>
+  <data name="About_SimplificationFeatures" xml:space="preserve">
+    <value>(सरलीकरण फ़ीचर)</value>
+  </data>
+  <data name="About_TheOriginalDeepNest" xml:space="preserve">
+    <value>(मूल DeepNest)</value>
+  </data>
+  <data name="About_TitleFormat" xml:space="preserve">
+    <value>DeepNest# {0}:{1} के बारे में</value>
+  </data>
+  <data name="About_WinFormsPort" xml:space="preserve">
+    <value>(WinForms C# पोर्ट)</value>
+  </data>
+  <data name="AddSheet_Add" xml:space="preserve">
+    <value>जोड़ें</value>
+  </data>
+  <data name="AddSheet_EditTitle" xml:space="preserve">
+    <value>शीट एडिट करें</value>
+  </data>
+  <data name="AddSheet_HeaderInches" xml:space="preserve">
+    <value>शीट का साइज़ इंच में (चौड़ाई = लंबी साइड)।</value>
+  </data>
+  <data name="AddSheet_HeaderMillimeters" xml:space="preserve">
+    <value>शीट का साइज़ मिलीमीटर में (चौड़ाई = लंबी साइड)।</value>
+  </data>
+  <data name="AddSheet_HeightIn" xml:space="preserve">
+    <value>ऊँचाई (in)</value>
+  </data>
+  <data name="AddSheet_HeightMm" xml:space="preserve">
+    <value>ऊँचाई (mm)</value>
+  </data>
+  <data name="AddSheet_Quantity" xml:space="preserve">
+    <value>मात्रा</value>
+  </data>
+  <data name="AddSheet_RememberPreset" xml:space="preserve">
+    <value>प्रीसेट के रूप में याद रखें</value>
+  </data>
+  <data name="AddSheet_RememberPresetTip" xml:space="preserve">
+    <value>इस साइज़ को "शीट जोड़ें" मेनू में "मेरी शीटें" के अंदर सेव करें।</value>
+  </data>
+  <data name="AddSheet_Title" xml:space="preserve">
+    <value>कस्टम शीट साइज़</value>
+  </data>
+  <data name="AddSheet_Unlimited" xml:space="preserve">
+    <value>असीमित</value>
+  </data>
+  <data name="AddSheet_UnlimitedTip" xml:space="preserve">
+    <value>इस साइज़ की शीटें जितनी ज़रूरत हो उतनी उपलब्ध हैं, इसलिए नेस्टिंग तब तक शीटें लेती रहती है जब तक हर पार्ट रख न दिया जाए। इस पर टिक लगा होने पर मात्रा को अनदेखा किया जाता है (टिक हटाने पर उसकी वैल्यू वैसी ही रहती है)।</value>
+  </data>
+  <data name="AddSheet_WidthIn" xml:space="preserve">
+    <value>चौड़ाई (in)</value>
+  </data>
+  <data name="AddSheet_WidthMm" xml:space="preserve">
+    <value>चौड़ाई (mm)</value>
+  </data>
+  <data name="Advanced_ApplicationGroup" xml:space="preserve">
+    <value>ऐप्लिकेशन</value>
+  </data>
+  <data name="Advanced_Autosave" xml:space="preserve">
+    <value>खुले प्रोजेक्ट को ऑटो सेव करें</value>
+  </data>
+  <data name="Advanced_AutosaveMinutes" xml:space="preserve">
+    <value>ऑटो सेव (मिनट):</value>
+  </data>
+  <data name="Advanced_AutosaveMinutesTip" xml:space="preserve">
+    <value>रिकवरी के लिए खुला प्रोजेक्ट कितनी बार अपने-आप सेव हो।</value>
+  </data>
+  <data name="Advanced_AutosaveTip" xml:space="preserve">
+    <value>खुले प्रोजेक्ट का समय-समय पर स्नैपशॉट लेता है, ताकि क्रैश के बाद बिना सेव किया काम वापस पाया जा सके।</value>
+  </data>
+  <data name="Advanced_ClusterAuto" xml:space="preserve">
+    <value>ऑटो</value>
+  </data>
+  <data name="Advanced_ClusterManual" xml:space="preserve">
+    <value>मैनुअल</value>
+  </data>
+  <data name="Advanced_ClusterModeTip" xml:space="preserve">
+    <value>ऑटो में SheetNest सुरक्षित क्लस्टर साइज़ खुद चुनता है; मैनुअल में पार्ट की संख्या की एक पक्की सीमा लगती है।</value>
+  </data>
+  <data name="Advanced_CommonLineGapFormat" xml:space="preserve">
+    <value>कॉमन लाइन गैप ({0}):</value>
+  </data>
+  <data name="Advanced_CommonLineGapTip" xml:space="preserve">
+    <value>कॉमन-लाइन प्लेसमेंट सेट किया गया गैप इस्तेमाल करते हैं; DXF एक्सपोर्ट से पहले SheetNest एक सेंटर कट तय करता है। वैल्यू इंच में सेव होती है और दिखाने के लिए चुनी गई ड्रॉइंग यूनिट में बदली जाती है।</value>
+  </data>
+  <data name="Advanced_CommonLineGroup" xml:space="preserve">
+    <value>कॉमन लाइन कटिंग</value>
+  </data>
+  <data name="Advanced_DefaultRotations" xml:space="preserve">
+    <value>पार्ट के डिफ़ॉल्ट रोटेशन:</value>
+  </data>
+  <data name="Advanced_DefaultRotationsTip" xml:space="preserve">
+    <value>जिन पार्ट को एडिट नहीं किया गया, उनके लिए नेस्टर ये रोटेशन आज़मा सकता है। "पार्ट एडिट करें" में हर पार्ट की अपनी सेटिंग हमेशा ऊपर रहती है।</value>
+  </data>
+  <data name="Advanced_DifferentiateHoles" xml:space="preserve">
+    <value>होल कंटूर अलग रंग में</value>
+  </data>
+  <data name="Advanced_DifferentiateHolesTip" xml:space="preserve">
+    <value>होल (चाइल्ड) कंटूर अलग रंग में एक्सपोर्ट होते हैं, ताकि CAM उन्हें अलग से संभाल सके।</value>
+  </data>
+  <data name="Advanced_DxfExportGroup" xml:space="preserve">
+    <value>DXF एक्सपोर्ट</value>
+  </data>
+  <data name="Advanced_Inches" xml:space="preserve">
+    <value>इंच</value>
+  </data>
+  <data name="Advanced_MaterialTarget" xml:space="preserve">
+    <value>मटीरियल उपयोग लक्ष्य (%):</value>
+  </data>
+  <data name="Advanced_MaterialTargetTip" xml:space="preserve">
+    <value>जैसे ही पार्ट शीट का इतना हिस्सा इस्तेमाल कर लें, बाकी समय लगाए बिना नेस्ट दे दें। पार्ट का क्षेत्रफल इस्तेमाल हुई शीटों से नापा जाता है, उसमें से वह बचा हुआ टुकड़ा घटाकर जो SheetNest आखिरी शीट से काटता है; बचे हुए टुकड़े का विकल्प बंद हो तो हर शीट पूरी गिनी जाती है। 0 इसे बंद कर देता है।</value>
+  </data>
+  <data name="Advanced_MaxClusterParts" xml:space="preserve">
+    <value>क्लस्टर में अधिकतम पार्ट:</value>
+  </data>
+  <data name="Advanced_MaxClusterPartsTip" xml:space="preserve">
+    <value>एक कॉमन-लाइन क्लस्टर में पार्ट की पक्की अधिकतम संख्या (2 से 500)।</value>
+  </data>
+  <data name="Advanced_MergeLines" xml:space="preserve">
+    <value>एक-दूसरे पर पड़ी कट लाइनें मर्ज करें</value>
+  </data>
+  <data name="Advanced_MergeLinesTip" xml:space="preserve">
+    <value>साधारण ज्यामिति के लिए पुराना एक्सपोर्ट विकल्प: एक-दूसरे पर पड़ी DXF एंटिटी को जोड़ देता है। कॉमन-लाइन आउटपुट एक्सपोर्ट से पहले अपना एक सेंटर कट अलग से तय करता है।</value>
+  </data>
+  <data name="Advanced_Millimeters" xml:space="preserve">
+    <value>मिलीमीटर</value>
+  </data>
+  <data name="Advanced_NestingGroup" xml:space="preserve">
+    <value>नेस्टिंग</value>
+  </data>
+  <data name="Advanced_PartSpacingFormat" xml:space="preserve">
+    <value>पार्ट स्पेसिंग ({0}):</value>
+  </data>
+  <data name="Advanced_PartSpacingTip" xml:space="preserve">
+    <value>साधारण पार्ट के बीच डिफ़ॉल्ट गैप (ड्रॉइंग यूनिट)। "पार्ट एडिट करें" में हर पार्ट के लिए इसे बदला जा सकता है; कॉमन-लाइन प्लेसमेंट नीचे दिया गया अलग गैप इस्तेमाल करते हैं।</value>
+  </data>
+  <data name="Advanced_ResetCluster" xml:space="preserve">
+    <value>रीसेट</value>
+  </data>
+  <data name="Advanced_ResetClusterTip" xml:space="preserve">
+    <value>कॉमन-लाइन क्लस्टर का ऑटोमैटिक साइज़ वापस लाएँ।</value>
+  </data>
+  <data name="Advanced_ResetGap" xml:space="preserve">
+    <value>डिफ़ॉल्ट पर रीसेट</value>
+  </data>
+  <data name="Advanced_ResetGapTip" xml:space="preserve">
+    <value>कॉमन-लाइन गैप को शुरुआती डिफ़ॉल्ट वैल्यू पर वापस लाएँ।</value>
+  </data>
+  <data name="Advanced_Rotations90" xml:space="preserve">
+    <value>90° स्टेप</value>
+  </data>
+  <data name="Advanced_SecondsPerSheet" xml:space="preserve">
+    <value>प्रति शीट समय (सेकंड):</value>
+  </data>
+  <data name="Advanced_SecondsPerSheetTip" xml:space="preserve">
+    <value>प्रति शीट समय सीमा: जॉब में जितनी शीटें लगने का अनुमान है, उनमें से हर शीट के लिए नेस्ट को इतने सेकंड मिलते हैं; यह घड़ी के हिसाब से खोजता है और जो सबसे अच्छा मिला वह दे देता है, इसलिए दो बार चलाने पर नतीजा थोड़ा अलग आ सकता है। जिन साझा कट की योजना बनाने का समय नहीं मिला, वे सामान्य स्पेसिंग से कटते हैं। 0 = कोई सीमा नहीं: नेस्ट तब रुकता है जब मटीरियल उपयोग लक्ष्य पूरा हो, जब उसमें सुधार रुक जाए, या जब आप रोकें दबाएँ।</value>
+  </data>
+  <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
+    <value>शीट किनारे का मार्जिन ({0}):</value>
+  </data>
+  <data name="Advanced_SheetEdgeMarginTip" xml:space="preserve">
+    <value>हर पार्ट और शीट के किनारे के बीच छोड़ी गई खाली पट्टी।</value>
+  </data>
+  <data name="Advanced_Title" xml:space="preserve">
+    <value>एडवांस्ड सेटिंग्स</value>
+  </data>
+  <data name="Advanced_Units" xml:space="preserve">
+    <value>यूनिट:</value>
+  </data>
+  <data name="Advanced_UnitsTip" xml:space="preserve">
+    <value>पार्ट, शीट, स्पेसिंग और मार्जिन के लिए ड्रॉइंग यूनिट। वही यूनिट चुनें जिसमें आपकी DXF फ़ाइलें बनी हैं; कॉमन-लाइन का असली गैप अपने-आप बदल दिया जाता है।</value>
+  </data>
+  <data name="App_FileType3D" xml:space="preserve">
+    <value>  3D शीट मेटल (*.step, *.stp, *.iges, *.igs)</value>
+  </data>
+  <data name="App_FileTypeDxf" xml:space="preserve">
+    <value>  AutoCad Drawing Exchange Format (*.dxf) और </value>
+  </data>
+  <data name="App_FileTypePolygon" xml:space="preserve">
+    <value>  DeepNest पॉलीगॉन (*.dnpoly)।</value>
+  </data>
+  <data name="App_FileTypeProject" xml:space="preserve">
+    <value>  DeepNest प्रोजेक्ट (*.dnest)</value>
+  </data>
+  <data name="App_FileTypeResult" xml:space="preserve">
+    <value>  DeepNest रिज़ल्ट (*.dnr)</value>
+  </data>
+  <data name="App_FileTypeSheetPlacement" xml:space="preserve">
+    <value>  DeepNest शीट प्लेसमेंट (*.dnsp)</value>
+  </data>
+  <data name="App_MsgFilesSupported" xml:space="preserve">
+    <value>समर्थित फ़ाइलें: </value>
+  </data>
+  <data name="App_MsgUnableToLoadFormat" xml:space="preserve">
+    <value>{0} लोड नहीं हो सका</value>
+  </data>
+  <data name="Card_NameFormat" xml:space="preserve">
+    <value>नेस्ट {0}</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>रद्द करें</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>बंद करें</value>
+  </data>
+  <data name="Common_Edit" xml:space="preserve">
+    <value>एडिट करें</value>
+  </data>
+  <data name="Common_OK" xml:space="preserve">
+    <value>ठीक है</value>
+  </data>
+  <data name="Common_Remove" xml:space="preserve">
+    <value>हटाएँ</value>
+  </data>
+  <data name="Crash_CopyDetails" xml:space="preserve">
+    <value>विवरण कॉपी करें</value>
+  </data>
+  <data name="Crash_Header" xml:space="preserve">
+    <value>SheetNest में एक समस्या आ गई।</value>
+  </data>
+  <data name="Crash_LogNotWritten" xml:space="preserve">
+    <value>(लॉग नहीं लिखा जा सका)</value>
+  </data>
+  <data name="Crash_MsgBrowserFailed" xml:space="preserve">
+    <value>ब्राउज़र नहीं खुल सका। 'विवरण कॉपी करें' दबाएँ और इसे github.com/ManuelMRosa/SheetNest/issues पर एक नए इश्यू में पेस्ट करें।</value>
+  </data>
+  <data name="Crash_ReportHint" xml:space="preserve">
+    <value>इसे रिपोर्ट करने से इसे ठीक करने में मदद मिलती है। नीचे का बटन आपके ब्राउज़र में पहले से भरा हुआ GitHub इश्यू खोलता है: आप वहाँ सब कुछ देख सकते हैं, और जब तक आप खुद सबमिट न करें, कुछ भी नहीं भेजा जाता।</value>
+  </data>
+  <data name="Crash_ReportOnGitHub" xml:space="preserve">
+    <value>GitHub पर रिपोर्ट करें</value>
+  </data>
+  <data name="Crash_SavedTo" xml:space="preserve">
+    <value>क्रैश रिपोर्ट यहाँ सेव की गई:</value>
+  </data>
+  <data name="Crash_Title" xml:space="preserve">
+    <value>SheetNest - समस्या रिपोर्ट</value>
+  </data>
+  <data name="Dxf_LayerFormat" xml:space="preserve">
+    <value>लेयर {0}</value>
+  </data>
+  <data name="Dxf_LayersFormat" xml:space="preserve">
+    <value>लेयर {0}</value>
+  </data>
+  <data name="Dxf_MsgBadSplineFormat" xml:space="preserve">
+    <value>इस ड्रॉइंग में एक SPLINE है जिसके {0} कंट्रोल पॉइंट और {1} नॉट कोई कर्व नहीं बनाते। इसे पॉलीलाइन में बदलें और फिर से इम्पोर्ट करें।</value>
+  </data>
+  <data name="Dxf_MsgBlockReference" xml:space="preserve">
+    <value>यह फ़ाइल SheetNest के साथ कम्पैटिबल नहीं है: इसकी ज्यामिति एक ब्लॉक (ब्लॉक रेफ़रेंस) के रूप में बनी है। इसे अपने CAD प्रोग्राम में खोलें, ब्लॉक को एक्सप्लोड करें, और DXF फिर से सेव करें।</value>
+  </data>
+  <data name="Dxf_MsgNoGeometryFormat" xml:space="preserve">
+    <value>'{0}' में नेस्ट करने लायक कोई ज्यामिति नहीं है: इसमें केवल टेक्स्ट, डाइमेंशन या दूसरे एनोटेशन हैं।</value>
+  </data>
+  <data name="Dxf_MsgOpenLineFormat" xml:space="preserve">
+    <value>'{0}' में {1} पर एक खुली लाइन है। कटने वाली हर लाइन से एक बंद आकार बनना चाहिए, और इससे नहीं बनता। इसे हटाएँ, या पीले रंग में बनाएँ ताकि इसे काटने के बजाय पार्ट पर मार्क किया जाए।</value>
+  </data>
+  <data name="Dxf_MsgOpenLinesFormat" xml:space="preserve">
+    <value>'{0}' में {2} पर {1} खुली लाइनें हैं। कटने वाली हर लाइन से एक बंद आकार बनना चाहिए, और इनसे नहीं बनता। इन्हें हटाएँ, या पीले रंग में बनाएँ ताकि इन्हें काटने के बजाय पार्ट पर मार्क किया जाए।</value>
+  </data>
+  <data name="Dxf_MsgUnmeasurableFormat" xml:space="preserve">
+    <value>इस ड्रॉइंग में एक {0} है, जिसे SheetNest नाप नहीं सकता। इसे एक्सप्लोड करें या लाइन, आर्क, पॉलीलाइन, एलिप्स या स्प्लाइन के रूप में फिर से बनाएँ और फिर से इम्पोर्ट करें।</value>
+  </data>
+  <data name="EditPart_CommonCutting" xml:space="preserve">
+    <value>कॉमन कटिंग:</value>
+  </data>
+  <data name="EditPart_CommonCuttingNone" xml:space="preserve">
+    <value>कोई नहीं</value>
+  </data>
+  <data name="EditPart_CommonCuttingSamePart" xml:space="preserve">
+    <value>वही पार्ट</value>
+  </data>
+  <data name="EditPart_CommonCuttingTip" xml:space="preserve">
+    <value>यह पार्ट किसके साथ कट वाला किनारा साझा कर सकता है। पूरे किनारे सेट किए गए कॉमन लाइन गैप पर रहते हैं और क्लस्टर के बाहरी घेरे और बीच के एक कॉमन कट के रूप में एक्सपोर्ट होते हैं। बाकी हर जगह पार्ट स्पेसिंग लागू रहती है। यह विकल्प बदलने से इस पार्ट के लिए कॉमन कटिंग साफ़ तौर पर चालू हो जाती है।</value>
+  </data>
+  <data name="EditPart_CommonCuttingUnrestricted" xml:space="preserve">
+    <value>बिना पाबंदी (कम्पैटिबल पार्ट)</value>
+  </data>
+  <data name="EditPart_Extra" xml:space="preserve">
+    <value>अतिरिक्त:</value>
+  </data>
+  <data name="EditPart_ExtraTip" xml:space="preserve">
+    <value>ज़रूरी मात्रा के ऊपर नेस्ट किए गए स्पेयर पार्ट (जैसे अगर कोई एक खराब हो जाए)।</value>
+  </data>
+  <data name="EditPart_InDrawingUnits" xml:space="preserve">
+    <value>ड्रॉइंग की यूनिट में</value>
+  </data>
+  <data name="EditPart_KFactor" xml:space="preserve">
+    <value>K-फ़ैक्टर:</value>
+  </data>
+  <data name="EditPart_KFactorTip" xml:space="preserve">
+    <value>बेंड-अलाउंस K-फ़ैक्टर। इसे बदलने पर यह पार्ट FreeCAD से फिर से अनफ़ोल्ड होता है (डेवलप्ड लंबाई बदल जाती है)।</value>
+  </data>
+  <data name="EditPart_LegacyCommonCuttingHint" xml:space="preserve">
+    <value>सेव किया गया पुराना कॉमन-कटिंग मोड निष्क्रिय है। इस सीधे DXF/STEP पार्ट के लिए इसकी पुष्टि करने के लिए एक मोड चुनें।</value>
+  </data>
+  <data name="EditPart_Mirrored" xml:space="preserve">
+    <value>मिरर:</value>
+  </data>
+  <data name="EditPart_MirroredTip" xml:space="preserve">
+    <value>ऊपर की मात्राओं के अलावा मिरर (X में पलटी हुई) नेस्ट की गई कॉपी, बाएँ/दाएँ हाथ वाले जोड़ों के लिए। एक्सपोर्ट की गई DXF इन्हें मिरर करके काटती है।</value>
+  </data>
+  <data name="EditPart_NestedSheetWarningFormat" xml:space="preserve">
+    <value>⚠ यह DXF एक अकेला पार्ट नहीं, बल्कि पूरी नेस्ट की गई शीट जैसी लगती है ({1:0.#}×{2:0.#} फ़्रेम के अंदर {0} आकार)। SheetNest हर DXF को एक पार्ट के रूप में इम्पोर्ट करता है, और अंदर के आकारों के बीच के गैप मूल ड्रॉइंग से आते हैं। इसके बजाय हर पार्ट को उसकी अपनी DXF के रूप में एक्सपोर्ट करें।</value>
+  </data>
+  <data name="EditPart_NotAvailable" xml:space="preserve">
+    <value>उपलब्ध नहीं</value>
+  </data>
+  <data name="EditPart_Orientations" xml:space="preserve">
+    <value>अनुमत ओरिएंटेशन:</value>
+  </data>
+  <data name="EditPart_OrientationsTip" xml:space="preserve">
+    <value>रोटेशन जो नेस्टर इस पार्ट पर लगा सकता है (जैसे ग्रेन की दिशा के लिए सीमित करें)।</value>
+  </data>
+  <data name="EditPart_PartFile" xml:space="preserve">
+    <value>पार्ट फ़ाइल:</value>
+  </data>
+  <data name="EditPart_PartSpacing" xml:space="preserve">
+    <value>पार्ट स्पेसिंग:</value>
+  </data>
+  <data name="EditPart_PartSpacingTip" xml:space="preserve">
+    <value>यह पार्ट उन पड़ोसी पार्ट से जितना गैप रखता है जिनके साथ यह कट साझा नहीं कर सकता (ड्रॉइंग यूनिट)। दो पार्ट के बीच आखिर में (spacingA + spacingB) / 2 की दूरी रहती है।</value>
+  </data>
+  <data name="EditPart_Priority" xml:space="preserve">
+    <value>प्राथमिकता:</value>
+  </data>
+  <data name="EditPart_PriorityHigh" xml:space="preserve">
+    <value>ऊँची</value>
+  </data>
+  <data name="EditPart_PriorityHighest" xml:space="preserve">
+    <value>सबसे ऊँची</value>
+  </data>
+  <data name="EditPart_PriorityLow" xml:space="preserve">
+    <value>नीची</value>
+  </data>
+  <data name="EditPart_PriorityLowest" xml:space="preserve">
+    <value>सबसे नीची</value>
+  </data>
+  <data name="EditPart_PriorityNormal" xml:space="preserve">
+    <value>सामान्य</value>
+  </data>
+  <data name="EditPart_PriorityTip" xml:space="preserve">
+    <value>1 = सबसे ऊँची प्राथमिकता। ऊँची प्राथमिकता वाले पार्ट पहले नेस्ट होते हैं, इसलिए वे पहली शीटें भरते हैं और मटीरियल खत्म होने पर कभी छूटते नहीं।</value>
+  </data>
+  <data name="EditPart_Quantity" xml:space="preserve">
+    <value>मात्रा</value>
+  </data>
+  <data name="EditPart_Required" xml:space="preserve">
+    <value>ज़रूरी:</value>
+  </data>
+  <data name="EditPart_RequiredTip" xml:space="preserve">
+    <value>जॉब के लिए चाहिए पार्ट।</value>
+  </data>
+  <data name="EditPart_Settings" xml:space="preserve">
+    <value>सेटिंग्स</value>
+  </data>
+  <data name="EditPart_Standard" xml:space="preserve">
+    <value>स्टैंडर्ड:</value>
+  </data>
+  <data name="EditPart_SymmetricShapeHint" xml:space="preserve">
+    <value>रोटेशन-सममित आकार (गोल/चौकोर) मिला: इसे घुमाने से नेस्ट बेहतर नहीं होगा, इसलिए "जैसा ड्रॉ किया" खोज का समय बचाता है।</value>
+  </data>
+  <data name="EditPart_Thickness" xml:space="preserve">
+    <value>मोटाई:</value>
+  </data>
+  <data name="EditPart_Title" xml:space="preserve">
+    <value>पार्ट एडिट करें</value>
+  </data>
+  <data name="EditPart_Unfold3DGroup" xml:space="preserve">
+    <value>3D अनफ़ोल्ड (शीट मेटल)</value>
+  </data>
+  <data name="Engine_FallbackContourFormat" xml:space="preserve">
+    <value>बाहरी कंटूर का फ़ॉर्मेट सटीक कॉमन लाइन ज्यामिति में समर्थित नहीं है</value>
+  </data>
+  <data name="Engine_FallbackTopology" xml:space="preserve">
+    <value>कॉमन-लाइन क्लस्टर की टोपोलॉजी अमान्य थी</value>
+  </data>
+  <data name="Engine_MsgAddSheetSize" xml:space="preserve">
+    <value>पहले एक शीट साइज़ जोड़ें।</value>
+  </data>
+  <data name="Engine_MsgCancelled" xml:space="preserve">
+    <value>रद्द किया गया।</value>
+  </data>
+  <data name="Engine_MsgCannotReadFormat" xml:space="preserve">
+    <value>{0} पढ़ा नहीं जा सका।</value>
+  </data>
+  <data name="Engine_MsgClusterChanged" xml:space="preserve">
+    <value>आखिरी प्लेसमेंट के बाद एक कॉमन-लाइन क्लस्टर बदल गया और उसे अस्वीकार कर दिया गया।</value>
+  </data>
+  <data name="Engine_MsgClusterFailedSheetValidation" xml:space="preserve">
+    <value>एक कॉमन-लाइन क्लस्टर आखिरी शीट जाँच में पास नहीं हुआ।</value>
+  </data>
+  <data name="Engine_MsgClusterTopologyFormat" xml:space="preserve">
+    <value>एक कॉमन-लाइन क्लस्टर आखिरी टोपोलॉजी जाँच में फ़ेल हुआ: {0}</value>
+  </data>
+  <data name="Engine_MsgCommonLineGapInvalid" xml:space="preserve">
+    <value>कॉमन लाइन गैप, चालू ड्रॉइंग यूनिट में शून्य से बड़ी एक मान्य दूरी होना चाहिए।</value>
+  </data>
+  <data name="Engine_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>नेस्टिंग इंजन शुरू नहीं हो सका: {0}</value>
+  </data>
+  <data name="Engine_MsgEngineNotFound" xml:space="preserve">
+    <value>नेस्टिंग इंजन (sparrow.exe) नहीं मिला।</value>
+  </data>
+  <data name="Engine_MsgGeometryToleranceInvalid" xml:space="preserve">
+    <value>GeometryTolerance मान्य, शून्य से बड़ा और कॉमन लाइन गैप से छोटा होना चाहिए।</value>
+  </data>
+  <data name="Engine_MsgNoPlacements" xml:space="preserve">
+    <value>नेस्टिंग इंजन ने कोई प्लेसमेंट नहीं दिया।</value>
+  </data>
+  <data name="Engine_MsgNoPlacementsFormat" xml:space="preserve">
+    <value>नेस्टिंग इंजन ने कोई प्लेसमेंट नहीं दिया: {0}</value>
+  </data>
+  <data name="Engine_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} में नेस्ट करने लायक कोई आकार नहीं है।</value>
+  </data>
+  <data name="Engine_MsgNoSolution" xml:space="preserve">
+    <value>नेस्टिंग इंजन कोई हल नहीं निकाल सका।</value>
+  </data>
+  <data name="Engine_MsgNoSolutionExitFormat" xml:space="preserve">
+    <value>नेस्टिंग इंजन कोई हल नहीं निकाल सका (एग्ज़िट {0})।</value>
+  </data>
+  <data name="Engine_MsgNoSolutionFormat" xml:space="preserve">
+    <value>नेस्टिंग इंजन कोई हल नहीं निकाल सका: {0}</value>
+  </data>
+  <data name="Engine_MsgTimedOut" xml:space="preserve">
+    <value>नेस्टिंग इंजन का समय खत्म हो गया।</value>
+  </data>
+  <data name="Export_DxfFilter" xml:space="preserve">
+    <value>Dxf फ़ाइलें (*.dxf)|*.dxf</value>
+  </data>
+  <data name="Export_MsgCommonLineArcSweep" xml:space="preserve">
+    <value>COMMON_LINE में ऐसे ARC कोण हैं जिनका स्वीप मान्य संख्या नहीं है।</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArc" xml:space="preserve">
+    <value>COMMON_LINE में शून्य लंबाई वाला या अमान्य ARC है।</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArcValues" xml:space="preserve">
+    <value>COMMON_LINE में ARC का सेंटर, रेडियस या कोण मान्य संख्या नहीं है।</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCircle" xml:space="preserve">
+    <value>COMMON_LINE में अमान्य संख्या वाला, शून्य लंबाई वाला या अमान्य CIRCLE है।</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCurve" xml:space="preserve">
+    <value>COMMON_LINE में एक अमान्य या असमर्थित सटीक कर्व है।</value>
+  </data>
+  <data name="Export_MsgCommonLineBadLine" xml:space="preserve">
+    <value>COMMON_LINE में अमान्य संख्या वाली, शून्य लंबाई वाली या बहुत छोटी LINE एंटिटी है।</value>
+  </data>
+  <data name="Export_MsgCommonLineBadPolylineSegment" xml:space="preserve">
+    <value>COMMON_LINE में एक अमान्य या बहुत छोटा LWPOLYLINE सेगमेंट है।</value>
+  </data>
+  <data name="Export_MsgCommonLineDegeneratePolyline" xml:space="preserve">
+    <value>COMMON_LINE में एक डीजनरेट LWPOLYLINE है।</value>
+  </data>
+  <data name="Export_MsgCommonLineOtherEntity" xml:space="preserve">
+    <value>COMMON_LINE में LINE, गोलाकार LWPOLYLINE, ARC या CIRCLE के अलावा कोई और एंटिटी है।</value>
+  </data>
+  <data name="Export_MsgCommonLineTinySegment" xml:space="preserve">
+    <value>COMMON_LINE में शून्य लंबाई वाला या बहुत छोटा सेगमेंट है।</value>
+  </data>
+  <data name="Export_MsgContourNotRebuilt" xml:space="preserve">
+    <value>कॉमन-लाइन एक्सपोर्ट के लिए एक DXF कंटूर फिर से नहीं बनाया जा सका।</value>
+  </data>
+  <data name="Export_MsgCutInnerOpenCluster" xml:space="preserve">
+    <value>CUT_INNER में एक खुला या डीजनरेट क्लस्टर कंटूर है।</value>
+  </data>
+  <data name="Export_MsgCutOuterOpenCluster" xml:space="preserve">
+    <value>CUT_OUTER में एक खुला या डीजनरेट क्लस्टर कंटूर है।</value>
+  </data>
+  <data name="Export_MsgCutOuterSelfIntersecting" xml:space="preserve">
+    <value>CUT_OUTER में एक ऐसा कंटूर है जो खुद को काटता है।</value>
+  </data>
+  <data name="Export_MsgEmptyContourFormat" xml:space="preserve">
+    <value>{0} में एक खाली कंटूर है।</value>
+  </data>
+  <data name="Export_MsgInvalidCutEntityFormat" xml:space="preserve">
+    <value>{0} में एक खुली, अमान्य संख्या वाली, बहुत छोटी या किसी और तरह से अमान्य एंटिटी है।</value>
+  </data>
+  <data name="Export_MsgNotClosedFormat" xml:space="preserve">
+    <value>{0} में ऐसी ज्यामिति है जो पूरी तरह बंद नहीं है।</value>
+  </data>
+  <data name="Export_MsgNotRebuiltClosedFormat" xml:space="preserve">
+    <value>{0} को बंद कंटूर के रूप में फिर से नहीं बनाया जा सका।</value>
+  </data>
+  <data name="Export_MsgOuterSourceUnsupportedFormat" xml:space="preserve">
+    <value>पार्ट {0} में ऐसी बाहरी सोर्स ज्यामिति है जिसे कॉमन-लाइन क्लस्टर बिल्कुल सटीक नहीं रख सकता।</value>
+  </data>
+  <data name="Export_MsgSourceChangedFormat" xml:space="preserve">
+    <value>कॉमन-लाइन एक्सपोर्ट के दौरान सोर्स DXF '{0}' बदल गई; एक्सपोर्ट रद्द कर दिया गया।</value>
+  </data>
+  <data name="Export_MsgSourceNotLoadedForCommonLineFormat" xml:space="preserve">
+    <value>जाँचे गए कॉमन-लाइन एक्सपोर्ट के लिए फ़ाइल {0} लोड नहीं हो सकी।</value>
+  </data>
+  <data name="Export_MsgSourceNotLoadedFormat" xml:space="preserve">
+    <value>फ़ाइल {0} लोड नहीं हो सकी। एक्सपोर्ट करते समय सटीकता के लिए वे मूल फ़ाइलें इस्तेमाल होती हैं जिनसे नेस्ट बना था, न कि वे कॉपी जो नेस्ट के दौरान शायद कई बार घुमाई और बदली गईं, जिससे उनकी सटीकता घट सकती है। मूल फ़ाइलों को लोड करके रखना संभव होगा, लेकिन उसमें कुछ मेहनत लगेगी...</value>
+  </data>
+  <data name="Export_MsgSourceUnavailableFormat" xml:space="preserve">
+    <value>कॉमन-लाइन एक्सपोर्ट के दौरान सोर्स DXF '{0}' बदल गई या उपलब्ध नहीं रही।</value>
+  </data>
+  <data name="Export_MsgUnsupportedEntityFormat" xml:space="preserve">
+    <value>असमर्थित एंटिटी टाइप: {0}</value>
+  </data>
+  <data name="Files_PartFilter" xml:space="preserve">
+    <value>AutoCad Drawing Exchange Format (*.dxf)|*.dxf|DeepNest पॉलीगॉन (*.dnpoly)|*.dnpoly|सभी फ़ाइलें (*.*)|*.*</value>
+  </data>
+  <data name="Files_ProjectFilter" xml:space="preserve">
+    <value>DeepNest प्रोजेक्ट (*.dnest)|*.dnest|Json (*.json)|*.json|सभी फ़ाइलें (*.*)|*.*</value>
+  </data>
+  <data name="Import3D_File" xml:space="preserve">
+    <value>फ़ाइल</value>
+  </data>
+  <data name="Import3D_Inches" xml:space="preserve">
+    <value>इंच (मिलीमीटर के लिए टिक हटाएँ)</value>
+  </data>
+  <data name="Import3D_InchesTip" xml:space="preserve">
+    <value>आपकी शीट/ड्रॉइंग जिस यूनिट में हैं; अनफ़ोल्ड किया गया फ़्लैट इसी यूनिट में बदला जाता है।</value>
+  </data>
+  <data name="Import3D_Intro" xml:space="preserve">
+    <value>बेंड-अलाउंस K-फ़ैक्टर को अपने मटीरियल/मशीन के हिसाब से सेट करें, फिर अनफ़ोल्ड करें।</value>
+  </data>
+  <data name="Import3D_KFactor" xml:space="preserve">
+    <value>K-फ़ैक्टर</value>
+  </data>
+  <data name="Import3D_KFactorTip" xml:space="preserve">
+    <value>बेंड-अलाउंस K-फ़ैक्टर। इसे ऐसे कैलिब्रेट करें कि अनफ़ोल्ड की गई लंबाई आपके असली फ़्लैट से मेल खाए (आम तौर पर 0.3–0.5)।</value>
+  </data>
+  <data name="Import3D_NotDetected" xml:space="preserve">
+    <value>पता नहीं चला</value>
+  </data>
+  <data name="Import3D_PartsDetected" xml:space="preserve">
+    <value>मिले पार्ट</value>
+  </data>
+  <data name="Import3D_Thickness" xml:space="preserve">
+    <value>मोटाई</value>
+  </data>
+  <data name="Import3D_ThicknessVariesFormat" xml:space="preserve">
+    <value>अलग-अलग ({0}–{1} {2})</value>
+  </data>
+  <data name="Import3D_Title" xml:space="preserve">
+    <value>3D इम्पोर्ट: अनफ़ोल्ड विकल्प</value>
+  </data>
+  <data name="Import3D_UnfoldAndAdd" xml:space="preserve">
+    <value>अनफ़ोल्ड और जोड़ें</value>
+  </data>
+  <data name="Import3D_Units" xml:space="preserve">
+    <value>यूनिट</value>
+  </data>
+  <data name="Main_AddPart" xml:space="preserve">
+    <value>+ पार्ट जोड़ें</value>
+  </data>
+  <data name="Main_AddPartTip" xml:space="preserve">
+    <value>नेस्ट करने के लिए एक पार्ट जोड़ें (DXF)।</value>
+  </data>
+  <data name="Main_AddSheet" xml:space="preserve">
+    <value>+ शीट जोड़ें</value>
+  </data>
+  <data name="Main_AddSheetTip" xml:space="preserve">
+    <value>स्टॉक शीट जोड़ें: कोई स्टैंडर्ड साइज़ चुनें या अपना कस्टम साइज़ डालें</value>
+  </data>
+  <data name="Main_AvailableFormat" xml:space="preserve">
+    <value>उपलब्ध: {0}</value>
+  </data>
+  <data name="Main_Cancel" xml:space="preserve">
+    <value>■  रद्द करें</value>
+  </data>
+  <data name="Main_Cancelling" xml:space="preserve">
+    <value>रद्द हो रहा है…</value>
+  </data>
+  <data name="Main_CancelTip" xml:space="preserve">
+    <value>चल रहा नेस्ट रद्द करें; कुछ भी नहीं रखा जाता</value>
+  </data>
+  <data name="Main_Clearances" xml:space="preserve">
+    <value>क्लीयरेंस</value>
+  </data>
+  <data name="Main_ClearResult" xml:space="preserve">
+    <value>रिज़ल्ट हटाएँ</value>
+  </data>
+  <data name="Main_ClearResultTip" xml:space="preserve">
+    <value>नेस्ट का रिज़ल्ट हटाएँ और उसमें इस्तेमाल हुई शीटें स्टॉक में वापस करें</value>
+  </data>
+  <data name="Main_Color" xml:space="preserve">
+    <value>रंग</value>
+  </data>
+  <data name="Main_ColorTip" xml:space="preserve">
+    <value>चुना गया पार्ट जिस रंग में दिखता है</value>
+  </data>
+  <data name="Main_CustomSize" xml:space="preserve">
+    <value>कस्टम साइज़…</value>
+  </data>
+  <data name="Main_DrawingsKept_One" xml:space="preserve">
+    <value>, {0} ड्रॉइंग सामान्य गैप पर रखी गई</value>
+  </data>
+  <data name="Main_DrawingsKept_Other" xml:space="preserve">
+    <value>, {0} ड्रॉइंग सामान्य गैप पर रखी गईं</value>
+  </data>
+  <data name="Main_EditPartTip" xml:space="preserve">
+    <value>चुना गया पार्ट एडिट करें (मात्रा, ओरिएंटेशन, प्राथमिकता)</value>
+  </data>
+  <data name="Main_EditSheetTip" xml:space="preserve">
+    <value>चुनी गई शीट एडिट करें (साइज़ और मात्रा)</value>
+  </data>
+  <data name="Main_Export" xml:space="preserve">
+    <value>एक्सपोर्ट</value>
+  </data>
+  <data name="Main_ExportTip" xml:space="preserve">
+    <value>चुना गया नेस्ट रिज़ल्ट DXF में एक्सपोर्ट करें</value>
+  </data>
+  <data name="Main_FallbackRowFormat" xml:space="preserve">
+    <value>    {0}: {1}</value>
+  </data>
+  <data name="Main_GivenUpFormat" xml:space="preserve">
+    <value>, {0} छोड़ दिए गए</value>
+  </data>
+  <data name="Main_Import3DDialogTitle" xml:space="preserve">
+    <value>3D इम्पोर्ट (STEP / IGES)</value>
+  </data>
+  <data name="Main_ImportedParts_One" xml:space="preserve">
+    <value>{0} पार्ट इम्पोर्ट किया गया।</value>
+  </data>
+  <data name="Main_ImportedParts_Other" xml:space="preserve">
+    <value>{0} पार्ट इम्पोर्ट किए गए।</value>
+  </data>
+  <data name="Main_MySheets" xml:space="preserve">
+    <value>मेरी शीटें</value>
+  </data>
+  <data name="Main_Nest" xml:space="preserve">
+    <value>▶  नेस्ट करें</value>
+  </data>
+  <data name="Main_NestCancelled" xml:space="preserve">
+    <value>नेस्ट रद्द किया गया</value>
+  </data>
+  <data name="Main_NestedFormat" xml:space="preserve">
+    <value>नेस्ट हुए: {0}</value>
+  </data>
+  <data name="Main_NestedInFormat" xml:space="preserve">
+    <value>{0} में नेस्ट हुआ{1}</value>
+  </data>
+  <data name="Main_NestBestSoFarFormat" xml:space="preserve">
+    <value>  ·  लक्ष्य {0} %, अब तक सबसे अच्छा {1} %</value>
+  </data>
+  <data name="Main_NestingFormat" xml:space="preserve">
+    <value>नेस्टिंग…  {0}</value>
+  </data>
+  <data name="Main_NestingOfFormat" xml:space="preserve">
+    <value>नेस्टिंग…  {1} में से {0}</value>
+  </data>
+  <data name="Main_NestingLimitFormat" xml:space="preserve">
+    <value>नेस्टिंग…  {1} में से {0}  ·  राउंड {2}</value>
+  </data>
+  <data name="Main_NestingRoundFormat" xml:space="preserve">
+    <value>नेस्टिंग…  {0}  ·  राउंड {1}</value>
+  </data>
+  <data name="Main_NestOverLimitFormat" xml:space="preserve">
+    <value>  ·  {0} की सीमा पार हुई</value>
+  </data>
+  <data name="Main_NestStopped" xml:space="preserve">
+    <value>  ·  रोका गया</value>
+  </data>
+  <data name="Main_NestRounds_One" xml:space="preserve">
+    <value>  ·  {0} राउंड</value>
+  </data>
+  <data name="Main_NestRounds_Other" xml:space="preserve">
+    <value>  ·  {0} राउंड में सबसे अच्छा: राउंड {1}</value>
+  </data>
+  <data name="Main_NestTargetReachedFormat" xml:space="preserve">
+    <value>  ·  {0} % लक्ष्य पूरा ({1} %)</value>
+  </data>
+  <data name="Main_NestReport" xml:space="preserve">
+    <value>नेस्ट रिपोर्ट</value>
+  </data>
+  <data name="Main_NestReportTip" xml:space="preserve">
+    <value>नेस्ट की PDF रिपोर्ट सेव करें: हर लेआउट का एक पेज, जिसमें स्केल पर बनी शीट, उसके पार्ट की सूची और उपयोग हो</value>
+  </data>
+  <data name="Main_NestsEmpty" xml:space="preserve">
+    <value>इसके लेआउट यहाँ देखने के लिए नेस्ट चलाएँ।</value>
+  </data>
+  <data name="Main_NestsTab" xml:space="preserve">
+    <value>नेस्ट</value>
+  </data>
+  <data name="Main_NestTip" xml:space="preserve">
+    <value>नेस्ट चलाएँ।</value>
+  </data>
+  <data name="Main_NetAreaFormat" xml:space="preserve">
+    <value>नेट क्षेत्रफल {0:0.0}</value>
+  </data>
+  <data name="Main_New" xml:space="preserve">
+    <value>नया</value>
+  </data>
+  <data name="Main_NewTip" xml:space="preserve">
+    <value>नया नेस्टिंग प्रोजेक्ट शुरू करें</value>
+  </data>
+  <data name="Main_Open" xml:space="preserve">
+    <value>खोलें</value>
+  </data>
+  <data name="Main_OpenTip" xml:space="preserve">
+    <value>मौजूदा प्रोजेक्ट खोलें</value>
+  </data>
+  <data name="Main_PaletteSwatchFormat" xml:space="preserve">
+    <value>पार्ट {0}</value>
+  </data>
+  <data name="Main_PartColour" xml:space="preserve">
+    <value>पार्ट का रंग</value>
+  </data>
+  <data name="Main_PartsTab" xml:space="preserve">
+    <value>पार्ट</value>
+  </data>
+  <data name="Main_PdfFilter" xml:space="preserve">
+    <value>PDF फ़ाइलें (*.pdf)|*.pdf</value>
+  </data>
+  <data name="Main_QuantityFormat" xml:space="preserve">
+    <value>मात्रा: {0}</value>
+  </data>
+  <data name="Main_QuantityUnlimited" xml:space="preserve">
+    <value>मात्रा: असीमित</value>
+  </data>
+  <data name="Main_RecoverUnsavedName" xml:space="preserve">
+    <value>बिना सेव किया प्रोजेक्ट</value>
+  </data>
+  <data name="Main_RecoverWhenFormat" xml:space="preserve">
+    <value> (ऑटो सेव {0})</value>
+  </data>
+  <data name="Main_RemainingFormat" xml:space="preserve">
+    <value>बाकी: {0}</value>
+  </data>
+  <data name="Main_RemoveFromMySheets" xml:space="preserve">
+    <value>मेरी शीटों से हटाएँ</value>
+  </data>
+  <data name="Main_RemovePartTip" xml:space="preserve">
+    <value>चुना गया पार्ट हटाएँ</value>
+  </data>
+  <data name="Main_RemoveSheetTip" xml:space="preserve">
+    <value>चुनी गई शीट हटाएँ</value>
+  </data>
+  <data name="Main_ReportFileName" xml:space="preserve">
+    <value>नेस्ट रिपोर्ट.pdf</value>
+  </data>
+  <data name="Main_ReportSheetName" xml:space="preserve">
+    <value>शीट</value>
+  </data>
+  <data name="Main_RequiredFormat" xml:space="preserve">
+    <value>ज़रूरी: {0}</value>
+  </data>
+  <data name="Main_SaveReportTitle" xml:space="preserve">
+    <value>नेस्ट रिपोर्ट सेव करें</value>
+  </data>
+  <data name="Main_SharedCuts_One" xml:space="preserve">
+    <value>  ·  {0} साझा कट</value>
+  </data>
+  <data name="Main_SharedCuts_Other" xml:space="preserve">
+    <value>  ·  {0} साझा कट</value>
+  </data>
+  <data name="Main_SheetCardTip" xml:space="preserve">
+    <value>शीट साइज़, चौड़ाई × ऊँचाई (चौड़ाई = लंबी साइड)। बदलने के लिए डबल-क्लिक करें या एडिट दबाएँ</value>
+  </data>
+  <data name="Main_SheetEdgeMargin" xml:space="preserve">
+    <value>शीट किनारे का मार्जिन</value>
+  </data>
+  <data name="Main_SheetEdgeMarginTip" xml:space="preserve">
+    <value>शीट के चारों ओर खाली छोड़ी गई पट्टी (ड्रॉइंग की यूनिट में)।</value>
+  </data>
+  <data name="Main_SheetsFormat" xml:space="preserve">
+    <value>शीटें: {0}</value>
+  </data>
+  <data name="Main_SheetsHint" xml:space="preserve">
+    <value>चौड़ाई = लंबी साइड · सूची की हर शीट शामिल होती है; हर शीट के लिए नेस्टर वह साइज़ काटता है जो सबसे ज़्यादा भरता है · किसी साइज़ पर असीमित टिक करें और जॉब उसकी जितनी ज़रूरत हो उतनी शीटें लेगा</value>
+  </data>
+  <data name="Main_SheetsTab" xml:space="preserve">
+    <value>शीटें</value>
+  </data>
+  <data name="Main_SizeFormat" xml:space="preserve">
+    <value>साइज़: {0}</value>
+  </data>
+  <data name="Main_SkippedSolids_One" xml:space="preserve">
+    <value>{0} सॉलिड छोड़ा गया (शीट मेटल के रूप में पहचाना नहीं गया)।</value>
+  </data>
+  <data name="Main_SkippedSolids_Other" xml:space="preserve">
+    <value>{0} सॉलिड छोड़े गए (शीट मेटल के रूप में पहचाने नहीं गए)।</value>
+  </data>
+  <data name="Main_StatusPlaced" xml:space="preserve">
+    <value>रखे गए:</value>
+  </data>
+  <data name="Main_StatusSheets" xml:space="preserve">
+    <value>शीटें:</value>
+  </data>
+  <data name="Main_StatusUnplaced" xml:space="preserve">
+    <value>नहीं रखे गए:</value>
+  </data>
+  <data name="Main_StatusUtilization" xml:space="preserve">
+    <value>उपयोग:</value>
+  </data>
+  <data name="Main_Stop" xml:space="preserve">
+    <value>■  रोकें</value>
+  </data>
+  <data name="Main_Stopping" xml:space="preserve">
+    <value>रुक रहा है…</value>
+  </data>
+  <data name="Main_StopTip" xml:space="preserve">
+    <value>नेस्ट खत्म करें और अब तक का सबसे अच्छा नेस्ट रखें</value>
+  </data>
+  <data name="Main_UnfitBothFormat" xml:space="preserve">
+    <value>, {0} पड़ोसी पार्ट से ओवरलैप और {1} शीट किनारे के मार्जिन के अंदर</value>
+  </data>
+  <data name="Main_UnfitInMargin" xml:space="preserve">
+    <value>, शीट किनारे के मार्जिन के अंदर</value>
+  </data>
+  <data name="Main_UnfitOverlapping" xml:space="preserve">
+    <value>, पड़ोसी पार्ट से ओवरलैप</value>
+  </data>
+  <data name="Main_UnfitParts_One" xml:space="preserve">
+    <value>{0} पार्ट</value>
+  </data>
+  <data name="Main_UnfitParts_Other" xml:space="preserve">
+    <value>{0} पार्ट</value>
+  </data>
+  <data name="Main_UpdateAvailableFormat" xml:space="preserve">
+    <value>अपडेट उपलब्ध: {0}</value>
+  </data>
+  <data name="Main_UpdateNoticeTip" xml:space="preserve">
+    <value>SheetNest का नया वर्ज़न उपलब्ध है। डाउनलोड पेज खोलने के लिए क्लिक करें।</value>
+  </data>
+  <data name="Main_UsedFormat" xml:space="preserve">
+    <value>इस्तेमाल: {0}</value>
+  </data>
+  <data name="Main_UtilizationFormat" xml:space="preserve">
+    <value>उपयोग: {0}</value>
+  </data>
+  <data name="Menu_About" xml:space="preserve">
+    <value>के बारे में</value>
+  </data>
+  <data name="Menu_AdvancedSettings" xml:space="preserve">
+    <value>एडवांस्ड सेटिंग्स...</value>
+  </data>
+  <data name="Menu_CheckUpdates" xml:space="preserve">
+    <value>अपडेट जाँचें...</value>
+  </data>
+  <data name="Menu_Exit" xml:space="preserve">
+    <value>बाहर निकलें</value>
+  </data>
+  <data name="Menu_File" xml:space="preserve">
+    <value>फ़ाइल(_F)</value>
+  </data>
+  <data name="Menu_Help" xml:space="preserve">
+    <value>सहायता(_H)</value>
+  </data>
+  <data name="Menu_Import3D" xml:space="preserve">
+    <value>3D इम्पोर्ट (STEP / IGES)...</value>
+  </data>
+  <data name="Menu_Language" xml:space="preserve">
+    <value>भाषा</value>
+  </data>
+  <data name="Menu_LanguageAutomatic" xml:space="preserve">
+    <value>ऑटोमैटिक (Windows)</value>
+  </data>
+  <data name="Menu_NewProject" xml:space="preserve">
+    <value>नया प्रोजेक्ट</value>
+  </data>
+  <data name="Menu_Offcut" xml:space="preserve">
+    <value>बचा हुआ टुकड़ा...</value>
+  </data>
+  <data name="Menu_OpenProject" xml:space="preserve">
+    <value>प्रोजेक्ट खोलें...</value>
+  </data>
+  <data name="Menu_RecentEmpty" xml:space="preserve">
+    <value>(खाली)</value>
+  </data>
+  <data name="Menu_RecentProjects" xml:space="preserve">
+    <value>हाल के प्रोजेक्ट</value>
+  </data>
+  <data name="Menu_Save" xml:space="preserve">
+    <value>सेव करें</value>
+  </data>
+  <data name="Menu_SaveAs" xml:space="preserve">
+    <value>इस रूप में सेव करें...</value>
+  </data>
+  <data name="Menu_SendFeedback" xml:space="preserve">
+    <value>फ़ीडबैक भेजें...</value>
+  </data>
+  <data name="Menu_SendFeedbackTip" xml:space="preserve">
+    <value>सुझाव देने या समस्या बताने के लिए पहले से भरा हुआ GitHub इश्यू खोलें</value>
+  </data>
+  <data name="Menu_Settings" xml:space="preserve">
+    <value>सेटिंग्स(_S)</value>
+  </data>
+  <data name="Msg_AddPartsFirst" xml:space="preserve">
+    <value>पहले एक प्रोजेक्ट खोलें और पार्ट जोड़ें।</value>
+  </data>
+  <data name="Msg_AddSheetFirst" xml:space="preserve">
+    <value>पहले शीटें टैब में कम से कम एक शीट जोड़ें।</value>
+  </data>
+  <data name="Msg_AvailableSheets_One" xml:space="preserve">
+    <value>{0} उपलब्ध शीट</value>
+  </data>
+  <data name="Msg_AvailableSheets_Other" xml:space="preserve">
+    <value>{0} उपलब्ध शीटों</value>
+  </data>
+  <data name="Msg_CheckUpdatesTitle" xml:space="preserve">
+    <value>अपडेट जाँचें</value>
+  </data>
+  <data name="Msg_CommonLineSkippedFormat" xml:space="preserve">
+    <value>इनके लिए कॉमन-लाइन कटिंग छोड़ दी गई:
+
+{0}
+
+उन पार्ट ने सामान्य पार्ट गैप रखा।</value>
+  </data>
+  <data name="Msg_CommonLineTitle" xml:space="preserve">
+    <value>कॉमन लाइन</value>
+  </data>
+  <data name="Msg_EngineMissing" xml:space="preserve">
+    <value>नेस्टिंग इंजन (sparrow.exe) नहीं मिला। यह ऐप के साथ ही आता है; फिर से इंस्टॉल करें, या SHEETNEST_SPARROW एनवायरनमेंट वेरिएबल में इसका पाथ सेट करें।</value>
+  </data>
+  <data name="Msg_ExportTitle" xml:space="preserve">
+    <value>DXF एक्सपोर्ट</value>
+  </data>
+  <data name="Msg_FeedbackNoBrowser" xml:space="preserve">
+    <value>ब्राउज़र नहीं खुल सका। आप यहाँ फ़ीडबैक भेज सकते हैं:
+https://github.com/ManuelMRosa/SheetNest/issues</value>
+  </data>
+  <data name="Msg_Import3DTitle" xml:space="preserve">
+    <value>3D इम्पोर्ट</value>
+  </data>
+  <data name="Msg_LanguageNextStart" xml:space="preserve">
+    <value>भाषा अगली बार SheetNest खुलने पर बदलेगी।</value>
+  </data>
+  <data name="Msg_NestReportTitle" xml:space="preserve">
+    <value>नेस्ट रिपोर्ट</value>
+  </data>
+  <data name="Msg_NestTitle" xml:space="preserve">
+    <value>नेस्ट</value>
+  </data>
+  <data name="Msg_NoResult" xml:space="preserve">
+    <value>नेस्ट से कोई रिज़ल्ट नहीं मिला।</value>
+  </data>
+  <data name="Msg_NotEnoughSheetsTitle" xml:space="preserve">
+    <value>पर्याप्त शीटें नहीं</value>
+  </data>
+  <data name="Msg_NotReadyToCut_One" xml:space="preserve">
+    <value>{0} पार्ट काटने के लिए तैयार नहीं है:
+
+{1}
+
+यह लाल रंग में दिखाया गया है। इसे "नेस्ट एडिट करें" में खिसकाकर अलग करें और फिर से कोशिश करें।</value>
+  </data>
+  <data name="Msg_NotReadyToCut_Other" xml:space="preserve">
+    <value>{0} पार्ट काटने के लिए तैयार नहीं हैं:
+
+{1}
+
+ये लाल रंग में दिखाए गए हैं। इन्हें "नेस्ट एडिट करें" में खिसकाकर अलग करें और फिर से कोशिश करें।</value>
+  </data>
+  <data name="Msg_PartsDidNotFit_One" xml:space="preserve">
+    <value>{0} पार्ट {1} पर फ़िट नहीं हुआ।
+
+शीटें टैब में शीट की मात्रा बढ़ाएँ, किसी साइज़ पर असीमित टिक करें, या दूसरी शीट जोड़ें, और फिर से नेस्ट करें।</value>
+  </data>
+  <data name="Msg_PartsDidNotFit_Other" xml:space="preserve">
+    <value>{0} पार्ट {1} पर फ़िट नहीं हुए।
+
+शीटें टैब में शीट की मात्रा बढ़ाएँ, किसी साइज़ पर असीमित टिक करें, या दूसरी शीट जोड़ें, और फिर से नेस्ट करें।</value>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_One" xml:space="preserve">
+    <value>{0} पार्ट शीटें टैब के किसी भी शीट साइज़ पर फ़िट नहीं होता।
+
+शीटों की कमी नहीं थी: एक साइज़ असीमित है। पार्ट हर उस शीट से बड़ा है जिस पर वह जा सकता है, इसलिए एक बड़ा शीट साइज़ जोड़ें (या पार्ट की स्पेसिंग और मार्जिन जाँचें)।</value>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_Other" xml:space="preserve">
+    <value>{0} पार्ट शीटें टैब के किसी भी शीट साइज़ पर फ़िट नहीं होते।
+
+शीटों की कमी नहीं थी: एक साइज़ असीमित है। पार्ट हर उस शीट से बड़ा है जिस पर वह जा सकता है, इसलिए एक बड़ा शीट साइज़ जोड़ें (या पार्ट की स्पेसिंग और मार्जिन जाँचें)।</value>
+  </data>
+  <data name="Msg_PartsDoNotFitTitle" xml:space="preserve">
+    <value>पार्ट फ़िट नहीं होते</value>
+  </data>
+  <data name="Msg_RecoverAutosave" xml:space="preserve">
+    <value>SheetNest अचानक बंद हो गया और {0}{1} में बिना सेव किए बदलाव रह गए।
+
+ऑटो सेव किया गया प्रोजेक्ट वापस लाएँ?</value>
+  </data>
+  <data name="Msg_RecoveryTitle" xml:space="preserve">
+    <value>रिकवरी</value>
+  </data>
+  <data name="Msg_ReportWriteFailed" xml:space="preserve">
+    <value>रिपोर्ट नहीं लिखी जा सकी: {0}</value>
+  </data>
+  <data name="Msg_ResultExists" xml:space="preserve">
+    <value>पहले से एक नेस्ट रिज़ल्ट मौजूद है। पहले "रिज़ल्ट हटाएँ" दबाएँ; इससे उस नेस्ट में इस्तेमाल हुई शीटें स्टॉक में वापस आ जाती हैं।</value>
+  </data>
+  <data name="Msg_ReunfoldTitle" xml:space="preserve">
+    <value>फिर से अनफ़ोल्ड</value>
+  </data>
+  <data name="Msg_SaveBeforeClosing" xml:space="preserve">
+    <value>आपके पास एक नेस्ट रिज़ल्ट है। बंद करने से पहले प्रोजेक्ट सेव करें?</value>
+  </data>
+  <data name="Msg_SelectResultForExport" xml:space="preserve">
+    <value>पहले नेस्ट चलाएँ और एक रिज़ल्ट चुनें, फिर एक्सपोर्ट करें।</value>
+  </data>
+  <data name="Msg_SelectResultForReport" xml:space="preserve">
+    <value>पहले नेस्ट चलाएँ और एक रिज़ल्ट चुनें, फिर रिपोर्ट सेव करें।</value>
+  </data>
+  <data name="Msg_SendFeedbackTitle" xml:space="preserve">
+    <value>फ़ीडबैक भेजें</value>
+  </data>
+  <data name="Msg_UpdateAvailableFormat" xml:space="preserve">
+    <value>SheetNest {0} उपलब्ध है (आपके पास {1} है)।
+
+डाउनलोड पेज खोलें?</value>
+  </data>
+  <data name="Msg_UpdateCheckFailed" xml:space="preserve">
+    <value>अपडेट नहीं जाँचे जा सके। अपना इंटरनेट कनेक्शन जाँचें।</value>
+  </data>
+  <data name="Msg_UpToDateFormat" xml:space="preserve">
+    <value>आपके पास नया वर्ज़न है (SheetNest {0})।</value>
+  </data>
+  <data name="Offcut_Auto" xml:space="preserve">
+    <value>ऑटो (सबसे अच्छा टुकड़ा)</value>
+  </data>
+  <data name="Offcut_AutoTip" xml:space="preserve">
+    <value>नेस्ट से बने लेआउट पर "शीट का अंत", "शीट की साइड" और "दोनों" को तौलता है और वह रखता है जिससे सबसे ज़्यादा मटीरियल बचे।</value>
+  </data>
+  <data name="Offcut_Both" xml:space="preserve">
+    <value>दोनों (L-आकार)</value>
+  </data>
+  <data name="Offcut_BothTip" xml:space="preserve">
+    <value>जब नेस्ट ने दोनों तरफ़ जगह छोड़ी हो, तो बचा हुआ हिस्सा दो आयतों के रूप में निकलता है (गिलोटिन कट, इसलिए कोई भी कट किसी बचे हुए टुकड़े को दो हिस्सों में नहीं बाँटता)।</value>
+  </data>
+  <data name="Offcut_EdgeOverlapFormat" xml:space="preserve">
+    <value>एज ओवरलैप ({0}):</value>
+  </data>
+  <data name="Offcut_EdgeOverlapTip" xml:space="preserve">
+    <value>कट हर सिरे पर शीट के किनारे से कितना आगे तक जाता है, ताकि बचा हुआ टुकड़ा कोनों पर किसी ब्रिज से लटका न रहे, बल्कि अलग हो जाए। 0 = किनारे के बराबर।</value>
+  </data>
+  <data name="Offcut_Enable" xml:space="preserve">
+    <value>बची हुई जगह को आयताकार टुकड़े के रूप में काटकर अलग करें</value>
+  </data>
+  <data name="Offcut_EnableTip" xml:space="preserve">
+    <value>नेस्ट ने आखिरी शीट पर जो खाली जगह छोड़ी है उसे नापता है और एक कट लाइन जोड़ता है ताकि वह दोबारा इस्तेमाल होने लायक आयत के रूप में अलग हो जाए। यह कभी कोई पार्ट नहीं हिलाता: जब तक यह गणना होती है, नेस्ट पूरा हो चुका होता है, इसलिए इसे चालू करने से किसी भी चीज़ की जगह नहीं बदल सकती।</value>
+  </data>
+  <data name="Offcut_End" xml:space="preserve">
+    <value>शीट का अंत</value>
+  </data>
+  <data name="Offcut_EndTip" xml:space="preserve">
+    <value>शीट की लंबी साइड के अंत में एक पूरी पट्टी: पारंपरिक बचा हुआ टुकड़ा।</value>
+  </data>
+  <data name="Offcut_MaxXFormat" xml:space="preserve">
+    <value>अधिकतम X साइज़ ({0}):</value>
+  </data>
+  <data name="Offcut_MaxXTip" xml:space="preserve">
+    <value>सबसे चौड़ा बचा हुआ टुकड़ा जिसे काटना अब भी फ़ायदेमंद है। इससे बड़ा हो तो वह बचा हुआ टुकड़ा नहीं बल्कि लगभग पूरी शीट है, इसलिए कुछ नहीं काटा जाता और शीट पूरी रखी जाती है। 0 = कोई सीमा नहीं।</value>
+  </data>
+  <data name="Offcut_MaxYFormat" xml:space="preserve">
+    <value>अधिकतम Y साइज़ ({0}):</value>
+  </data>
+  <data name="Offcut_MaxYTip" xml:space="preserve">
+    <value>सबसे ऊँचा बचा हुआ टुकड़ा जिसे काटना अब भी फ़ायदेमंद है। 0 = कोई सीमा नहीं।</value>
+  </data>
+  <data name="Offcut_MinXFormat" xml:space="preserve">
+    <value>न्यूनतम X साइज़ ({0}):</value>
+  </data>
+  <data name="Offcut_MinXTip" xml:space="preserve">
+    <value>सबसे संकरा बचा हुआ टुकड़ा जिसे अलग करना फ़ायदेमंद है। इससे कम हो तो शीट बिना कटे छोड़ दी जाती है। 0 = ऑटोमैटिक (शीट की साइड का 5%)।</value>
+  </data>
+  <data name="Offcut_MinYFormat" xml:space="preserve">
+    <value>न्यूनतम Y साइज़ ({0}):</value>
+  </data>
+  <data name="Offcut_MinYTip" xml:space="preserve">
+    <value>सबसे छोटा बचा हुआ टुकड़ा जिसे अलग करना फ़ायदेमंद है। 0 = ऑटोमैटिक (शीट की साइड का 5%)।</value>
+  </data>
+  <data name="Offcut_RemnantPosition" xml:space="preserve">
+    <value>बचे हुए टुकड़े की जगह</value>
+  </data>
+  <data name="Offcut_ResetDefaults" xml:space="preserve">
+    <value>डिफ़ॉल्ट पर रीसेट</value>
+  </data>
+  <data name="Offcut_ResetDefaultsTip" xml:space="preserve">
+    <value>ऊपर के छह नंबर इस ड्रॉइंग की यूनिट के लिए सुझाए गए मानों पर वापस लाता है। बचे हुए टुकड़े की जगह और चालू करने वाला टिक नहीं बदलते।</value>
+  </data>
+  <data name="Offcut_Side" xml:space="preserve">
+    <value>शीट की साइड</value>
+  </data>
+  <data name="Offcut_SideTip" xml:space="preserve">
+    <value>शीट की छोटी साइड के साथ एक पूरी पट्टी।</value>
+  </data>
+  <data name="Offcut_SpacingFormat" xml:space="preserve">
+    <value>बचे हुए टुकड़े की स्पेसिंग ({0}):</value>
+  </data>
+  <data name="Offcut_SpacingTip" xml:space="preserve">
+    <value>पैक किए गए पार्ट और बचे हुए टुकड़े की कट लाइन के बीच रखा गया गैप (ड्रॉइंग यूनिट)।</value>
+  </data>
+  <data name="Offcut_Title" xml:space="preserve">
+    <value>बचा हुआ टुकड़ा</value>
+  </data>
+  <data name="Part_CommonLine" xml:space="preserve">
+    <value>कॉमन लाइन</value>
+  </data>
+  <data name="Part_CommonLineSamePart" xml:space="preserve">
+    <value>कॉमन लाइन (वही पार्ट)</value>
+  </data>
+  <data name="Part_Rot45Steps" xml:space="preserve">
+    <value>45° स्टेप</value>
+  </data>
+  <data name="Part_Rot4Way" xml:space="preserve">
+    <value>4-तरफ़ा</value>
+  </data>
+  <data name="Part_Rot90Only" xml:space="preserve">
+    <value>सिर्फ़ 90°</value>
+  </data>
+  <data name="Part_RotAsDrawn" xml:space="preserve">
+    <value>जैसा ड्रॉ किया</value>
+  </data>
+  <data name="Part_RotFree" xml:space="preserve">
+    <value>फ़्री</value>
+  </data>
+  <data name="Part_RotJobDefault" xml:space="preserve">
+    <value>जॉब डिफ़ॉल्ट</value>
+  </data>
+  <data name="Part_RotOther" xml:space="preserve">
+    <value>रोटेशन: अन्य</value>
+  </data>
+  <data name="Part_SpacingDefault" xml:space="preserve">
+    <value>स्पेसिंग: डिफ़ॉल्ट</value>
+  </data>
+  <data name="Part_SpacingFormat" xml:space="preserve">
+    <value>स्पेसिंग {0:0.###}</value>
+  </data>
+  <data name="Project_AddPartTitle" xml:space="preserve">
+    <value>पार्ट जोड़ें</value>
+  </data>
+  <data name="Project_ErrorSavingTitle" xml:space="preserve">
+    <value>सेव करने में त्रुटि</value>
+  </data>
+  <data name="Project_FileMissingTitle" xml:space="preserve">
+    <value>फ़ाइल गायब है</value>
+  </data>
+  <data name="Project_FileNotFoundTitle" xml:space="preserve">
+    <value>फ़ाइल नहीं मिली</value>
+  </data>
+  <data name="Project_Import3DTitle" xml:space="preserve">
+    <value>3D इम्पोर्ट</value>
+  </data>
+  <data name="Project_MsgCannotUseFormat" xml:space="preserve">
+    <value>{0} इस्तेमाल नहीं किया जा सकता:</value>
+  </data>
+  <data name="Project_MsgFileNotFoundFormat" xml:space="preserve">
+    <value>फ़ाइल नहीं मिली: {0}।</value>
+  </data>
+  <data name="Project_MsgMixedSvgDxf" xml:space="preserve">
+    <value>जब आपके पार्ट Svg और Dxf का मिश्रण हों, तब एक्सपोर्ट संभव नहीं है।</value>
+  </data>
+  <data name="Project_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} में नेस्ट करने लायक कोई आकार नहीं है।</value>
+  </data>
+  <data name="Project_MsgSaveChangesFormat" xml:space="preserve">
+    <value>फ़ाइल '{0}' के बदलाव सेव करें?</value>
+  </data>
+  <data name="Project_MsgSaveResultFirst" xml:space="preserve">
+    <value>आपके पास एक नेस्ट रिज़ल्ट है। पहले प्रोजेक्ट सेव करें?</value>
+  </data>
+  <data name="Project_MsgUnableToLocateFormat" xml:space="preserve">
+    <value>{0} नहीं मिला।</value>
+  </data>
+  <data name="Project_MsgUseImport3D" xml:space="preserve">
+    <value>3D पार्ट इम्पोर्ट करने के लिए फ़ाइल &gt; 3D इम्पोर्ट (STEP / IGES)... इस्तेमाल करें। यह शीट की मोटाई पहचान लेता है और आपको K-फ़ैक्टर सेट करने देता है।</value>
+  </data>
+  <data name="Report_Date" xml:space="preserve">
+    <value>तारीख</value>
+  </data>
+  <data name="Report_DateFormat" xml:space="preserve">
+    <value>dd-MM-yyyy HH:mm:ss</value>
+  </data>
+  <data name="Report_DrawingName" xml:space="preserve">
+    <value>ड्रॉइंग का नाम</value>
+  </data>
+  <data name="Report_ItemColumn" xml:space="preserve">
+    <value>क्र.</value>
+  </data>
+  <data name="Report_Layout" xml:space="preserve">
+    <value>लेआउट</value>
+  </data>
+  <data name="Report_LayoutOfFormat" xml:space="preserve">
+    <value>{1} में से {0}</value>
+  </data>
+  <data name="Report_MoreFormat" xml:space="preserve">
+    <value>     ... और {0}</value>
+  </data>
+  <data name="Report_NothingToReport" xml:space="preserve">
+    <value>रिपोर्ट करने के लिए कुछ नहीं है। पहले नेस्ट चलाएँ।</value>
+  </data>
+  <data name="Report_NumberOfSheets" xml:space="preserve">
+    <value>शीटों की संख्या</value>
+  </data>
+  <data name="Report_NumOffColumn" xml:space="preserve">
+    <value>संख्या</value>
+  </data>
+  <data name="Report_PartNameColumn" xml:space="preserve">
+    <value>पार्ट का नाम</value>
+  </data>
+  <data name="Report_PartsHeading" xml:space="preserve">
+    <value>नेस्ट पार्ट सूची</value>
+  </data>
+  <data name="Report_PartsNotPlaced" xml:space="preserve">
+    <value>न रखे गए पार्ट</value>
+  </data>
+  <data name="Report_SettingHeading" xml:space="preserve">
+    <value>सेटिंग की जानकारी</value>
+  </data>
+  <data name="Report_SheetSize" xml:space="preserve">
+    <value>शीट साइज़</value>
+  </data>
+  <data name="Report_SheetUtilization" xml:space="preserve">
+    <value>शीट का उपयोग</value>
+  </data>
+  <data name="Rotation_0And180Tip" xml:space="preserve">
+    <value>0° और 180°: मटीरियल का ग्रेन बना रहता है, लेकिन पार्ट पलट सकता है।</value>
+  </data>
+  <data name="Rotation_0And90Tip" xml:space="preserve">
+    <value>0° और 90° की अनुमति।</value>
+  </data>
+  <data name="Rotation_45Steps" xml:space="preserve">
+    <value>45° स्टेप</value>
+  </data>
+  <data name="Rotation_45StepsTip" xml:space="preserve">
+    <value>आठ ओरिएंटेशन, 45° के अंतर पर। जॉब सेटिंग में भी यह विकल्प है, और यहाँ यह न हो तो पार्ट पर असल में क्या सेट है वह दिखाया नहीं जा सकता।</value>
+  </data>
+  <data name="Rotation_4Way" xml:space="preserve">
+    <value>4-तरफ़ा</value>
+  </data>
+  <data name="Rotation_4WayTip" xml:space="preserve">
+    <value>चारों सीधे ओरिएंटेशन (0 / 90 / 180 / 270°)। चौकोर और L आकार के पार्ट के लिए सुरक्षित पहली पसंद: इन पर यह आम तौर पर फ़्री रोटेशन से बेहतर रहता है, और इसकी खोज में हमेशा कम समय लगता है।</value>
+  </data>
+  <data name="Rotation_90And270Tip" xml:space="preserve">
+    <value>90° और 270°: हमेशा घुमाया हुआ, किसी भी तरफ़।</value>
+  </data>
+  <data name="Rotation_90Only" xml:space="preserve">
+    <value>सिर्फ़ 90°</value>
+  </data>
+  <data name="Rotation_90OnlyTip" xml:space="preserve">
+    <value>सिर्फ़ 90°, इसलिए पार्ट हमेशा एक बार घुमाया जाता है।</value>
+  </data>
+  <data name="Rotation_AsDrawn" xml:space="preserve">
+    <value>जैसा ड्रॉ किया</value>
+  </data>
+  <data name="Rotation_AsDrawnTip" xml:space="preserve">
+    <value>सिर्फ़ 0°, इसलिए पार्ट बिल्कुल वैसा ही रहता है जैसा ड्रॉ किया गया है (ग्रेन बना रहता है)।</value>
+  </data>
+  <data name="Rotation_Free" xml:space="preserve">
+    <value>फ़्री</value>
+  </data>
+  <data name="Rotation_FreeTip" xml:space="preserve">
+    <value>कोई भी कोण, और यह अपने-आप सबसे टाइट नहीं होता। तिरछे या गोल किनारों वाले पार्ट पर यह जीतता है, और चौकोर या L आकार वाले पार्ट पर हारता है, जो ठीक समकोण पर आपस में फँसते हैं और तिरछा करने से कुछ नहीं पाते। दो असली जॉब पर नापा गया: एक पर ब्लॉक का 84.3% भरा, जबकि 4-तरफ़ा से 81.6%, और दूसरे पर 69.6%, जबकि 73.2%। खोज में लगभग दोगुना समय लगता है। ग्रेन को अनदेखा करता है।</value>
+  </data>
+  <data name="Rotation_JobDefault" xml:space="preserve">
+    <value>जॉब डिफ़ॉल्ट</value>
+  </data>
+  <data name="Rotation_JobDefaultTip" xml:space="preserve">
+    <value>जॉब पर जो भी सेट है, सेटिंग्स &gt; एडवांस्ड सेटिंग्स में। वहाँ बदलें और यह पार्ट भी उसी के हिसाब से चलेगा।</value>
+  </data>
+  <data name="Step_Filter3D" xml:space="preserve">
+    <value>STEP / IGES 3D (*.step;*.stp;*.iges;*.igs)|*.step;*.stp;*.iges;*.igs|सभी फ़ाइलें (*.*)|*.*</value>
+  </data>
+  <data name="Step_MsgCouldNotAnalyzeFormat" xml:space="preserve">
+    <value>3D मॉडल का विश्लेषण नहीं हो सका।
+
+{0}</value>
+  </data>
+  <data name="Step_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>अनफ़ोल्ड इंजन (FreeCAD) शुरू नहीं हो सका:
+{0}
+
+{1}</value>
+  </data>
+  <data name="Step_MsgCouldNotUnfoldFormat" xml:space="preserve">
+    <value>3D पार्ट अनफ़ोल्ड नहीं हो सका।
+
+{0}</value>
+  </data>
+  <data name="Step_MsgEngineNotFound" xml:space="preserve">
+    <value>अनफ़ोल्ड इंजन (FreeCAD) नहीं मिला।
+SheetNest फिर से इंस्टॉल करें (इसमें FreeCAD शामिल है) या freecad.org से FreeCAD इंस्टॉल करें।</value>
+  </data>
+  <data name="Step_MsgMacroNotFound" xml:space="preserve">
+    <value>SheetNest के पास unfold_macro.py नहीं मिला।</value>
+  </data>
+  <data name="Step_MsgNoFlatPattern" xml:space="preserve">
+    <value>अनफ़ोल्ड सफल बताया गया, लेकिन कोई फ़्लैट पैटर्न नहीं बना।</value>
+  </data>
+  <data name="Step_MsgNoResultFormat" xml:space="preserve">
+    <value>FreeCAD ने कोई रिज़ल्ट नहीं दिया।
+
+{0}</value>
+  </data>
+  <data name="Step_MsgTimedOutFormat" xml:space="preserve">
+    <value>FreeCAD का समय खत्म हो गया ({0} s)।</value>
+  </data>
+  <data name="Viewer_DistanceAgainFormat" xml:space="preserve">
+    <value>दूरी: {0:0.000} {1}  ·  फिर से नापने के लिए क्लिक करें</value>
+  </data>
+  <data name="Viewer_DistanceFormat" xml:space="preserve">
+    <value>दूरी: {0:0.000} {1}</value>
+  </data>
+  <data name="Viewer_EditNest" xml:space="preserve">
+    <value>✋ नेस्ट एडिट करें</value>
+  </data>
+  <data name="Viewer_EditNestTip" xml:space="preserve">
+    <value>मैनुअल नेस्टिंग: किसी पार्ट को चुनने के लिए उस पर क्लिक करें, खिसकाने के लिए ड्रैग करें, बटन से घुमाएँ। दोबारा जमाते समय ड्रैग करने से कोई पार्ट दूसरे के ऊपर रह सकता है: वह लाल हो जाता है, और जब तक कुछ भी लाल है, एक्सपोर्ट नहीं होता। छोड़ते समय Alt दबाए रखें ताकि वह पड़ोसी पार्ट से सटकर खिसक जाए। ऐरो की ठीक से रखे पार्ट को पड़ोसी पार्ट में नहीं धकेलतीं, लेकिन जो पहले से लाल है उसे खिसकाती हैं, ताकि आप उसे धीरे-धीरे अलग कर सकें। बदलाव इस लेआउट की हर कॉपी पर लागू होते हैं और DXF एक्सपोर्ट में जाते हैं।</value>
+  </data>
+  <data name="Viewer_EditNestTitle" xml:space="preserve">
+    <value>नेस्ट एडिट करें</value>
+  </data>
+  <data name="Viewer_EmptyHint" xml:space="preserve">
+    <value>रिज़ल्ट यहाँ देखने के लिए नेस्ट चलाएँ।</value>
+  </data>
+  <data name="Viewer_FullSheet" xml:space="preserve">
+    <value>पूरी शीट</value>
+  </data>
+  <data name="Viewer_GapFormat" xml:space="preserve">
+    <value>गैप {0} {1}</value>
+  </data>
+  <data name="Viewer_HintCommonLineLocked" xml:space="preserve">
+    <value>कॉमन-लाइन क्लस्टर के पार्ट लॉक हैं  ·  उनकी जगह बदलने के लिए फिर से नेस्ट करें</value>
+  </data>
+  <data name="Viewer_HintEdit" xml:space="preserve">
+    <value>क्लिक = पार्ट चुनें  ·  ड्रैग = खिसकाएँ  ·  ऐरो = थोड़ा खिसकाएँ  ·  सटीक जगह के लिए कोऑर्डिनेट टाइप करें  ·  ओवरलैप लाल दिखते हैं</value>
+  </data>
+  <data name="Viewer_HintMeasureSecond" xml:space="preserve">
+    <value>नापें: दूसरे पॉइंट पर क्लिक करें</value>
+  </data>
+  <data name="Viewer_HintMeasureStart" xml:space="preserve">
+    <value>नापें: दो पॉइंट पर क्लिक करें (कोनों पर स्नैप होता है)</value>
+  </data>
+  <data name="Viewer_HintPlanReadOnly" xml:space="preserve">
+    <value>यह लेआउट प्रोडक्शन प्लान का प्रस्ताव है, नेस्ट की गई शीटों में से एक नहीं, इसलिए इसे एडिट नहीं किया जा सकता  ·  काटी वही शीटें जाती हैं जिनका यह प्रतिनिधित्व करता है</value>
+  </data>
+  <data name="Viewer_HintUnreadableNumber" xml:space="preserve">
+    <value>यह ऐसी संख्या नहीं है जिसे मैं पढ़ सकूँ  ·  पार्ट को उसकी जगह पर ही छोड़ दिया गया है</value>
+  </data>
+  <data name="Viewer_HintView" xml:space="preserve">
+    <value>स्क्रॉल = ज़ूम  ·  व्हील-ड्रैग = पैन  ·  राइट-क्लिक = फ़िट</value>
+  </data>
+  <data name="Viewer_LayoutNameFormat" xml:space="preserve">
+    <value>लेआउट {0}</value>
+  </data>
+  <data name="Viewer_Measure" xml:space="preserve">
+    <value>नापें</value>
+  </data>
+  <data name="Viewer_MeasureTip" xml:space="preserve">
+    <value>दूरी नापें: ड्रॉइंग पर दो पॉइंट पर क्लिक करें; लंबाई नीचे दिखती है (ड्रॉइंग की यूनिट में)। 3D से अनफ़ोल्ड किए गए पार्ट का साइज़ / K-फ़ैक्टर जाँचने के लिए इसका इस्तेमाल करें।</value>
+  </data>
+  <data name="Viewer_Mirror" xml:space="preserve">
+    <value>⇆ मिरर</value>
+  </data>
+  <data name="Viewer_MirrorTip" xml:space="preserve">
+    <value>चुने गए पार्ट को मिरर करें (बायाँ ↔ दायाँ हाथ)। DXF एक्सपोर्ट में भी यह दिखता है, इसलिए कटा हुआ पार्ट सच में मिरर होता है, सिर्फ़ स्क्रीन पर नहीं।</value>
+  </data>
+  <data name="Viewer_MsgLeaveAnyway" xml:space="preserve">
+    <value>फिर भी बाहर निकलें?</value>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_One" xml:space="preserve">
+    <value>इस लेआउट पर {0} पार्ट काटने लायक नहीं है{1}।
+
+यह लाल रंग में दिखाया गया है। एडिटर से निकलने से पहले इसे खिसकाकर अलग करें।
+
+{2}</value>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_Other" xml:space="preserve">
+    <value>इस लेआउट पर {0} पार्ट काटने लायक नहीं हैं{1}।
+
+ये लाल रंग में दिखाए गए हैं। एडिटर से निकलने से पहले इन्हें खिसकाकर अलग करें।
+
+{2}</value>
+  </data>
+  <data name="Viewer_MsgUndoAndLeave" xml:space="preserve">
+    <value>अपने बदलाव अनडू करके फिर भी बाहर निकलें?</value>
+  </data>
+  <data name="Viewer_NotFitCount_One" xml:space="preserve">
+    <value>{0} पार्ट काटने लायक नहीं</value>
+  </data>
+  <data name="Viewer_NotFitCount_Other" xml:space="preserve">
+    <value>{0} पार्ट काटने लायक नहीं</value>
+  </data>
+  <data name="Viewer_OverlapCountTip" xml:space="preserve">
+    <value>पड़ोसी पार्ट से ओवरलैप करते या शीट से बाहर लटकते पार्ट। जब तक कोई भी बाकी है, एक्सपोर्ट नहीं होगा।</value>
+  </data>
+  <data name="Viewer_PartAngleTip" xml:space="preserve">
+    <value>कोण डिग्री में। वैल्यू टाइप करें और Enter दबाएँ।</value>
+  </data>
+  <data name="Viewer_PartFallbackName" xml:space="preserve">
+    <value>पार्ट</value>
+  </data>
+  <data name="Viewer_PartGapTip" xml:space="preserve">
+    <value>इस पार्ट से इसके सबसे पास वाले पार्ट तक की दूरी, जो इसके रुकने पर नापी जाती है।</value>
+  </data>
+  <data name="Viewer_PartXTip" xml:space="preserve">
+    <value>पार्ट का बायाँ किनारा, शीट कोऑर्डिनेट में। वैल्यू टाइप करें और Enter दबाएँ।</value>
+  </data>
+  <data name="Viewer_PartYTip" xml:space="preserve">
+    <value>पार्ट का निचला किनारा, शीट कोऑर्डिनेट में। वैल्यू टाइप करें और Enter दबाएँ।</value>
+  </data>
+  <data name="Viewer_RedoTip" xml:space="preserve">
+    <value>रीडू (Ctrl+Y)</value>
+  </data>
+  <data name="Viewer_RemainderSheet" xml:space="preserve">
+    <value>बाकी पार्ट की शीट</value>
+  </data>
+  <data name="Viewer_RotateCcw5Tip" xml:space="preserve">
+    <value>चुने गए पार्ट को 5° एंटी-क्लॉकवाइज़ घुमाएँ</value>
+  </data>
+  <data name="Viewer_RotateCcw90Tip" xml:space="preserve">
+    <value>चुने गए पार्ट को 90° एंटी-क्लॉकवाइज़ घुमाएँ</value>
+  </data>
+  <data name="Viewer_RotateCw5Tip" xml:space="preserve">
+    <value>चुने गए पार्ट को 5° क्लॉकवाइज़ घुमाएँ</value>
+  </data>
+  <data name="Viewer_RotateCw90Tip" xml:space="preserve">
+    <value>चुने गए पार्ट को 90° क्लॉकवाइज़ घुमाएँ</value>
+  </data>
+  <data name="Viewer_UndoTip" xml:space="preserve">
+    <value>अनडू (Ctrl+Z)</value>
+  </data>
+  <data name="Viewer_UnfitBothFormat" xml:space="preserve">
+    <value>: {0} पड़ोसी पार्ट से ओवरलैप और {1} शीट किनारे के मार्जिन के अंदर</value>
+  </data>
+  <data name="Viewer_UnfitInMargin" xml:space="preserve">
+    <value>, शीट किनारे के मार्जिन के अंदर</value>
+  </data>
+  <data name="Viewer_UnfitOverlapping" xml:space="preserve">
+    <value>, पड़ोसी पार्ट से ओवरलैप</value>
+  </data>
+</root>

@@ -143,6 +143,7 @@
             <ListItem Value="en" Text="English" />
             <ListItem Value="de" Text="Deutsch" />
             <ListItem Value="es" Text="Español" />
+            <ListItem Value="hi" Text="हिन्दी" />
             <ListItem Value="pt-BR" Text="Português (Brasil)" />
             <ListItem Value="zh-Hans" Text="中文（简体）" />
           </ComboBox>

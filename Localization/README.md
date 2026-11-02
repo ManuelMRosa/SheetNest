@@ -11,6 +11,7 @@ programming: one file and one pull request.
 | English | `Strings.resx` | The reference: every other file translates this one. |
 | Deutsch | `Strings.de.resx` | Complete. A review by a native speaker is welcome. |
 | Español | `Strings.es.resx` | Complete, kept up to date with the code. |
+| हिन्दी | `Strings.hi.resx` | Complete. A review by a native speaker is welcome. |
 | Português (Brasil) | `Strings.pt-BR.resx` | Complete. A review by a native speaker is welcome. |
 | 中文（简体） | `Strings.zh-Hans.resx` | Complete. A review by a native speaker is welcome. |
 
