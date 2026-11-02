@@ -313,6 +313,30 @@ namespace DeepNestLib.CiTests.IO
       }
     }
 
+    /// <summary>
+    /// The operator very often still has the drawing open in their CAD program, which holds it for writing.
+    /// The import already reads it then; the exact geometry behind every shared cut has to as well, or each
+    /// seam of that drawing fails and the nest keeps the normal gap everywhere.
+    /// </summary>
+    [Fact]
+    public void LoadAndSnapshotReadADrawingStillOpenInTheCadProgram()
+    {
+      string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".dxf");
+      try
+      {
+        File.WriteAllBytes(path, CircleDxfBytes(7D));
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+        {
+          DxfContourCatalog.Load(path).Contours.Should().ContainSingle();
+          DxfContourCatalog.ReadSnapshot(path).Catalog.Contours.Should().ContainSingle();
+        }
+      }
+      finally
+      {
+        File.Delete(path);
+      }
+    }
+
     [Fact]
     public void ArcAndCircleRejectNonFiniteOrNonPositiveGeometry()
     {

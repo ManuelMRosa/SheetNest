@@ -545,6 +545,25 @@
           "the source-boundary cache must follow drawing content, not length and mtime hints");
     }
 
+    /// <summary>A saved nest reopened while its drawing is still open in the CAD program, which holds the
+    /// file for writing: the exact source outline is read all the same.</summary>
+    [Fact]
+    public void SourceOuterIsReadWhileTheDrawingIsOpenInTheCadProgram()
+    {
+      string path = Path.Combine(this.tempDirectory, "curved-source-open-in-cad.dxf");
+      File.WriteAllBytes(path, BulgedLightweightPolylineBytes(0.25D));
+      SheetPlacement reloaded = SheetPlacement.FromJson(
+        this.BuildTransformedCurvedPlacement(path, rotation: 0D, mirrored: false).ToJson());
+
+      using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+      {
+        CommonLineGeometryResolver.Resolve(reloaded).Clusters.Single().OuterBoundaries.Single().Bulges
+          .Where(bulge => Math.Abs(bulge) > 1e-12)
+          .Select(Math.Abs)
+          .Should().BeEquivalentTo(new[] { 0.25D, 0.25D });
+      }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

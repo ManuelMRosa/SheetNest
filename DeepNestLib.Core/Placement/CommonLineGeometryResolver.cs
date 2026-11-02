@@ -1312,7 +1312,7 @@ namespace DeepNestLib.Placement
       {
         // Use the same content-addressed, immutable-snapshot pattern as DxfContourCatalog. File
         // length and mtime are only hints and are routinely preserved by CAD save/copy workflows.
-        byte[] sourceBytes = File.ReadAllBytes(path);
+        byte[] sourceBytes = DxfPartSplitter.ReadAllBytesShared(path);
         string contentFingerprint = Convert.ToHexString(SHA256.HashData(sourceBytes));
         var cacheKey = new SourceCacheKey(path, contentFingerprint);
         attemptedCacheKey = cacheKey;

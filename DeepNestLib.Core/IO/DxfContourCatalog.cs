@@ -72,7 +72,7 @@
       // drawing while preserving both.  Parse the same immutable byte snapshot whose digest keys the
       // cache, otherwise a saved CommonBoundarySpan could validate against stale geometry and suppress
       // the newly loaded outside contour during export.
-      byte[] sourceBytes = File.ReadAllBytes(fullPath);
+      byte[] sourceBytes = DxfPartSplitter.ReadAllBytesShared(fullPath);
       string contentFingerprint = Convert.ToHexString(SHA256.HashData(sourceBytes));
       var key = new CatalogCacheKey(
         fullPath,
@@ -135,7 +135,7 @@
       }
 
       string fullPath = Path.GetFullPath(path);
-      byte[] sourceBytes = File.ReadAllBytes(fullPath);
+      byte[] sourceBytes = DxfPartSplitter.ReadAllBytesShared(fullPath);
       using var stream = new MemoryStream(sourceBytes, writable: false);
       DxfFile file = DxfFile.Load(stream);
       DxfContourCatalog catalog = Create(
