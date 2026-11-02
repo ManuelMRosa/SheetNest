@@ -275,6 +275,15 @@ Verificar con Git al iniciar; esta sección es una referencia fechada.
   Mesa de soldar con common line a 15 s: 93 → 62 s, planificador "forest" 313 → 185 s, mismo hash. Visto, sin tocar:
   `NoFitPolygon.Reverse()` hace `this.points.Reverse()`, que con C# 14 / .NET 10 invierte en su sitio (antes LINQ, no
   hacía nada); solo lo llaman `NfpHelper` (heredado) y `ObservableNfp`.
+  Misma rama: **el buscador de arcos lee cada dibujo una vez.** Cuando el planificador no le pasa catálogo a
+  `DxfCommonLineArcCandidateFinder.Find` (el chequeo de pares curvos corta antes de cargar el de la segunda pieza), Find
+  leía y hasheaba el DXF en cada par de poses: 84 % del planificador en tri100-cl. Ahora recuerda por nombre lo que cargó
+  (diccionario por llamada al planificador); mismo catálogo, mismo código de carga, qué catálogo recibe Find no cambia.
+  tri100-cl: candidatos 33.6 → 0.9 s, planificador 40 → 8.2 s, total 12.2 → 4.3 s, mismo hash. Además `DirectCandidate`
+  tiene su propia igualdad (la misma de `ValueType.Equals`, sin reflexión ni hash del primer campo): 33.6 → 28.2 s antes
+  del arreglo de catálogos. Excepciones como control de flujo: medido, no vale la pena; la mesa de soldar lanza 3571 en
+  59 s (todas "spans are not separated by CommonLineGap"), menos de 1 %. El 21 % del perfil era una etiqueta de actividad
+  del perfilador, no el costo de lanzar.
 - La tabla de abajo no coincide con `main` de hoy. Medido con Fast: mixto 30 colocadas y 36 aristas;
   test2 x16/x17/x24/x25 con 26/27/41/42 aristas; x26 con 29 aristas, `isolated=1`, cadena 19; x27 con
   26 colocadas y 28 aristas. Comparar contra una línea base medida, no contra la tabla.
