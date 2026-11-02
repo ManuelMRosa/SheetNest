@@ -142,6 +142,7 @@
             <ListItem Value="auto" Text="Automatic (Windows language)" />
             <ListItem Value="en" Text="English" />
             <ListItem Value="es" Text="Español" />
+            <ListItem Value="zh-Hans" Text="中文（简体）" />
           </ComboBox>
         </Control>
         <Control Id="LanguageHint" Type="Text" X="20" Y="91" Width="330" Height="20" NoPrefix="yes"

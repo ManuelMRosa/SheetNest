@@ -1,0 +1,1507 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="About_CompilingMinkowski" xml:space="preserve">
+    <value>编译 minkowski.dll</value>
+  </data>
+  <data name="About_Contributors" xml:space="preserve">
+    <value>贡献者</value>
+  </data>
+  <data name="About_DeepNestOriginal" xml:space="preserve">
+    <value>DeepNest - 原始版本</value>
+  </data>
+  <data name="About_DeepNestPortPort" xml:space="preserve">
+    <value>DeepNestPort - C# WinForms 移植版</value>
+  </data>
+  <data name="About_DeepNestSharpPort" xml:space="preserve">
+    <value>DeepNest# - Net Core C#/Mvvm/WPF 移植版</value>
+  </data>
+  <data name="About_DxfExport" xml:space="preserve">
+    <value>（DXF 导出）</value>
+  </data>
+  <data name="About_DxfImportExport" xml:space="preserve">
+    <value>DXF 导入/导出：</value>
+  </data>
+  <data name="About_GiantsQuote" xml:space="preserve">
+    <value>“如果说我看得更远，那是因为我站在巨人的肩膀上”</value>
+  </data>
+  <data name="About_History1" xml:space="preserve">
+    <value>Jack 和 Felix 做了很多出色的工作，但原版依赖远程服务在图像格式之间转换，这是个问题；而移植版对我的需求来说又不够稳定。我真正需要的是：能够保存项目、排样结果和单张板材的排布；能够用之前的排样结果作为后续排样的起点；还能够编辑排布，把算法始终找不到位置的最后一个零件塞进板材上的空隙。</value>
+  </data>
+  <data name="About_History2" xml:space="preserve">
+    <value>Felix 希望 DeepNestPort 忠于原始的 DeepNest 代码...</value>
+  </data>
+  <data name="About_History3" xml:space="preserve">
+    <value>...于是 DeepNestSharp 诞生了。它在 Net.Core 上用 WPF 完全重建了界面，是一次大规模重构，带来了一些回报，但也引入了一些妥协和问题，其中有些可能仍未解决...欢迎告诉我。</value>
+  </data>
+  <data name="About_Intro" xml:space="preserve">
+    <value>SheetNest 是 DeepNestSharp 的分支，增加了 GPU / 栅格排样引擎、支持分组排布 DXF 导出的工业生产计划，以及精简的操作界面。采用 MIT 许可；完整的源流见下文。</value>
+  </data>
+  <data name="About_MinkowskiExample" xml:space="preserve">
+    <value>示例：cl /Ox -I "D:\boost\boost_1_76_0" /LD minkowski.cc</value>
+  </data>
+  <data name="About_MinkowskiIntro" xml:space="preserve">
+    <value>随附一组 minkowski.dll，可在我手头的多种 Windows 配置上运行：AnyCpu、x86 和 x64；但如果要使用 DllImport，您可能需要为自己的环境编译这些 dll。为了让原生代码可以互相替换，已经做了大量工作；已经接近完成，但仍属实验性质。在我这里能用，因人而异。</value>
+  </data>
+  <data name="About_MinkowskiStep1" xml:space="preserve">
+    <value>1. 在 compile.bat 中将 [boost_1.76_path] 替换为实际的 BOOST (1.76+) 路径</value>
+  </data>
+  <data name="About_MinkowskiStep2" xml:space="preserve">
+    <value>2. 使用 Visual Studio 的 Developer Command Prompt 运行 compile.bat</value>
+  </data>
+  <data name="About_MinkowskiStep3" xml:space="preserve">
+    <value>3. 将 minkowski.dll 复制到 MinkowskiDlls 文件夹。</value>
+  </data>
+  <data name="About_MinkowskiVisualStudio" xml:space="preserve">
+    <value>如果在 Visual Studio 中运行，DeepNestLib.CiTests 有一个 PostBuild 任务会自动从那里复制 DLL。否则，请确保相应的 DLL 位于 DeepNestSharp.exe 所在文件夹。注意，代码中有预处理指令，会根据运行的架构选择正确的 dll。</value>
+  </data>
+  <data name="About_PortToNetCore" xml:space="preserve">
+    <value>（移植到 Net.Core）</value>
+  </data>
+  <data name="About_QuoteBreakAway" xml:space="preserve">
+    <value>“希望你考虑脱离旧代码库，因为合并已经变得非常困难。”</value>
+  </data>
+  <data name="About_QuoteEntangle" xml:space="preserve">
+    <value>&gt;&gt; 我认为我们的仓库不应该纠缠得太深</value>
+  </data>
+  <data name="About_QuoteTryCompatibility" xml:space="preserve">
+    <value>&gt;&gt; 我会尽量，但保持与原始代码的兼容性很重要...</value>
+  </data>
+  <data name="About_SimplificationFeatures" xml:space="preserve">
+    <value>（简化功能）</value>
+  </data>
+  <data name="About_TheOriginalDeepNest" xml:space="preserve">
+    <value>（原始 DeepNest）</value>
+  </data>
+  <data name="About_TitleFormat" xml:space="preserve">
+    <value>关于 DeepNest# {0}:{1}</value>
+  </data>
+  <data name="About_WinFormsPort" xml:space="preserve">
+    <value>（WinForms C# 移植版）</value>
+  </data>
+  <data name="AddSheet_Add" xml:space="preserve">
+    <value>添加</value>
+  </data>
+  <data name="AddSheet_EditTitle" xml:space="preserve">
+    <value>编辑板材</value>
+  </data>
+  <data name="AddSheet_HeaderInches" xml:space="preserve">
+    <value>板材尺寸，单位英寸（宽度 = 长边）。</value>
+  </data>
+  <data name="AddSheet_HeaderMillimeters" xml:space="preserve">
+    <value>板材尺寸，单位毫米（宽度 = 长边）。</value>
+  </data>
+  <data name="AddSheet_HeightIn" xml:space="preserve">
+    <value>高度 (in)</value>
+  </data>
+  <data name="AddSheet_HeightMm" xml:space="preserve">
+    <value>高度 (mm)</value>
+  </data>
+  <data name="AddSheet_Quantity" xml:space="preserve">
+    <value>数量</value>
+  </data>
+  <data name="AddSheet_RememberPreset" xml:space="preserve">
+    <value>保存为预设</value>
+  </data>
+  <data name="AddSheet_RememberPresetTip" xml:space="preserve">
+    <value>将此尺寸保存到“添加板材”菜单的“我的板材”下。</value>
+  </data>
+  <data name="AddSheet_Title" xml:space="preserve">
+    <value>自定义板材尺寸</value>
+  </data>
+  <data name="AddSheet_Unlimited" xml:space="preserve">
+    <value>无限</value>
+  </data>
+  <data name="AddSheet_UnlimitedTip" xml:space="preserve">
+    <value>此尺寸的板材数量按任务所需提供，排样会持续取用板材，直到所有零件都已放置。勾选时忽略数量（取消勾选后恢复原值）。</value>
+  </data>
+  <data name="AddSheet_WidthIn" xml:space="preserve">
+    <value>宽度 (in)</value>
+  </data>
+  <data name="AddSheet_WidthMm" xml:space="preserve">
+    <value>宽度 (mm)</value>
+  </data>
+  <data name="Advanced_ApplicationGroup" xml:space="preserve">
+    <value>应用程序</value>
+  </data>
+  <data name="Advanced_Autosave" xml:space="preserve">
+    <value>自动保存打开的项目</value>
+  </data>
+  <data name="Advanced_AutosaveMinutes" xml:space="preserve">
+    <value>自动保存间隔 (min)：</value>
+  </data>
+  <data name="Advanced_AutosaveMinutesTip" xml:space="preserve">
+    <value>自动保存打开的项目以便恢复的频率。</value>
+  </data>
+  <data name="Advanced_AutosaveTip" xml:space="preserve">
+    <value>定期保存打开项目的快照，以便在程序崩溃后恢复未保存的工作。</value>
+  </data>
+  <data name="Advanced_ClusterAuto" xml:space="preserve">
+    <value>自动</value>
+  </data>
+  <data name="Advanced_ClusterManual" xml:space="preserve">
+    <value>手动</value>
+  </data>
+  <data name="Advanced_ClusterModeTip" xml:space="preserve">
+    <value>“自动”由 SheetNest 选择安全的组大小；“手动”则设置零件数量的硬性上限。</value>
+  </data>
+  <data name="Advanced_CommonLineGapFormat" xml:space="preserve">
+    <value>共边间隙 ({0})：</value>
+  </data>
+  <data name="Advanced_CommonLineGapTip" xml:space="preserve">
+    <value>共边排布使用设置的间隙；SheetNest 在导出 DXF 前确定一条中心切割线。该值以英寸存储，并换算为所选图纸单位显示。</value>
+  </data>
+  <data name="Advanced_CommonLineGroup" xml:space="preserve">
+    <value>共边切割</value>
+  </data>
+  <data name="Advanced_DefaultRotations" xml:space="preserve">
+    <value>默认零件旋转：</value>
+  </data>
+  <data name="Advanced_DefaultRotationsTip" xml:space="preserve">
+    <value>排样时可对未编辑过的零件尝试的旋转。“编辑零件”中的单个零件设置始终优先。</value>
+  </data>
+  <data name="Advanced_DifferentiateHoles" xml:space="preserve">
+    <value>用颜色区分孔轮廓</value>
+  </data>
+  <data name="Advanced_DifferentiateHolesTip" xml:space="preserve">
+    <value>孔（内）轮廓以不同颜色导出，便于 CAM 单独处理。</value>
+  </data>
+  <data name="Advanced_DxfExportGroup" xml:space="preserve">
+    <value>DXF 导出</value>
+  </data>
+  <data name="Advanced_Inches" xml:space="preserve">
+    <value>英寸</value>
+  </data>
+  <data name="Advanced_MaterialTarget" xml:space="preserve">
+    <value>材料利用率目标 (%)：</value>
+  </data>
+  <data name="Advanced_MaterialTargetTip" xml:space="preserve">
+    <value>零件用料一达到板材的这个比例就交出排样结果，不再用完剩余时间。零件面积与所用板材相比，扣除 SheetNest 从最后一张板材切下的余料；关闭余料选项时，每张板材按整张计算。0 表示关闭。</value>
+  </data>
+  <data name="Advanced_MaxClusterParts" xml:space="preserve">
+    <value>最大组内零件数：</value>
+  </data>
+  <data name="Advanced_MaxClusterPartsTip" xml:space="preserve">
+    <value>一个共边组内零件数量的硬性上限（2 到 500）。</value>
+  </data>
+  <data name="Advanced_MergeLines" xml:space="preserve">
+    <value>合并重合的切割线</value>
+  </data>
+  <data name="Advanced_MergeLinesTip" xml:space="preserve">
+    <value>用于普通几何图形的旧版导出选项：合并重合的 DXF 图元。共边输出会在导出前单独确定其唯一的中心切割线。</value>
+  </data>
+  <data name="Advanced_Millimeters" xml:space="preserve">
+    <value>毫米</value>
+  </data>
+  <data name="Advanced_NestingGroup" xml:space="preserve">
+    <value>排样</value>
+  </data>
+  <data name="Advanced_PartSpacingFormat" xml:space="preserve">
+    <value>零件间距 ({0})：</value>
+  </data>
+  <data name="Advanced_PartSpacingTip" xml:space="preserve">
+    <value>普通零件之间的默认间距（图纸单位）。“编辑零件”可为单个零件覆盖此值；共边排布使用下方单独的间隙。</value>
+  </data>
+  <data name="Advanced_ResetCluster" xml:space="preserve">
+    <value>重置</value>
+  </data>
+  <data name="Advanced_ResetClusterTip" xml:space="preserve">
+    <value>恢复自动确定共边组大小。</value>
+  </data>
+  <data name="Advanced_ResetGap" xml:space="preserve">
+    <value>恢复默认</value>
+  </data>
+  <data name="Advanced_ResetGapTip" xml:space="preserve">
+    <value>恢复出厂的共边间隙。</value>
+  </data>
+  <data name="Advanced_Rotations90" xml:space="preserve">
+    <value>90° 步进</value>
+  </data>
+  <data name="Advanced_SecondsPerSheet" xml:space="preserve">
+    <value>每张板材时间 (s)：</value>
+  </data>
+  <data name="Advanced_SecondsPerSheetTip" xml:space="preserve">
+    <value>每张板材的时间限制：任务预计需要多少张板材，排样就获得多少个这样的秒数，按时间搜索并交出找到的最佳结果，因此两次运行的结果可能略有不同。来不及规划的共边按常规间距切割。0 = 不限制：排样在达到材料利用率目标、不再改进或按下“停止”时结束。</value>
+  </data>
+  <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
+    <value>板材边距 ({0})：</value>
+  </data>
+  <data name="Advanced_SheetEdgeMarginTip" xml:space="preserve">
+    <value>每个零件与板材边缘之间保留的空白边距。</value>
+  </data>
+  <data name="Advanced_Title" xml:space="preserve">
+    <value>高级设置</value>
+  </data>
+  <data name="Advanced_Units" xml:space="preserve">
+    <value>单位：</value>
+  </data>
+  <data name="Advanced_UnitsTip" xml:space="preserve">
+    <value>零件、板材、间距和边距使用的图纸单位。请与 DXF 文件绘制时的单位一致；实际的共边间隙会自动换算。</value>
+  </data>
+  <data name="App_FileType3D" xml:space="preserve">
+    <value>  3D 钣金件 (*.step, *.stp, *.iges, *.igs)</value>
+  </data>
+  <data name="App_FileTypeDxf" xml:space="preserve">
+    <value>  AutoCad 图形交换格式 (*.dxf) 和 </value>
+  </data>
+  <data name="App_FileTypePolygon" xml:space="preserve">
+    <value>  DeepNest 多边形 (*.dnpoly)。</value>
+  </data>
+  <data name="App_FileTypeProject" xml:space="preserve">
+    <value>  DeepNest 项目 (*.dnest)</value>
+  </data>
+  <data name="App_FileTypeResult" xml:space="preserve">
+    <value>  DeepNest 结果 (*.dnr)</value>
+  </data>
+  <data name="App_FileTypeSheetPlacement" xml:space="preserve">
+    <value>  DeepNest 板材排布 (*.dnsp)</value>
+  </data>
+  <data name="App_MsgFilesSupported" xml:space="preserve">
+    <value>支持的文件包括： </value>
+  </data>
+  <data name="App_MsgUnableToLoadFormat" xml:space="preserve">
+    <value>无法加载 {0}</value>
+  </data>
+  <data name="Card_NameFormat" xml:space="preserve">
+    <value>排样 {0}</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="Common_Edit" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="Common_OK" xml:space="preserve">
+    <value>确定</value>
+  </data>
+  <data name="Common_Remove" xml:space="preserve">
+    <value>移除</value>
+  </data>
+  <data name="Crash_CopyDetails" xml:space="preserve">
+    <value>复制详情</value>
+  </data>
+  <data name="Crash_Header" xml:space="preserve">
+    <value>SheetNest 遇到了问题。</value>
+  </data>
+  <data name="Crash_LogNotWritten" xml:space="preserve">
+    <value>（无法写入日志）</value>
+  </data>
+  <data name="Crash_MsgBrowserFailed" xml:space="preserve">
+    <value>无法打开浏览器。请使用“复制详情”，然后将其粘贴到 github.com/ManuelMRosa/SheetNest/issues 的新问题中。</value>
+  </data>
+  <data name="Crash_ReportHint" xml:space="preserve">
+    <value>报告此问题有助于修复它。下方按钮会在浏览器中打开一个预先填好的 GitHub 问题：您可以在那里查看所有内容，除非您亲自提交，否则不会发送任何内容。</value>
+  </data>
+  <data name="Crash_ReportOnGitHub" xml:space="preserve">
+    <value>在 GitHub 上报告</value>
+  </data>
+  <data name="Crash_SavedTo" xml:space="preserve">
+    <value>崩溃报告已保存到：</value>
+  </data>
+  <data name="Crash_Title" xml:space="preserve">
+    <value>SheetNest - 问题报告</value>
+  </data>
+  <data name="Dxf_LayerFormat" xml:space="preserve">
+    <value>图层 {0}</value>
+  </data>
+  <data name="Dxf_LayersFormat" xml:space="preserve">
+    <value>图层 {0}</value>
+  </data>
+  <data name="Dxf_MsgBadSplineFormat" xml:space="preserve">
+    <value>此图纸包含一条样条曲线 (SPLINE)，其 {0} 个控制点和 {1} 个节点无法构成曲线。请将其转换为多段线后重新导入。</value>
+  </data>
+  <data name="Dxf_MsgBlockReference" xml:space="preserve">
+    <value>此文件与 SheetNest 不兼容：其几何图形以块（块参照）绘制。请在 CAD 程序中打开，分解块，然后重新保存 DXF。</value>
+  </data>
+  <data name="Dxf_MsgNoGeometryFormat" xml:space="preserve">
+    <value>“{0}”没有可排样的几何图形：其中只有文字、尺寸标注或其他注释。</value>
+  </data>
+  <data name="Dxf_MsgOpenLineFormat" xml:space="preserve">
+    <value>“{0}”在{1}上有一条开放线段。每条切割线都必须构成封闭图形，而这条没有。请删除它，或将其改为黄色，使其改为在零件上刻印。</value>
+  </data>
+  <data name="Dxf_MsgOpenLinesFormat" xml:space="preserve">
+    <value>“{0}”在{2}上有 {1} 条开放线段。每条切割线都必须构成封闭图形，而这些线段没有。请删除它们，或将其改为黄色，使其改为在零件上刻印。</value>
+  </data>
+  <data name="Dxf_MsgUnmeasurableFormat" xml:space="preserve">
+    <value>此图纸包含 {0}，SheetNest 无法测量。请将其分解，或重新绘制为直线、圆弧、多段线、椭圆或样条曲线后重新导入。</value>
+  </data>
+  <data name="EditPart_CommonCutting" xml:space="preserve">
+    <value>共边切割：</value>
+  </data>
+  <data name="EditPart_CommonCuttingNone" xml:space="preserve">
+    <value>无</value>
+  </data>
+  <data name="EditPart_CommonCuttingSamePart" xml:space="preserve">
+    <value>相同零件</value>
+  </data>
+  <data name="EditPart_CommonCuttingTip" xml:space="preserve">
+    <value>此零件可以与哪些零件共用切割边。完整的共边保持设置的“共边间隙”，并导出为组外轮廓加一条中线共边切割。其他位置仍使用零件间距。更改此选项即为此零件明确启用共边切割。</value>
+  </data>
+  <data name="EditPart_CommonCuttingUnrestricted" xml:space="preserve">
+    <value>不限（兼容零件）</value>
+  </data>
+  <data name="EditPart_Extra" xml:space="preserve">
+    <value>额外：</value>
+  </data>
+  <data name="EditPart_ExtraTip" xml:space="preserve">
+    <value>在需求数量之外额外排样的备用零件（例如以防报废一件）。</value>
+  </data>
+  <data name="EditPart_InDrawingUnits" xml:space="preserve">
+    <value>图纸单位</value>
+  </data>
+  <data name="EditPart_KFactor" xml:space="preserve">
+    <value>K 因子：</value>
+  </data>
+  <data name="EditPart_KFactorTip" xml:space="preserve">
+    <value>折弯补偿 K 因子。更改后会用 FreeCAD 重新展开此零件（展开长度会变化）。</value>
+  </data>
+  <data name="EditPart_LegacyCommonCuttingHint" xml:space="preserve">
+    <value>已保存的旧版共边切割模式未生效。请选择一种模式，为此直接导入的 DXF/STEP 零件确认。</value>
+  </data>
+  <data name="EditPart_Mirrored" xml:space="preserve">
+    <value>镜像：</value>
+  </data>
+  <data name="EditPart_MirroredTip" xml:space="preserve">
+    <value>在上述数量之外，以镜像（X 方向翻转）方式排样的数量，用于左右对称件。导出的 DXF 会按镜像切割这些零件。</value>
+  </data>
+  <data name="EditPart_NestedSheetWarningFormat" xml:space="preserve">
+    <value>⚠ 此 DXF 看起来是一整张已排样的板材（{1:0.#}×{2:0.#} 的边框内有 {0} 个图形），而不是单个零件。SheetNest 会把每个 DXF 作为一个零件导入，内部图形之间的间隙来自原始图纸。请将每个零件分别导出为单独的 DXF。</value>
+  </data>
+  <data name="EditPart_NotAvailable" xml:space="preserve">
+    <value>无</value>
+  </data>
+  <data name="EditPart_Orientations" xml:space="preserve">
+    <value>允许的方向：</value>
+  </data>
+  <data name="EditPart_OrientationsTip" xml:space="preserve">
+    <value>排样时可对此零件应用的旋转（例如按材料纹理方向加以限制）。</value>
+  </data>
+  <data name="EditPart_PartFile" xml:space="preserve">
+    <value>零件文件：</value>
+  </data>
+  <data name="EditPart_PartSpacing" xml:space="preserve">
+    <value>零件间距：</value>
+  </data>
+  <data name="EditPart_PartSpacingTip" xml:space="preserve">
+    <value>此零件与不能共边的相邻零件之间保持的间距（图纸单位）。两个零件最终相距 (spacingA + spacingB) / 2。</value>
+  </data>
+  <data name="EditPart_Priority" xml:space="preserve">
+    <value>优先级：</value>
+  </data>
+  <data name="EditPart_PriorityHigh" xml:space="preserve">
+    <value>高</value>
+  </data>
+  <data name="EditPart_PriorityHighest" xml:space="preserve">
+    <value>最高</value>
+  </data>
+  <data name="EditPart_PriorityLow" xml:space="preserve">
+    <value>低</value>
+  </data>
+  <data name="EditPart_PriorityLowest" xml:space="preserve">
+    <value>最低</value>
+  </data>
+  <data name="EditPart_PriorityNormal" xml:space="preserve">
+    <value>普通</value>
+  </data>
+  <data name="EditPart_PriorityTip" xml:space="preserve">
+    <value>1 = 最高优先级。优先级高的零件先排样，因此会排在前面的板材上，材料不足时也不会被剩下。</value>
+  </data>
+  <data name="EditPart_Quantity" xml:space="preserve">
+    <value>数量</value>
+  </data>
+  <data name="EditPart_Required" xml:space="preserve">
+    <value>需求：</value>
+  </data>
+  <data name="EditPart_RequiredTip" xml:space="preserve">
+    <value>任务所需的零件数量。</value>
+  </data>
+  <data name="EditPart_Settings" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="EditPart_Standard" xml:space="preserve">
+    <value>标准：</value>
+  </data>
+  <data name="EditPart_SymmetricShapeHint" xml:space="preserve">
+    <value>检测到旋转对称图形（圆形/正方形）：旋转无法改善排样，因此选择“按原图”可省去搜索。</value>
+  </data>
+  <data name="EditPart_Thickness" xml:space="preserve">
+    <value>厚度：</value>
+  </data>
+  <data name="EditPart_Title" xml:space="preserve">
+    <value>编辑零件</value>
+  </data>
+  <data name="EditPart_Unfold3DGroup" xml:space="preserve">
+    <value>3D 展开（钣金）</value>
+  </data>
+  <data name="Engine_FallbackContourFormat" xml:space="preserve">
+    <value>精确共边几何不支持该外轮廓格式</value>
+  </data>
+  <data name="Engine_FallbackTopology" xml:space="preserve">
+    <value>共边组的拓扑无效</value>
+  </data>
+  <data name="Engine_MsgAddSheetSize" xml:space="preserve">
+    <value>请先添加板材尺寸。</value>
+  </data>
+  <data name="Engine_MsgCancelled" xml:space="preserve">
+    <value>已取消。</value>
+  </data>
+  <data name="Engine_MsgCannotReadFormat" xml:space="preserve">
+    <value>无法读取 {0}。</value>
+  </data>
+  <data name="Engine_MsgClusterChanged" xml:space="preserve">
+    <value>一个共边组在最终放置后发生了变化，已被拒绝。</value>
+  </data>
+  <data name="Engine_MsgClusterFailedSheetValidation" xml:space="preserve">
+    <value>一个共边组未通过最终的板材验证。</value>
+  </data>
+  <data name="Engine_MsgClusterTopologyFormat" xml:space="preserve">
+    <value>一个共边组未通过最终拓扑验证：{0}</value>
+  </data>
+  <data name="Engine_MsgCommonLineGapInvalid" xml:space="preserve">
+    <value>共边间隙必须是当前图纸单位下的有限正距离。</value>
+  </data>
+  <data name="Engine_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>无法启动排样引擎：{0}</value>
+  </data>
+  <data name="Engine_MsgEngineNotFound" xml:space="preserve">
+    <value>未找到排样引擎 (sparrow.exe)。</value>
+  </data>
+  <data name="Engine_MsgGeometryToleranceInvalid" xml:space="preserve">
+    <value>GeometryTolerance 必须为有限正数，且小于共边间隙。</value>
+  </data>
+  <data name="Engine_MsgNoPlacements" xml:space="preserve">
+    <value>排样引擎未返回任何放置结果。</value>
+  </data>
+  <data name="Engine_MsgNoPlacementsFormat" xml:space="preserve">
+    <value>排样引擎未返回任何放置结果：{0}</value>
+  </data>
+  <data name="Engine_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} 中没有可排样的图形。</value>
+  </data>
+  <data name="Engine_MsgNoSolution" xml:space="preserve">
+    <value>排样引擎未生成任何方案。</value>
+  </data>
+  <data name="Engine_MsgNoSolutionExitFormat" xml:space="preserve">
+    <value>排样引擎未生成任何方案（退出代码 {0}）。</value>
+  </data>
+  <data name="Engine_MsgNoSolutionFormat" xml:space="preserve">
+    <value>排样引擎未生成任何方案：{0}</value>
+  </data>
+  <data name="Engine_MsgTimedOut" xml:space="preserve">
+    <value>排样引擎超时。</value>
+  </data>
+  <data name="Export_DxfFilter" xml:space="preserve">
+    <value>DXF 文件 (*.dxf)|*.dxf</value>
+  </data>
+  <data name="Export_MsgCommonLineArcSweep" xml:space="preserve">
+    <value>COMMON_LINE 包含扫掠角度非有限值的 ARC。</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArc" xml:space="preserve">
+    <value>COMMON_LINE 包含长度为零或无效的 ARC。</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArcValues" xml:space="preserve">
+    <value>COMMON_LINE 包含圆心、半径或角度为非有限值的 ARC。</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCircle" xml:space="preserve">
+    <value>COMMON_LINE 包含非有限、长度为零或无效的 CIRCLE。</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCurve" xml:space="preserve">
+    <value>COMMON_LINE 包含无效或不支持的精确曲线。</value>
+  </data>
+  <data name="Export_MsgCommonLineBadLine" xml:space="preserve">
+    <value>COMMON_LINE 包含非有限、长度为零或过短的 LINE 图元。</value>
+  </data>
+  <data name="Export_MsgCommonLineBadPolylineSegment" xml:space="preserve">
+    <value>COMMON_LINE 包含无效或过短的 LWPOLYLINE 线段。</value>
+  </data>
+  <data name="Export_MsgCommonLineDegeneratePolyline" xml:space="preserve">
+    <value>COMMON_LINE 包含退化的 LWPOLYLINE。</value>
+  </data>
+  <data name="Export_MsgCommonLineOtherEntity" xml:space="preserve">
+    <value>COMMON_LINE 包含 LINE、圆弧 LWPOLYLINE、ARC 或 CIRCLE 以外的图元。</value>
+  </data>
+  <data name="Export_MsgCommonLineTinySegment" xml:space="preserve">
+    <value>COMMON_LINE 包含长度为零或过短的线段。</value>
+  </data>
+  <data name="Export_MsgContourNotRebuilt" xml:space="preserve">
+    <value>无法为共边导出重建 DXF 轮廓。</value>
+  </data>
+  <data name="Export_MsgCutInnerOpenCluster" xml:space="preserve">
+    <value>CUT_INNER 包含开放或退化的组轮廓。</value>
+  </data>
+  <data name="Export_MsgCutOuterOpenCluster" xml:space="preserve">
+    <value>CUT_OUTER 包含开放或退化的组轮廓。</value>
+  </data>
+  <data name="Export_MsgCutOuterSelfIntersecting" xml:space="preserve">
+    <value>CUT_OUTER 包含自相交的轮廓。</value>
+  </data>
+  <data name="Export_MsgEmptyContourFormat" xml:space="preserve">
+    <value>{0} 包含空轮廓。</value>
+  </data>
+  <data name="Export_MsgInvalidCutEntityFormat" xml:space="preserve">
+    <value>{0} 包含开放、非有限、过短或其他无效的图元。</value>
+  </data>
+  <data name="Export_MsgNotClosedFormat" xml:space="preserve">
+    <value>{0} 包含未完全封闭的几何图形。</value>
+  </data>
+  <data name="Export_MsgNotRebuiltClosedFormat" xml:space="preserve">
+    <value>无法将 {0} 重建为封闭轮廓。</value>
+  </data>
+  <data name="Export_MsgOuterSourceUnsupportedFormat" xml:space="preserve">
+    <value>零件 {0} 的外部源几何图形无法在共边组中精确保留。</value>
+  </data>
+  <data name="Export_MsgSourceChangedFormat" xml:space="preserve">
+    <value>共边导出期间源 DXF“{0}”发生了变化，导出已取消。</value>
+  </data>
+  <data name="Export_MsgSourceNotLoadedForCommonLineFormat" xml:space="preserve">
+    <value>无法加载文件 {0} 进行经验证的共边导出。</value>
+  </data>
+  <data name="Export_MsgSourceNotLoadedFormat" xml:space="preserve">
+    <value>无法加载文件 {0}。为了保证精度，导出时使用的是生成排样的原始文件，而不是排样过程中可能经过多次旋转和处理的副本，因为那样可能降低其精度。也可以加载并保存原始文件，但那需要一些工作量...</value>
+  </data>
+  <data name="Export_MsgSourceUnavailableFormat" xml:space="preserve">
+    <value>共边导出期间源 DXF“{0}”发生了变化或无法访问。</value>
+  </data>
+  <data name="Export_MsgUnsupportedEntityFormat" xml:space="preserve">
+    <value>不支持的图元类型：{0}</value>
+  </data>
+  <data name="Files_PartFilter" xml:space="preserve">
+    <value>AutoCad 图形交换格式 (*.dxf)|*.dxf|DeepNest 多边形 (*.dnpoly)|*.dnpoly|所有文件 (*.*)|*.*</value>
+  </data>
+  <data name="Files_ProjectFilter" xml:space="preserve">
+    <value>DeepNest 项目 (*.dnest)|*.dnest|Json (*.json)|*.json|所有文件 (*.*)|*.*</value>
+  </data>
+  <data name="Import3D_File" xml:space="preserve">
+    <value>文件</value>
+  </data>
+  <data name="Import3D_Inches" xml:space="preserve">
+    <value>英寸（取消勾选为毫米）</value>
+  </data>
+  <data name="Import3D_InchesTip" xml:space="preserve">
+    <value>板材/图纸使用的单位；展开后的平板会换算为此单位。</value>
+  </data>
+  <data name="Import3D_Intro" xml:space="preserve">
+    <value>设置与材料/设备相符的折弯补偿 K 因子，然后展开。</value>
+  </data>
+  <data name="Import3D_KFactor" xml:space="preserve">
+    <value>K 因子</value>
+  </data>
+  <data name="Import3D_KFactorTip" xml:space="preserve">
+    <value>折弯补偿 K 因子。请校准，使展开长度与实际平板一致（通常为 0.3–0.5）。</value>
+  </data>
+  <data name="Import3D_NotDetected" xml:space="preserve">
+    <value>未检测到</value>
+  </data>
+  <data name="Import3D_PartsDetected" xml:space="preserve">
+    <value>检测到的零件</value>
+  </data>
+  <data name="Import3D_Thickness" xml:space="preserve">
+    <value>厚度</value>
+  </data>
+  <data name="Import3D_ThicknessVariesFormat" xml:space="preserve">
+    <value>不一（{0}–{1} {2}）</value>
+  </data>
+  <data name="Import3D_Title" xml:space="preserve">
+    <value>导入 3D：展开选项</value>
+  </data>
+  <data name="Import3D_UnfoldAndAdd" xml:space="preserve">
+    <value>展开并添加</value>
+  </data>
+  <data name="Import3D_Units" xml:space="preserve">
+    <value>单位</value>
+  </data>
+  <data name="Main_AddPart" xml:space="preserve">
+    <value>+ 添加零件</value>
+  </data>
+  <data name="Main_AddPartTip" xml:space="preserve">
+    <value>添加要排样的零件 (DXF)。</value>
+  </data>
+  <data name="Main_AddSheet" xml:space="preserve">
+    <value>+ 添加板材</value>
+  </data>
+  <data name="Main_AddSheetTip" xml:space="preserve">
+    <value>添加库存板材：选择标准尺寸或输入自定义尺寸</value>
+  </data>
+  <data name="Main_AvailableFormat" xml:space="preserve">
+    <value>可用：{0}</value>
+  </data>
+  <data name="Main_Cancel" xml:space="preserve">
+    <value>■  取消</value>
+  </data>
+  <data name="Main_Cancelling" xml:space="preserve">
+    <value>正在取消…</value>
+  </data>
+  <data name="Main_CancelTip" xml:space="preserve">
+    <value>取消正在运行的排样；不保留任何结果</value>
+  </data>
+  <data name="Main_Clearances" xml:space="preserve">
+    <value>间隙</value>
+  </data>
+  <data name="Main_ClearResult" xml:space="preserve">
+    <value>清除结果</value>
+  </data>
+  <data name="Main_ClearResultTip" xml:space="preserve">
+    <value>放弃排样结果，并将其使用的板材退回库存</value>
+  </data>
+  <data name="Main_Color" xml:space="preserve">
+    <value>颜色</value>
+  </data>
+  <data name="Main_ColorTip" xml:space="preserve">
+    <value>所选零件的显示颜色</value>
+  </data>
+  <data name="Main_CustomSize" xml:space="preserve">
+    <value>自定义尺寸…</value>
+  </data>
+  <data name="Main_DrawingsKept_One" xml:space="preserve">
+    <value>，{0} 张图纸保持常规间距</value>
+  </data>
+  <data name="Main_DrawingsKept_Other" xml:space="preserve">
+    <value>，{0} 张图纸保持常规间距</value>
+  </data>
+  <data name="Main_EditPartTip" xml:space="preserve">
+    <value>编辑所选零件（数量、方向、优先级）</value>
+  </data>
+  <data name="Main_EditSheetTip" xml:space="preserve">
+    <value>编辑所选板材（尺寸和数量）</value>
+  </data>
+  <data name="Main_Export" xml:space="preserve">
+    <value>导出</value>
+  </data>
+  <data name="Main_ExportTip" xml:space="preserve">
+    <value>将所选排样结果导出为 DXF</value>
+  </data>
+  <data name="Main_FallbackRowFormat" xml:space="preserve">
+    <value>    {0}：{1}</value>
+  </data>
+  <data name="Main_GivenUpFormat" xml:space="preserve">
+    <value>，{0} 条已放弃</value>
+  </data>
+  <data name="Main_Import3DDialogTitle" xml:space="preserve">
+    <value>导入 3D (STEP / IGES)</value>
+  </data>
+  <data name="Main_ImportedParts_One" xml:space="preserve">
+    <value>已导入 {0} 个零件。</value>
+  </data>
+  <data name="Main_ImportedParts_Other" xml:space="preserve">
+    <value>已导入 {0} 个零件。</value>
+  </data>
+  <data name="Main_MySheets" xml:space="preserve">
+    <value>我的板材</value>
+  </data>
+  <data name="Main_Nest" xml:space="preserve">
+    <value>▶  排样</value>
+  </data>
+  <data name="Main_NestCancelled" xml:space="preserve">
+    <value>排样已取消</value>
+  </data>
+  <data name="Main_NestedFormat" xml:space="preserve">
+    <value>已排样：{0}</value>
+  </data>
+  <data name="Main_NestedInFormat" xml:space="preserve">
+    <value>排样用时 {0}{1}</value>
+  </data>
+  <data name="Main_NestBestSoFarFormat" xml:space="preserve">
+    <value>  ·  目标 {0} %，目前最佳 {1} %</value>
+  </data>
+  <data name="Main_NestingFormat" xml:space="preserve">
+    <value>正在排样…  {0}</value>
+  </data>
+  <data name="Main_NestingOfFormat" xml:space="preserve">
+    <value>正在排样…  {0} / {1}</value>
+  </data>
+  <data name="Main_NestingLimitFormat" xml:space="preserve">
+    <value>正在排样…  {0} / {1}  ·  第 {2} 轮</value>
+  </data>
+  <data name="Main_NestingRoundFormat" xml:space="preserve">
+    <value>正在排样…  {0}  ·  第 {1} 轮</value>
+  </data>
+  <data name="Main_NestOverLimitFormat" xml:space="preserve">
+    <value>  ·  超出 {0} 的时限</value>
+  </data>
+  <data name="Main_NestStopped" xml:space="preserve">
+    <value>  ·  已停止</value>
+  </data>
+  <data name="Main_NestRounds_One" xml:space="preserve">
+    <value>  ·  {0} 轮</value>
+  </data>
+  <data name="Main_NestRounds_Other" xml:space="preserve">
+    <value>  ·  {0} 轮中最佳：第 {1} 轮</value>
+  </data>
+  <data name="Main_NestTargetReachedFormat" xml:space="preserve">
+    <value>  ·  已达到 {0} % 目标（{1} %）</value>
+  </data>
+  <data name="Main_NestReport" xml:space="preserve">
+    <value>排样报告</value>
+  </data>
+  <data name="Main_NestReportTip" xml:space="preserve">
+    <value>保存 PDF 排样报告：每个排布一页，包含按比例绘制的板材、零件清单和利用率</value>
+  </data>
+  <data name="Main_NestsEmpty" xml:space="preserve">
+    <value>运行排样后，排布将显示在这里。</value>
+  </data>
+  <data name="Main_NestsTab" xml:space="preserve">
+    <value>排样</value>
+  </data>
+  <data name="Main_NestTip" xml:space="preserve">
+    <value>运行排样。</value>
+  </data>
+  <data name="Main_NetAreaFormat" xml:space="preserve">
+    <value>净面积 {0:0.0}</value>
+  </data>
+  <data name="Main_New" xml:space="preserve">
+    <value>新建</value>
+  </data>
+  <data name="Main_NewTip" xml:space="preserve">
+    <value>新建排样项目</value>
+  </data>
+  <data name="Main_Open" xml:space="preserve">
+    <value>打开</value>
+  </data>
+  <data name="Main_OpenTip" xml:space="preserve">
+    <value>打开现有项目</value>
+  </data>
+  <data name="Main_PaletteSwatchFormat" xml:space="preserve">
+    <value>零件 {0}</value>
+  </data>
+  <data name="Main_PartColour" xml:space="preserve">
+    <value>零件颜色</value>
+  </data>
+  <data name="Main_PartsTab" xml:space="preserve">
+    <value>零件</value>
+  </data>
+  <data name="Main_PdfFilter" xml:space="preserve">
+    <value>PDF 文件 (*.pdf)|*.pdf</value>
+  </data>
+  <data name="Main_QuantityFormat" xml:space="preserve">
+    <value>数量：{0}</value>
+  </data>
+  <data name="Main_QuantityUnlimited" xml:space="preserve">
+    <value>数量：无限</value>
+  </data>
+  <data name="Main_RecoverUnsavedName" xml:space="preserve">
+    <value>一个未保存的项目</value>
+  </data>
+  <data name="Main_RecoverWhenFormat" xml:space="preserve">
+    <value> （自动保存于 {0}）</value>
+  </data>
+  <data name="Main_RemainingFormat" xml:space="preserve">
+    <value>剩余：{0}</value>
+  </data>
+  <data name="Main_RemoveFromMySheets" xml:space="preserve">
+    <value>从我的板材中移除</value>
+  </data>
+  <data name="Main_RemovePartTip" xml:space="preserve">
+    <value>移除所选零件</value>
+  </data>
+  <data name="Main_RemoveSheetTip" xml:space="preserve">
+    <value>移除所选板材</value>
+  </data>
+  <data name="Main_ReportFileName" xml:space="preserve">
+    <value>排样报告.pdf</value>
+  </data>
+  <data name="Main_ReportSheetName" xml:space="preserve">
+    <value>板材</value>
+  </data>
+  <data name="Main_RequiredFormat" xml:space="preserve">
+    <value>需求：{0}</value>
+  </data>
+  <data name="Main_SaveReportTitle" xml:space="preserve">
+    <value>保存排样报告</value>
+  </data>
+  <data name="Main_SharedCuts_One" xml:space="preserve">
+    <value>  ·  {0} 条共边</value>
+  </data>
+  <data name="Main_SharedCuts_Other" xml:space="preserve">
+    <value>  ·  {0} 条共边</value>
+  </data>
+  <data name="Main_SheetCardTip" xml:space="preserve">
+    <value>板材尺寸，宽 × 高（宽度 = 长边）。双击或点击“编辑”进行修改</value>
+  </data>
+  <data name="Main_SheetEdgeMargin" xml:space="preserve">
+    <value>板材边距</value>
+  </data>
+  <data name="Main_SheetEdgeMarginTip" xml:space="preserve">
+    <value>板材四周保留的空白边距（图纸单位）。</value>
+  </data>
+  <data name="Main_SheetsFormat" xml:space="preserve">
+    <value>板材：{0}</value>
+  </data>
+  <data name="Main_SheetsHint" xml:space="preserve">
+    <value>宽度 = 长边 · 列出的每种板材都参与排样；对每张板材，排样会选用自身填充率最高的尺寸 · 在某个尺寸上勾选“无限”，任务就会按需取用该尺寸</value>
+  </data>
+  <data name="Main_SheetsTab" xml:space="preserve">
+    <value>板材</value>
+  </data>
+  <data name="Main_SizeFormat" xml:space="preserve">
+    <value>尺寸：{0}</value>
+  </data>
+  <data name="Main_SkippedSolids_One" xml:space="preserve">
+    <value>已跳过 {0} 个实体（未识别为钣金件）。</value>
+  </data>
+  <data name="Main_SkippedSolids_Other" xml:space="preserve">
+    <value>已跳过 {0} 个实体（未识别为钣金件）。</value>
+  </data>
+  <data name="Main_StatusPlaced" xml:space="preserve">
+    <value>已放置：</value>
+  </data>
+  <data name="Main_StatusSheets" xml:space="preserve">
+    <value>板材：</value>
+  </data>
+  <data name="Main_StatusUnplaced" xml:space="preserve">
+    <value>未放置：</value>
+  </data>
+  <data name="Main_StatusUtilization" xml:space="preserve">
+    <value>利用率：</value>
+  </data>
+  <data name="Main_Stop" xml:space="preserve">
+    <value>■  停止</value>
+  </data>
+  <data name="Main_Stopping" xml:space="preserve">
+    <value>正在停止…</value>
+  </data>
+  <data name="Main_StopTip" xml:space="preserve">
+    <value>结束排样，并保留目前找到的最佳结果</value>
+  </data>
+  <data name="Main_UnfitBothFormat" xml:space="preserve">
+    <value>，{0} 个与相邻零件重叠，{1} 个位于板材边距内</value>
+  </data>
+  <data name="Main_UnfitInMargin" xml:space="preserve">
+    <value>，位于板材边距内</value>
+  </data>
+  <data name="Main_UnfitOverlapping" xml:space="preserve">
+    <value>，与相邻零件重叠</value>
+  </data>
+  <data name="Main_UnfitParts_One" xml:space="preserve">
+    <value>{0} 个零件</value>
+  </data>
+  <data name="Main_UnfitParts_Other" xml:space="preserve">
+    <value>{0} 个零件</value>
+  </data>
+  <data name="Main_UpdateAvailableFormat" xml:space="preserve">
+    <value>有可用更新：{0}</value>
+  </data>
+  <data name="Main_UpdateNoticeTip" xml:space="preserve">
+    <value>有更新版本的 SheetNest 可用。单击打开下载页面。</value>
+  </data>
+  <data name="Main_UsedFormat" xml:space="preserve">
+    <value>已用：{0}</value>
+  </data>
+  <data name="Main_UtilizationFormat" xml:space="preserve">
+    <value>利用率：{0}</value>
+  </data>
+  <data name="Menu_About" xml:space="preserve">
+    <value>关于</value>
+  </data>
+  <data name="Menu_AdvancedSettings" xml:space="preserve">
+    <value>高级设置...</value>
+  </data>
+  <data name="Menu_CheckUpdates" xml:space="preserve">
+    <value>检查更新...</value>
+  </data>
+  <data name="Menu_Exit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+  <data name="Menu_File" xml:space="preserve">
+    <value>文件(_F)</value>
+  </data>
+  <data name="Menu_Help" xml:space="preserve">
+    <value>帮助(_H)</value>
+  </data>
+  <data name="Menu_Import3D" xml:space="preserve">
+    <value>导入 3D (STEP / IGES)...</value>
+  </data>
+  <data name="Menu_Language" xml:space="preserve">
+    <value>语言</value>
+  </data>
+  <data name="Menu_LanguageAutomatic" xml:space="preserve">
+    <value>自动 (Windows)</value>
+  </data>
+  <data name="Menu_NewProject" xml:space="preserve">
+    <value>新建项目</value>
+  </data>
+  <data name="Menu_Offcut" xml:space="preserve">
+    <value>余料...</value>
+  </data>
+  <data name="Menu_OpenProject" xml:space="preserve">
+    <value>打开项目...</value>
+  </data>
+  <data name="Menu_RecentEmpty" xml:space="preserve">
+    <value>（空）</value>
+  </data>
+  <data name="Menu_RecentProjects" xml:space="preserve">
+    <value>最近的项目</value>
+  </data>
+  <data name="Menu_Save" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="Menu_SaveAs" xml:space="preserve">
+    <value>另存为...</value>
+  </data>
+  <data name="Menu_SendFeedback" xml:space="preserve">
+    <value>发送反馈...</value>
+  </data>
+  <data name="Menu_SendFeedbackTip" xml:space="preserve">
+    <value>打开预先填好的 GitHub 问题，提出建议或报告问题</value>
+  </data>
+  <data name="Menu_Settings" xml:space="preserve">
+    <value>设置(_S)</value>
+  </data>
+  <data name="Msg_AddPartsFirst" xml:space="preserve">
+    <value>请先打开项目并添加零件。</value>
+  </data>
+  <data name="Msg_AddSheetFirst" xml:space="preserve">
+    <value>请先在“板材”选项卡中至少添加一张板材。</value>
+  </data>
+  <data name="Msg_AvailableSheets_One" xml:space="preserve">
+    <value>现有的 {0} 张板材</value>
+  </data>
+  <data name="Msg_AvailableSheets_Other" xml:space="preserve">
+    <value>现有的 {0} 张板材</value>
+  </data>
+  <data name="Msg_CheckUpdatesTitle" xml:space="preserve">
+    <value>检查更新</value>
+  </data>
+  <data name="Msg_CommonLineSkippedFormat" xml:space="preserve">
+    <value>以下零件跳过了共边切割：
+
+{0}
+
+这些零件保持常规零件间距。</value>
+  </data>
+  <data name="Msg_CommonLineTitle" xml:space="preserve">
+    <value>共边</value>
+  </data>
+  <data name="Msg_EngineMissing" xml:space="preserve">
+    <value>未找到排样引擎 (sparrow.exe)。它随程序一起安装在程序旁边；请重新安装，或将环境变量 SHEETNEST_SPARROW 设置为其路径。</value>
+  </data>
+  <data name="Msg_ExportTitle" xml:space="preserve">
+    <value>导出 DXF</value>
+  </data>
+  <data name="Msg_FeedbackNoBrowser" xml:space="preserve">
+    <value>无法打开浏览器。您可以在以下网址发送反馈：
+https://github.com/ManuelMRosa/SheetNest/issues</value>
+  </data>
+  <data name="Msg_Import3DTitle" xml:space="preserve">
+    <value>导入 3D</value>
+  </data>
+  <data name="Msg_LanguageNextStart" xml:space="preserve">
+    <value>语言将在下次打开 SheetNest 时更改。</value>
+  </data>
+  <data name="Msg_NestReportTitle" xml:space="preserve">
+    <value>排样报告</value>
+  </data>
+  <data name="Msg_NestTitle" xml:space="preserve">
+    <value>排样</value>
+  </data>
+  <data name="Msg_NoResult" xml:space="preserve">
+    <value>排样未产生结果。</value>
+  </data>
+  <data name="Msg_NotEnoughSheetsTitle" xml:space="preserve">
+    <value>板材不足</value>
+  </data>
+  <data name="Msg_NotReadyToCut_One" xml:space="preserve">
+    <value>{0} 个零件尚不能切割：
+
+{1}
+
+它以红色显示。请在“编辑排样”中将其移开，然后重试。</value>
+  </data>
+  <data name="Msg_NotReadyToCut_Other" xml:space="preserve">
+    <value>{0} 个零件尚不能切割：
+
+{1}
+
+它们以红色显示。请在“编辑排样”中将其移开，然后重试。</value>
+  </data>
+  <data name="Msg_PartsDidNotFit_One" xml:space="preserve">
+    <value>{0} 个零件无法放入{1}。
+
+请在“板材”选项卡中增加板材数量、在某个尺寸上勾选“无限”或添加其他板材，然后重新排样。</value>
+  </data>
+  <data name="Msg_PartsDidNotFit_Other" xml:space="preserve">
+    <value>{0} 个零件无法放入{1}。
+
+请在“板材”选项卡中增加板材数量、在某个尺寸上勾选“无限”或添加其他板材，然后重新排样。</value>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_One" xml:space="preserve">
+    <value>{0} 个零件无法放入“板材”选项卡中的任何板材尺寸。
+
+限制并非来自板材数量：其中一个尺寸是无限的。该零件比所有可用板材都大，请添加更大的板材尺寸（或检查零件的间距和边距）。</value>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_Other" xml:space="preserve">
+    <value>{0} 个零件无法放入“板材”选项卡中的任何板材尺寸。
+
+限制并非来自板材数量：其中一个尺寸是无限的。这些零件比所有可用板材都大，请添加更大的板材尺寸（或检查零件的间距和边距）。</value>
+  </data>
+  <data name="Msg_PartsDoNotFitTitle" xml:space="preserve">
+    <value>零件放不下</value>
+  </data>
+  <data name="Msg_RecoverAutosave" xml:space="preserve">
+    <value>SheetNest 意外关闭，{0}{1} 中有未保存的更改。
+
+是否恢复自动保存的项目？</value>
+  </data>
+  <data name="Msg_RecoveryTitle" xml:space="preserve">
+    <value>恢复</value>
+  </data>
+  <data name="Msg_ReportWriteFailed" xml:space="preserve">
+    <value>无法写入报告：{0}</value>
+  </data>
+  <data name="Msg_ResultExists" xml:space="preserve">
+    <value>已有排样结果。请先单击“清除结果”；它会将该排样使用的板材退回库存。</value>
+  </data>
+  <data name="Msg_ReunfoldTitle" xml:space="preserve">
+    <value>重新展开</value>
+  </data>
+  <data name="Msg_SaveBeforeClosing" xml:space="preserve">
+    <value>您有排样结果。关闭前是否保存项目？</value>
+  </data>
+  <data name="Msg_SelectResultForExport" xml:space="preserve">
+    <value>请先运行排样并选择一个结果，然后再导出。</value>
+  </data>
+  <data name="Msg_SelectResultForReport" xml:space="preserve">
+    <value>请先运行排样并选择一个结果，然后再保存报告。</value>
+  </data>
+  <data name="Msg_SendFeedbackTitle" xml:space="preserve">
+    <value>发送反馈</value>
+  </data>
+  <data name="Msg_UpdateAvailableFormat" xml:space="preserve">
+    <value>SheetNest {0} 已发布（当前版本 {1}）。
+
+是否打开下载页面？</value>
+  </data>
+  <data name="Msg_UpdateCheckFailed" xml:space="preserve">
+    <value>无法检查更新。请检查网络连接。</value>
+  </data>
+  <data name="Msg_UpToDateFormat" xml:space="preserve">
+    <value>已是最新版本 (SheetNest {0})。</value>
+  </data>
+  <data name="Offcut_Auto" xml:space="preserve">
+    <value>自动（最佳余料）</value>
+  </data>
+  <data name="Offcut_AutoTip" xml:space="preserve">
+    <value>根据排样生成的排布比较“末端”、“侧边”和“两者”，保留释放材料最多的方案。</value>
+  </data>
+  <data name="Offcut_Both" xml:space="preserve">
+    <value>两者（L 形）</value>
+  </data>
+  <data name="Offcut_BothTip" xml:space="preserve">
+    <value>当排样在两侧都留有空间时，剩余部分切成两个矩形（直通切割，因此任何切割都不会把余料一分为二）。</value>
+  </data>
+  <data name="Offcut_EdgeOverlapFormat" xml:space="preserve">
+    <value>边缘超出 ({0})：</value>
+  </data>
+  <data name="Offcut_EdgeOverlapTip" xml:space="preserve">
+    <value>切割线在两端超出板材边缘的距离，使余料能完全分离，而不会在角部靠连接桥挂住。0 = 与边缘齐平。</value>
+  </data>
+  <data name="Offcut_Enable" xml:space="preserve">
+    <value>将剩余部分切下作为矩形余料</value>
+  </data>
+  <data name="Offcut_EnableTip" xml:space="preserve">
+    <value>测量排样在最后一张板材上留下的空闲区域，并添加一条切割线，使其作为可重复使用的矩形分离出来。它从不移动零件：计算余料时排样已经完成，因此启用此选项不会改变任何零件的位置。</value>
+  </data>
+  <data name="Offcut_End" xml:space="preserve">
+    <value>板材末端</value>
+  </data>
+  <data name="Offcut_EndTip" xml:space="preserve">
+    <value>沿板材长边末端的一整条：传统的余料。</value>
+  </data>
+  <data name="Offcut_MaxXFormat" xml:space="preserve">
+    <value>最大 X 尺寸 ({0})：</value>
+  </data>
+  <data name="Offcut_MaxXTip" xml:space="preserve">
+    <value>仍值得切下的最宽余料。超过此值就不算余料而几乎是一整张板材，因此不切割，保留整张板材。0 = 不限制。</value>
+  </data>
+  <data name="Offcut_MaxYFormat" xml:space="preserve">
+    <value>最大 Y 尺寸 ({0})：</value>
+  </data>
+  <data name="Offcut_MaxYTip" xml:space="preserve">
+    <value>仍值得切下的最高余料。0 = 不限制。</value>
+  </data>
+  <data name="Offcut_MinXFormat" xml:space="preserve">
+    <value>最小 X 尺寸 ({0})：</value>
+  </data>
+  <data name="Offcut_MinXTip" xml:space="preserve">
+    <value>值得分离的最窄余料。低于此值则不切割板材。0 = 自动（板材边长的 5%）。</value>
+  </data>
+  <data name="Offcut_MinYFormat" xml:space="preserve">
+    <value>最小 Y 尺寸 ({0})：</value>
+  </data>
+  <data name="Offcut_MinYTip" xml:space="preserve">
+    <value>值得分离的最短余料。0 = 自动（板材边长的 5%）。</value>
+  </data>
+  <data name="Offcut_RemnantPosition" xml:space="preserve">
+    <value>余料位置</value>
+  </data>
+  <data name="Offcut_ResetDefaults" xml:space="preserve">
+    <value>恢复默认值</value>
+  </data>
+  <data name="Offcut_ResetDefaultsTip" xml:space="preserve">
+    <value>将上方六个数值恢复为当前图纸单位的推荐值。余料位置和启用勾选保持不变。</value>
+  </data>
+  <data name="Offcut_Side" xml:space="preserve">
+    <value>板材侧边</value>
+  </data>
+  <data name="Offcut_SideTip" xml:space="preserve">
+    <value>沿板材短边的一整条。</value>
+  </data>
+  <data name="Offcut_SpacingFormat" xml:space="preserve">
+    <value>余料间距 ({0})：</value>
+  </data>
+  <data name="Offcut_SpacingTip" xml:space="preserve">
+    <value>排好的零件与余料切割线之间保留的间距（图纸单位）。</value>
+  </data>
+  <data name="Offcut_Title" xml:space="preserve">
+    <value>余料</value>
+  </data>
+  <data name="Part_CommonLine" xml:space="preserve">
+    <value>共边</value>
+  </data>
+  <data name="Part_CommonLineSamePart" xml:space="preserve">
+    <value>共边（相同零件）</value>
+  </data>
+  <data name="Part_Rot45Steps" xml:space="preserve">
+    <value>45° 步进</value>
+  </data>
+  <data name="Part_Rot4Way" xml:space="preserve">
+    <value>四向</value>
+  </data>
+  <data name="Part_Rot90Only" xml:space="preserve">
+    <value>仅 90°</value>
+  </data>
+  <data name="Part_RotAsDrawn" xml:space="preserve">
+    <value>按原图</value>
+  </data>
+  <data name="Part_RotFree" xml:space="preserve">
+    <value>自由</value>
+  </data>
+  <data name="Part_RotJobDefault" xml:space="preserve">
+    <value>任务默认</value>
+  </data>
+  <data name="Part_RotOther" xml:space="preserve">
+    <value>旋转：其他</value>
+  </data>
+  <data name="Part_SpacingDefault" xml:space="preserve">
+    <value>间距：默认</value>
+  </data>
+  <data name="Part_SpacingFormat" xml:space="preserve">
+    <value>间距 {0:0.###}</value>
+  </data>
+  <data name="Project_AddPartTitle" xml:space="preserve">
+    <value>添加零件</value>
+  </data>
+  <data name="Project_ErrorSavingTitle" xml:space="preserve">
+    <value>保存出错</value>
+  </data>
+  <data name="Project_FileMissingTitle" xml:space="preserve">
+    <value>文件缺失</value>
+  </data>
+  <data name="Project_FileNotFoundTitle" xml:space="preserve">
+    <value>找不到文件</value>
+  </data>
+  <data name="Project_Import3DTitle" xml:space="preserve">
+    <value>导入 3D</value>
+  </data>
+  <data name="Project_MsgCannotUseFormat" xml:space="preserve">
+    <value>无法使用 {0}：</value>
+  </data>
+  <data name="Project_MsgFileNotFoundFormat" xml:space="preserve">
+    <value>找不到文件：{0}。</value>
+  </data>
+  <data name="Project_MsgMixedSvgDxf" xml:space="preserve">
+    <value>零件混合了 Svg 和 Dxf 文件时无法导出。</value>
+  </data>
+  <data name="Project_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} 中没有可排样的图形。</value>
+  </data>
+  <data name="Project_MsgSaveChangesFormat" xml:space="preserve">
+    <value>是否保存对文件“{0}”的更改？</value>
+  </data>
+  <data name="Project_MsgSaveResultFirst" xml:space="preserve">
+    <value>您有排样结果。是否先保存项目？</value>
+  </data>
+  <data name="Project_MsgUnableToLocateFormat" xml:space="preserve">
+    <value>无法找到 {0}。</value>
+  </data>
+  <data name="Project_MsgUseImport3D" xml:space="preserve">
+    <value>要导入 3D 零件，请使用“文件 &gt; 导入 3D (STEP / IGES)...”。它会检测板材厚度，并可设置 K 因子。</value>
+  </data>
+  <data name="Report_Date" xml:space="preserve">
+    <value>日期</value>
+  </data>
+  <data name="Report_DateFormat" xml:space="preserve">
+    <value>yyyy-MM-dd HH:mm:ss</value>
+  </data>
+  <data name="Report_DrawingName" xml:space="preserve">
+    <value>图纸名称</value>
+  </data>
+  <data name="Report_ItemColumn" xml:space="preserve">
+    <value>序号</value>
+  </data>
+  <data name="Report_Layout" xml:space="preserve">
+    <value>排布</value>
+  </data>
+  <data name="Report_LayoutOfFormat" xml:space="preserve">
+    <value>{0} / {1}</value>
+  </data>
+  <data name="Report_MoreFormat" xml:space="preserve">
+    <value>     ... 另有 {0} 个</value>
+  </data>
+  <data name="Report_NothingToReport" xml:space="preserve">
+    <value>没有可报告的内容。请先运行排样。</value>
+  </data>
+  <data name="Report_NumberOfSheets" xml:space="preserve">
+    <value>板材数量</value>
+  </data>
+  <data name="Report_NumOffColumn" xml:space="preserve">
+    <value>数量</value>
+  </data>
+  <data name="Report_PartNameColumn" xml:space="preserve">
+    <value>零件名称</value>
+  </data>
+  <data name="Report_PartsHeading" xml:space="preserve">
+    <value>排样零件清单</value>
+  </data>
+  <data name="Report_PartsNotPlaced" xml:space="preserve">
+    <value>未放置零件</value>
+  </data>
+  <data name="Report_SettingHeading" xml:space="preserve">
+    <value>设置信息</value>
+  </data>
+  <data name="Report_SheetSize" xml:space="preserve">
+    <value>板材尺寸</value>
+  </data>
+  <data name="Report_SheetUtilization" xml:space="preserve">
+    <value>板材利用率</value>
+  </data>
+  <data name="Rotation_0And180Tip" xml:space="preserve">
+    <value>0° 和 180°：遵循材料纹理，但可翻转。</value>
+  </data>
+  <data name="Rotation_0And90Tip" xml:space="preserve">
+    <value>允许 0° 和 90°。</value>
+  </data>
+  <data name="Rotation_45Steps" xml:space="preserve">
+    <value>45° 步进</value>
+  </data>
+  <data name="Rotation_45StepsTip" xml:space="preserve">
+    <value>八个方向，间隔 45°。任务设置中也有此选项，如果这里没有，就无法显示零件的实际设置。</value>
+  </data>
+  <data name="Rotation_4Way" xml:space="preserve">
+    <value>四向</value>
+  </data>
+  <data name="Rotation_4WayTip" xml:space="preserve">
+    <value>全部四个直角方向（0 / 90 / 180 / 270°）。方形和 L 形零件的稳妥首选：在这类零件上通常优于自由旋转，而且搜索成本总是更低。</value>
+  </data>
+  <data name="Rotation_90And270Tip" xml:space="preserve">
+    <value>90° 和 270°：总是旋转，任一方向。</value>
+  </data>
+  <data name="Rotation_90Only" xml:space="preserve">
+    <value>仅 90°</value>
+  </data>
+  <data name="Rotation_90OnlyTip" xml:space="preserve">
+    <value>仅 90°，零件总是旋转一次。</value>
+  </data>
+  <data name="Rotation_AsDrawn" xml:space="preserve">
+    <value>按原图</value>
+  </data>
+  <data name="Rotation_AsDrawnTip" xml:space="preserve">
+    <value>仅 0°，零件完全保持原图方向（遵循纹理）。</value>
+  </data>
+  <data name="Rotation_Free" xml:space="preserve">
+    <value>自由</value>
+  </data>
+  <data name="Rotation_FreeTip" xml:space="preserve">
+    <value>任意角度，但并不一定最紧凑。对带斜边或曲边的零件更好，对方形或 L 形零件则更差，因为它们在直角时正好咬合，倾斜没有任何好处。在两个实际任务上的测量：一个填满了块的 84.3%，“四向”为 81.6%；另一个为 69.6%，“四向”为 73.2%。搜索成本约为两倍。不考虑纹理。</value>
+  </data>
+  <data name="Rotation_JobDefault" xml:space="preserve">
+    <value>任务默认</value>
+  </data>
+  <data name="Rotation_JobDefaultTip" xml:space="preserve">
+    <value>沿用任务的设置，位于“设置 &gt; 高级设置”。在那里更改后，此零件随之改变。</value>
+  </data>
+  <data name="Step_Filter3D" xml:space="preserve">
+    <value>STEP / IGES 3D (*.step;*.stp;*.iges;*.igs)|*.step;*.stp;*.iges;*.igs|所有文件 (*.*)|*.*</value>
+  </data>
+  <data name="Step_MsgCouldNotAnalyzeFormat" xml:space="preserve">
+    <value>无法分析 3D 模型。
+
+{0}</value>
+  </data>
+  <data name="Step_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>无法启动展开引擎 (FreeCAD)：
+{0}
+
+{1}</value>
+  </data>
+  <data name="Step_MsgCouldNotUnfoldFormat" xml:space="preserve">
+    <value>无法展开 3D 零件。
+
+{0}</value>
+  </data>
+  <data name="Step_MsgEngineNotFound" xml:space="preserve">
+    <value>未找到展开引擎 (FreeCAD)。
+请重新安装 SheetNest（已附带 FreeCAD），或从 freecad.org 安装 FreeCAD。</value>
+  </data>
+  <data name="Step_MsgMacroNotFound" xml:space="preserve">
+    <value>在 SheetNest 旁边未找到 unfold_macro.py。</value>
+  </data>
+  <data name="Step_MsgNoFlatPattern" xml:space="preserve">
+    <value>展开报告成功，但未生成展开图。</value>
+  </data>
+  <data name="Step_MsgNoResultFormat" xml:space="preserve">
+    <value>FreeCAD 未返回结果。
+
+{0}</value>
+  </data>
+  <data name="Step_MsgTimedOutFormat" xml:space="preserve">
+    <value>FreeCAD 超时（{0} s）。</value>
+  </data>
+  <data name="Viewer_DistanceAgainFormat" xml:space="preserve">
+    <value>距离：{0:0.000} {1}  ·  单击重新测量</value>
+  </data>
+  <data name="Viewer_DistanceFormat" xml:space="preserve">
+    <value>距离：{0:0.000} {1}</value>
+  </data>
+  <data name="Viewer_EditNest" xml:space="preserve">
+    <value>✋ 编辑排样</value>
+  </data>
+  <data name="Viewer_EditNestTip" xml:space="preserve">
+    <value>手动排样：单击零件选中，拖动移动，用按钮旋转。调整时拖动可能使零件压在另一个零件上：它会变成红色，在没有红色零件之前无法导出。放下时按住 Alt 键，可使其贴着相邻零件滑动。方向键不会把放置正确的零件推入相邻零件，但可以移动已经变红的零件，因此可以把它逐步移开。编辑会应用到此排布的每个副本，并体现在 DXF 导出中。</value>
+  </data>
+  <data name="Viewer_EditNestTitle" xml:space="preserve">
+    <value>编辑排样</value>
+  </data>
+  <data name="Viewer_EmptyHint" xml:space="preserve">
+    <value>运行排样后，结果将显示在这里。</value>
+  </data>
+  <data name="Viewer_FullSheet" xml:space="preserve">
+    <value>整板</value>
+  </data>
+  <data name="Viewer_GapFormat" xml:space="preserve">
+    <value>间隙 {0} {1}</value>
+  </data>
+  <data name="Viewer_HintCommonLineLocked" xml:space="preserve">
+    <value>共边组中的零件已锁定  ·  重新排样以改变其位置</value>
+  </data>
+  <data name="Viewer_HintEdit" xml:space="preserve">
+    <value>单击 = 选择零件  ·  拖动 = 移动  ·  方向键 = 微调  ·  输入坐标可精确放置  ·  重叠显示为红色</value>
+  </data>
+  <data name="Viewer_HintMeasureSecond" xml:space="preserve">
+    <value>测量：单击第二个点</value>
+  </data>
+  <data name="Viewer_HintMeasureStart" xml:space="preserve">
+    <value>测量：单击两个点（捕捉到角点）</value>
+  </data>
+  <data name="Viewer_HintPlanReadOnly" xml:space="preserve">
+    <value>此排布是生产计划的方案，并非已排样的板材，因此不能编辑  ·  实际切割的是它所代表的板材</value>
+  </data>
+  <data name="Viewer_HintUnreadableNumber" xml:space="preserve">
+    <value>无法识别该数字  ·  零件保留在原位置</value>
+  </data>
+  <data name="Viewer_HintView" xml:space="preserve">
+    <value>滚轮 = 缩放  ·  按住滚轮拖动 = 平移  ·  右键 = 适应窗口</value>
+  </data>
+  <data name="Viewer_LayoutNameFormat" xml:space="preserve">
+    <value>排布 {0}</value>
+  </data>
+  <data name="Viewer_Measure" xml:space="preserve">
+    <value>测量</value>
+  </data>
+  <data name="Viewer_MeasureTip" xml:space="preserve">
+    <value>测量距离：在图上单击两个点，长度显示在下方（图纸单位）。可用于核对 3D 展开零件的尺寸 / K 因子。</value>
+  </data>
+  <data name="Viewer_Mirror" xml:space="preserve">
+    <value>⇆ 镜像</value>
+  </data>
+  <data name="Viewer_MirrorTip" xml:space="preserve">
+    <value>镜像所选零件（左件 ↔ 右件）。DXF 导出也会反映此操作，因此切出的零件是真正镜像的，而不仅仅是屏幕上显示。</value>
+  </data>
+  <data name="Viewer_MsgLeaveAnyway" xml:space="preserve">
+    <value>仍要离开吗？</value>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_One" xml:space="preserve">
+    <value>此排布上有 {0} 个零件不适合切割{1}。
+
+它以红色显示。离开编辑器之前请将其移开。
+
+{2}</value>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_Other" xml:space="preserve">
+    <value>此排布上有 {0} 个零件不适合切割{1}。
+
+它们以红色显示。离开编辑器之前请将其移开。
+
+{2}</value>
+  </data>
+  <data name="Viewer_MsgUndoAndLeave" xml:space="preserve">
+    <value>撤销更改并离开吗？</value>
+  </data>
+  <data name="Viewer_NotFitCount_One" xml:space="preserve">
+    <value>{0} 个零件不适合切割</value>
+  </data>
+  <data name="Viewer_NotFitCount_Other" xml:space="preserve">
+    <value>{0} 个零件不适合切割</value>
+  </data>
+  <data name="Viewer_OverlapCountTip" xml:space="preserve">
+    <value>与相邻零件重叠或超出板材的零件。只要还有这样的零件，就无法导出。</value>
+  </data>
+  <data name="Viewer_PartAngleTip" xml:space="preserve">
+    <value>角度（度）。输入数值后按 Enter。</value>
+  </data>
+  <data name="Viewer_PartFallbackName" xml:space="preserve">
+    <value>零件</value>
+  </data>
+  <data name="Viewer_PartGapTip" xml:space="preserve">
+    <value>此零件停放后，测得的与最近相邻零件的距离。</value>
+  </data>
+  <data name="Viewer_PartXTip" xml:space="preserve">
+    <value>零件左边缘，板材坐标。输入数值后按 Enter。</value>
+  </data>
+  <data name="Viewer_PartYTip" xml:space="preserve">
+    <value>零件下边缘，板材坐标。输入数值后按 Enter。</value>
+  </data>
+  <data name="Viewer_RedoTip" xml:space="preserve">
+    <value>重做 (Ctrl+Y)</value>
+  </data>
+  <data name="Viewer_RemainderSheet" xml:space="preserve">
+    <value>剩余板</value>
+  </data>
+  <data name="Viewer_RotateCcw5Tip" xml:space="preserve">
+    <value>将所选零件逆时针旋转 5°</value>
+  </data>
+  <data name="Viewer_RotateCcw90Tip" xml:space="preserve">
+    <value>将所选零件逆时针旋转 90°</value>
+  </data>
+  <data name="Viewer_RotateCw5Tip" xml:space="preserve">
+    <value>将所选零件顺时针旋转 5°</value>
+  </data>
+  <data name="Viewer_RotateCw90Tip" xml:space="preserve">
+    <value>将所选零件顺时针旋转 90°</value>
+  </data>
+  <data name="Viewer_UndoTip" xml:space="preserve">
+    <value>撤销 (Ctrl+Z)</value>
+  </data>
+  <data name="Viewer_UnfitBothFormat" xml:space="preserve">
+    <value>：{0} 个与相邻零件重叠，{1} 个位于板材边距内</value>
+  </data>
+  <data name="Viewer_UnfitInMargin" xml:space="preserve">
+    <value>，位于板材边距内</value>
+  </data>
+  <data name="Viewer_UnfitOverlapping" xml:space="preserve">
+    <value>，与相邻零件重叠</value>
+  </data>
+</root>
