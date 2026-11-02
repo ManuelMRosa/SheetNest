@@ -23,7 +23,8 @@
     // chosen so the chord deviation stays within CurveChordTolerance (drawing units), adaptive to
     // radius, and clamped so even tiny holes look smooth and huge arcs don't explode in segments.
     // (Replaces the old hard-coded 15 deg step that turned every circle into a 24-gon.)
-    private const double CurveChordTolerance = 0.05;
+    // Public so the scrap cuts can keep their gap from the drawn arc, not just from its chords.
+    public const double CurveChordTolerance = 0.05;
     private const double MinArcStepDeg = 1.0;
     private const double MaxArcStepDeg = 6.0;
 
