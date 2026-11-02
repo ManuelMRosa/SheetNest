@@ -262,6 +262,58 @@
       b.X.Should().Be(originalX, "a failed exception must restore the ordinary-spacing candidate");
     }
 
+    /// <summary>
+    /// By the clock the planner keeps what it had time for. Out of time before its forest gets to the lobed
+    /// pair, it does not try it: nothing is planned, nothing is counted as given up (without a clock it is, see
+    /// above), and the part is back at its ordinary spacing.
+    /// </summary>
+    [Fact]
+    public void OutOfTimeThePlannerTriesNoMoreSeamsAndKeepsNormalSpacing()
+    {
+      const double normalGap = 0.30;
+      var (a, b) = LobedPair(normalGap);
+      var all = new List<IPartPlacement> { a, b };
+      double originalX = b.X;
+
+      var result = SparrowNestService.SnapDirectCommonLineEdges(
+        all,
+        Rules(normalGap, all.Count),
+        null,
+        40,
+        25,
+        0,
+        0.01,
+        0.0001,
+        timeLeft: () => TimeSpan.Zero);
+
+      result.Edges.Should().BeEmpty();
+      result.GivenUp.Should().Be(0, "out of time the forest stops before trying the pair");
+      b.X.Should().Be(originalX, "what was not planned keeps the ordinary-spacing position");
+    }
+
+    /// <summary>With time to spare the clock changes nothing: the same seam at the same place.</summary>
+    [Fact]
+    public void WithTimeToSpareThePlannerPlansAsWithoutAClock()
+    {
+      var plainParts = Pair(Square(10), 0.30);
+      var timedParts = Pair(Square(10), 0.30);
+
+      var plain = SparrowNestService.SnapDirectCommonLineEdges(plainParts, Rules(0.30, 2), 40, 20, 0, 0.01, 0.0001);
+      var timed = SparrowNestService.SnapDirectCommonLineEdges(
+        timedParts,
+        Rules(0.30, 2),
+        null,
+        40,
+        20,
+        0,
+        0.01,
+        0.0001,
+        timeLeft: () => TimeSpan.FromHours(1));
+
+      timed.Edges.Should().HaveCount(plain.Edges.Count).And.NotBeEmpty();
+      timedParts.Select(p => (p.X, p.Y, p.Rotation)).Should().Equal(plainParts.Select(p => (p.X, p.Y, p.Rotation)));
+    }
+
     [Theory]
     [InlineData(0.010)]
     [InlineData(0.050)]

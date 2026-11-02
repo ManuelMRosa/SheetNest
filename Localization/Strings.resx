@@ -279,7 +279,7 @@
     <comment>Label of the time limit per sheet, in seconds. The label column is narrow; keep it short.</comment>
   </data>
   <data name="Advanced_SecondsPerSheetTip" xml:space="preserve">
-    <value>Time limit per sheet: the nest gets this many seconds for every sheet the job is expected to take. The first round always finishes. 0 = no limit: the nest stops at the material usage target, when it stops improving, or when you press Stop.</value>
+    <value>Time limit per sheet: the nest gets this many seconds for every sheet the job is expected to take, searches by the clock and hands over the best it found, so two runs can come out slightly different. Shared cuts it had no time to plan are cut with normal spacing. 0 = no limit: the nest stops at the material usage target, when it stops improving, or when you press Stop.</value>
   </data>
   <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
     <value>Sheet edge margin ({0}):</value>
@@ -874,8 +874,8 @@
     <comment>Status bar while a nest runs. {0} is the elapsed time, m:ss; {1} is the round number. Keep the two spaces and the dot.</comment>
   </data>
   <data name="Main_NestOverLimitFormat" xml:space="preserve">
-    <value>  ·  the first round went over the {0} limit</value>
-    <comment>Status bar after a nest with a time per sheet set, when its first round took longer than the time (the first round always finishes). {0} is the time, m:ss. Keep the leading spaces and dot.</comment>
+    <value>  ·  went over the {0} limit</value>
+    <comment>Status bar after a nest with a time per sheet set, when it took longer than that time. {0} is the time, m:ss. Keep the leading spaces and dot.</comment>
   </data>
   <data name="Main_NestStopped" xml:space="preserve">
     <value>  ·  stopped</value>

@@ -377,6 +377,32 @@
       }
 
       limit?.Invoke(maxTime);
+      if (secondsPerSheet > 0)
+      {
+        return NestByClock(
+          loaded,
+          stock,
+          margin,
+          perSheetBudgetSec,
+          sparrowExePath,
+          new NestClock(clock, maxTime),
+          rowPattern,
+          sharing,
+          out error,
+          out report,
+          cancel,
+          stop,
+          progress,
+          roundStarted,
+          roundFinished,
+          newBest,
+          commonLineGap,
+          geometryTolerance,
+          commonLineMaxClusterParts,
+          materialTarget,
+          offcut);
+      }
+
       string firstRoundError = null;
       var best = NestRounds.Run<TimedRound>(
         maxTime,
@@ -454,6 +480,136 @@
       // whichever one ran last.
       best.RestoreDiagnostics();
       return best.Result;
+    }
+
+    /// <summary>A nest is over its time only past this much, the leeway for the stages that run after the search.</summary>
+    internal static readonly TimeSpan ClockLeeway = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>The least time left for a search pass after the row pattern to be worth starting.</summary>
+    private static readonly TimeSpan MinClockPass = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// The nest by the clock (a time per sheet): the row pattern first when the job is one it lays out, then,
+    /// with what is left, one search pass that spends the time sheet by sheet (<see cref="NestClock"/>), and the
+    /// better of the two (<see cref="NestRounds.IsBetter"/>). Nothing finished is thrown away for being late:
+    /// the pass is built to end on time, and its planner keeps the shared cuts it had time for. Stop keeps what
+    /// finished; Cancel throws everything away.
+    /// </summary>
+    private static INestResult NestByClock(
+      List<Loaded> loaded,
+      IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock,
+      double margin,
+      int perSheetBudgetSec,
+      string sparrowExePath,
+      NestClock clock,
+      bool rowPattern,
+      HashSet<int> sharing,
+      out string error,
+      out NestRoundsReport report,
+      CancellationToken cancel,
+      CancellationToken stop,
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
+      Action<int> roundStarted,
+      Action<int, INestResult> roundFinished,
+      Action<INestResult> newBest,
+      double commonLineGap,
+      double geometryTolerance,
+      int commonLineMaxClusterParts,
+      double materialTarget,
+      OffcutOptions offcut)
+    {
+      error = null;
+      report = new NestRoundsReport { MaxTime = clock.End };
+      TimedRound kept = null;
+      string passError = null;
+      using var cut = CancellationTokenSource.CreateLinkedTokenSource(cancel, stop);
+      try
+      {
+        if (rowPattern)
+        {
+          roundStarted?.Invoke(0);
+          ResetNestDiagnostics();
+          var pattern = RunRowPattern(loaded, stock, margin, sparrowExePath, cut.Token, progress, commonLineGap, geometryTolerance, commonLineMaxClusterParts, out _);
+          if (pattern != null && !cut.IsCancellationRequested)
+          {
+            kept = new TimedRound(pattern, sharing.Contains);
+            report.OpeningFinished = true;
+            newBest?.Invoke(pattern);
+            roundFinished?.Invoke(0, pattern);
+          }
+        }
+
+        if (kept != null && ReachesTarget(kept.Result, materialTarget, offcut))
+        {
+          report.StopReason = NestRoundsStop.TargetReached;
+        }
+        else if (kept != null && clock.Remaining < MinClockPass)
+        {
+          report.StopReason = NestRoundsStop.NextRoundWontFit;
+        }
+        else if (!cut.IsCancellationRequested)
+        {
+          roundStarted?.Invoke(1);
+          ResetNestDiagnostics();
+          var searched = RunNestBody(
+            loaded,
+            BuildSizes(stock),
+            margin,
+            perSheetBudgetSec,
+            sparrowExePath,
+            cut.Token,
+            progress,
+            NestEffort.Fast,
+            commonLineGap,
+            geometryTolerance,
+            commonLineMaxClusterParts,
+            0,
+            out passError,
+            clock: clock);
+          if (searched != null && !cut.IsCancellationRequested)
+          {
+            var round = new TimedRound(searched, sharing.Contains);
+            report.FinishedRounds = 1;
+            roundFinished?.Invoke(1, searched);
+            if (kept == null || NestRounds.IsBetter(round.Summary, kept.Summary))
+            {
+              kept = round;
+              report.BestRound = 1;
+              newBest?.Invoke(searched);
+            }
+          }
+
+          report.StopReason = kept != null && ReachesTarget(kept.Result, materialTarget, offcut)
+            ? NestRoundsStop.TargetReached
+            : NestRoundsStop.Deadline;
+        }
+      }
+      catch (Exception ex) when (NestRounds.IsCancellation(ex) && stop.IsCancellationRequested && !cancel.IsCancellationRequested)
+      {
+        // Stop: the pass still running is dropped and what finished before it is handed over.
+      }
+
+      cancel.ThrowIfCancellationRequested();
+      if (stop.IsCancellationRequested)
+      {
+        report.StopReason = kept == null ? NestRoundsStop.Cancelled : NestRoundsStop.Stopped;
+        if (kept == null)
+        {
+          error = Strings.Engine_MsgCancelled;
+          return null;
+        }
+      }
+
+      report.OverTime = clock.Elapsed > clock.End + ClockLeeway;
+      if (kept == null)
+      {
+        report.StopReason = NestRoundsStop.FirstRoundFailed;
+        error = passError ?? Strings.Engine_MsgNoPlacements;
+        return null;
+      }
+
+      kept.RestoreDiagnostics();
+      return kept.Result;
     }
 
     /// <summary>Whether a nest is good enough to hand over on the material usage target: every part placed,
@@ -713,7 +869,8 @@
       out string error,
       bool rowPattern = false,
       int iterations = 0,
-      long evals = 0)
+      long evals = 0,
+      NestClock clock = null)
     {
       error = null;
       var loadedById = loaded.ToDictionary(l => l.Source);
@@ -751,6 +908,12 @@
         List<CommonEdgeIntent> bestCommonEdges = null;
         IReadOnlyList<CommonLineFallbackNotice> bestCommonLineFallbacks = Array.Empty<CommonLineFallbackNotice>();
 
+        // By the clock this sheet gets its share of what is left, the rest split over the sheets still
+        // expected, and each stock size tried for it a part of that share.
+        TimeSpan sheetShare = clock == null
+          ? TimeSpan.Zero
+          : clock.SheetShare(SheetsLeft(pool, loadedById, sizes, margin)) / Math.Max(1, sizes.Count(s => s.HasStock));
+
         foreach (var size in sizes)
         {
           if (!size.HasStock)
@@ -782,6 +945,18 @@
           bool isFinalSheet = batchParts == pool.Values.Sum();
           int tries = TriesFor(replicas, isFinalSheet, effort);
 
+          // By the clock: one wave of as many searches as run side by side, each for the time the share
+          // leaves, and a planner that stops when the share is spent.
+          int searchMs = 0;
+          Func<TimeSpan> plannerLeft = null;
+          if (clock != null)
+          {
+            tries = Math.Min(WaveSize, Concurrency());
+            bool shares = sentQty.Keys.Any(src => loadedById[src].RequiresMergedLines && loadedById[src].Cc != CommonCuttingMode.None);
+            searchMs = NestClock.SearchMs(sheetShare, shares);
+            TimeSpan packEnds = clock.Elapsed + sheetShare;
+            plannerLeft = () => packEnds - clock.Elapsed;
+          }
 
           // packW/packH = the sheet dims PackOneSheet packed in (always the stock size's own orientation — the
           // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
@@ -812,7 +987,9 @@
               effort,
               commonLineMaxClusterParts,
               seedOffset,
-              out perr);
+              out perr,
+              searchMs,
+              plannerLeft);
           firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
@@ -848,8 +1025,11 @@
           // no second chance at all, while one that seats 13 of 14 gets one. It was there to keep the cost
           // down when a single budget served everybody; the operator picks the effort now, and giving parts
           // back uncut is worth more seconds than any of them.
-          if (!rowPattern && placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
+          // By the clock only when there is as much time again as this sheet had.
+          bool timeForRetry = clock == null || clock.Remaining >= sheetShare;
+          if (!rowPattern && placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes) && timeForRetry)
           {
+            TimeSpan retryEnds = clock == null ? TimeSpan.Zero : clock.Elapsed + sheetShare;
             var (retryPl, retryBy, retryW, retryH, retrySeamsSnapped, retrySeamsGivenUp, retryCommonEdges, retryCommonLineFallbacks) = PackOneSheet(
               loaded,
               sentQty,
@@ -870,7 +1050,9 @@
               effort,
               commonLineMaxClusterParts,
               seedOffset,
-              out _);
+              out _,
+              searchMs,
+              clock == null ? null : () => retryEnds - clock.Elapsed);
 
             if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
                 && retryBy.Values.Sum() > placedBySrc.Values.Sum())
@@ -1443,8 +1625,11 @@
     /// add it either.
     /// </summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, long maxEvals, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, double commonLineGap, double geometryTolerance, NestEffort effort, int commonLineMaxClusterParts, int seedOffset, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, long maxEvals, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, double commonLineGap, double geometryTolerance, NestEffort effort, int commonLineMaxClusterParts, int seedOffset, out string error,
+      int timeMs = 0,
+      Func<TimeSpan> plannerTimeLeft = null)
     {
+      // By the clock (timeMs > 0) every search runs for that long and one wave is all there is time for.
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
       if (batch.Count == 0)
@@ -1543,7 +1728,7 @@
             string tryDir = Path.Combine(workDir, "try" + seed.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(tryDir);
             var diagRun = System.Diagnostics.Stopwatch.StartNew();
-            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, maxEvals, workers, hardTimeoutSec, seed, cancel, aggDensity, out string tryErr);
+            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, maxEvals, workers, hardTimeoutSec, seed, cancel, aggDensity, out string tryErr, timeMs);
             if (tryErr != null)
             {
               // Not fatal on its own: the other races may still return something. But when they ALL fail the
@@ -1571,7 +1756,8 @@
               commonLineMaxClusterParts,
               cancel,
               capturedSources,
-              $"pack={packIndex} seed={seed}");
+              $"pack={packIndex} seed={seed}",
+              plannerTimeLeft);
             System.Threading.Interlocked.Add(ref DiagMapMs, diagMap.ElapsedMilliseconds);
             wPl[j] = pl;
             wBy[j] = by;
@@ -1611,7 +1797,7 @@
           int waveBest = winners.Count == 0
             ? -1
             : PickBest(winners.Select(w => (w.Count, w.Unshared, w.SharedLength, w.Extent, w.Density, w.Seed)).ToList());
-          if (bestIndex >= 0 && waveBest == bestIndex)
+          if ((bestIndex >= 0 && waveBest == bestIndex) || timeMs > 0)
           {
             break;
           }
@@ -1852,7 +2038,8 @@
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks) MapAndCompact(
       string outputJson, List<Loaded> batch, double sheetWin, double sheetHin, double margin, double commonLineGap, double geometryTolerance, NestEffort effort, int commonLineMaxClusterParts, CancellationToken cancel,
       IReadOnlyDictionary<string, DxfContourCatalog> capturedSources,
-      string diagnosticLabel)
+      string diagnosticLabel,
+      Func<TimeSpan> plannerTimeLeft = null)
     {
       cancel.ThrowIfCancellationRequested();
       var sourceCatalogs = capturedSources.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
@@ -1942,7 +2129,8 @@
         commonLineMaxClusterParts,
         cancel,
         sourceCatalogs,
-        diagnosticLabel: diagnosticLabel);
+        diagnosticLabel: diagnosticLabel,
+        timeLeft: plannerTimeLeft);
       NestDiagnostics.AddElapsed("map.planner", stageClock);
 
       // Once an intentional graph exists, compact each connected component as one rigid body. Internal
@@ -2657,7 +2845,8 @@
       CancellationToken cancel = default,
       IDictionary<string, DxfContourCatalog> sourceCatalogs = null,
       Action<string> onStage = null,
-      string diagnosticLabel = null)
+      string diagnosticLabel = null,
+      Func<TimeSpan> timeLeft = null)
     {
       cancel.ThrowIfCancellationRequested();
       IPartPlacement[] originals = all?.ToArray() ?? Array.Empty<IPartPlacement>();
@@ -2682,7 +2871,7 @@
       {
         var result = SnapDirectCommonLineEdgesCore(all, rulesBySource, orientationProfilesBySource,
           sheetW, sheetH, margin, commonLineGap, geometryTolerance, effort, commonLineMaxClusterParts,
-          cancel, sourceCatalogs, ReportStage, verdictCache);
+          cancel, sourceCatalogs, ReportStage, verdictCache, timeLeft);
         ReportStage("source-revalidation");
         if (result.Edges.Count > 0)
         {
@@ -2744,8 +2933,13 @@
       CancellationToken cancel,
       IDictionary<string, DxfContourCatalog> sourceCatalogs,
       Action<string> reportStage,
-      CommonEdgeClearance.PairVerdictCache verdictCache)
+      CommonEdgeClearance.PairVerdictCache verdictCache,
+      Func<TimeSpan> timeLeft = null)
     {
+      // By the clock the planner keeps what it has when the time runs out instead of failing the sheet: the
+      // beam may take half of what is left, the forest stops adding seams on time and its accepted prefix is
+      // proved once, and whatever is not planned keeps its ordinary spacing. Without a clock it runs to the end.
+      bool TimeUp() => timeLeft != null && timeLeft() <= TimeSpan.Zero;
       var result = new DirectCommonLineSnapResult { Groups = new int[all?.Count ?? 0] };
       if (all == null || all.Count < 2 || rulesBySource == null
           || !double.IsFinite(commonLineGap) || commonLineGap <= 0
@@ -4483,9 +4677,17 @@
       List<DirectCandidate> actionableCandidates = candidates;
       reportStage("beam");
       var beam = new List<DirectPlanState> { new DirectPlanState(n, maxClusterParts) };
+
+      // By the clock the beam stops once half of what was left when it started is gone, so the forest below
+      // still has time to plan something if the beam's plans do not prove out.
+      TimeSpan beamStopsAt = timeLeft == null ? TimeSpan.Zero : timeLeft() / 2;
       for (int candidateIndex = 0; candidateIndex < actionableCandidates.Count; candidateIndex++)
       {
         cancel.ThrowIfCancellationRequested();
+        if (timeLeft != null && timeLeft() <= beamStopsAt)
+        {
+          break;
+        }
 
         DirectCandidate candidate = actionableCandidates[candidateIndex];
         var expanded = new List<DirectPlanState>(beam.Count * 2);
@@ -4585,6 +4787,11 @@
         .OrderBy(state => state, Comparer<DirectPlanState>.Create(ComparePlanStates))
         .Take(validationLimit))
       {
+        if (TimeUp())
+        {
+          break;
+        }
+
         if (TryApplyPlan(
           finalist.Plan,
           true,
@@ -4719,6 +4926,11 @@
         foreach (DirectCandidate candidate in candidates)
         {
           cancel.ThrowIfCancellationRequested();
+          if (TimeUp())
+          {
+            break; // the prefix accepted so far is what there was time for
+          }
+
           if (!TryAddToForest(candidate))
           {
             continue;
@@ -4807,6 +5019,15 @@
         PublishFailures(finalIntents);
         result.Groups = finalGroups;
         result.Edges.AddRange(finalIntents);
+        return result;
+      }
+
+      if (TimeUp())
+      {
+        // No time for the strict pass: nothing planned on this sheet, every part keeps its ordinary spacing.
+        RestoreOriginalPlacements();
+        PublishFailures(Array.Empty<CommonEdgeIntent>());
+        result.GivenUp++;
         return result;
       }
 
@@ -6165,6 +6386,19 @@
     /// <summary>How many sheets a job is expected to take before it is nested: its parts' area over one
     /// sheet's usable area, rounded up, and never more sheets than are in stock. Only the size of the job
     /// goes in, so every machine expects the same.</summary>
+    /// <summary>How many more sheets what is still in <paramref name="pool"/> is expected to take on the biggest
+    /// size in stock (<see cref="EstimatedSheets"/>).</summary>
+    private static int SheetsLeft(Dictionary<int, int> pool, Dictionary<int, Loaded> loadedById, List<StockSize> sizes, double margin)
+    {
+      var stocked = sizes.Where(size => size.HasStock).ToList();
+      var biggest = stocked.OrderByDescending(size => (double)size.W * size.H).FirstOrDefault();
+      double usableArea = biggest == null ? 0 : Math.Max(0, biggest.W - (2 * margin)) * Math.Max(0, biggest.H - (2 * margin));
+      return EstimatedSheets(
+        pool.Sum(kv => kv.Value * Math.Abs(loadedById[kv.Key].Nfp.Area)),
+        usableArea,
+        stocked.Any(size => size.Unlimited) ? int.MaxValue : stocked.Sum(size => size.Remaining));
+    }
+
     internal static int EstimatedSheets(double partsArea, double usableSheetArea, int sheetsInStock)
     {
       if (usableSheetArea <= 0)
@@ -6447,6 +6681,35 @@
       return best;
     }
 
+    /// <summary>The engine's command line for one search: by iterations (and a work cap when given), which is
+    /// reproducible, or by the clock when <paramref name="timeMs"/> is above zero.</summary>
+    internal static IReadOnlyList<string> SparrowArguments(string inputPath, int iterations, long maxEvals, int workers, int seed, int timeMs = 0)
+    {
+      var arguments = new List<string> { "-i", inputPath };
+      if (timeMs > 0)
+      {
+        arguments.Add("--time-ms"); // the engine stops on the clock and still writes what it found
+        arguments.Add(timeMs.ToString(CultureInfo.InvariantCulture));
+      }
+      else
+      {
+        arguments.Add("--max-iterations"); // deterministic budget; also forces the failure-based
+        arguments.Add(iterations.ToString(CultureInfo.InvariantCulture)); // compression decay
+        if (maxEvals > 0)
+        {
+          arguments.Add("--max-evals");
+          arguments.Add(maxEvals.ToString(CultureInfo.InvariantCulture));
+        }
+      }
+
+      arguments.Add("-x"); // stop a search that is stuck (counts failures, not seconds)
+      arguments.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
+      arguments.Add(seed.ToString(CultureInfo.InvariantCulture));
+      arguments.Add("--workers");
+      arguments.Add(workers.ToString(CultureInfo.InvariantCulture));
+      return arguments;
+    }
+
     /// <summary>Runs one sparrow search. The search is bounded by a fixed number of iterations, NEVER by
     /// the clock: a wall-clock deadline makes the same job land differently depending on how busy the
     /// machine is, which is what made a repeated nest come back with a different offcut every time.
@@ -6455,7 +6718,10 @@
     /// <param name="maxEvals">A cap on the search's work as well, in sample evaluations; 0 for none. The engine
     /// counts them, not the clock, so the cap is as reproducible as the iterations. A search that finishes its
     /// iterations within it comes out exactly as it would without one.</param>
-    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, long maxEvals, int workers, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
+    /// <param name="timeMs">Above zero the search runs by the clock instead (a nest by time per sheet): the engine
+    /// stops itself after that many milliseconds and writes what it has, and the iterations and the work cap are
+    /// not sent.</param>
+    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, long maxEvals, int workers, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error, int timeMs = 0)
     {
       error = null;
       var psi = new ProcessStartInfo
@@ -6467,21 +6733,10 @@
         UseShellExecute = false,
         CreateNoWindow = true,
       };
-      psi.ArgumentList.Add("-i");
-      psi.ArgumentList.Add(inputPath);
-      psi.ArgumentList.Add("--max-iterations"); // deterministic budget; also forces the failure-based
-      psi.ArgumentList.Add(iterations.ToString(CultureInfo.InvariantCulture)); // compression decay
-      if (maxEvals > 0)
+      foreach (string argument in SparrowArguments(inputPath, iterations, maxEvals, workers, seed, timeMs))
       {
-        psi.ArgumentList.Add("--max-evals");
-        psi.ArgumentList.Add(maxEvals.ToString(CultureInfo.InvariantCulture));
+        psi.ArgumentList.Add(argument);
       }
-
-      psi.ArgumentList.Add("-x"); // stop a search that is stuck (counts failures, not seconds)
-      psi.ArgumentList.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
-      psi.ArgumentList.Add(seed.ToString(CultureInfo.InvariantCulture));
-      psi.ArgumentList.Add("--workers");
-      psi.ArgumentList.Add(workers.ToString(CultureInfo.InvariantCulture));
 
       Process proc;
       try

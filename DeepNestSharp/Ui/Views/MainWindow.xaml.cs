@@ -33,7 +33,7 @@
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
     private int materialTargetPercent = SessionState.DefaultMaterialTargetPercent; // 0 = off (SessionState)
-    private int nestSecondsPerSheet; // time limit per sheet in seconds, 0 = no limit (SessionState)
+    private int nestSecondsPerSheet = SessionState.DefaultNestSecondsPerSheet; // time per sheet in seconds, 0 = no limit (SessionState)
     // Per-user defaults for the NEXT job. The process-wide config is temporarily overwritten whenever
     // a document becomes active, so it cannot also be the source of truth for session preferences.
     private double sessionCommonLineGapInches = CommonLineDefaults.DefaultGapInches;

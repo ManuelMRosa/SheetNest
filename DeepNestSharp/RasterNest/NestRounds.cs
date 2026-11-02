@@ -400,6 +400,58 @@ namespace DeepNestSharp.RasterNest
     void CancelAt(CancellationTokenSource source, TimeSpan at);
   }
 
+  /// <summary>
+  /// The time a nest by the clock has, and how it is spent sheet by sheet. The app nests this way when the
+  /// operator sets a time per sheet: the search stops on the clock and hands over what it has, so the nest is
+  /// on time but two runs, or two machines, can land a little differently.
+  /// </summary>
+  internal sealed class NestClock
+  {
+    /// <summary>The least a sheet is given however little time is left: one engine start and a short search.</summary>
+    internal static readonly TimeSpan MinSheet = TimeSpan.FromMilliseconds(700);
+
+    /// <summary>What starting the engine, reading its input and writing its answer cost before it searches at
+    /// all: about 0.43 s measured on 170 parts, whatever the time asked for.</summary>
+    internal static readonly TimeSpan EngineStart = TimeSpan.FromMilliseconds(450);
+
+    /// <summary>The shortest search worth starting the engine for.</summary>
+    internal const int MinSearchMs = 150;
+
+    private readonly IRoundClock clock;
+
+    public NestClock(IRoundClock clock, TimeSpan end)
+    {
+      this.clock = clock;
+      this.End = end;
+    }
+
+    public TimeSpan End { get; }
+
+    public TimeSpan Elapsed => this.clock.Elapsed;
+
+    public TimeSpan Remaining => this.End - this.clock.Elapsed;
+
+    /// <summary>What is left split evenly over the sheets still expected, never below <paramref name="floor"/>,
+    /// so the last sheets are not starved by the first ones running over.</summary>
+    internal static TimeSpan SheetShare(TimeSpan remaining, int sheetsLeft, TimeSpan floor)
+    {
+      TimeSpan even = remaining <= TimeSpan.Zero ? TimeSpan.Zero : remaining / Math.Max(1, sheetsLeft);
+      return even > floor ? even : floor;
+    }
+
+    /// <summary>How long the engine searches on a sheet given <paramref name="share"/>: what is left after
+    /// starting it, less what mapping and checking the answer needs (more with common line, where the planner
+    /// runs after the search).</summary>
+    internal static int SearchMs(TimeSpan share, bool commonLine)
+    {
+      double afterStart = (share - EngineStart).TotalMilliseconds;
+      double fraction = commonLine ? 0.5 : 0.75;
+      return (int)Math.Max(MinSearchMs, afterStart * fraction);
+    }
+
+    public TimeSpan SheetShare(int sheetsLeft) => SheetShare(this.Remaining, sheetsLeft, MinSheet);
+  }
+
   /// <summary>One nest's score: see <see cref="NestRounds.IsBetter"/>.</summary>
   internal readonly struct NestSummary
   {

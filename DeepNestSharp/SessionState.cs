@@ -103,17 +103,21 @@
     /// <summary>The longest time per sheet the operator may set, in seconds.</summary>
     public const int MaxNestSecondsPerSheet = 600;
 
+    /// <summary>The time per sheet a new install nests with, in seconds.</summary>
+    public const int DefaultNestSecondsPerSheet = 2;
+
     /// <summary>
-    /// Time limit per sheet in seconds: the nest gets this much for every sheet the job is expected to take.
-    /// -1 = default (0), 0 = no limit (the target, two rounds without improvement or Stop end it).
+    /// Time limit per sheet in seconds: the nest gets this much for every sheet the job is expected to take,
+    /// and searches by the clock. -1 = default (<see cref="DefaultNestSecondsPerSheet"/>), 0 = no limit (the
+    /// target, two rounds without improvement or Stop end it).
     /// </summary>
     public int NestSecondsPerSheet { get; set; } = -1;
 
     /// <summary>The time per sheet this session represents, 0 (no limit) to <see cref="MaxNestSecondsPerSheet"/>;
-    /// never saved, or out of range, is no limit.</summary>
+    /// never saved, or out of range, is the default.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public int EffectiveNestSecondsPerSheet
-      => this.NestSecondsPerSheet is >= 0 and <= MaxNestSecondsPerSheet ? this.NestSecondsPerSheet : 0;
+      => this.NestSecondsPerSheet is >= 0 and <= MaxNestSecondsPerSheet ? this.NestSecondsPerSheet : DefaultNestSecondsPerSheet;
 
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();

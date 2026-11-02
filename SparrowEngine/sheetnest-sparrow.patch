@@ -426,3 +426,76 @@ index 6bc8a79..b49542f 100644
  #[derive(Debug, Clone)]
 -- 
 2.53.0.windows.2
+From 975ea8cdbb08e243f946edf82ed7e9b5eb6b51b8 Mon Sep 17 00:00:00 2001
+From: SheetNest <noreply@sheetnest.io>
+Date: Sun, 1 Nov 2026 23:11:02 -0500
+Subject: [PATCH 3/3] Keep a deadline too: --time-ms, and the clock inside a
+ separation
+
+A caller that splits a couple of seconds between several sheets needs budgets finer than a whole second, and a deadline that a long separation strike cannot run past: --time-ms is -t in milliseconds, and the wall-clock terminator now also answers the separator inner loop.
+---
+ src/cli.rs                   | 8 ++++++--
+ src/util/ctrlc_terminator.rs | 6 ++++++
+ src/util/io.rs               | 4 ++++
+ 3 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/src/cli.rs b/src/cli.rs
+index de41e04..1377287 100644
+--- a/src/cli.rs
++++ b/src/cli.rs
+@@ -36,7 +36,11 @@ pub fn run() -> Result<()>{
+ 
+     let args = MainCli::parse();
+     let input_file_path = &args.input;
+-    let (explore_dur, compress_dur) = match (args.global_time, args.exploration, args.compression) {
++    // --time-ms is -t in milliseconds: a caller that splits a few seconds between several sheets needs
++    // budgets finer than a whole second.
++    let (explore_dur, compress_dur) = if let Some(ms) = args.time_ms {
++        (Duration::from_millis(ms).mul_f32(DEFAULT_EXPLORE_TIME_RATIO), Duration::from_millis(ms).mul_f32(DEFAULT_COMPRESS_TIME_RATIO))
++    } else { match (args.global_time, args.exploration, args.compression) {
+         (Some(gt), None, None) => {
+             (Duration::from_secs(gt).mul_f32(DEFAULT_EXPLORE_TIME_RATIO), Duration::from_secs(gt).mul_f32(DEFAULT_COMPRESS_TIME_RATIO))
+         },
+@@ -50,7 +54,7 @@ pub fn run() -> Result<()>{
+             (Duration::from_secs(600).mul_f32(DEFAULT_EXPLORE_TIME_RATIO), Duration::from_secs(600).mul_f32(DEFAULT_COMPRESS_TIME_RATIO))
+         },
+         _ => bail!("invalid cli pattern (clap should have caught this)"),
+-    };
++    } };
+     config.expl_cfg.time_limit = explore_dur;
+     config.cmpr_cfg.time_limit = compress_dur;
+     if args.early_termination {
+diff --git a/src/util/ctrlc_terminator.rs b/src/util/ctrlc_terminator.rs
+index f4cd199..e562269 100644
+--- a/src/util/ctrlc_terminator.rs
++++ b/src/util/ctrlc_terminator.rs
+@@ -50,4 +50,10 @@ impl Terminator for CtrlCTerminator {
+     fn timeout_at(&self) -> Option<Instant> {
+         self.timeout
+     }
++
++    // The separator only asks `kill()` between strikes, and one strike of a hard separation can run for
++    // seconds; its inner loop asks this instead, so a deadline is also kept inside a strike.
++    fn work_spent(&self) -> bool {
++        self.kill()
++    }
+ }
+\ No newline at end of file
+diff --git a/src/util/io.rs b/src/util/io.rs
+index a6edc79..b3d4e47 100644
+--- a/src/util/io.rs
++++ b/src/util/io.rs
+@@ -22,6 +22,10 @@ pub struct MainCli {
+     #[arg(short = 't', long, conflicts_with_all = &["exploration", "compression"], help = "Set a global time limit (in seconds)")]
+     pub global_time: Option<u64>,
+ 
++    /// Global time limit in milliseconds, for budgets finer than a second (mutually exclusive with -t, -e, -c)
++    #[arg(long, conflicts_with_all = &["global_time", "exploration", "compression", "max_iterations"], help = "Set a global time limit (in milliseconds)")]
++    pub time_ms: Option<u64>,
++
+     /// Exploration time limit in seconds (requires compression time)
+     #[arg(short = 'e', long, requires = "compression", help = "Set the exploration phase time limit (in seconds)")]
+     pub exploration: Option<u64>,
+-- 
+2.53.0
+

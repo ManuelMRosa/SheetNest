@@ -232,7 +232,7 @@
     <value>Tiempo por lámina (s):</value>
   </data>
   <data name="Advanced_SecondsPerSheetTip" xml:space="preserve">
-    <value>Tope de tiempo por lámina: el anidado tiene estos segundos por cada lámina que se espera que use el trabajo. La primera ronda siempre termina. 0 = sin límite: para al llegar al objetivo de aprovechamiento, cuando deja de mejorar o cuando pulsas Detener.</value>
+    <value>Tope de tiempo por lámina: el anidado tiene estos segundos por cada lámina que se espera que use el trabajo, busca por reloj y entrega lo mejor que encontró, así que dos corridas pueden salir un poco distintas. Los cortes compartidos que no alcanzó a planear se cortan con separación normal. 0 = sin límite: para al llegar al objetivo de aprovechamiento, cuando deja de mejorar o cuando pulsas Detener.</value>
   </data>
   <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
     <value>Margen del borde ({0}):</value>
@@ -730,7 +730,7 @@
     <value>  ·  objetivo {0} %, mejor hasta ahora {1} %</value>
   </data>
   <data name="Main_NestOverLimitFormat" xml:space="preserve">
-    <value>  ·  la primera ronda pasó del límite de {0}</value>
+    <value>  ·  se pasó del límite de {0}</value>
   </data>
   <data name="Main_NestStopped" xml:space="preserve">
     <value>  ·  detenido</value>

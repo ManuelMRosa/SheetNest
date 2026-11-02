@@ -26,7 +26,7 @@ namespace DeepNestSharp.Ui.Views
       double commonLineGapInches = DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches,
       int commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts,
       int materialTargetPercent = SessionState.DefaultMaterialTargetPercent,
-      int nestSecondsPerSheet = 0)
+      int nestSecondsPerSheet = SessionState.DefaultNestSecondsPerSheet)
     {
       this.config = config;
       this.commonLineGapInches = NormalizeCommonLineGapInches(commonLineGapInches);
@@ -76,7 +76,7 @@ namespace DeepNestSharp.Ui.Views
     public int MaterialTargetPercent => System.Math.Clamp(this.materialTargetUpDown.Value ?? SessionState.DefaultMaterialTargetPercent, 0, 100);
 
     /// <summary>The time limit per sheet in seconds, 0 = no limit, for the caller to persist (SessionState).</summary>
-    public int NestSecondsPerSheet => System.Math.Clamp(this.secondsPerSheetUpDown.Value ?? 0, 0, SessionState.MaxNestSecondsPerSheet);
+    public int NestSecondsPerSheet => System.Math.Clamp(this.secondsPerSheetUpDown.Value ?? SessionState.DefaultNestSecondsPerSheet, 0, SessionState.MaxNestSecondsPerSheet);
 
     /// <summary>Converts canonical inches to the units selected for display.</summary>
     internal static double CommonLineGapForDisplay(double inches, bool unitsMm)
