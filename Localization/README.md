@@ -47,8 +47,8 @@ is already useful and others can complete it later.
 - **Keep it short** on buttons, tabs and labels, because windows have fixed widths. Tooltips and messages can be
   as long as they need to be.
 - **Report texts** (keys starting with `Report_`) are printed in a fixed-width font, and their comments give the
-  length limit. The report prints Latin letters with accents (é, ñ, ü, ç...). For a language written in another
-  alphabet the printed report stays in English for now, while the program itself is fully translated.
+  length limit, counted in columns of that font. The report prints any alphabet. A Latin letter takes one column;
+  other letters take what they need, about two columns for a Chinese character.
 - **`Report_DateFormat`** is a date pattern, not text: reorder its letters the way your language writes dates.
 - **Spaces and symbols:** keep leading spaces, `...` and symbols such as `▶` where the English has them.
 - Save the file as UTF-8.

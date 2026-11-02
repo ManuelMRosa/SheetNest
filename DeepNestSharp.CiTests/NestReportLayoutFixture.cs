@@ -139,22 +139,85 @@ namespace DeepNestSharp.CiTests
       lines.Should().OnlyContain(l => l.Length <= NestReportPdf.TextColumnChars, "a line must end before the sheet drawing");
     }
 
-    /// <summary>The report is written in Latin-1: a language it cannot set is printed in English, not as question marks.</summary>
-    [Fact]
-    public void ALanguageThePdfCannotSetFallsBackToEnglish()
+    /// <summary>
+    /// Chinese and Hindi are printed in their own letters, drawn as outlines where Courier has none, and the
+    /// numbers stay in Courier after the colon. Nothing falls back to English or turns into question marks.
+    /// </summary>
+    [Theory]
+    [InlineData("zh-Hans")]
+    [InlineData("hi")]
+    public void APageInALanguageCourierCannotSetIsSetInThatLanguage(string language)
     {
-      NestReportPdf.Printable("TAMAÑO DE LÁMINA", "SHEET SIZE").Should().Be("TAMAÑO DE LÁMINA", "accented Latin letters print");
-      NestReportPdf.Printable("РАЗМЕР ЛИСТА", "SHEET SIZE").Should().Be("SHEET SIZE", "Cyrillic would print as question marks");
+      string pdf = InLanguage(language, () => WriteAndRead("job.pdf", unplacedCount: 2, new DateTime(2026, 10, 29, 14, 5, 0)));
+
+      foreach (var english in new[] { "SETTING INFORMATION", "NEST PARTS LIST", "DRAWING NAME", "SHEET SIZE", "NOT PLACED", "Num Off" })
+      {
+        pdf.Should().NotContain(english, "the {0} label is printed in {1}", english, language);
+      }
+
+      pdf.Should().NotContain("?", "a letter Latin-1 lacks must not reach the paper as a question mark");
+      Line(pdf, @" *: 200 x 100 in").Should().Be(1, "the value is still Courier, after the colon");
+      Line(pdf, @" *: 2").Should().Be(2, "parts not placed, on both pages");
+
+      // Per page: two headings, seven labels and the parts list's header are drawn.
+      Regex.Matches(pdf, @" f\*?\r?\n").Count.Should().BeGreaterOrEqualTo(2 * 10, "every label and heading is drawn as outlines");
+    }
+
+    /// <summary>
+    /// The page lines its columns up by what each text takes on paper: a Chinese character is about two
+    /// Courier columns wide, so counting characters would push the colons and the sheet drawing out of line.
+    /// </summary>
+    [Fact]
+    public void AChineseCharacterTakesAboutTwoColumns()
+    {
+      NestReportPdf.Columns("SHEET SIZE").Should().Be(10, "Courier: a column a letter");
+      InLanguage("zh-Hans", () => NestReportPdf.Columns("板材尺寸")).Should().BeInRange(7, 8, "four characters of one em each, at 0.6 em a column");
+    }
+
+    /// <summary>In Chinese and Hindi the colons line up and every line ends before the sheet drawing, in columns.</summary>
+    [Theory]
+    [InlineData("zh-Hans")]
+    [InlineData("hi")]
+    public void APageInALanguageCourierCannotSetKeepsItsColumns(string language)
+    {
+      var (lines, header, rows) = InLanguage(language, () =>
+      {
+        var (job, cut) = NestReportPdf.SettingLines(Layouts(), 0, new string('N', 60), new DateTime(2026, 10, 29, 14, 5, 0), unplacedCount: 2, "in");
+        return (job.Concat(cut).ToList(), NestReportPdf.PartListHeader, NestReportPdf.PartRows(Layouts()[0].Sheet));
+      });
+
+      InLanguage(language, () => lines.Select(l => NestReportPdf.Columns(l.Substring(0, l.IndexOf(" : ", StringComparison.Ordinal)))).Distinct().ToList())
+        .Should().ContainSingle("every colon sits in one column");
+      InLanguage(language, () => lines.Select(NestReportPdf.Columns).ToList())
+        .Should().OnlyContain(c => c <= NestReportPdf.TextColumnChars, "a line must end before the sheet drawing");
+      InLanguage(language, () => NestReportPdf.Columns(header)).Should().Be(4 + 1 + 40 + 1 + 7, "each heading fits its column");
+      InLanguage(language, () => NestReportPdf.Columns(rows[0])).Should().Be(4 + 1 + 40 + 1 + 7, "a row lines up under the heading");
+    }
+
+    /// <summary>A part named in Chinese is printed in Chinese, cut to its column, not as question marks.</summary>
+    [Fact]
+    public void APartNamedInChineseIsPrintedAndCutToItsColumn()
+    {
+      string name = "支架零件编号一二三四五六七八九十一二三四五六七八九十.dxf";
+
+      string pdf = WriteAndRead("job.pdf", unplacedCount: 0, bracket: name);
+      string row = NestReportPdf.PartRows(Layouts(name)[0].Sheet).Single(r => r.Contains("支架", StringComparison.Ordinal));
+
+      pdf.Should().NotContain("?");
+      row.Should().Contain("~", "the name is longer than its 40 columns");
+      NestReportPdf.Columns(row).Should().Be(4 + 1 + 40 + 1 + 7, "the cut name still lines up with the quantity");
     }
 
     /// <summary>How many times one whole line of text, matched by the pattern, is set on the paper.</summary>
     private static int Line(string pdf, string pattern)
       => Regex.Matches(pdf, @"\(" + pattern + @"\) Tj").Count;
 
-    private static T InSpanish<T>(Func<T> write)
+    private static T InSpanish<T>(Func<T> write) => InLanguage("es", write);
+
+    private static T InLanguage<T>(string language, Func<T> write)
     {
       var before = Strings.Culture;
-      Strings.Culture = CultureInfo.GetCultureInfo("es");
+      Strings.Culture = CultureInfo.GetCultureInfo(language);
       try
       {
         return write();
@@ -165,9 +228,9 @@ namespace DeepNestSharp.CiTests
       }
     }
 
-    private static string WriteAndRead(string fileName, int unplacedCount, DateTime? now = null)
+    private static string WriteAndRead(string fileName, int unplacedCount, DateTime? now = null, string bracket = "bracket.dxf")
     {
-      var layouts = Layouts();
+      var layouts = Layouts(bracket);
       string dir = Path.Combine(Path.GetTempPath(), $"sheetnest-layout-{Guid.NewGuid():N}");
       Directory.CreateDirectory(dir);
       try
@@ -194,7 +257,7 @@ namespace DeepNestSharp.CiTests
     /// Two layouts on different sheets. The first carries two brackets and a washer with a hole and is cut
     /// three times; the second carries one bracket and is cut once.
     /// </summary>
-    private static List<(ISheetPlacement Sheet, int Count, string Name)> Layouts()
+    private static List<(ISheetPlacement Sheet, int Count, string Name)> Layouts(string bracket = "bracket.dxf")
     {
       var washer = Poly("washer.dxf", (0, 0), (10, 0), (10, 10), (0, 10));
       washer.Children.Add(new NoFitPolygon(new List<SvgPoint>
@@ -204,13 +267,13 @@ namespace DeepNestSharp.CiTests
 
       var first = new List<IPartPlacement>
       {
-        new PartPlacement(Poly("bracket.dxf", (0, 0), (10, 0), (10, 10), (0, 10))) { X = 0, Y = 0, Source = 0 },
-        new PartPlacement(Poly("bracket.dxf", (0, 0), (10, 0), (10, 10), (0, 10))) { X = 30, Y = 0, Source = 0 },
+        new PartPlacement(Poly(bracket, (0, 0), (10, 0), (10, 10), (0, 10))) { X = 0, Y = 0, Source = 0 },
+        new PartPlacement(Poly(bracket, (0, 0), (10, 0), (10, 10), (0, 10))) { X = 30, Y = 0, Source = 0 },
         new PartPlacement(washer) { X = 60, Y = 0, Source = 1 },
       };
       var second = new List<IPartPlacement>
       {
-        new PartPlacement(Poly("bracket.dxf", (0, 0), (10, 0), (10, 10), (0, 10))) { X = 0, Y = 0, Source = 0 },
+        new PartPlacement(Poly(bracket, (0, 0), (10, 0), (10, 10), (0, 10))) { X = 0, Y = 0, Source = 0 },
       };
 
       return new List<(ISheetPlacement Sheet, int Count, string Name)>

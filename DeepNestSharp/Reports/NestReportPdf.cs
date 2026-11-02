@@ -10,21 +10,28 @@
   using DeepNestLib;
   using DeepNestLib.Placement;
   using SheetNest.Localization;
+  using Media = System.Windows.Media;
 
   /// <summary>
   /// Writes the production nest report as a PDF: one nest sheet per DISTINCT layout, the paper the
   /// operator takes to the laser. Each page carries the layout's settings top left, the parts on it
   /// below them and the sheet drawn to scale on the right, every part numbered to its row.
-  /// Self-contained minimal PDF writer (vector lines + Courier text is all a report needs): no external
-  /// PDF library, nothing to license.
+  /// Self-contained minimal PDF writer (vector lines + Courier text is all a report needs, and letters
+  /// Courier lacks are drawn as their outlines): no external PDF library, nothing to license.
   /// </summary>
   public static class NestReportPdf
   {
     /// <summary>
-    /// How many Courier characters fit between the left margin and the sheet drawing: (384 - 36) points at
-    /// 6 points a character. A settings line, label and value, has to stay inside it in every language.
+    /// How many Courier columns fit between the left margin and the sheet drawing: (384 - 36) points at
+    /// 6 points a column. A settings line, label and value, has to stay inside it in every language.
     /// </summary>
     internal const int TextColumnChars = 58;
+
+    /// <summary>The size every line of the report is set at, in points.</summary>
+    private const double TextSize = 10;
+
+    /// <summary>Courier advances every character by this much of its size: one column.</summary>
+    private const double ColumnEm = 0.6;
 
     /// <summary>The report page, in points: US Letter landscape.</summary>
     internal const double PageW = 792;
@@ -45,7 +52,7 @@
 
     /// <summary>The parts list's column heading, padded to line up with <see cref="PartRows"/>.</summary>
     internal static string PartListHeader
-      => $"{Text(nameof(Strings.Report_ItemColumn)),4} {Text(nameof(Strings.Report_PartNameColumn)),-NameWidth} {Text(nameof(Strings.Report_NumOffColumn)),7}";
+      => $"{PadLeft(Text(nameof(Strings.Report_ItemColumn)), 4)} {PadRight(Text(nameof(Strings.Report_PartNameColumn)), NameWidth)} {PadLeft(Text(nameof(Strings.Report_NumOffColumn)), 7)}";
 
     /// <summary>Every settings label, so the colons line up under the longest one in the report's language.</summary>
     private static string[] SettingLabels => new[]
@@ -60,11 +67,11 @@
     };
 
     /// <summary>
-    /// A report text in the operator's language, or in English when that language has letters the report's
-    /// Courier cannot set: the file is written in Latin-1, and an English label beats a row of question marks.
+    /// How many Courier columns <paramref name="text"/> takes on the page: one for each letter Courier sets,
+    /// and as many as a run of other letters, drawn as outlines, needs to fit (a Chinese character takes
+    /// about two). The report lines its columns up by this count, so it never measures in characters.
     /// </summary>
-    internal static string Printable(string translated, string english)
-      => translated.All(ch => ch <= 'ÿ') ? translated : english;
+    internal static int Columns(string text) => Runs(text, TextSize).Sum(run => run.Columns);
 
     /// <summary>
     /// The four things a report page is drawn with, written into the page's content stream by
@@ -138,16 +145,11 @@
       string units)
     {
       var (sp, count, _) = layouts[index];
-      int labelWidth = SettingLabels.Max(label => label.Length);
-      string Setting(string key, string value) => $"{Text(key).PadRight(labelWidth)} : {value}";
+      int labelWidth = SettingLabels.Max(Columns);
+      string Setting(string key, string value) => $"{PadRight(Text(key), labelWidth)} : {value}";
 
-      // Day and month names in the report's language while the report can print them.
-      string dateFormat = Text(nameof(Strings.Report_DateFormat));
-      string date = now.ToString(dateFormat, Strings.Culture ?? CultureInfo.CurrentUICulture);
-      if (Printable(date, string.Empty).Length == 0)
-      {
-        date = now.ToString(dateFormat, CultureInfo.InvariantCulture);
-      }
+      // Day and month names in the report's language.
+      string date = now.ToString(Text(nameof(Strings.Report_DateFormat)), Strings.Culture ?? CultureInfo.CurrentUICulture);
 
       var job = new List<string>
       {
@@ -178,7 +180,7 @@
     /// </summary>
     internal static List<string> PartRows(ISheetPlacement sheet)
       => NumberedParts(sheet)
-        .Select(t => $"{t.Number,4} {Trunc(t.File, NameWidth),-NameWidth} {t.Qty,7}")
+        .Select(t => $"{t.Number,4} {PadRight(Trunc(t.File, NameWidth), NameWidth)} {t.Qty,7}")
         .ToList();
 
     /// <summary>Points per sheet unit that the page draws this sheet at: as big as the drawing's room allows
@@ -196,8 +198,8 @@
       string units)
     {
       // Courier advances every character by 0.6 em, so at 10 points each column is a count of 6 point
-      // steps and a line padded with spaces lines up under the one above without measuring anything.
-      const double size = 10;
+      // steps and a line padded with spaces (see Columns) lines up under the one above.
+      const double size = TextSize;
       const double leading = 12;
       const double left = 36;
       const double bottom = 48;
@@ -315,7 +317,7 @@
     private static void Heading(IPageCanvas c, double x, double y, double size, string title)
     {
       c.Text(x, y, size, bold: false, title);
-      c.Line(x, y - 3, x + (0.6 * size * title.Length), y - 3, 0.6);
+      c.Line(x, y - 3, x + (ColumnEm * size * Columns(title)), y - 3, 0.6);
     }
 
     private static double Util(ISheetPlacement sp)
@@ -645,13 +647,98 @@
       return Math.Sqrt(((px - qx) * (px - qx)) + ((py - qy) * (py - qy)));
     }
 
-    private static string Trunc(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "~";
+    /// <summary><paramref name="s"/> cut to <paramref name="max"/> columns, ending in ~ when it was longer. It
+    /// cuts between whole letters, so a Hindi letter never loses its vowel sign.</summary>
+    private static string Trunc(string s, int max)
+    {
+      if (Columns(s) <= max)
+      {
+        return s;
+      }
 
-    /// <summary>The report text stored under <paramref name="key"/>, printable; see <see cref="Printable"/>.</summary>
-    private static string Text(string key)
-      => Printable(
-        Strings.ResourceManager.GetString(key, Strings.Culture) ?? string.Empty,
-        Strings.ResourceManager.GetString(key, CultureInfo.InvariantCulture) ?? string.Empty);
+      string kept = string.Empty;
+      var letters = StringInfo.GetTextElementEnumerator(s);
+      while (letters.MoveNext())
+      {
+        string longer = kept + letters.GetTextElement();
+        if (Columns(longer) > max - 1)
+        {
+          break;
+        }
+
+        kept = longer;
+      }
+
+      return kept + "~";
+    }
+
+    /// <summary><paramref name="s"/> with spaces after it up to <paramref name="columns"/> columns.</summary>
+    private static string PadRight(string s, int columns) => s + new string(' ', Math.Max(0, columns - Columns(s)));
+
+    /// <summary><paramref name="s"/> with spaces before it up to <paramref name="columns"/> columns.</summary>
+    private static string PadLeft(string s, int columns) => new string(' ', Math.Max(0, columns - Columns(s))) + s;
+
+    /// <summary>The report text stored under <paramref name="key"/> in the report's language.</summary>
+    private static string Text(string key) => Strings.ResourceManager.GetString(key, Strings.Culture) ?? string.Empty;
+
+    /// <summary>
+    /// <paramref name="text"/> split into what Courier sets and what is drawn as outlines, each with the columns
+    /// it takes at <paramref name="size"/>. Spaces stay Courier columns, so padding lines up whatever the
+    /// language; a drawn run is a whole word, and letters only join within a word. Empty text is one empty
+    /// Courier run.
+    /// </summary>
+    private static List<(string Text, bool Courier, int Columns)> Runs(string text, double size)
+    {
+      var runs = new List<(string Text, bool Courier, int Columns)>();
+      int i = 0;
+      while (i < text.Length)
+      {
+        int start = i;
+        if (InCourier(text[i]))
+        {
+          while (i < text.Length && InCourier(text[i]))
+          {
+            i++;
+          }
+
+          runs.Add((text.Substring(start, i - start), true, i - start));
+          continue;
+        }
+
+        while (i < text.Length && !InCourier(text[i]))
+        {
+          i++;
+        }
+
+        string drawn = text.Substring(start, i - start);
+        runs.Add((drawn, false, (int)Math.Ceiling((Outline(drawn, size).Width / (ColumnEm * size)) - 1e-9)));
+      }
+
+      if (runs.Count == 0)
+      {
+        runs.Add((text, true, 0));
+      }
+
+      return runs;
+    }
+
+    /// <summary>Whether Courier sets <paramref name="ch"/>: the report's Courier is Latin-1.</summary>
+    private static bool InCourier(char ch) => ch <= 'ÿ';
+
+    /// <summary>
+    /// <paramref name="text"/> laid out the way the screen would set it, in the report's language: shaped (a
+    /// Hindi consonant cluster joins, its vowel signs move into place) and set in a system font that has the
+    /// letters.
+    /// </summary>
+    private static Media.FormattedText Outline(string text, double size)
+      => new Media.FormattedText(
+        text,
+        Strings.Culture ?? CultureInfo.CurrentUICulture,
+        System.Windows.FlowDirection.LeftToRight,
+        new Media.Typeface("Segoe UI"),
+        size,
+        Media.Brushes.Black,
+        1.0);
 
     private static string Num(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
 
@@ -660,10 +747,28 @@
     {
       private readonly StringBuilder sb = new StringBuilder();
 
+      /// <summary>
+      /// A line of text from its baseline. What Courier sets is written in Courier; letters it lacks are
+      /// drawn as their filled outlines, each run starting at its column, so the columns still line up.
+      /// </summary>
       public void Text(double x, double y, double size, bool bold, string text)
       {
-        this.sb.AppendLine(FormattableString.Invariant(
-          $"BT /{(bold ? "F2" : "F1")} {size:0.#} Tf {x:0.##} {y:0.##} Td ({Escape(text)}) Tj ET"));
+        int column = 0;
+        foreach (var run in Runs(text, size))
+        {
+          double runX = x + (column * ColumnEm * size);
+          if (run.Courier)
+          {
+            this.sb.AppendLine(FormattableString.Invariant(
+              $"BT /{(bold ? "F2" : "F1")} {size:0.#} Tf {runX:0.##} {y:0.##} Td ({Escape(run.Text)}) Tj ET"));
+          }
+          else
+          {
+            this.Drawn(runX, y, size, run.Text);
+          }
+
+          column += run.Columns;
+        }
       }
 
       public void Line(double x1, double y1, double x2, double y2, double width)
@@ -714,11 +819,103 @@
       {
         return s.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
       }
+
+      /// <summary>
+      /// <paramref name="text"/> as filled glyph outlines with its baseline at <paramref name="y"/>, in the
+      /// text's black. The outlines are WPF's (screen Y down), so each point is turned over about the baseline.
+      /// </summary>
+      private void Drawn(double x, double y, double size, string text)
+      {
+        Media.FormattedText formatted = Outline(text, size);
+        Media.Geometry letters = formatted.BuildGeometry(new System.Windows.Point(0, 0));
+        if (letters == null || letters.IsEmpty())
+        {
+          return;
+        }
+
+        Media.PathGeometry path = Media.PathGeometry.CreateFromGeometry(letters);
+        bool curvesOnly = path.Figures.All(f => f.Segments.All(s =>
+          s is Media.LineSegment || s is Media.PolyLineSegment || s is Media.BezierSegment || s is Media.PolyBezierSegment
+          || s is Media.QuadraticBezierSegment || s is Media.PolyQuadraticBezierSegment));
+        if (!curvesOnly)
+        {
+          path = path.GetFlattenedPathGeometry();
+        }
+
+        double top = y + formatted.Baseline;
+        string P(System.Windows.Point p) => FormattableString.Invariant($"{x + p.X:0.##} {top - p.Y:0.##}");
+        foreach (Media.PathFigure figure in path.Figures)
+        {
+          System.Windows.Point at = figure.StartPoint;
+          this.sb.Append(P(at)).Append(" m ");
+          foreach (Media.PathSegment segment in figure.Segments)
+          {
+            switch (segment)
+            {
+              case Media.LineSegment line:
+                this.sb.Append(P(line.Point)).Append(" l ");
+                at = line.Point;
+                break;
+              case Media.PolyLineSegment lines:
+                foreach (var p in lines.Points)
+                {
+                  this.sb.Append(P(p)).Append(" l ");
+                  at = p;
+                }
+
+                break;
+              case Media.BezierSegment curve:
+                this.sb.Append(P(curve.Point1)).Append(' ').Append(P(curve.Point2)).Append(' ').Append(P(curve.Point3)).Append(" c ");
+                at = curve.Point3;
+                break;
+              case Media.PolyBezierSegment curves:
+                for (int i = 0; i + 2 < curves.Points.Count; i += 3)
+                {
+                  this.sb.Append(P(curves.Points[i])).Append(' ').Append(P(curves.Points[i + 1])).Append(' ').Append(P(curves.Points[i + 2])).Append(" c ");
+                  at = curves.Points[i + 2];
+                }
+
+                break;
+              case Media.QuadraticBezierSegment quad:
+                at = this.Quadratic(at, quad.Point1, quad.Point2, P);
+                break;
+              case Media.PolyQuadraticBezierSegment quads:
+                for (int i = 0; i + 1 < quads.Points.Count; i += 2)
+                {
+                  at = this.Quadratic(at, quads.Points[i], quads.Points[i + 1], P);
+                }
+
+                break;
+            }
+          }
+
+          if (figure.IsClosed)
+          {
+            this.sb.Append("h ");
+          }
+        }
+
+        this.sb.AppendLine(path.FillRule == Media.FillRule.EvenOdd ? "f*" : "f");
+      }
+
+      /// <summary>A quadratic curve written as the cubic PDF draws, the same curve; returns where it ends.</summary>
+      private System.Windows.Point Quadratic(
+        System.Windows.Point from,
+        System.Windows.Point control,
+        System.Windows.Point to,
+        Func<System.Windows.Point, string> p)
+      {
+        var c1 = new System.Windows.Point(from.X + (2.0 / 3.0 * (control.X - from.X)), from.Y + (2.0 / 3.0 * (control.Y - from.Y)));
+        var c2 = new System.Windows.Point(to.X + (2.0 / 3.0 * (control.X - to.X)), to.Y + (2.0 / 3.0 * (control.Y - to.Y)));
+        this.sb.Append(p(c1)).Append(' ').Append(p(c2)).Append(' ').Append(p(to)).Append(" c ");
+        return to;
+      }
     }
 
     /// <summary>
     /// Minimal PDF assembler: fixed Letter-landscape pages, Courier + Courier-Bold (standard-14 fonts
-    /// every viewer ships, so nothing is embedded), uncompressed content streams, exact xref.
+    /// every viewer ships, so nothing is embedded; other letters are already outlines in the content),
+    /// uncompressed content streams, exact xref.
     /// </summary>
     private sealed class MiniPdf
     {
