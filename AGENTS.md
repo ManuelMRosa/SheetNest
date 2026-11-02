@@ -248,6 +248,16 @@ Verificar con Git al iniciar; esta sección es una referencia fechada.
   entrega la apertura a los 3 s (Fast no cabía); a 30 s corta Fast a las 0:30 y entrega la apertura; el dibujo de 19
   piezas a 2 s entrega a las 0:02, 19 en una lámina compartiendo. Visto: tras un corte por tiempo, los procesos del
   motor de la ronda tirada tardan unos 20 s en cerrarse. Suites: app sin motor 557 + 13 omitidas, traducciones 5/5.
+- 2026-11-02, rama `cpp-compact` (desde `nest-time`), sin push: **piloto del núcleo nativo en C++.** `native/`
+  (CMake, C++17) compila `sheetnest_core.dll` con MSVC (C++ estático, ucrt del sistema, `/fp:precise`) y `.so` con
+  gcc en Linux. Lleva Clipper 6.4.2 C++ sin cambios (`native/third_party/clipper`, Boost) y `snc_compact`, traducción
+  línea a línea de `RasterCompact.Compact` con API en C plana. `RasterCompact.Compact` llama al nativo
+  (`NativeCompact.cs`) y, si la DLL falta, no carga o rechaza la entrada, corre el C# de siempre (`CompactManaged`);
+  `SHEETNEST_NATIVE=off` fuerza el C#. La DLL va precompilada en `NativeDlls/`, como las de Minkowski; CI no compila
+  nativo. Paridad: `RasterCompactParityFixture`, 10 casos inventados, posiciones idénticas al último bit; 6 de 7
+  sabotajes del C++ en rojo (un sort inestable no se nota: MSVC ordena estable los rangos cortos). Suites de la app
+  con y sin `SHEETNEST_NATIVE=off`: 579 + 14 omitidas. Medido en 4 trabajos reales a Fast: mismo hash, compactación
+  de 1.6× a 7× más rápida; el total casi no cambia (manda sparrow o el planificador).
 - La tabla de abajo no coincide con `main` de hoy. Medido con Fast: mixto 30 colocadas y 36 aristas;
   test2 x16/x17/x24/x25 con 26/27/41/42 aristas; x26 con 29 aristas, `isolated=1`, cadena 19; x27 con
   26 colocadas y 28 aristas. Comparar contra una línea base medida, no contra la tabla.
