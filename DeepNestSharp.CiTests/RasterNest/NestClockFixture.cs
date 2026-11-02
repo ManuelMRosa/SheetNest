@@ -1,6 +1,7 @@
-namespace DeepNestSharp.CiTests.RasterNest
+﻿namespace DeepNestSharp.CiTests.RasterNest
 {
   using System;
+  using System.Collections.Generic;
   using DeepNestSharp.RasterNest;
   using FluentAssertions;
   using Xunit;
@@ -37,6 +38,33 @@ namespace DeepNestSharp.CiTests.RasterNest
       NestClock.SearchMs(TimeSpan.FromMilliseconds(300), commonLine: false).Should().Be(NestClock.MinSearchMs, "a search shorter than this is not worth starting the engine for");
     }
 
+    /// <summary>A job expected to take one sheet that turns out to need three gets the time per sheet for each,
+    /// and never less than it was given; the new end is announced so the status line can show it.</summary>
+    [Fact]
+    public void ASheetBeyondTheExpectedOnesBringsItsOwnTime()
+    {
+      var announced = new List<TimeSpan>();
+      var clock = new NestClock(new StoppedClock(), TimeSpan.FromSeconds(2), secondsPerSheet: 2, extended: announced.Add);
+
+      clock.CoverSheets(1);
+      clock.End.Should().Be(TimeSpan.FromSeconds(2), "one sheet was expected and one is in use");
+      clock.CoverSheets(3);
+      clock.End.Should().Be(TimeSpan.FromSeconds(6));
+      clock.CoverSheets(2);
+      clock.End.Should().Be(TimeSpan.FromSeconds(6), "the time given is never taken back");
+      announced.Should().Equal(TimeSpan.FromSeconds(6));
+    }
+
+    [Fact]
+    public void WithoutATimePerSheetTheEndStaysPut()
+    {
+      var clock = new NestClock(new StoppedClock(), TimeSpan.FromSeconds(10));
+
+      clock.CoverSheets(50);
+
+      clock.End.Should().Be(TimeSpan.FromSeconds(10));
+    }
+
     [Fact]
     public void ByTheClockTheEngineIsToldATimeAndNoCount()
     {
@@ -53,6 +81,16 @@ namespace DeepNestSharp.CiTests.RasterNest
       var arguments = SparrowNestService.SparrowArguments("job.json", 300, 1_000_000, 2, 7);
 
       arguments.Should().Equal("-i", "job.json", "--max-iterations", "300", "--max-evals", "1000000", "-x", "-s", "7", "--workers", "2");
+    }
+
+    /// <summary>A clock that never moves: only the end matters here.</summary>
+    private sealed class StoppedClock : IRoundClock
+    {
+      public TimeSpan Elapsed => TimeSpan.Zero;
+
+      public void CancelAt(System.Threading.CancellationTokenSource source, TimeSpan at)
+      {
+      }
     }
   }
 }

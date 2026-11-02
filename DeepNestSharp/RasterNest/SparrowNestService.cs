@@ -385,7 +385,7 @@
           margin,
           perSheetBudgetSec,
           sparrowExePath,
-          new NestClock(clock, maxTime),
+          new NestClock(clock, maxTime, secondsPerSheet, limit),
           rowPattern,
           sharing,
           out error,
@@ -532,6 +532,7 @@
           var pattern = RunRowPattern(loaded, stock, margin, sparrowExePath, cut.Token, progress, commonLineGap, geometryTolerance, commonLineMaxClusterParts, out _);
           if (pattern != null && !cut.IsCancellationRequested)
           {
+            clock.CoverSheets(pattern.UsedSheets.Count());
             kept = new TimedRound(pattern, sharing.Contains);
             report.OpeningFinished = true;
             newBest?.Invoke(pattern);
@@ -600,6 +601,7 @@
         }
       }
 
+      report.MaxTime = clock.End; // grown by any sheet the job used beyond the expected ones
       report.OverTime = clock.Elapsed > clock.End + ClockLeeway;
       if (kept == null)
       {
@@ -909,7 +911,9 @@
         IReadOnlyList<CommonLineFallbackNotice> bestCommonLineFallbacks = Array.Empty<CommonLineFallbackNotice>();
 
         // By the clock this sheet gets its share of what is left, the rest split over the sheets still
-        // expected, and each stock size tried for it a part of that share.
+        // expected, and each stock size tried for it a part of that share. A sheet past the ones the job was
+        // expected to take brings its own time with it.
+        clock?.CoverSheets(sheetNum);
         TimeSpan sheetShare = clock == null
           ? TimeSpan.Zero
           : clock.SheetShare(SheetsLeft(pool, loadedById, sizes, margin)) / Math.Max(1, sizes.Count(s => s.HasStock));
@@ -2102,7 +2106,13 @@
         CommonCuttingDomain = ccById.TryGetValue(pp.Source, out var domain) ? domain.CommonCuttingDomain : string.Empty,
       }).ToList();
       var stageClock = Stopwatch.StartNew();
-      RasterCompact.Compact(compactItems, sheetWin, sheetHin, margin, cancel: cancel);
+
+      // By the clock the compaction stops when the sheet's share is spent and keeps what it reached; on a big
+      // perforated panel one pass could otherwise take longer than the whole share.
+      TimeSpan compactLeft = plannerTimeLeft == null ? TimeSpan.Zero : plannerTimeLeft();
+      using var clockStop = plannerTimeLeft == null ? null : new CancellationTokenSource(compactLeft > TimeSpan.Zero ? compactLeft : TimeSpan.Zero);
+      CancellationToken compactStop = clockStop?.Token ?? CancellationToken.None;
+      RasterCompact.Compact(compactItems, sheetWin, sheetHin, margin, cancel: cancel, stop: compactStop);
       NestDiagnostics.AddElapsed("map.compact-1", stageClock);
       for (int k = 0; k < all.Count; k++)
       {
@@ -2171,7 +2181,8 @@
           margin,
           groups: direct.Groups,
           cancel: cancel,
-          commonLineGap: commonLineGap);
+          commonLineGap: commonLineGap,
+          stop: compactStop);
         NestDiagnostics.AddElapsed("map.compact-2", stageClock);
         for (int k = 0; k < all.Count; k++)
         {
@@ -3875,12 +3886,23 @@
       }
 
       reportStage("candidates");
-      for (int a = 0; a < n; a++)
+
+      // By the clock the candidates may take two thirds of what is left when they start; past that no new pair
+      // is looked at, so the beam and the forest still have time to plan the ones already found.
+      TimeSpan candidatesStopAt = timeLeft == null ? TimeSpan.Zero : timeLeft() / 3;
+      bool candidatesTimeUp = false;
+      for (int a = 0; a < n && !candidatesTimeUp; a++)
       {
         cancel.ThrowIfCancellationRequested();
         for (int b = a + 1; b < n; b++)
         {
           cancel.ThrowIfCancellationRequested();
+          if (timeLeft != null && timeLeft() <= candidatesStopAt)
+          {
+            candidatesTimeUp = true;
+            break;
+          }
+
           if (!MayShare(a, b))
           {
             continue;

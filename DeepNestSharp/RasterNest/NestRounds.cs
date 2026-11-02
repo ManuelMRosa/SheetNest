@@ -418,14 +418,42 @@ namespace DeepNestSharp.RasterNest
     internal const int MinSearchMs = 150;
 
     private readonly IRoundClock clock;
+    private readonly double secondsPerSheet;
+    private readonly Action<TimeSpan>? extended;
 
-    public NestClock(IRoundClock clock, TimeSpan end)
+    /// <param name="end">The time the job has, from the sheets it was expected to take.</param>
+    /// <param name="secondsPerSheet">The time per sheet the operator set; a job that turns out to use more sheets
+    /// than expected gets it for each of them (<see cref="CoverSheets"/>). Zero keeps <paramref name="end"/> fixed.</param>
+    /// <param name="extended">Told of the new end each time it moves.</param>
+    public NestClock(IRoundClock clock, TimeSpan end, double secondsPerSheet = 0, Action<TimeSpan>? extended = null)
     {
       this.clock = clock;
       this.End = end;
+      this.secondsPerSheet = secondsPerSheet;
+      this.extended = extended;
     }
 
-    public TimeSpan End { get; }
+    public TimeSpan End { get; private set; }
+
+    /// <summary>
+    /// The job is using at least <paramref name="sheets"/> sheets, so it gets the time per sheet for each of them:
+    /// the expected count is an estimate from the parts' area as if they packed solid, and a job that fills its
+    /// sheets less than that would otherwise run out of time on sheets it was never given time for.
+    /// </summary>
+    public void CoverSheets(int sheets)
+    {
+      if (this.secondsPerSheet <= 0)
+      {
+        return;
+      }
+
+      TimeSpan covered = TimeSpan.FromSeconds(this.secondsPerSheet * sheets);
+      if (covered > this.End)
+      {
+        this.End = covered;
+        this.extended?.Invoke(covered);
+      }
+    }
 
     public TimeSpan Elapsed => this.clock.Elapsed;
 
