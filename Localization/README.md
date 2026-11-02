@@ -57,7 +57,7 @@ With the tools from [BUILDING.md](../BUILDING.md) installed, from the repository
 dotnet build DeepNestSharp/DeepNestSharp.csproj -c Release
 ```
 
-Start `DeepNestSharp/bin/Release/net6.0-windows/SheetNest.exe`, choose your language in **Settings > Language**
+Start `DeepNestSharp/bin/Release/net10.0-windows/SheetNest.exe`, choose your language in **Settings > Language**
 and open SheetNest again.
 
 To run the same check as the pull request:

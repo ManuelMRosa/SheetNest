@@ -3,12 +3,12 @@
 You only need this if you want to build SheetNest yourself. Most people should just
 download the installer from the [latest release](https://github.com/ManuelMRosa/SheetNest/releases/latest).
 
-SheetNest is a .NET 6 / WPF desktop app for Windows.
+SheetNest is a .NET 10 / WPF desktop app for Windows.
 
 ## Prerequisites
 
 - Windows 10/11 (64-bit)
-- .NET 6 SDK
+- .NET 10 SDK
 - Visual Studio 2022 (or the .NET SDK with your editor of choice)
 
 ## Build & test
