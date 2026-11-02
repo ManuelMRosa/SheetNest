@@ -266,6 +266,15 @@ Verificar con Git al iniciar; esta sección es una referencia fechada.
   holgura (`unfit`) solo 2.1 → 2.0 s y el planificador igual (~30 s): su costo está fuera de `TooClose` (copias de
   polígono y revalidaciones). Suites de la app con el núcleo: 587 + 14 omitidas; con `SHEETNEST_NATIVE=off` igual,
   salvo la carrera conocida de `Strings.Culture` que a veces tumba `CommonLineFallbackMessageFixture`.
+- 2026-11-02, rama `fewer-copies` (desde `cpp-compact`), sin push: **`PartPlacement.PlacedPart` ya no copia en cada
+  lectura.** Guarda la copia desplazada y la devuelve mientras no cambien la posición (bits de X, Y) ni los arreglos de
+  puntos de la pieza y de cada contorno interior; devuelve exactamente lo que construye `Shift`. Nadie escribe en ese
+  polígono en el anidado. Pruebas: `PartPlacementPlacedPartFixture` (misma instancia, mismos bits que `Shift`, se ve un
+  movimiento, puntos nuevos, un hueco añadido o cambiado, una isla), rojas contra 3 sabotajes. Mismo hash en
+  tri100-cl, test2-26-cl-1 y mixreg-cl (ahí no se nota: su planificador se va en generar candidatos, 84 % en tri100-cl).
+  Mesa de soldar con common line a 15 s: 93 → 62 s, planificador "forest" 313 → 185 s, mismo hash. Visto, sin tocar:
+  `NoFitPolygon.Reverse()` hace `this.points.Reverse()`, que con C# 14 / .NET 10 invierte en su sitio (antes LINQ, no
+  hacía nada); solo lo llaman `NfpHelper` (heredado) y `ObservableNfp`.
 - La tabla de abajo no coincide con `main` de hoy. Medido con Fast: mixto 30 colocadas y 36 aristas;
   test2 x16/x17/x24/x25 con 26/27/41/42 aristas; x26 con 29 aristas, `isolated=1`, cadena 19; x27 con
   26 colocadas y 28 aristas. Comparar contra una línea base medida, no contra la tabla.
