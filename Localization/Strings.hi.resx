@@ -934,7 +934,7 @@
     <value>नया प्रोजेक्ट</value>
   </data>
   <data name="Menu_Offcut" xml:space="preserve">
-    <value>बचा हुआ टुकड़ा...</value>
+    <value>बचा हुआ टुकड़ा और स्क्रैप कट...</value>
   </data>
   <data name="Menu_OpenProject" xml:space="preserve">
     <value>प्रोजेक्ट खोलें...</value>
@@ -1166,7 +1166,58 @@ https://github.com/ManuelMRosa/SheetNest/issues</value>
     <value>पैक किए गए पार्ट और बचे हुए टुकड़े की कट लाइन के बीच रखा गया गैप (ड्रॉइंग यूनिट)।</value>
   </data>
   <data name="Offcut_Title" xml:space="preserve">
-    <value>बचा हुआ टुकड़ा</value>
+    <value>बचा हुआ टुकड़ा और स्क्रैप कट</value>
+  </data>
+  <data name="Scrap_Enable" xml:space="preserve">
+    <value>स्क्रैप कट से स्केलेटन को टुकड़ों में काटें</value>
+  </data>
+  <data name="Scrap_EnableTip" xml:space="preserve">
+    <value>स्केलेटन, यानी पार्ट्स के आसपास बची शीट, पर सीधे कट जोड़ता है ताकि वह ऐसे टुकड़ों में निकले जिन्हें उठाया जा सके। हर कट पार्ट्स से नीचे दी गई दूरी पर रुक जाता है। ये हर शीट पर लगते हैं, बचे हुए टुकड़े के अंदर कभी नहीं, और बचे हुए टुकड़े के कट के साथ एक्सपोर्ट होते हैं। ये किसी पार्ट को कभी नहीं हिलाते।</value>
+  </data>
+  <data name="Scrap_Lines" xml:space="preserve">
+    <value>कट की दिशा</value>
+  </data>
+  <data name="Scrap_Both" xml:space="preserve">
+    <value>दोनों दिशाएँ</value>
+  </data>
+  <data name="Scrap_BothTip" xml:space="preserve">
+    <value>खड़े और आड़े कट: स्केलेटन आयताकार टुकड़ों में निकलता है।</value>
+  </data>
+  <data name="Scrap_Vertical" xml:space="preserve">
+    <value>खड़े</value>
+  </data>
+  <data name="Scrap_VerticalTip" xml:space="preserve">
+    <value>सिर्फ़ खड़े कट, हर खड़ी लाइन स्पेसिंग पर एक।</value>
+  </data>
+  <data name="Scrap_Horizontal" xml:space="preserve">
+    <value>आड़े</value>
+  </data>
+  <data name="Scrap_HorizontalTip" xml:space="preserve">
+    <value>सिर्फ़ आड़े कट, हर आड़ी लाइन स्पेसिंग पर एक।</value>
+  </data>
+  <data name="Scrap_SpacingXFormat" xml:space="preserve">
+    <value>खड़ी लाइन स्पेसिंग ({0}):</value>
+  </data>
+  <data name="Scrap_SpacingXTip" xml:space="preserve">
+    <value>खड़े कट के बीच चाही गई दूरी। स्केलेटन बराबर हिस्सों में बँटता है, उतने टुकड़ों में जो इस दूरी के सबसे करीब हों, इसलिए असली दूरी थोड़ी ज़्यादा या कम हो सकती है। 0 = कोई खड़ा कट नहीं।</value>
+  </data>
+  <data name="Scrap_SpacingYFormat" xml:space="preserve">
+    <value>आड़ी लाइन स्पेसिंग ({0}):</value>
+  </data>
+  <data name="Scrap_SpacingYTip" xml:space="preserve">
+    <value>आड़े कट के बीच चाही गई दूरी, उसी तरह बराबर बँटी हुई। 0 = कोई आड़ा कट नहीं।</value>
+  </data>
+  <data name="Scrap_PartGapFormat" xml:space="preserve">
+    <value>पार्ट्स से दूरी ({0}):</value>
+  </data>
+  <data name="Scrap_PartGapTip" xml:space="preserve">
+    <value>जहाँ कट किसी पार्ट तक पहुँचता है, वहाँ वह उससे कम से कम इतनी दूरी पर रुक जाता है और एक पतला जोड़ छोड़ता है जो हाथ से टूट जाता है।</value>
+  </data>
+  <data name="Scrap_EdgeOverlapTip" xml:space="preserve">
+    <value>हर कट शीट के किनारे से कितना आगे जाता है, ताकि टुकड़ा किनारे पर अटका न रहे बल्कि पूरी तरह निकल जाए। 0 = किनारे के बराबर।</value>
+  </data>
+  <data name="Scrap_ResetDefaultsTip" xml:space="preserve">
+    <value>ऊपर के चार नंबर इस ड्रॉइंग की यूनिट के लिए सुझाए गए मानों पर वापस लाता है। कट की दिशा और चालू करने वाला टिक नहीं बदलते।</value>
   </data>
   <data name="Part_CommonLine" xml:space="preserve">
     <value>कॉमन लाइन</value>

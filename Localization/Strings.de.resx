@@ -934,7 +934,7 @@
     <value>Neues Projekt</value>
   </data>
   <data name="Menu_Offcut" xml:space="preserve">
-    <value>Restblech...</value>
+    <value>Restblech und Restgitterschnitte...</value>
   </data>
   <data name="Menu_OpenProject" xml:space="preserve">
     <value>Projekt öffnen...</value>
@@ -1166,7 +1166,58 @@ Die Download-Seite öffnen?</value>
     <value>Abstand zwischen den platzierten Teilen und der Schnittlinie des Restblechs (Zeichnungseinheiten).</value>
   </data>
   <data name="Offcut_Title" xml:space="preserve">
-    <value>Restblech</value>
+    <value>Restblech und Restgitterschnitte</value>
+  </data>
+  <data name="Scrap_Enable" xml:space="preserve">
+    <value>Restgitter mit Trennschnitten zerteilen</value>
+  </data>
+  <data name="Scrap_EnableTip" xml:space="preserve">
+    <value>Fügt gerade Schnitte quer durch das Restgitter hinzu, also das Blech, das um die Teile übrig bleibt, damit es in Stücken abfällt, die sich anheben lassen. Jeder Schnitt endet mit dem Abstand unten vor den Teilen. Sie kommen auf jedes Blech, nie in das Restblech, und werden zusammen mit dem Restblechschnitt exportiert. Sie verschieben nie ein Teil.</value>
+  </data>
+  <data name="Scrap_Lines" xml:space="preserve">
+    <value>Richtung der Schnitte</value>
+  </data>
+  <data name="Scrap_Both" xml:space="preserve">
+    <value>Beide Richtungen</value>
+  </data>
+  <data name="Scrap_BothTip" xml:space="preserve">
+    <value>Senkrechte und waagerechte Schnitte: Das Restgitter fällt in Rechtecken ab.</value>
+  </data>
+  <data name="Scrap_Vertical" xml:space="preserve">
+    <value>Senkrecht</value>
+  </data>
+  <data name="Scrap_VerticalTip" xml:space="preserve">
+    <value>Nur senkrechte Schnitte, einer pro senkrechtem Linienabstand.</value>
+  </data>
+  <data name="Scrap_Horizontal" xml:space="preserve">
+    <value>Waagerecht</value>
+  </data>
+  <data name="Scrap_HorizontalTip" xml:space="preserve">
+    <value>Nur waagerechte Schnitte, einer pro waagerechtem Linienabstand.</value>
+  </data>
+  <data name="Scrap_SpacingXFormat" xml:space="preserve">
+    <value>Abstand senkrecht ({0}):</value>
+  </data>
+  <data name="Scrap_SpacingXTip" xml:space="preserve">
+    <value>Der gewünschte Abstand zwischen senkrechten Schnitten. Das Restgitter wird gleichmäßig in die Anzahl Stücke geteilt, die diesem Abstand am nächsten kommt; der tatsächliche Abstand kann also etwas größer oder kleiner sein. 0 = keine senkrechten Schnitte.</value>
+  </data>
+  <data name="Scrap_SpacingYFormat" xml:space="preserve">
+    <value>Abstand waagerecht ({0}):</value>
+  </data>
+  <data name="Scrap_SpacingYTip" xml:space="preserve">
+    <value>Der gewünschte Abstand zwischen waagerechten Schnitten, auf dieselbe Weise gleichmäßig geteilt. 0 = keine waagerechten Schnitte.</value>
+  </data>
+  <data name="Scrap_PartGapFormat" xml:space="preserve">
+    <value>Abstand zu den Teilen ({0}):</value>
+  </data>
+  <data name="Scrap_PartGapTip" xml:space="preserve">
+    <value>Wo ein Schnitt auf ein Teil trifft, endet er mindestens so weit davor und lässt einen dünnen Steg, der sich von Hand brechen lässt.</value>
+  </data>
+  <data name="Scrap_EdgeOverlapTip" xml:space="preserve">
+    <value>Wie weit jeder Schnitt ÜBER die Blechkante hinausläuft, damit das Stück abfällt, statt an der Kante hängen zu bleiben. 0 = bündig mit der Kante.</value>
+  </data>
+  <data name="Scrap_ResetDefaultsTip" xml:space="preserve">
+    <value>Setzt die vier Zahlen oben auf die empfohlenen Werte für die Einheiten dieser Zeichnung zurück. Die Richtung der Schnitte und der Aktivierungshaken bleiben unverändert.</value>
   </data>
   <data name="Part_CommonLine" xml:space="preserve">
     <value>gemeinsamer Schnitt</value>

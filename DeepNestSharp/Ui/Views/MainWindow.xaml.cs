@@ -53,6 +53,12 @@
     private double offcutMaxX = -1;
     private double offcutMaxY = -1;
     private double offcutEdgeOverlap = -1; // how far the cut runs past the sheet edge; <=0 = flush
+    private bool scrapCutsEnabled; // cut the skeleton into pieces (SessionState.ScrapCutsEnabled)
+    private int scrapCutType = -1; // the scrap cut settings as saved; -1 = default (SessionState)
+    private double scrapSpacingX = -1;
+    private double scrapSpacingY = -1;
+    private double scrapPartGap = -1;
+    private double scrapEdgeOverlap = -1;
 
     public MainWindow(IMainViewModel viewModel)
     {
@@ -238,6 +244,12 @@
         this.offcutMaxX = session.OffcutMaxX;
         this.offcutMaxY = session.OffcutMaxY;
         this.offcutEdgeOverlap = session.OffcutEdgeOverlap;
+        this.scrapCutsEnabled = session.ScrapCutsEnabled == true;
+        this.scrapCutType = session.ScrapCutType;
+        this.scrapSpacingX = session.ScrapSpacingX;
+        this.scrapSpacingY = session.ScrapSpacingY;
+        this.scrapPartGap = session.ScrapPartGap;
+        this.scrapEdgeOverlap = session.ScrapEdgeOverlap;
       }
 
       // Create the initial document only AFTER restoring the session. ProjectInfo snapshots the
@@ -593,7 +605,7 @@
     private void OnOffcutSettings(object sender, RoutedEventArgs e)
     {
       var (limits, spacing, edgeOverlap) = this.EffectiveOffcutLimits();
-      var dialog = new OffcutSettingsWindow(this.preferRectOffcut, this.offcutDirection, spacing, limits, edgeOverlap, this.unitsMm) { Owner = this };
+      var dialog = new OffcutSettingsWindow(this.preferRectOffcut, this.offcutDirection, spacing, limits, edgeOverlap, this.scrapCutsEnabled, this.EffectiveScrapCuts(), this.unitsMm) { Owner = this };
       if (dialog.ShowDialog() != true)
       {
         return;
@@ -607,6 +619,12 @@
       this.offcutMaxX = dialog.Limits.MaxX;
       this.offcutMaxY = dialog.Limits.MaxY;
       this.offcutEdgeOverlap = dialog.EdgeOverlap;
+      this.scrapCutsEnabled = dialog.ScrapCutsEnabled;
+      this.scrapCutType = (int)dialog.ScrapCuts.Type;
+      this.scrapSpacingX = dialog.ScrapCuts.SpacingX;
+      this.scrapSpacingY = dialog.ScrapCuts.SpacingY;
+      this.scrapPartGap = dialog.ScrapCuts.PartGap;
+      this.scrapEdgeOverlap = dialog.ScrapCuts.EdgeOverlap;
 
       var session = SessionState.Load();
       session.PreferRectangularOffcut = this.preferRectOffcut;
@@ -617,6 +635,12 @@
       session.OffcutMaxX = this.offcutMaxX;
       session.OffcutMaxY = this.offcutMaxY;
       session.OffcutEdgeOverlap = this.offcutEdgeOverlap;
+      session.ScrapCutsEnabled = this.scrapCutsEnabled;
+      session.ScrapCutType = this.scrapCutType;
+      session.ScrapSpacingX = this.scrapSpacingX;
+      session.ScrapSpacingY = this.scrapSpacingY;
+      session.ScrapPartGap = this.scrapPartGap;
+      session.ScrapEdgeOverlap = this.scrapEdgeOverlap;
       session.Save();
 
       // Reflect the new settings on the on-screen result immediately (overlay only — the packing
@@ -624,6 +648,7 @@
       if (this.dxfViewer != null)
       {
         this.dxfViewer.OffcutOptions = this.CurrentOffcutOptions();
+        this.dxfViewer.ScrapCutOptions = this.CurrentScrapCutOptions();
         this.dxfViewer.RefreshRender();
       }
     }
@@ -1779,6 +1804,7 @@
           // The same edge margin the engine packed to, so hand-editing keeps the parts off the sheet edge.
           this.dxfViewer.SheetEdgeMargin = System.Math.Max(0, margin);
           this.dxfViewer.OffcutOptions = this.CurrentOffcutOptions();
+          this.dxfViewer.ScrapCutOptions = this.CurrentScrapCutOptions();
 
           // Group by path — the same DXF may legitimately be listed twice (e.g. once common-line,
           // once spaced); a plain ToDictionary would throw and crash the app AFTER the nest ran.
@@ -2146,8 +2172,9 @@
           // The offcut separation cut(s) travel only with the genuine remainder sheet the engine
           // shaped (same rule as the viewer overlay) — never a replicated pattern or a synthetic
           // production-plan representative — so the cut matches the packed remainder exactly.
-          var offcut = ReferenceEquals(layouts[li], offcutSheet) ? OffcutGeometry.BuildLines(layouts[li], this.CurrentOffcutOptions()) : null;
-          await ViewModel.ExportSheetPlacementAsync(layouts[li], offcut);
+          // The scrap cuts go with every sheet, on the same layer.
+          var cuts = ScrapCutGeometry.ExportLines(layouts[li], ReferenceEquals(layouts[li], offcutSheet), this.CurrentOffcutOptions(), this.CurrentScrapCutOptions());
+          await ViewModel.ExportSheetPlacementAsync(layouts[li], cuts);
         }
       }
       else
@@ -2155,8 +2182,8 @@
         var used = selected.UsedSheets.ToList();
         for (int si = 0; si < used.Count; si++)
         {
-          var offcut = si == used.Count - 1 ? OffcutGeometry.BuildLines(used[si], this.CurrentOffcutOptions()) : null;
-          await ViewModel.ExportSheetPlacementAsync(used[si], offcut);
+          var cuts = ScrapCutGeometry.ExportLines(used[si], si == used.Count - 1, this.CurrentOffcutOptions(), this.CurrentScrapCutOptions());
+          await ViewModel.ExportSheetPlacementAsync(used[si], cuts);
         }
       }
     }
@@ -2326,5 +2353,14 @@
         EdgeOverlap = System.Math.Max(0, edgeOverlap),
       };
     }
+
+    /// <summary>The scrap cut settings in force, whether or not they are on: what was saved, or the default
+    /// for the drawing's units.</summary>
+    private ScrapCutOptions EffectiveScrapCuts()
+      => ScrapCutOptions.Resolve(this.scrapCutType, this.scrapSpacingX, this.scrapSpacingY, this.scrapPartGap, this.scrapEdgeOverlap, this.unitsMm);
+
+    /// <summary>The active scrap cut settings, or null when the option is off.</summary>
+    private ScrapCutOptions CurrentScrapCutOptions()
+      => this.scrapCutsEnabled ? this.EffectiveScrapCuts() : null;
   }
 }

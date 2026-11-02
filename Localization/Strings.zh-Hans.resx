@@ -934,7 +934,7 @@
     <value>新建项目</value>
   </data>
   <data name="Menu_Offcut" xml:space="preserve">
-    <value>余料...</value>
+    <value>余料和废料切割...</value>
   </data>
   <data name="Menu_OpenProject" xml:space="preserve">
     <value>打开项目...</value>
@@ -1166,7 +1166,58 @@ https://github.com/ManuelMRosa/SheetNest/issues</value>
     <value>排好的零件与余料切割线之间保留的间距（图纸单位）。</value>
   </data>
   <data name="Offcut_Title" xml:space="preserve">
-    <value>余料</value>
+    <value>余料和废料切割</value>
+  </data>
+  <data name="Scrap_Enable" xml:space="preserve">
+    <value>用废料切割把废料骨架切成块</value>
+  </data>
+  <data name="Scrap_EnableTip" xml:space="preserve">
+    <value>在废料骨架（零件周围剩下的板材）上加直线切割，让它分成能搬动的小块。每条切割线在零件前按下方的距离停下。它们加在每张板上，从不进入余料，并与余料切割线一起导出。它们从不移动零件。</value>
+  </data>
+  <data name="Scrap_Lines" xml:space="preserve">
+    <value>切割方向</value>
+  </data>
+  <data name="Scrap_Both" xml:space="preserve">
+    <value>双向</value>
+  </data>
+  <data name="Scrap_BothTip" xml:space="preserve">
+    <value>竖向和横向切割：废料骨架分成矩形块。</value>
+  </data>
+  <data name="Scrap_Vertical" xml:space="preserve">
+    <value>竖向</value>
+  </data>
+  <data name="Scrap_VerticalTip" xml:space="preserve">
+    <value>只切竖线，每隔一个竖线间距一条。</value>
+  </data>
+  <data name="Scrap_Horizontal" xml:space="preserve">
+    <value>横向</value>
+  </data>
+  <data name="Scrap_HorizontalTip" xml:space="preserve">
+    <value>只切横线，每隔一个横线间距一条。</value>
+  </data>
+  <data name="Scrap_SpacingXFormat" xml:space="preserve">
+    <value>竖线间距 ({0})：</value>
+  </data>
+  <data name="Scrap_SpacingXTip" xml:space="preserve">
+    <value>希望的竖向切割间距。废料骨架按最接近该间距的块数平均分开，所以实际间距可能略大或略小。0 = 不切竖线。</value>
+  </data>
+  <data name="Scrap_SpacingYFormat" xml:space="preserve">
+    <value>横线间距 ({0})：</value>
+  </data>
+  <data name="Scrap_SpacingYTip" xml:space="preserve">
+    <value>希望的横向切割间距，以同样的方式平均分开。0 = 不切横线。</value>
+  </data>
+  <data name="Scrap_PartGapFormat" xml:space="preserve">
+    <value>到零件的距离 ({0})：</value>
+  </data>
+  <data name="Scrap_PartGapTip" xml:space="preserve">
+    <value>切割线遇到零件时，至少在这个距离外停下，留下一条可以用手掰断的细连接。</value>
+  </data>
+  <data name="Scrap_EdgeOverlapTip" xml:space="preserve">
+    <value>每条切割线超出板材边缘多远，让小块完全脱落，而不是在边缘处连着。0 = 与边缘齐平。</value>
+  </data>
+  <data name="Scrap_ResetDefaultsTip" xml:space="preserve">
+    <value>将上方四个数值恢复为当前图纸单位的推荐值。切割方向和启用勾选保持不变。</value>
   </data>
   <data name="Part_CommonLine" xml:space="preserve">
     <value>共边</value>

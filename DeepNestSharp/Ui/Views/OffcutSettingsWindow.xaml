@@ -34,6 +34,14 @@
 
   <StackPanel Margin="14">
 
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+    <StackPanel Grid.Column="0">
     <CheckBox x:Name="enableCheck"
               Content="{x:Static loc:Strings.Offcut_Enable}"
               Checked="OnEnableToggled" Unchecked="OnEnableToggled"
@@ -176,6 +184,121 @@
               ToolTip="{x:Static loc:Strings.Offcut_ResetDefaultsTip}" />
 
     </StackPanel>
+    </StackPanel>
+
+    <Border Grid.Column="1" Width="1" Background="{DynamicResource Brush.Border}" Margin="16,0" />
+
+    <!-- The scrap cuts: lines across the skeleton so it comes off in pieces. Same cards and the same kind of
+         numbers as the offcut, with their own tick, so either one can be on without the other. The cards show
+         a line stopping short of a part, as the real cut does. -->
+    <StackPanel Grid.Column="2">
+      <CheckBox x:Name="scrapEnableCheck"
+                Content="{x:Static loc:Strings.Scrap_Enable}"
+                Checked="OnScrapEnableToggled" Unchecked="OnScrapEnableToggled"
+                ToolTip="{x:Static loc:Strings.Scrap_EnableTip}" />
+
+      <StackPanel x:Name="scrapDetailsPanel" Margin="0,10,0,0">
+
+        <TextBlock Text="{x:Static loc:Strings.Scrap_Lines}" FontWeight="Bold" Margin="0,0,0,6" />
+
+        <StackPanel Orientation="Horizontal">
+
+          <RadioButton x:Name="scrapBothRadio" GroupName="scrapType" Margin="0,0,10,0" VerticalContentAlignment="Top"
+                       ToolTip="{x:Static loc:Strings.Scrap_BothTip}">
+            <Border Style="{StaticResource OffcutCardBorder}">
+              <StackPanel>
+                <Canvas Width="96" Height="56">
+                  <Rectangle Width="96" Height="56" Stroke="#888888" StrokeThickness="1" Fill="#FAFAFA" />
+                  <Rectangle Canvas.Left="8" Canvas.Top="8" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Rectangle Canvas.Left="24" Canvas.Top="34" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Rectangle Canvas.Left="70" Canvas.Top="10" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Line X1="32" Y1="1" X2="32" Y2="31" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="32" Y1="51" X2="32" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="62" Y1="1" X2="62" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="1" Y1="28" X2="95" Y2="28" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                </Canvas>
+                <TextBlock Text="{x:Static loc:Strings.Scrap_Both}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+              </StackPanel>
+            </Border>
+          </RadioButton>
+
+          <RadioButton x:Name="scrapVerticalRadio" GroupName="scrapType" Margin="0,0,10,0" VerticalContentAlignment="Top"
+                       ToolTip="{x:Static loc:Strings.Scrap_VerticalTip}">
+            <Border Style="{StaticResource OffcutCardBorder}">
+              <StackPanel>
+                <Canvas Width="96" Height="56">
+                  <Rectangle Width="96" Height="56" Stroke="#888888" StrokeThickness="1" Fill="#FAFAFA" />
+                  <Rectangle Canvas.Left="8" Canvas.Top="8" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Rectangle Canvas.Left="24" Canvas.Top="34" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Rectangle Canvas.Left="70" Canvas.Top="10" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Line X1="32" Y1="1" X2="32" Y2="31" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="32" Y1="51" X2="32" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="62" Y1="1" X2="62" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                </Canvas>
+                <TextBlock Text="{x:Static loc:Strings.Scrap_Vertical}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+              </StackPanel>
+            </Border>
+          </RadioButton>
+
+          <RadioButton x:Name="scrapHorizontalRadio" GroupName="scrapType" VerticalContentAlignment="Top"
+                       ToolTip="{x:Static loc:Strings.Scrap_HorizontalTip}">
+            <Border Style="{StaticResource OffcutCardBorder}">
+              <StackPanel>
+                <Canvas Width="96" Height="56">
+                  <Rectangle Width="96" Height="56" Stroke="#888888" StrokeThickness="1" Fill="#FAFAFA" />
+                  <Rectangle Canvas.Left="8" Canvas.Top="8" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Rectangle Canvas.Left="24" Canvas.Top="34" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Rectangle Canvas.Left="70" Canvas.Top="10" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
+                  <Line X1="1" Y1="28" X2="95" Y2="28" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                </Canvas>
+                <TextBlock Text="{x:Static loc:Strings.Scrap_Horizontal}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+              </StackPanel>
+            </Border>
+          </RadioButton>
+
+        </StackPanel>
+
+        <Grid Margin="0,12,0,0">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <TextBlock x:Name="scrapSpacingXLabel" Grid.Row="0" Grid.Column="0" Text="Vertical line spacing (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
+          <xctk:DoubleUpDown Grid.Row="0" Grid.Column="1" x:Name="scrapSpacingXUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
+                             Minimum="0" Increment="1" FormatString="0.###"
+                             ToolTip="{x:Static loc:Strings.Scrap_SpacingXTip}" />
+
+          <TextBlock x:Name="scrapSpacingYLabel" Grid.Row="1" Grid.Column="0" Text="Horizontal line spacing (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
+          <xctk:DoubleUpDown Grid.Row="1" Grid.Column="1" x:Name="scrapSpacingYUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
+                             Minimum="0" Increment="1" FormatString="0.###"
+                             ToolTip="{x:Static loc:Strings.Scrap_SpacingYTip}" />
+
+          <TextBlock x:Name="scrapPartGapLabel" Grid.Row="2" Grid.Column="0" Text="Gap to the parts (in):" VerticalAlignment="Center" Margin="0,0,10,6" />
+          <xctk:DoubleUpDown Grid.Row="2" Grid.Column="1" x:Name="scrapPartGapUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
+                             Minimum="0" Increment="0.01" FormatString="0.####"
+                             ToolTip="{x:Static loc:Strings.Scrap_PartGapTip}" />
+
+          <!-- Four decimals for the same reason as the offcut's: 0.1969 must not come back as 0.197. -->
+          <TextBlock x:Name="scrapEdgeOverlapLabel" Grid.Row="3" Grid.Column="0" Text="Edge overlap (in):" VerticalAlignment="Center" Margin="0,0,10,0" />
+          <xctk:DoubleUpDown Grid.Row="3" Grid.Column="1" x:Name="scrapEdgeOverlapUpDown" Width="80" HorizontalAlignment="Left"
+                             Minimum="0" Increment="0.05" FormatString="0.####"
+                             ToolTip="{x:Static loc:Strings.Scrap_EdgeOverlapTip}" />
+        </Grid>
+
+        <Button x:Name="scrapResetButton" Style="{DynamicResource ModernButton}" Content="{x:Static loc:Strings.Offcut_ResetDefaults}"
+                HorizontalAlignment="Right" Margin="0,10,0,0" Padding="10,3" Click="OnScrapResetDefaults"
+                ToolTip="{x:Static loc:Strings.Scrap_ResetDefaultsTip}" />
+
+      </StackPanel>
+    </StackPanel>
+    </Grid>
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
       <Button Style="{DynamicResource PrimaryButton}" Content="{x:Static loc:Strings.Common_OK}" Width="90" FontSize="13" Padding="0,6" Margin="0,0,8,0" IsDefault="True" Click="OnOk" />

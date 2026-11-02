@@ -1119,8 +1119,8 @@
     <value>New Project</value>
   </data>
   <data name="Menu_Offcut" xml:space="preserve">
-    <value>Offcut...</value>
-    <comment>Opens the settings for cutting the leftover of the last sheet off as a remnant.</comment>
+    <value>Offcut and scrap cuts...</value>
+    <comment>Opens the settings for cutting the leftover of the last sheet off as a remnant, and for the scrap cuts that break the skeleton into pieces.</comment>
   </data>
   <data name="Menu_OpenProject" xml:space="preserve">
     <value>Open Project...</value>
@@ -1382,8 +1382,68 @@ Open the download page?</value>
     <value>Gap kept between the packed parts and the offcut cut line (drawing units).</value>
   </data>
   <data name="Offcut_Title" xml:space="preserve">
-    <value>Offcut</value>
-    <comment>Title of the dialog that cuts the leftover of the last sheet off as a remnant.</comment>
+    <value>Offcut and scrap cuts</value>
+    <comment>Title of the dialog that cuts the leftover of the last sheet off as a remnant and sets the scrap cuts that break the skeleton into pieces.</comment>
+  </data>
+  <data name="Scrap_Enable" xml:space="preserve">
+    <value>Break up the skeleton with scrap cuts</value>
+    <comment>Check box at the top of the right-hand column of the Offcut and scrap cuts dialog. The skeleton is the sheet left around the parts once they are cut out.</comment>
+  </data>
+  <data name="Scrap_EnableTip" xml:space="preserve">
+    <value>Adds straight cuts across the skeleton, the sheet left around the parts, so it comes off in pieces you can lift. Each cut stops short of the parts by the gap below. They go on every sheet, never into the offcut, and are exported with the offcut cut. They never move a part.</value>
+  </data>
+  <data name="Scrap_Lines" xml:space="preserve">
+    <value>Scrap cut lines</value>
+    <comment>Heading over three picture cards.</comment>
+  </data>
+  <data name="Scrap_Both" xml:space="preserve">
+    <value>Both ways</value>
+    <comment>Caption under a picture card about 96 px wide.</comment>
+  </data>
+  <data name="Scrap_BothTip" xml:space="preserve">
+    <value>Vertical and horizontal cuts: the skeleton comes off in rectangles.</value>
+  </data>
+  <data name="Scrap_Vertical" xml:space="preserve">
+    <value>Vertical</value>
+    <comment>Caption under a picture card about 96 px wide.</comment>
+  </data>
+  <data name="Scrap_VerticalTip" xml:space="preserve">
+    <value>Vertical cuts only, one every vertical line spacing.</value>
+  </data>
+  <data name="Scrap_Horizontal" xml:space="preserve">
+    <value>Horizontal</value>
+    <comment>Caption under a picture card about 96 px wide.</comment>
+  </data>
+  <data name="Scrap_HorizontalTip" xml:space="preserve">
+    <value>Horizontal cuts only, one every horizontal line spacing.</value>
+  </data>
+  <data name="Scrap_SpacingXFormat" xml:space="preserve">
+    <value>Vertical line spacing ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Scrap_SpacingXTip" xml:space="preserve">
+    <value>The distance wanted between vertical cuts. The skeleton is split evenly into the number of pieces nearest to it, so the real distance can be a little more or less. 0 = no vertical cuts.</value>
+  </data>
+  <data name="Scrap_SpacingYFormat" xml:space="preserve">
+    <value>Horizontal line spacing ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Scrap_SpacingYTip" xml:space="preserve">
+    <value>The distance wanted between horizontal cuts, split evenly the same way. 0 = no horizontal cuts.</value>
+  </data>
+  <data name="Scrap_PartGapFormat" xml:space="preserve">
+    <value>Gap to the parts ({0}):</value>
+    <comment>{0} is the unit symbol, in or mm.</comment>
+  </data>
+  <data name="Scrap_PartGapTip" xml:space="preserve">
+    <value>Where a cut meets a part it stops at least this far from it, leaving a thin web that snaps by hand.</value>
+  </data>
+  <data name="Scrap_EdgeOverlapTip" xml:space="preserve">
+    <value>How far each cut runs PAST the sheet edge, so the piece comes away instead of hanging on at the edge. 0 = flush with the edge.</value>
+  </data>
+  <data name="Scrap_ResetDefaultsTip" xml:space="preserve">
+    <value>Puts the four numbers above back to the recommended figures for this drawing's units. The line choice and the enable tick are left alone.</value>
+    <comment>The button is Offcut_ResetDefaults.</comment>
   </data>
   <data name="Part_CommonLine" xml:space="preserve">
     <value>common line</value>

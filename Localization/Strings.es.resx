@@ -934,7 +934,7 @@
     <value>Nuevo proyecto</value>
   </data>
   <data name="Menu_Offcut" xml:space="preserve">
-    <value>Retazo...</value>
+    <value>Retazo y cortes de esqueleto...</value>
   </data>
   <data name="Menu_OpenProject" xml:space="preserve">
     <value>Abrir proyecto...</value>
@@ -1166,7 +1166,58 @@ El límite no fue la cantidad de láminas: uno de los tamaños es ilimitado. La 
     <value>Separación que se deja entre las piezas acomodadas y la línea de corte del retazo (unidades del dibujo).</value>
   </data>
   <data name="Offcut_Title" xml:space="preserve">
-    <value>Retazo</value>
+    <value>Retazo y cortes de esqueleto</value>
+  </data>
+  <data name="Scrap_Enable" xml:space="preserve">
+    <value>Cortar el esqueleto en trozos</value>
+  </data>
+  <data name="Scrap_EnableTip" xml:space="preserve">
+    <value>Agrega cortes rectos a través del esqueleto, la lámina que queda alrededor de las piezas, para que salga en trozos que se puedan levantar. Cada corte se detiene antes de las piezas a la distancia de abajo. Van en todas las láminas, nunca dentro del retazo, y se exportan junto con el corte del retazo. Nunca mueven una pieza.</value>
+  </data>
+  <data name="Scrap_Lines" xml:space="preserve">
+    <value>Dirección de los cortes</value>
+  </data>
+  <data name="Scrap_Both" xml:space="preserve">
+    <value>En ambos sentidos</value>
+  </data>
+  <data name="Scrap_BothTip" xml:space="preserve">
+    <value>Cortes verticales y horizontales: el esqueleto sale en rectángulos.</value>
+  </data>
+  <data name="Scrap_Vertical" xml:space="preserve">
+    <value>Verticales</value>
+  </data>
+  <data name="Scrap_VerticalTip" xml:space="preserve">
+    <value>Solo cortes verticales, uno cada separación entre verticales.</value>
+  </data>
+  <data name="Scrap_Horizontal" xml:space="preserve">
+    <value>Horizontales</value>
+  </data>
+  <data name="Scrap_HorizontalTip" xml:space="preserve">
+    <value>Solo cortes horizontales, uno cada separación entre horizontales.</value>
+  </data>
+  <data name="Scrap_SpacingXFormat" xml:space="preserve">
+    <value>Separación entre verticales ({0}):</value>
+  </data>
+  <data name="Scrap_SpacingXTip" xml:space="preserve">
+    <value>La distancia que se quiere entre cortes verticales. El esqueleto se reparte en partes iguales, en el número de trozos más cercano a ella, así que la distancia real puede ser un poco mayor o menor. 0 = sin cortes verticales.</value>
+  </data>
+  <data name="Scrap_SpacingYFormat" xml:space="preserve">
+    <value>Separación entre horizontales ({0}):</value>
+  </data>
+  <data name="Scrap_SpacingYTip" xml:space="preserve">
+    <value>La distancia que se quiere entre cortes horizontales, repartida en partes iguales de la misma forma. 0 = sin cortes horizontales.</value>
+  </data>
+  <data name="Scrap_PartGapFormat" xml:space="preserve">
+    <value>Distancia a las piezas ({0}):</value>
+  </data>
+  <data name="Scrap_PartGapTip" xml:space="preserve">
+    <value>Donde un corte llega a una pieza, se detiene al menos a esta distancia de ella y deja un puente delgado que se rompe a mano.</value>
+  </data>
+  <data name="Scrap_EdgeOverlapTip" xml:space="preserve">
+    <value>Cuánto se pasa cada corte MÁS ALLÁ del borde de la lámina, para que el trozo se suelte en vez de quedar sujeto en el borde. 0 = al ras del borde.</value>
+  </data>
+  <data name="Scrap_ResetDefaultsTip" xml:space="preserve">
+    <value>Devuelve los cuatro números de arriba a los valores recomendados para las unidades de este dibujo. La dirección de los cortes y la casilla de activación no se tocan.</value>
   </data>
   <data name="Part_CommonLine" xml:space="preserve">
     <value>corte común</value>
