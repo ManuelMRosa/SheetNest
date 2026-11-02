@@ -135,7 +135,9 @@
         <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Choose the language and shortcuts." />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
         <!-- One item per translation in Localization\, named the way the app's own menu names it; a test
-             (InstallerLanguagesFixture) fails while a translation is missing here. -->
+             (InstallerLanguagesFixture) fails while a translation is missing here. The installer's screens
+             only have Western European letters (code page 1252), so a language written in another
+             alphabet goes by its English name. -->
         <Control Id="LanguageLabel" Type="Text" X="20" Y="58" Width="330" Height="10" Text="SheetNest &amp;language:" />
         <Control Id="LanguageCombo" Type="ComboBox" X="20" Y="71" Width="200" Height="16" Property="SHEETNEST_LANGUAGE" ComboList="yes">
           <ComboBox Property="SHEETNEST_LANGUAGE">
@@ -143,9 +145,9 @@
             <ListItem Value="en" Text="English" />
             <ListItem Value="de" Text="Deutsch" />
             <ListItem Value="es" Text="Español" />
-            <ListItem Value="hi" Text="हिन्दी" />
+            <ListItem Value="hi" Text="Hindi" />
             <ListItem Value="pt-BR" Text="Português (Brasil)" />
-            <ListItem Value="zh-Hans" Text="中文（简体）" />
+            <ListItem Value="zh-Hans" Text="Chinese (Simplified)" />
           </ComboBox>
         </Control>
         <Control Id="LanguageHint" Type="Text" X="20" Y="91" Width="330" Height="20" NoPrefix="yes"
