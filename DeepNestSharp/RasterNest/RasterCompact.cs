@@ -100,6 +100,9 @@
     /// The work is done by the C++ translation in sheetnest_core.dll (<see cref="NativeCompact"/>), which gives
     /// the same positions bit for bit. Without the DLL, or on an input it refuses, <see cref="CompactManaged"/>
     /// runs instead.
+    /// <para><paramref name="stop"/> is the nest's clock running out: the pass stops where the C# code checks
+    /// <paramref name="cancel"/> and keeps the positions it reached, which are all valid because every move is
+    /// checked before it is made. Unlike a cancel it throws nothing. Without it the pass runs to the end.</para>
     /// </remarks>
     public static void Compact(
       IList<CompactItem> items,
@@ -108,19 +111,20 @@
       double margin,
       int[] groups = null,
       System.Threading.CancellationToken cancel = default,
-      double commonLineGap = CommonLineGap)
+      double commonLineGap = CommonLineGap,
+      System.Threading.CancellationToken stop = default)
     {
       if (items == null || items.Count < 1)
       {
         return;
       }
 
-      if (NativeCompact.TryCompact(items, sheetW, sheetH, margin, groups, cancel, commonLineGap))
+      if (NativeCompact.TryCompact(items, sheetW, sheetH, margin, groups, cancel, commonLineGap, stop))
       {
         return;
       }
 
-      CompactManaged(items, sheetW, sheetH, margin, groups, cancel, commonLineGap);
+      CompactManaged(items, sheetW, sheetH, margin, groups, cancel, commonLineGap, stop);
     }
 
     /// <summary>The compaction in C#: what <see cref="Compact"/> runs without the native core, and what the
@@ -132,7 +136,8 @@
       double margin,
       int[] groups = null,
       System.Threading.CancellationToken cancel = default,
-      double commonLineGap = CommonLineGap)
+      double commonLineGap = CommonLineGap,
+      System.Threading.CancellationToken stop = default)
     {
       if (items == null || items.Count < 1)
       {
@@ -318,9 +323,16 @@
       // for its blocker to move first), so the budget scales with the part count; the loop also stops
       // as soon as an iteration produces no movement (truly jammed).
       int maxIterations = System.Math.Min(128, items.Count + 8);
+      bool stopped = false; // the clock ran out: keep what was reached and skip the rest
       for (int iter = 0; iter < maxIterations; iter++)
       {
         cancel.ThrowIfCancellationRequested();
+        if (stop.IsCancellationRequested)
+        {
+          stopped = true;
+          break;
+        }
+
         bool anyViolation = false;
         bool movedAny = false;
         for (int a = 0; a < items.Count; a++)
@@ -520,13 +532,19 @@
       // next round, and stacked chains need as many rounds as their depth — the old fixed two left
       // parts hanging 0.07-0.32" above a late-settling neighbour, beyond the weld's reach.
       var processed = new bool[items.Count];
-      for (int round = 0; round < 8; round++)
+      for (int round = 0; round < 8 && !stopped; round++)
       {
         bool moved = false;
         Array.Clear(processed, 0, processed.Length);
         foreach (int i in order)
         {
           cancel.ThrowIfCancellationRequested();
+          if (stop.IsCancellationRequested)
+          {
+            stopped = true;
+            break;
+          }
+
           if (processed[i])
           {
             continue; // already moved as part of its rigid module this round
@@ -593,13 +611,19 @@
       // Sweeps run until nothing moves. Two was not enough once a cascade could still shift a part
       // that a later part had already closed onto; the loop breaks the moment a sweep welds nothing,
       // so a converged layout still costs exactly one extra measuring sweep.
-      for (int sweep = 0; sweep < 8; sweep++)
+      for (int sweep = 0; sweep < 8 && !stopped; sweep++)
       {
         bool welded = false;
         Array.Clear(processed, 0, processed.Length);
         foreach (int i in weldOrder)
         {
           cancel.ThrowIfCancellationRequested();
+          if (stop.IsCancellationRequested)
+          {
+            stopped = true;
+            break;
+          }
+
           if (items[i].CommonEdgePeers == null || items[i].CommonEdgePeers.Count == 0 || processed[i])
           {
             continue;

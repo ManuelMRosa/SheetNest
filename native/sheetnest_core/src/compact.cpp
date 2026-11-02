@@ -172,6 +172,7 @@ struct Compactor
   const unsigned char* shares;
   int n;
   const volatile int* cancel;
+  const volatile int* stop; // the nest's clock: finish early and keep the positions reached
   // memberSets[i] in C#: the same array instance for every member of one rigid group. Here the group's
   // index into `sets`, -1 for a part on its own.
   std::vector<int> memberSet;
@@ -187,6 +188,11 @@ struct Compactor
     {
       throw Cancelled();
     }
+  }
+
+  bool StopRequested() const
+  {
+    return stop != nullptr && *stop != 0;
   }
 
   bool SharesCommonEdge(int i, int j) const
@@ -661,9 +667,16 @@ struct Compactor
     int maxIterations = std::min(128, n + 8);
     const double probes[] = {0.01, 0.05, 0.1, 0.25};
     const bool axes[4][2] = {{true, true}, {false, true}, {true, false}, {false, false}};
+    bool stopped = false;
     for (int iter = 0; iter < maxIterations; iter++)
     {
       CheckCancel();
+      if (StopRequested())
+      {
+        stopped = true;
+        break;
+      }
+
       bool anyViolation = false;
       bool movedAny = false;
       for (int a = 0; a < n; a++)
@@ -786,13 +799,19 @@ struct Compactor
     }
 
     std::vector<bool> processed(static_cast<size_t>(n));
-    for (int round = 0; round < 8; round++)
+    for (int round = 0; round < 8 && !stopped; round++)
     {
       bool moved = false;
       std::fill(processed.begin(), processed.end(), false);
       for (int i : order)
       {
         CheckCancel();
+        if (StopRequested())
+        {
+          stopped = true;
+          break;
+        }
+
         if (processed[i])
         {
           continue;
@@ -844,13 +863,19 @@ struct Compactor
       });
     }
 
-    for (int sweep = 0; sweep < 8; sweep++)
+    for (int sweep = 0; sweep < 8 && !stopped; sweep++)
     {
       bool welded = false;
       std::fill(processed.begin(), processed.end(), false);
       for (int i : weldOrder)
       {
         CheckCancel();
+        if (StopRequested())
+        {
+          stopped = true;
+          break;
+        }
+
         if (!items[i].hasPeers || processed[i])
         {
           continue;
@@ -908,7 +933,8 @@ extern "C" SNC_API int SNC_CALL snc_compact(
   double sheet_h,
   double margin,
   double common_line_gap,
-  const volatile int* cancel)
+  const volatile int* cancel,
+  const volatile int* stop)
 {
   if (n < 1)
   {
@@ -952,7 +978,7 @@ extern "C" SNC_API int SNC_CALL snc_compact(
       }
     }
 
-    Compactor compactor{items, shares, n, cancel, {}, {}, {}, {}, {}, {}};
+    Compactor compactor{items, shares, n, cancel, stop, {}, {}, {}, {}, {}, {}};
     compactor.Run(groups, groups_length, sheet_w, sheet_h, margin, common_line_gap);
     for (int i = 0; i < n; i++)
     {

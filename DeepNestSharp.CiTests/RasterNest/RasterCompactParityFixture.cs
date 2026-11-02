@@ -56,6 +56,28 @@
       }
     }
 
+    /// <summary>The nest's clock already ran out: both compactions stop before their first move, throw nothing,
+    /// and keep every part where it was.</summary>
+    [Fact]
+    public void AStopBeforeTheStartMovesNothingInEither()
+    {
+      var managed = Build("plain-inches");
+      var native = Build("plain-inches");
+      double[] startX = managed.Items.Select(it => it.X).ToArray();
+      double[] startY = managed.Items.Select(it => it.Y).ToArray();
+      using var stop = new System.Threading.CancellationTokenSource();
+      stop.Cancel();
+
+      RasterCompact.CompactManaged(managed.Items, managed.SheetW, managed.SheetH, managed.Margin, managed.Groups, default, managed.Gap, stop.Token);
+      NativeCompact.TryCompactNative(native.Items, native.SheetW, native.SheetH, native.Margin, native.Groups, default, native.Gap, stop.Token)
+        .Should().BeTrue("a stop is not a refusal: the native code answers with what it reached");
+
+      managed.Items.Select(it => it.X).Should().Equal(startX);
+      managed.Items.Select(it => it.Y).Should().Equal(startY);
+      native.Items.Select(it => it.X).Should().Equal(startX);
+      native.Items.Select(it => it.Y).Should().Equal(startY);
+    }
+
     /// <summary>A cancel before the native compaction starts throws, as the C# one does, and moves nothing.</summary>
     [Fact]
     public void ACancelThrowsAndMovesNothing()

@@ -27,10 +27,13 @@ namespace DeepNestSharp.RasterNest
       double margin,
       int[] groups,
       CancellationToken cancel,
-      double commonLineGap)
-      => !NativeCore.SwitchedOff && TryCompactNative(items, sheetW, sheetH, margin, groups, cancel, commonLineGap);
+      double commonLineGap,
+      CancellationToken stop = default)
+      => !NativeCore.SwitchedOff && TryCompactNative(items, sheetW, sheetH, margin, groups, cancel, commonLineGap, stop);
 
     /// <summary><see cref="TryCompact"/> whatever SHEETNEST_NATIVE says, for the parity tests.</summary>
+    /// <param name="stop">The nest's clock: the pass ends early and keeps the positions reached (see
+    /// <see cref="RasterCompact.Compact"/>).</param>
     internal static bool TryCompactNative(
       IList<CompactItem> items,
       double sheetW,
@@ -38,7 +41,8 @@ namespace DeepNestSharp.RasterNest
       double margin,
       int[] groups,
       CancellationToken cancel,
-      double commonLineGap)
+      double commonLineGap,
+      CancellationToken stop = default)
     {
       if (NativeCore.Missing)
       {
@@ -91,12 +95,13 @@ namespace DeepNestSharp.RasterNest
         }
       }
 
-      var flag = new int[1];
+      var flag = new int[2]; // [0] cancel, [1] stop, polled by the native code
       var pinned = GCHandle.Alloc(flag, GCHandleType.Pinned);
       try
       {
         int result;
         using (cancel.Register(() => Volatile.Write(ref flag[0], 1)))
+        using (stop.Register(() => Volatile.Write(ref flag[1], 1)))
         {
           try
           {
@@ -116,7 +121,8 @@ namespace DeepNestSharp.RasterNest
               sheetH,
               margin,
               commonLineGap,
-              pinned.AddrOfPinnedObject());
+              pinned.AddrOfPinnedObject(),
+              pinned.AddrOfPinnedObject() + sizeof(int));
           }
           catch (Exception ex) when (NativeCore.IsLoadFailure(ex))
           {
@@ -176,6 +182,7 @@ namespace DeepNestSharp.RasterNest
       double sheetH,
       double margin,
       double commonLineGap,
-      IntPtr cancel);
+      IntPtr cancel,
+      IntPtr stop);
   }
 }

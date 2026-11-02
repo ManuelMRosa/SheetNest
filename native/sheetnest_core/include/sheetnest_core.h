@@ -58,6 +58,8 @@ extern "C" {
  * groups          [groups_length] rigid group id per part (> 0 = member of that group), or NULL
  * sheet_w, sheet_h, margin, common_line_gap   in drawing units
  * cancel          polled where the C# code checks its CancellationToken; non-zero cancels. May be NULL.
+ * stop            polled at the same points; non-zero ends the pass early with SNC_OK and the positions
+ *                 reached so far (every move was checked before it was made). May be NULL.
  */
 SNC_API int SNC_CALL snc_compact(
   int n,
@@ -75,7 +77,8 @@ SNC_API int SNC_CALL snc_compact(
   double sheet_h,
   double margin,
   double common_line_gap,
-  const volatile int* cancel);
+  const volatile int* cancel,
+  const volatile int* stop);
 
 /*
  * PlacementCollision.TooClose: whether two placed parts are closer than a clearance. Each outline is grown by
