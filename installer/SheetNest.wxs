@@ -141,6 +141,7 @@
           <ComboBox Property="SHEETNEST_LANGUAGE">
             <ListItem Value="auto" Text="Automatic (Windows language)" />
             <ListItem Value="en" Text="English" />
+            <ListItem Value="de" Text="Deutsch" />
             <ListItem Value="es" Text="Español" />
             <ListItem Value="zh-Hans" Text="中文（简体）" />
           </ComboBox>

@@ -9,6 +9,7 @@ programming: one file and one pull request.
 | Language | File | Status |
 |---|---|---|
 | English | `Strings.resx` | The reference: every other file translates this one. |
+| Deutsch | `Strings.de.resx` | Complete. A review by a native speaker is welcome. |
 | Español | `Strings.es.resx` | Complete, kept up to date with the code. |
 | 中文（简体） | `Strings.zh-Hans.resx` | Complete. A review by a native speaker is welcome. |
 
