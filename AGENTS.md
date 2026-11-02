@@ -258,6 +258,14 @@ Verificar con Git al iniciar; esta sección es una referencia fechada.
   sabotajes del C++ en rojo (un sort inestable no se nota: MSVC ordena estable los rangos cortos). Suites de la app
   con y sin `SHEETNEST_NATIVE=off`: 579 + 14 omitidas. Medido en 4 trabajos reales a Fast: mismo hash, compactación
   de 1.6× a 7× más rápida; el total casi no cambia (manda sparrow o el planificador).
+  Segundo paso, misma rama: `snc_too_close`, traducción de `PlacementCollision.TooClose` (`collision.cpp`; los
+  ayudantes compartidos en `clipper_util.hpp`), con `NativeCollision.cs` y `TooCloseManaged` de respaldo; el interruptor
+  y la DLL faltante viven en `NativeCore.cs`. Paridad: `PlacementCollisionParityFixture`, 9000 pares inventados casi
+  todos al borde de la holgura, mismo veredicto; 5 de 7 sabotajes en rojo (los otros dos no pueden cambiar el veredicto
+  o solo pesan en una mordida cóncava al límite). En tri100-cl a Fast: mismo hash, compactación 4.0 → 0.8 s, pero la
+  holgura (`unfit`) solo 2.1 → 2.0 s y el planificador igual (~30 s): su costo está fuera de `TooClose` (copias de
+  polígono y revalidaciones). Suites de la app con el núcleo: 587 + 14 omitidas; con `SHEETNEST_NATIVE=off` igual,
+  salvo la carrera conocida de `Strings.Culture` que a veces tumba `CommonLineFallbackMessageFixture`.
 - La tabla de abajo no coincide con `main` de hoy. Medido con Fast: mixto 30 colocadas y 36 aristas;
   test2 x16/x17/x24/x25 con 26/27/41/42 aristas; x26 con 29 aristas, `isolated=1`, cadena 19; x27 con
   26 colocadas y 28 aristas. Comparar contra una línea base medida, no contra la tabla.
