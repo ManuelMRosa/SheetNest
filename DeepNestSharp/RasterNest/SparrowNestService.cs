@@ -287,6 +287,302 @@
       double geometryTolerance = CommonLineDefaults.DefaultGeometryToleranceInches,
       int commonLineMaxClusterParts = CommonLineDefaults.AutoMaxClusterParts)
     {
+      var loaded = Prepare(parts, stock, rotations, spacing, sparrowExePath, commonLineGap, geometryTolerance, out var sizes, out error);
+      if (loaded == null)
+      {
+        return null;
+      }
+
+      return RunNestBody(
+        loaded,
+        sizes,
+        margin,
+        perSheetBudgetSec,
+        sparrowExePath,
+        cancel,
+        progress,
+        effort,
+        commonLineGap,
+        geometryTolerance,
+        commonLineMaxClusterParts,
+        0,
+        out error);
+    }
+
+    /// <summary>
+    /// "Nest for up to <paramref name="maxTime"/>": the same nest as <c>Nest</c>, run in rounds of growing
+    /// effort (<see cref="NestRounds"/>) and kept from the best round that finished.
+    /// <para>Each round is still the fixed-iteration nest, so it lands the same on any machine. What the clock
+    /// decides is only how many rounds are tried, and a round still running when the time is up is thrown
+    /// away whole rather than kept half done.</para>
+    /// <para><paramref name="materialTarget"/> (a fraction; zero is none) hands the nest over as soon as the best
+    /// round reaches it (<see cref="ReachesTarget"/>), measured with the offcut <paramref name="offcut"/> cuts
+    /// off the last sheet left out (null = the offcut option is off).</para>
+    /// <para><paramref name="stop"/> is the operator's Stop: the best round so far is handed over and the one still
+    /// running thrown away. <paramref name="newBest"/> is told of each nest that becomes the best so far.</para>
+    /// <para><paramref name="secondsPerSheet"/> above zero replaces <paramref name="maxTime"/> with that much time for
+    /// every sheet the job is expected to take (<see cref="TimeLimit"/>); <paramref name="limit"/> is told the time
+    /// the nest runs against, once it is known.</para>
+    /// </summary>
+    internal static INestResult NestForTime(
+      IReadOnlyList<RasterPartInfo> parts,
+      IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock,
+      int rotations,
+      double spacing,
+      double margin,
+      int perSheetBudgetSec,
+      string sparrowExePath,
+      TimeSpan maxTime,
+      out string error,
+      out NestRoundsReport report,
+      CancellationToken cancel = default,
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress = null,
+      Action<int> roundStarted = null,
+      double commonLineGap = CommonLineDefaults.DefaultGapInches,
+      double geometryTolerance = CommonLineDefaults.DefaultGeometryToleranceInches,
+      int commonLineMaxClusterParts = CommonLineDefaults.AutoMaxClusterParts,
+      Action<int, INestResult> roundFinished = null,
+      double materialTarget = 0,
+      OffcutOptions offcut = null,
+      CancellationToken stop = default,
+      Action<INestResult> newBest = null,
+      double secondsPerSheet = 0,
+      Action<TimeSpan> limit = null)
+    {
+      // The clock starts before the drawings are read: the operator waits for that too.
+      var clock = new StopwatchRoundClock();
+      report = null;
+      var loaded = Prepare(parts, stock, rotations, spacing, sparrowExePath, commonLineGap, geometryTolerance, out _, out error);
+      if (loaded == null)
+      {
+        return null;
+      }
+
+      // Which drawings are set to share cuts, so a nest that leaves one of them on its own ranks lower.
+      var sharing = new HashSet<int>(loaded.Where(l => l.RequiresMergedLines && l.Cc != CommonCuttingMode.None).Select(l => l.Source));
+      bool rowPattern = RowPatternApplies(loaded, BuildSizes(stock), margin, commonLineGap, geometryTolerance, commonLineMaxClusterParts);
+
+      // The opening's work per sheet, from how many sheets the job should take on the biggest size in stock.
+      var stocked = BuildSizes(stock).Where(size => size.HasStock).ToList();
+      var biggest = stocked.OrderByDescending(size => (double)size.W * size.H).FirstOrDefault();
+      double usableArea = biggest == null ? 0 : Math.Max(0, biggest.W - (2 * margin)) * Math.Max(0, biggest.H - (2 * margin));
+      int estimatedSheets = EstimatedSheets(
+        loaded.Sum(l => l.Qty * Math.Abs(l.Nfp.Area)),
+        usableArea,
+        stocked.Any(size => size.Unlimited) ? int.MaxValue : stocked.Sum(size => size.Remaining));
+      long openingEvals = OpeningEvals(estimatedSheets);
+      if (secondsPerSheet > 0)
+      {
+        maxTime = TimeLimit(secondsPerSheet, estimatedSheets);
+      }
+
+      limit?.Invoke(maxTime);
+      string firstRoundError = null;
+      var best = NestRounds.Run<TimedRound>(
+        maxTime,
+        clock,
+        (round, token) =>
+        {
+          ResetNestDiagnostics();
+          var result = RunNestBody(
+            loaded,
+            BuildSizes(stock), // the body spends its stock, so every round starts from a full box
+            margin,
+            perSheetBudgetSec,
+            sparrowExePath,
+            token,
+            progress,
+            NestRounds.EffortOf(round),
+            commonLineGap,
+            geometryTolerance,
+            commonLineMaxClusterParts,
+            NestRounds.SeedOffsetOf(round),
+            out string roundError);
+          if (round == 1)
+          {
+            firstRoundError = roundError;
+          }
+
+          return result == null ? null : new TimedRound(result, sharing.Contains);
+        },
+        (a, b) => NestRounds.IsBetter(a.Summary, b.Summary),
+        cancel,
+        roundStarted,
+        out report,
+        roundFinished == null ? null : (round, finished) => roundFinished(round, finished.Result),
+        token =>
+        {
+          ResetNestDiagnostics();
+          var result = rowPattern
+            ? RunRowPattern(loaded, stock, margin, sparrowExePath, token, progress, commonLineGap, geometryTolerance, commonLineMaxClusterParts, out _)
+            : RunNestBody(
+              loaded,
+              BuildSizes(stock),
+              margin,
+              perSheetBudgetSec,
+              sparrowExePath,
+              token,
+              progress,
+              NestEffort.Fast,
+              commonLineGap,
+              geometryTolerance,
+              commonLineMaxClusterParts,
+              0,
+              out _,
+              iterations: QuickSearchIterations,
+              evals: openingEvals);
+          return result == null ? null : new TimedRound(result, sharing.Contains);
+        },
+        !rowPattern,
+        round => ReachesTarget(round.Result, materialTarget, offcut),
+        stop,
+        newBest == null ? null : round => newBest(round.Result));
+
+      if (report.StopReason == NestRoundsStop.Cancelled)
+      {
+        error = Strings.Engine_MsgCancelled;
+        return null;
+      }
+
+      if (best == null)
+      {
+        error = firstRoundError ?? Strings.Engine_MsgNoPlacements;
+        return null;
+      }
+
+      // The status line reads these after the nest, so they must describe the round that was kept, not
+      // whichever one ran last.
+      best.RestoreDiagnostics();
+      return best.Result;
+    }
+
+    /// <summary>Whether a nest is good enough to hand over on the material usage target: every part placed,
+    /// and the sheet used at least that well with the offcut left out (<see cref="NestRounds.UsedUtilization"/>).
+    /// A nest that leaves parts out never is: a later round may place them. Zero is no target.</summary>
+    internal static bool ReachesTarget(INestResult result, double materialTarget, OffcutOptions offcut)
+      => materialTarget > 0 && result.UnplacedParts.Count == 0 && NestRounds.UsedUtilization(result, offcut) >= materialTarget;
+
+    /// <summary>
+    /// The row-pattern nest on its own, as the opening of <see cref="NestForTime"/> runs it: null, with
+    /// <paramref name="error"/>, when the job is not one the pattern lays out or a sheet of it fails.
+    /// <para>It never starts the engine, which is what lets it be checked where the engine is not installed;
+    /// <paramref name="sparrowExePath"/> still has to name a file, because the request is checked the same way
+    /// as every other nest.</para>
+    /// </summary>
+    internal static INestResult NestByRowPattern(
+      IReadOnlyList<RasterPartInfo> parts,
+      IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock,
+      int rotations,
+      double spacing,
+      double margin,
+      string sparrowExePath,
+      out string error,
+      CancellationToken cancel = default,
+      double commonLineGap = CommonLineDefaults.DefaultGapInches,
+      double geometryTolerance = CommonLineDefaults.DefaultGeometryToleranceInches,
+      int commonLineMaxClusterParts = CommonLineDefaults.AutoMaxClusterParts)
+    {
+      var loaded = Prepare(parts, stock, rotations, spacing, sparrowExePath, commonLineGap, geometryTolerance, out var sizes, out error);
+      if (loaded == null)
+      {
+        return null;
+      }
+
+      if (!RowPatternApplies(loaded, sizes, margin, commonLineGap, geometryTolerance, commonLineMaxClusterParts))
+      {
+        error = Strings.Engine_MsgNoPlacements;
+        return null;
+      }
+
+      return RunRowPattern(loaded, stock, margin, sparrowExePath, cancel, null, commonLineGap, geometryTolerance, commonLineMaxClusterParts, out error);
+    }
+
+    private static INestResult RunRowPattern(
+      List<Loaded> loaded,
+      IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock,
+      double margin,
+      string sparrowExePath,
+      CancellationToken cancel,
+      System.IProgress<(int Placed, int Total, int Sheet, double Density)> progress,
+      double commonLineGap,
+      double geometryTolerance,
+      int commonLineMaxClusterParts,
+      out string error)
+    {
+      try
+      {
+        return RunNestBody(
+          loaded,
+          BuildSizes(stock),
+          margin,
+          0,
+          sparrowExePath,
+          cancel,
+          progress,
+          NestEffort.Fast, // not used: nothing is searched
+          commonLineGap,
+          geometryTolerance,
+          commonLineMaxClusterParts,
+          0,
+          out error,
+          rowPattern: true);
+      }
+      catch (CommonLineValidationException ex)
+      {
+        error = ex.Message;
+        return null; // fail closed: the search still runs
+      }
+    }
+
+    /// <summary>One finished round: its nest, how it ranks, and the counters the status line reads.</summary>
+    private sealed class TimedRound
+    {
+      private readonly int deferred = DiagDeferred;
+      private readonly int seamsSnapped = DiagSeamsSnapped;
+      private readonly int seamsGivenUp = DiagSeamsGivenUp;
+      private readonly CommonLineFallbackNotice[] fallbacks;
+
+      public TimedRound(INestResult result, Func<int, bool> mayShare)
+      {
+        this.Result = result;
+        this.Summary = NestRounds.Summarize(result, mayShare);
+        lock (DiagCommonLineFallbacks)
+        {
+          this.fallbacks = DiagCommonLineFallbacks.ToArray();
+        }
+      }
+
+      public INestResult Result { get; }
+
+      public NestSummary Summary { get; }
+
+      public void RestoreDiagnostics()
+      {
+        DiagDeferred = this.deferred;
+        DiagSeamsSnapped = this.seamsSnapped;
+        DiagSeamsGivenUp = this.seamsGivenUp;
+        lock (DiagCommonLineFallbacks)
+        {
+          DiagCommonLineFallbacks.Clear();
+          DiagCommonLineFallbacks.AddRange(this.fallbacks);
+        }
+      }
+    }
+
+    /// <summary>Checks the request and reads the drawings once. Null, with <paramref name="error"/>, when the
+    /// job cannot be nested at all.</summary>
+    private static List<Loaded> Prepare(
+      IReadOnlyList<RasterPartInfo> parts,
+      IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock,
+      int rotations,
+      double spacing,
+      string sparrowExePath,
+      double commonLineGap,
+      double geometryTolerance,
+      out List<StockSize> sizes,
+      out string error)
+    {
+      sizes = null;
       error = null;
       // These values are already expressed in the caller's active drawing units. Substituting inch
       // constants here would silently turn 0.010in into 0.010mm for an invalid metric call. Reject the
@@ -312,9 +608,35 @@
         return null;
       }
 
-      // The stock is kept AS SIZES with a remaining count, not expanded into a flat list of slots: an
-      // unlimited size has no count to expand, and the loop below chooses which size to cut next rather
-      // than walking a list in order, so there is no list to walk.
+      sizes = BuildSizes(stock);
+      if (sizes.Count == 0)
+      {
+        error = Strings.Engine_MsgAddSheetSize;
+        return null;
+      }
+
+      // Sparrow first preserves the ordinary spacing baseline. The schema-aware planner then evaluates
+      // every permitted discrete pose (or bounded deterministic poses for Continuous rotation) and moves
+      // only explicitly selected LINE/ARC spans to CommonLineGap.
+      ResetNestDiagnostics();
+
+      var diagLoad = System.Diagnostics.Stopwatch.StartNew();
+      var loaded = LoadAll(parts, rotations, spacing, out error);
+      DiagLoadMs = diagLoad.ElapsedMilliseconds;
+      if (loaded == null || loaded.Count == 0)
+      {
+        error ??= "No valid parts to nest.";
+        return null;
+      }
+
+      return loaded;
+    }
+
+    /// <summary>The stock is kept AS SIZES with a remaining count, not expanded into a flat list of slots: an
+    /// unlimited size has no count to expand, and the nest chooses which size to cut next rather than walking
+    /// a list in order, so there is no list to walk.</summary>
+    private static List<StockSize> BuildSizes(IReadOnlyList<(int Win, int Hin, int Qty, bool Unlimited)> stock)
+    {
       var sizes = new List<StockSize>();
       if (stock != null)
       {
@@ -327,15 +649,12 @@
         }
       }
 
-      if (sizes.Count == 0)
-      {
-        error = Strings.Engine_MsgAddSheetSize;
-        return null;
-      }
+      return sizes;
+    }
 
-      // Sparrow first preserves the ordinary spacing baseline. The schema-aware planner then evaluates
-      // every permitted discrete pose (or bounded deterministic poses for Continuous rotation) and moves
-      // only explicitly selected LINE/ARC spans to CommonLineGap.
+    /// <summary>The counters a nest leaves for the status line, cleared before each one.</summary>
+    private static void ResetNestDiagnostics()
+    {
       DiagDeferred = 0;
       DiagSeamsSnapped = 0;
       DiagSeamsGivenUp = 0;
@@ -346,29 +665,6 @@
       {
         DiagCommonLineFallbacks.Clear();
       }
-
-      var diagLoad = System.Diagnostics.Stopwatch.StartNew();
-      var loaded = LoadAll(parts, rotations, spacing, out error);
-      DiagLoadMs = diagLoad.ElapsedMilliseconds;
-      if (loaded == null || loaded.Count == 0)
-      {
-        error ??= "No valid parts to nest.";
-        return null;
-      }
-
-      return RunNestBody(
-        loaded,
-        sizes,
-        margin,
-        perSheetBudgetSec,
-        sparrowExePath,
-        cancel,
-        progress,
-        effort,
-        commonLineGap,
-        geometryTolerance,
-        commonLineMaxClusterParts,
-        out error);
     }
 
     /// <summary>One size of stock and how much of it is left. An unlimited size never runs down, so its
@@ -396,6 +692,11 @@
 
     /// <summary>The per-sheet nest loop: fills sheets from the stock (best-of-K sparrow packs, corner
     /// compaction, pattern replication) and maps to an <see cref="INestResult"/>.</summary>
+    /// <param name="rowPattern">Lay every sheet out with <see cref="RowPatternPacker"/> instead of searching.
+    /// The whole nest is then all pattern or nothing: a sheet it cannot lay out, or one that has to give
+    /// parts back, makes it return null rather than a nest that is half pattern.</param>
+    /// <param name="evals">A cap on each sheet's search work, in sample evaluations, on top of the iterations;
+    /// 0 for none (see <see cref="OpeningEvals"/>).</param>
     private static INestResult RunNestBody(
       List<Loaded> loaded,
       List<StockSize> sizes,
@@ -408,7 +709,11 @@
       double commonLineGap,
       double geometryTolerance,
       int commonLineMaxClusterParts,
-      out string error)
+      int seedOffset,
+      out string error,
+      bool rowPattern = false,
+      int iterations = 0,
+      long evals = 0)
     {
       error = null;
       var loadedById = loaded.ToDictionary(l => l.Source);
@@ -456,12 +761,14 @@
           int w = size.W;
           int h = size.H;
           var batchQty = SelectBatch(pool, loadedById, sizes, w, h, margin);
+          var sentQty = rowPattern ? batchQty : HoldBackForHoles(batchQty, loadedById, cancel);
+          int heldBack = batchQty.Values.Sum() - sentQty.Values.Sum();
 
           // Search budget, in ITERATIONS rather than seconds (see RunSparrowOnce), chosen by the operator's
           // effort setting. The wall clock a sheet takes is a consequence of the machine, not an input to the
           // answer, so two computers still agree on the nest.
           int batchParts = batchQty.Values.Sum();
-          int budget = IterationBudget(effort);
+          int budget = iterations > 0 ? iterations : IterationBudget(effort);
 
           // How many identical sheets this exact batch will tile (it is packed ONCE then pattern-replicated).
           // A batch that governs many clones is worth many best-of-K tries — the cost is amortized over all
@@ -475,6 +782,7 @@
           bool isFinalSheet = batchParts == pool.Values.Sum();
           int tries = TriesFor(replicas, isFinalSheet, effort);
 
+
           // packW/packH = the sheet dims PackOneSheet packed in (always the stock size's own orientation — the
           // sheet is never auto-rotated). Kept as a return value so the render matches what was packed.
           // Watchdog only: a search must finish because it ran out of iterations, never because it ran out
@@ -482,24 +790,29 @@
           // gets a longer leash, but far above any healthy run — it exists to catch a hung process.
           int hardTimeoutSec = WatchdogSeconds(perSheetBudgetSec, effort);
 
-          var (placements, placedBySrc, packW, packH, seamsSnapped, seamsGivenUp, commonEdges, commonLineFallbacks) = PackOneSheet(
-            loaded,
-            batchQty,
-            w,
-            h,
-            margin,
-            budget,
-            SearchWorkers(effort),
-            hardTimeoutSec,
-            tries,
-            sparrowExePath,
-            cancel,
-            onDensity,
-            commonLineGap,
-            geometryTolerance,
-            effort,
-            commonLineMaxClusterParts,
-            out string perr);
+          string perr = null;
+          var (placements, placedBySrc, packW, packH, seamsSnapped, seamsGivenUp, commonEdges, commonLineFallbacks) = rowPattern
+            ? PackRowPattern(loaded, batchQty, w, h, margin, commonLineGap, geometryTolerance, commonLineMaxClusterParts, cancel)
+            : PackOneSheet(
+              loaded,
+              sentQty,
+              w,
+              h,
+              margin,
+              budget,
+              evals,
+              SearchWorkers(effort),
+              hardTimeoutSec,
+              tries,
+              sparrowExePath,
+              cancel,
+              onDensity,
+              commonLineGap,
+              geometryTolerance,
+              effort,
+              commonLineMaxClusterParts,
+              seedOffset,
+              out perr);
           firstPackError ??= perr;
           if (cancel.IsCancellationRequested)
           {
@@ -526,22 +839,26 @@
           // from 2m13s to 26m23s for no better answer anywhere. What is worth paying for is the sheet that
           // came within a couple of parts, which is the one more searching can actually finish.
           int packedHere = placedBySrc?.Values.Sum() ?? 0;
-          int leftOver = pool.Values.Sum() - packedHere;
+
+          // What was held back for the holes is not left over: the sheet's hole fill below puts it in.
+          int leftOver = pool.Values.Sum() - packedHere - heldBack;
           // Whatever this sheet leaves behind is about to be handed back as uncut, so search again, harder.
           // There used to be a `leftOver * 4 <= packedHere` clause here, which quietly made the retry refuse
           // the cases that need it most: a job that seats 11 of 14 has too much left over to qualify and gets
           // no second chance at all, while one that seats 13 of 14 gets one. It was there to keep the cost
           // down when a single budget served everybody; the operator picks the effort now, and giving parts
           // back uncut is worth more seconds than any of them.
-          if (placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
+          if (!rowPattern && placements != null && packedHere > 0 && leftOver > 0 && IsLastChanceFor(size, sizes))
           {
             var (retryPl, retryBy, retryW, retryH, retrySeamsSnapped, retrySeamsGivenUp, retryCommonEdges, retryCommonLineFallbacks) = PackOneSheet(
               loaded,
-              batchQty,
+              sentQty,
               w,
               h,
               margin,
               LastChanceBudget(effort),
+              // The opening's harder search is held to twice its own work, not left to run a Normal's.
+              evals > 0 ? 2 * evals : 0,
               SearchWorkers(effort),
               hardTimeoutSec,
               tries,
@@ -552,6 +869,7 @@
               geometryTolerance,
               effort,
               commonLineMaxClusterParts,
+              seedOffset,
               out _);
 
             if (!cancel.IsCancellationRequested && retryPl != null && retryBy != null
@@ -595,6 +913,12 @@
 
         if (bestSize == null)
         {
+          if (rowPattern && sizes.Any(size => size.HasStock))
+          {
+            error = Strings.Engine_MsgNoPlacements;
+            return null; // the pattern cannot lay out what is left; the search may still manage it
+          }
+
           // Every size still in stock packed NOTHING, so what is left over cannot be cut from any of them
           // and asking again would only ask the same question. This is what stops an unlimited size: with
           // no sheet placed the loop's own counter never advances, so without this break it would spin.
@@ -619,6 +943,23 @@
           }
         }
 
+        // The engine never sees a part's holes, and the hole fill at the end only ever had parts to work with
+        // when the stock ran out: on unlimited sheets nothing went into a frame, and what would have fitted
+        // inside it took a sheet of its own. So this sheet's holes are filled now, from what is still to be
+        // placed, before it is judged. A drawing set to share cuts stays out: in a hole it is cut on its own.
+        if (!rowPattern)
+        {
+          var rest = pool
+            .Where(kv => !(loadedById[kv.Key].RequiresMergedLines && loadedById[kv.Key].Cc != CommonCuttingMode.None))
+            .ToDictionary(kv => kv.Key, kv => kv.Value - (bestPlacedBySrc.TryGetValue(kv.Key, out int on) ? on : 0));
+          var left = new Dictionary<int, int>(rest);
+          FillHoles(new List<List<IPartPlacement>> { bestPlacements }, rest, loadedById, cancel);
+          foreach (var (src, before) in left.Where(kv => rest[kv.Key] < kv.Value))
+          {
+            bestPlacedBySrc[src] = (bestPlacedBySrc.TryGetValue(src, out int on) ? on : 0) + before - rest[src];
+          }
+        }
+
         // The sheet is judged by the rule that decides whether it may be cut, before it is handed over.
         // Whatever fails goes back in the pool and lands on the next sheet, so no layout ever leaves here
         // that the app would paint red. See DeferUnfit for why this is not the same as trusting the pack.
@@ -632,7 +973,8 @@
           bestH,
           margin,
           commonLineGap,
-          geometryTolerance);
+          geometryTolerance,
+          reseatAtTail: !rowPattern && bestPlacedBySrc.Values.Sum() == pool.Values.Sum());
         NestDiagnostics.AddElapsed("body.defer-unfit", deferClock);
         if (bestPlacements.Count == 0)
         {
@@ -641,6 +983,12 @@
 
         if (deferred > 0)
         {
+          if (rowPattern)
+          {
+            error = Strings.Engine_MsgClusterFailedSheetValidation;
+            return null; // a pattern sheet passed every check before it got here; trust none of it now
+          }
+
           DiagDeferred += deferred;
         }
 
@@ -674,6 +1022,12 @@
         return null;
       }
 
+      // A last sheet left holding what the sheet before it gave back goes into the earlier sheets' tails.
+      if (!rowPattern)
+      {
+        FoldLastSheetBack(sheetLayouts, sheetCommonEdges, sheetSizes, (a, b) => AcceptanceClearanceOf(a, b, loadedById), margin, commonLineGap, geometryTolerance);
+      }
+
       // jagua ignores item holes, so sparrow never nests inside them. Recover that density ourselves:
       // drop leftover parts into the holes of already-placed parts (exact geometry, spacing preserved).
       var diagHoles = System.Diagnostics.Stopwatch.StartNew();
@@ -682,6 +1036,10 @@
 
       // Cloning and hole filling are intentionally incapable of moving a cluster, but the persisted
       // metadata is safety-critical: prove that assumption on the exact final layouts before ids/export.
+      // Each drawing is read once for this whole stage, here and now, rather than once per seam end: every
+      // check below still sees the drawing as it is at the end of the nest, and they all see the same one.
+      // Measured on 800 copies of a 345 KB drawing: the row-pattern nest went from 8.1 to 5.6 seconds.
+      var finalCatalogs = new Dictionary<string, DxfContourCatalog>(StringComparer.OrdinalIgnoreCase);
       var finalClock = Stopwatch.StartNew();
       for (int sheetIndex = 0; sheetIndex < sheetLayouts.Count; sheetIndex++)
       {
@@ -704,7 +1062,8 @@
             edge,
             commonLineGap,
             geometryTolerance,
-            out _));
+            out _,
+            finalCatalogs));
           if (!edgesValid
               || !OutlinesClearEveryone(sheetLayouts[sheetIndex], outlineById, null)
               || !FinalLayoutIsValid(
@@ -716,7 +1075,8 @@
                 margin,
                 commonLineGap,
                 geometryTolerance,
-                cancel))
+                cancel,
+                finalCatalogs))
           {
             error = Strings.Engine_MsgClusterFailedSheetValidation;
             return null;
@@ -744,7 +1104,8 @@
                 intent,
                 commonLineGap,
                 geometryTolerance,
-                out CommonEdge commonEdge))
+                out CommonEdge commonEdge,
+                finalCatalogs))
           {
             error = Strings.Engine_MsgClusterChanged;
             return null;
@@ -772,7 +1133,7 @@
           geometryTolerance: geometryTolerance);
         try
         {
-          _ = CommonLineGeometryResolver.Resolve(sheetPlacement);
+          _ = CommonLineGeometryResolver.Resolve(sheetPlacement, finalCatalogs);
         }
         catch (CommonLineValidationException ex)
         {
@@ -963,8 +1324,8 @@
       return false;
     }
 
-    /// <summary>Picks a batch from the pool up to ~1.3× the sheet area (extra choice for sparrow), keeping
-    /// source variety for mixed jobs. Offers only parts that can actually go on this size of sheet, the
+    /// <summary>Picks a batch from the pool up to 1.5× the sheet area (extra choice for sparrow), one of each
+    /// drawing in turn for mixed jobs. Offers only parts that can actually go on this size of sheet, the
     /// ones with the fewest sizes left to choose from first, and returns an empty batch when none of them
     /// can go on it at all.</summary>
     private static Dictionary<int, int> SelectBatch(
@@ -986,8 +1347,6 @@
       double sheetArea = (double)w * h;
       var batch = new Dictionary<int, int>();
       double acc = 0;
-      int prevPriority = int.MinValue;
-      int prevHomes = int.MinValue;
 
       // How many of the sizes STILL IN STOCK could hold each part at all. A part with two sizes left to
       // choose from has to be offered this sheet before one with three, or the sheet it depended on gets
@@ -1001,47 +1360,58 @@
 
       // Highest priority first (1 = highest, lower number wins) so preferred parts fill earlier
       // sheets and the leftover tail — what ends up unplaced when material runs out — is lowest priority.
-      foreach (var kv in pool
+      // A part that cannot go on THIS size of sheet must not spend its area budget either. The batch
+      // used to be picked on area alone, so one part too big for the sheet in front of it filled the
+      // batch of every candidate size, all of them packed nothing, and the sheet loop stopped with
+      // parts that fit and sheets left to cut them on: the operator got seven parts back uncut when
+      // only one of them was impossible.
+      var offered = pool
+        .Where(kv => kv.Value > 0 && FitsOnSheet(loadedById[kv.Key], w, h, margin))
         .OrderBy(kv => loadedById[kv.Key].Priority)
         .ThenBy(kv => homesBySource[kv.Key])
-        .ThenBy(kv => kv.Key))
+        .ThenBy(kv => kv.Key)
+        .ToList();
+      foreach (var group in offered.GroupBy(kv => (loadedById[kv.Key].Priority, homesBySource[kv.Key])))
       {
-        // A part that cannot go on THIS size of sheet must not spend its area budget either. The batch
-        // used to be picked on area alone, so one part too big for the sheet in front of it filled the
-        // batch of every candidate size, all of them packed nothing, and the sheet loop stopped with
-        // parts that fit and sheets left to cut them on: the operator got seven parts back uncut when
-        // only one of them was impossible.
-        if (kv.Value <= 0 || !FitsOnSheet(loadedById[kv.Key], w, h, margin))
-        {
-          continue;
-        }
-
         // Don't let a lower-priority part share a sheet that higher-priority parts already fill: once a
         // full sheet's worth of higher-priority area is queued, stop before crossing to a lower priority.
         // Keeps priority parts off the "left over" pile even though sparrow itself is priority-blind.
         // The same stop guards the parts with fewer sizes to choose from, and that is what RESERVES a
         // scarce size: while a sheetful of them is waiting, the ones with somewhere else to go are not
         // offered this sheet at all.
-        int pr = loadedById[kv.Key].Priority;
-        int homes = homesBySource[kv.Key];
-        if ((pr > prevPriority || (pr == prevPriority && homes > prevHomes)) && acc >= sheetArea)
+        if (batch.Count > 0 && acc >= sheetArea)
         {
           break;
         }
 
-        double area = Math.Max(1e-6, Math.Abs(loadedById[kv.Key].Nfp.Area));
-        int take = 0;
-        while (take < kv.Value && acc + area <= cap)
+        // One of each drawing in turn, not every copy of one drawing before the next. Drawing by drawing, a
+        // job of several sheets got its first drawings on the first sheets and its last ones on the last,
+        // so the small parts that fill the gaps between big ones were never on the same sheet as them.
+        // Measured on a mix of seven invented drawings: four sheets became three. A drawing set to share cuts
+        // still goes in whole when its turn comes, because its copies share with each other: spread among
+        // the rest on three times the common-line demo, Fast left 58 of them on their own, against 43 whole.
+        var left = group.ToDictionary(kv => kv.Key, kv => kv.Value);
+        bool took = true;
+        while (took)
         {
-          acc += area;
-          take++;
-        }
-
-        if (take > 0)
-        {
-          batch[kv.Key] = take;
-          prevPriority = pr;
-          prevHomes = homes;
+          took = false;
+          foreach (var kv in group)
+          {
+            Loaded part = loadedById[kv.Key];
+            double area = Math.Max(1e-6, Math.Abs(part.Nfp.Area));
+            bool whole = part.RequiresMergedLines && part.Cc != CommonCuttingMode.None;
+            while (left[kv.Key] > 0 && acc + area <= cap)
+            {
+              acc += area;
+              left[kv.Key]--;
+              batch[kv.Key] = (batch.TryGetValue(kv.Key, out int n) ? n : 0) + 1;
+              took = true;
+              if (!whole)
+              {
+                break;
+              }
+            }
+          }
         }
 
         if (acc >= cap)
@@ -1073,7 +1443,7 @@
     /// add it either.
     /// </summary>
     private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks) PackOneSheet(
-      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, double commonLineGap, double geometryTolerance, NestEffort effort, int commonLineMaxClusterParts, out string error)
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, int budget, long maxEvals, int workers, int hardTimeoutSec, int tries, string exe, CancellationToken cancel, Action<double> onDensity, double commonLineGap, double geometryTolerance, NestEffort effort, int commonLineMaxClusterParts, int seedOffset, out string error)
     {
       error = null;
       var batch = loaded.Where(l => batchQty.TryGetValue(l.Source, out int q) && q > 0).ToList();
@@ -1084,22 +1454,7 @@
 
       // Capture once for the complete seed race. Each seed owns its mutable lookup dictionary,
       // while the captured catalog values are immutable and shared. Normal-only jobs do no DXF I/O.
-      var capturedSources = new Dictionary<string, DxfContourCatalog>(StringComparer.OrdinalIgnoreCase);
-      foreach (string source in batch.Where(part => part.RequiresMergedLines)
-        .Select(part => part.Nfp.Name).Where(path => !string.IsNullOrWhiteSpace(path)
-          && path.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase))
-      {
-        cancel.ThrowIfCancellationRequested();
-        try
-        {
-          string path = Path.GetFullPath(source);
-          capturedSources[path] = DxfContourCatalog.Load(path, geometryTolerance);
-        }
-        catch (Exception ex) when (ex is IOException || ex is CommonLineValidationException || ex is ArgumentException)
-        {
-          // Preserve the existing fail-closed candidate/fallback handling for unsupported sources.
-        }
-      }
+      var capturedSources = CaptureSourceCatalogs(batch, geometryTolerance, cancel);
 
       // Live-density progress reports the best seen across all tries so the bar climbs with the winner.
       double bestSeen = 0;
@@ -1162,7 +1517,11 @@
         // much of the sheet is left in one piece. It is the metric the operator sees; sparrow's density
         // is measured on its own strip BEFORE the compaction, so the two can disagree.
         bool longAxisIsX = sheetW >= sheetH;
-        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, double SharedLength, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks)>();
+
+        // A part of a drawing set to share cuts that shares none is cut on its own: the same count the
+        // timed rounds rank nests by (NestForTime).
+        var sharing = new HashSet<int>(batch.Where(l => l.RequiresMergedLines && l.Cc != CommonCuttingMode.None).Select(l => l.Source));
+        var winners = new List<(List<IPartPlacement> Pl, Dictionary<int, int> By, int Count, int Unshared, double SharedLength, double Extent, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks)>();
         int bestIndex = -1, launched = 0;
         string firstTryError = null;
         int packIndex = System.Threading.Interlocked.Increment(ref diagPackSeq);
@@ -1175,7 +1534,8 @@
           var wEdges = new List<CommonEdgeIntent>[waveSize];
           var wFallbacks = new IReadOnlyList<CommonLineFallbackNotice>[waveSize];
           var wSt = new (int Count, double Density, int Seed, int SeamsSnapped, int SeamsGivenUp)?[waveSize];
-          int startSeed = launched + 1;
+          // A timed nest's later rounds race seeds no earlier round has tried (NestRounds.SeedOffsetOf).
+          int startSeed = seedOffset + launched + 1;
           var options = new ParallelOptions { MaxDegreeOfParallelism = maxConc, CancellationToken = cancel };
           Parallel.For(0, waveSize, options, j =>
           {
@@ -1183,7 +1543,7 @@
             string tryDir = Path.Combine(workDir, "try" + seed.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(tryDir);
             var diagRun = System.Diagnostics.Stopwatch.StartNew();
-            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, workers, hardTimeoutSec, seed, cancel, aggDensity, out string tryErr);
+            string outJson = RunSparrowOnce(exe, tryDir, inputPath, budget, maxEvals, workers, hardTimeoutSec, seed, cancel, aggDensity, out string tryErr);
             if (tryErr != null)
             {
               // Not fatal on its own: the other races may still return something. But when they ALL fail the
@@ -1231,7 +1591,9 @@
               var lengthClock = Stopwatch.StartNew();
               double sharedLength = CommonLineLength(wEdges[j], commonLineGap, geometryTolerance, capturedSources);
               NestDiagnostics.AddElapsed("wave.common-line-length", lengthClock);
-              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, sharedLength, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wEdges[j], wFallbacks[j]));
+              var welded = new HashSet<IPartPlacement>(wEdges[j].SelectMany(e => new[] { e.PartA, e.PartB }), ReferenceEqualityComparer.Instance);
+              int unshared = wPl[j].Count(p => sharing.Contains(p.Source) && !welded.Contains(p));
+              winners.Add((wPl[j], wBy[j], wSt[j].Value.Count, unshared, sharedLength, longAxisIsX ? ex : ey, wSt[j].Value.Density, wSt[j].Value.Seed, wSt[j].Value.SeamsSnapped, wSt[j].Value.SeamsGivenUp, wEdges[j], wFallbacks[j]));
               lock (DiagCandidates)
               {
                 DiagCandidates.Add(FormattableString.Invariant(
@@ -1241,14 +1603,14 @@
           }
 
           // Plateau: stop once a full wave fails to produce a better candidate than the ones already in
-          // hand, judged by the SAME ordering that will pick the winner (parts, common-line length,
-          // then extent and density).
+          // hand, judged by the SAME ordering that will pick the winner (parts, parts on their own, extent,
+          // common-line length, then density).
           // It used to count parts only, and parts placed is a metric that stops moving almost at once: a
           // wave that was still tightening the pack read as no progress, so the search was cut while the
           // block was still too wide, which is the whole complaint this change exists to answer.
           int waveBest = winners.Count == 0
             ? -1
-            : PickBest(winners.Select(w => (w.Count, w.SharedLength, w.Extent, w.Density, w.Seed)).ToList());
+            : PickBest(winners.Select(w => (w.Count, w.Unshared, w.SharedLength, w.Extent, w.Density, w.Seed)).ToList());
           if (bestIndex >= 0 && waveBest == bestIndex)
           {
             break;
@@ -1271,7 +1633,7 @@
           return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<CommonLineFallbackNotice>());
         }
 
-        int bi = PickBest(winners.Select(w => (w.Count, w.SharedLength, w.Extent, w.Density, w.Seed)).ToList());
+        int bi = PickBest(winners.Select(w => (w.Count, w.Unshared, w.SharedLength, w.Extent, w.Density, w.Seed)).ToList());
         var sel = winners[bi];
         return (sel.Pl, sel.By, sheetW, sheetH, sel.SeamsSnapped, sel.SeamsGivenUp, sel.CommonEdges, sel.CommonLineFallbacks);
       }
@@ -1284,7 +1646,205 @@
         catch (IOException)
         {
         }
+        catch (UnauthorizedAccessException)
+        {
+          // A search killed at a timed nest's deadline can leave a file still held for a moment. A temp
+          // folder left behind must not turn an ordinary stop into a crash report.
+        }
       }
+    }
+
+    /// <summary>The exact source of every common-line drawing in a pack, read once. A drawing that cannot be
+    /// read is left out, and its seams then fail closed where they are checked.</summary>
+    private static Dictionary<string, DxfContourCatalog> CaptureSourceCatalogs(IEnumerable<Loaded> batch, double geometryTolerance, CancellationToken cancel)
+    {
+      var capturedSources = new Dictionary<string, DxfContourCatalog>(StringComparer.OrdinalIgnoreCase);
+      foreach (string source in batch.Where(part => part.RequiresMergedLines)
+        .Select(part => part.Nfp.Name).Where(path => !string.IsNullOrWhiteSpace(path)
+          && path.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase))
+      {
+        cancel.ThrowIfCancellationRequested();
+        try
+        {
+          string path = Path.GetFullPath(source);
+          capturedSources[path] = DxfContourCatalog.Load(path, geometryTolerance);
+        }
+        catch (Exception ex) when (ex is IOException || ex is CommonLineValidationException || ex is ArgumentException)
+        {
+          // Preserve the existing fail-closed candidate/fallback handling for unsupported sources.
+        }
+      }
+
+      return capturedSources;
+    }
+
+    /// <summary>
+    /// Whether the job is one <see cref="RowPatternPacker"/> can lay out: a single drawing set to share cuts
+    /// with itself, with straight opposite sides that meet in full, two of which fit side by side on some sheet.
+    /// <para>Laying a part out by its box must also give little or nothing away. Its copies cannot reach into
+    /// each other's boxes; or the part fills most of its box, so there is little air for a copy to win back; or
+    /// every copy fits on one sheet of the smallest size in stock: no layout takes less than that, so all a
+    /// search could win is a tighter offcut. A slotted bar whose end fingers fit into a copy's slots fills most
+    /// of its box. Everything else is left to the search.</para>
+    /// </summary>
+    private static bool RowPatternApplies(List<Loaded> loaded, List<StockSize> sizes, double margin, double commonLineGap, double geometryTolerance, int commonLineMaxClusterParts)
+    {
+      if (loaded.Count != 1)
+      {
+        return false;
+      }
+
+      Loaded part = loaded[0];
+      if (!part.RequiresMergedLines
+          || part.Continuous
+          || !CommonCuttingCompatibility.MayShare(part.CommonCuttingDomain, part.Cc, part.ShareKey, part.CommonCuttingDomain, part.Cc, part.ShareKey))
+      {
+        return false;
+      }
+
+      int maxChain = ResolveCommonLineMaxClusterParts(commonLineMaxClusterParts, part.Qty);
+      var poses = RowPatternPacker.Poses(part.Nfp, part.Angles, commonLineGap, geometryTolerance);
+      RowPatternPacker.Layout? Lay(StockSize size, int count) => RowPatternPacker.Plan(
+        size.W - (2 * margin),
+        size.H - (2 * margin),
+        poses,
+        commonLineGap,
+        part.EffSpacing,
+        count,
+        maxChain,
+        size.W >= size.H,
+        geometryTolerance);
+      StockSize smallest = sizes.Where(size => size.HasStock).OrderBy(size => (double)size.W * size.H).FirstOrDefault();
+      return maxChain >= 2
+        && sizes.Any(size => Lay(size, 2) is { Placed: 2, Unshared: 0 })
+        && ((smallest != null && Lay(smallest, part.Qty)?.Placed == part.Qty)
+          || RowPatternPacker.FillsItsBoxes(part.Nfp, poses)
+          || RowPatternPacker.CopiesKeepToTheirBoxes(part.Nfp, poses));
+    }
+
+    /// <summary>
+    /// One sheet of the row pattern, held to the same four checks a searched sheet passes before its seams
+    /// are kept (see <see cref="MapAndCompact"/>): every seam makes an exact record, no outline eats into
+    /// another, every pair without a seam keeps its spacing, and the clusters close into cuttable outlines.
+    /// The grid is tried first; when it does not pass, plain bands are. Null when neither does.
+    /// </summary>
+    internal static (List<IPartPlacement> Placements, List<CommonEdgeIntent> CommonEdges) BuildRowPatternSheet(
+      INfp outline,
+      int source,
+      IReadOnlyList<int> angles,
+      bool mirrored,
+      (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing) rule,
+      int count,
+      int sheetW,
+      int sheetH,
+      double margin,
+      double commonLineGap,
+      double geometryTolerance,
+      int maxClusterParts,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs,
+      CancellationToken cancel = default)
+    {
+      var poses = RowPatternPacker.Poses(outline, angles, commonLineGap, geometryTolerance);
+      var turned = new Dictionary<int, INfp>();
+      foreach (int angle in poses.SelectMany(pose => pose.TwinAngle is int twin ? new[] { pose.Angle, twin } : new[] { pose.Angle }))
+      {
+        if (!turned.ContainsKey(angle))
+        {
+          turned[angle] = angle == 0 ? outline : outline.Rotate(angle);
+        }
+      }
+
+      var outlineById = new Dictionary<int, INfp> { [source] = outline };
+      var rules = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> { [source] = rule };
+      foreach (bool stack in new[] { true, false })
+      {
+        cancel.ThrowIfCancellationRequested();
+        RowPatternPacker.Layout layout = RowPatternPacker.Plan(
+          sheetW - (2 * margin),
+          sheetH - (2 * margin),
+          poses,
+          commonLineGap,
+          rule.Spacing,
+          count,
+          maxClusterParts,
+          sheetW >= sheetH,
+          geometryTolerance,
+          stack);
+        if (layout == null)
+        {
+          return (null, null);
+        }
+
+        var placements = new List<IPartPlacement>(layout.Slots.Count);
+        for (int i = 0; i < layout.Slots.Count; i++)
+        {
+          RowPatternPacker.Slot slot = layout.Slots[i];
+          RowPatternPacker.Pose pose = poses[slot.PoseIndex];
+          int angle = slot.Flipped ? pose.TwinAngle!.Value : pose.Angle;
+          INfp shape = turned[angle];
+          placements.Add(new PartPlacement(shape)
+          {
+            X = margin + slot.MinX - shape.MinX,
+            Y = margin + slot.MinY - shape.MinY,
+            Rotation = angle,
+            Source = source,
+            IsMirrored = mirrored,
+            Id = i, // the exact records refuse two parts with one id
+          });
+        }
+
+        var intents = layout.Seams
+          .SelectMany(seam => seam.Edges.Select(edge => new CommonEdgeIntent(placements[seam.A], edge.EdgeA, placements[seam.B], edge.EdgeB)))
+          .ToList();
+
+        try
+        {
+          if (intents.All(intent => TryCreateCommonEdgeRecord(intent, commonLineGap, geometryTolerance, out _, sourceCatalogs))
+              && OutlinesClearEveryone(placements, outlineById, null)
+              && DirectLayoutIsValid(placements, intents, rules, sheetW, sheetH, margin, commonLineGap, geometryTolerance, out _, out _, cancel, sourceCatalogs)
+              && CommonLineTopologyIsValid(placements, intents, sheetW, sheetH, commonLineGap, geometryTolerance, out _, cancel, sourceCatalogs))
+          {
+            return (placements, intents);
+          }
+        }
+        catch (CommonLineValidationException)
+        {
+          // Fail closed, exactly like a searched candidate whose seams do not hold.
+        }
+      }
+
+      return (null, null);
+    }
+
+    /// <summary>The row pattern in place of <see cref="PackOneSheet"/>: same answer shape, no search.</summary>
+    private static (List<IPartPlacement> Placements, Dictionary<int, int> PlacedBySource, int PackW, int PackH, int SeamsSnapped, int SeamsGivenUp, List<CommonEdgeIntent> CommonEdges, IReadOnlyList<CommonLineFallbackNotice> CommonLineFallbacks) PackRowPattern(
+      List<Loaded> loaded, Dictionary<int, int> batchQty, int sheetW, int sheetH, double margin, double commonLineGap, double geometryTolerance, int commonLineMaxClusterParts, CancellationToken cancel)
+    {
+      Loaded part = loaded.FirstOrDefault(l => batchQty.TryGetValue(l.Source, out int q) && q > 0);
+      if (part == null)
+      {
+        return (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<CommonLineFallbackNotice>());
+      }
+
+      int count = batchQty[part.Source];
+      var (placements, intents) = BuildRowPatternSheet(
+        part.Nfp,
+        part.Source,
+        part.Angles,
+        part.Mirrored,
+        (part.Cc, part.ShareKey, part.CommonCuttingDomain, part.RequiresMergedLines, part.EffSpacing),
+        count,
+        sheetW,
+        sheetH,
+        margin,
+        commonLineGap,
+        geometryTolerance,
+        ResolveCommonLineMaxClusterParts(commonLineMaxClusterParts, count),
+        CaptureSourceCatalogs(new[] { part }, geometryTolerance, cancel),
+        cancel);
+      return placements == null
+        ? (null, null, sheetW, sheetH, 0, 0, new List<CommonEdgeIntent>(), Array.Empty<CommonLineFallbackNotice>())
+        : (placements, new Dictionary<int, int> { [part.Source] = placements.Count }, sheetW, sheetH, 0, 0, intents, Array.Empty<CommonLineFallbackNotice>());
     }
 
     /// <summary>Maps sparrow's placements, anchors + gravity-compacts the pack to the bottom-left corner,
@@ -1367,6 +1927,7 @@
       double[] baselineX = baselinePlacements.Select(p => p.X).ToArray();
       double[] baselineY = baselinePlacements.Select(p => p.Y).ToArray();
       double[] baselineRotation = baselinePlacements.Select(p => p.Rotation).ToArray();
+      int baselineOnSheet = all.Count(p => !IsOutsideSheet(p, sheetWin, sheetHin));
       stageClock.Restart();
       DirectCommonLineSnapResult direct = SnapDirectCommonLineEdges(
         all,
@@ -1388,6 +1949,10 @@
       // edges keep CommonLineGap while every external pair still sees its ordinary EffSpacing.
       if (direct.Edges.Count > 0)
       {
+        // Where the planner left the parts, which already passed every check below. Compaction moves X and Y
+        // only, on these same objects the edges point at.
+        double[] plannedX = all.Select(p => p.X).ToArray();
+        double[] plannedY = all.Select(p => p.Y).ToArray();
         for (int k = 0; k < compactItems.Count; k++)
         {
           compactItems[k].X = all[k].X;
@@ -1463,10 +2028,33 @@
           cancel,
           sourceCatalogs);
         NestDiagnostics.AddElapsed("map.check-topology", stageClock);
-        if (!recordsStillValid
-            || !toolingStillValid
-            || !layoutStillValid
-            || !topologyStillValid)
+
+        // A compaction that breaks a check falls back to the planned layout before the baseline. Rigid
+        // compaction was measured leaving two clusters of a slotted bar 0.0001 in inside their spacing, and
+        // going straight to the baseline then threw away every shared cut on the sheet. The planned layout
+        // has to pass the same four checks again and put at least as many parts on the sheet as the baseline.
+        bool holds = recordsStillValid && toolingStillValid && layoutStillValid && topologyStillValid;
+        if (!holds)
+        {
+          stageClock.Restart();
+          for (int k = 0; k < all.Count; k++)
+          {
+            all[k].X = plannedX[k];
+            all[k].Y = plannedY[k];
+            compactItems[k].X = plannedX[k];
+            compactItems[k].Y = plannedY[k];
+          }
+
+          holds = all.Count(p => !IsOutsideSheet(p, sheetWin, sheetHin)) >= baselineOnSheet
+            && direct.Edges.All(edge => TryCreateCommonEdgeRecord(edge, commonLineGap, geometryTolerance, out _, sourceCatalogs))
+            && OutlinesClearEveryone(all, outlineById, null)
+            && DirectLayoutIsValid(all, direct.Edges, directRulesById, sheetWin, sheetHin, margin, commonLineGap, geometryTolerance, out _, out _, cancel, sourceCatalogs)
+            && CommonLineTopologyIsValid(all, direct.Edges, sheetWin, sheetHin, commonLineGap, geometryTolerance, out _, cancel, sourceCatalogs);
+          NestDiagnostics.AddElapsed("map.check-planned", stageClock);
+          NestDiagnostics.Add(holds ? "map.planned-kept" : "map.planned-failed");
+        }
+
+        if (!holds)
         {
           if (!topologyStillValid)
           {
@@ -3898,6 +4486,7 @@
       for (int candidateIndex = 0; candidateIndex < actionableCandidates.Count; candidateIndex++)
       {
         cancel.ThrowIfCancellationRequested();
+
         DirectCandidate candidate = actionableCandidates[candidateIndex];
         var expanded = new List<DirectPlanState>(beam.Count * 2);
         foreach (DirectPlanState state in beam)
@@ -4347,7 +4936,8 @@
       double margin,
       double commonLineGap,
       double geometryTolerance,
-      CancellationToken cancel = default)
+      CancellationToken cancel = default,
+      IDictionary<string, DxfContourCatalog> sourceCatalogs = null)
       => CommonEdgeClearance.FindUnfit(
         placements,
         sheetW,
@@ -4358,7 +4948,8 @@
         ClearanceEdges(intents),
         commonLineGap,
         geometryTolerance,
-        cancel: cancel).All.Count == 0;
+        cancel: cancel,
+        sourceCatalogs: sourceCatalogs).All.Count == 0;
 
     private static bool CommonLineTopologyIsValid(
       IReadOnlyList<IPartPlacement> placements,
@@ -4598,6 +5189,9 @@
     /// <para>Only one side of each offending pair is given back. Both are equally guilty, and dropping
     /// both would give away a part that has somewhere perfectly good to sit.</para>
     /// </summary>
+    /// <param name="reseatAtTail">The sheet holds everything still to be placed, so a part given back here would
+    /// have a sheet of its own or none at all: first try it past the end of the pack (see
+    /// <see cref="TryReseatAtTail"/>).</param>
     private static int DeferUnfit(
       List<IPartPlacement> placements,
       Dictionary<int, int> placedBySrc,
@@ -4607,7 +5201,8 @@
       double sheetH,
       double margin,
       double commonLineGap,
-      double geometryTolerance)
+      double geometryTolerance,
+      bool reseatAtTail = false)
     {
       int deferred = 0;
 
@@ -4654,17 +5249,18 @@
         // spend a sheet to buy nothing. Only when it genuinely has nowhere to go does it go back.
         var component = CommonEdgeComponent(victim, commonEdges);
         if (component.Count == 1
-            && TryNudgeClear(
-              placements,
-              victim,
-              (a, b) => AcceptanceClearanceOf(a, b, loadedById),
-              (a, b) => PlacementCollision.SliverFor(0, 0),
-              commonEdges,
-              sheetW,
-              sheetH,
-              margin,
-              commonLineGap,
-              geometryTolerance))
+            && (TryNudgeClear(
+                placements,
+                victim,
+                (a, b) => AcceptanceClearanceOf(a, b, loadedById),
+                (a, b) => PlacementCollision.SliverFor(0, 0),
+                commonEdges,
+                sheetW,
+                sheetH,
+                margin,
+                commonLineGap,
+                geometryTolerance)
+              || (reseatAtTail && TryReseatAtTail(placements, victim, (a, b) => AcceptanceClearanceOf(a, b, loadedById), commonEdges, sheetW, sheetH, margin, commonLineGap, geometryTolerance))))
         {
           continue;
         }
@@ -4693,6 +5289,149 @@
       }
 
       return deferred;
+    }
+
+    /// <summary>
+    /// Move one part that cannot be walked clear to past the end of the pack, on the same sheet, as it stands.
+    /// True when it found a place there.
+    /// </summary>
+    /// <remarks>
+    /// On the sheet that takes everything still to be placed, a part given back has nowhere else to go but a
+    /// sheet of its own. Measured on five welding tables in millimetres: the third sheet used 980 of its
+    /// 3048 mm, and a fourth was cut for one strip that sat a hair inside its clearance. Past the end of the
+    /// pack, one clearance beyond the farthest outline, there is nothing to be close to, so the part is tried
+    /// there from one margin across to the other, and judged by the same rule as the rest of the sheet. That
+    /// lengthens the sheet by about the part's width, which is still much less than another sheet.
+    /// </remarks>
+    internal static bool TryReseatAtTail(
+      List<IPartPlacement> placements,
+      IPartPlacement victim,
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
+      List<CommonEdgeIntent> commonEdges,
+      double sheetW,
+      double sheetH,
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
+    {
+      var others = placements.Where(p => !ReferenceEquals(p, victim) && p?.Part != null).ToList();
+      INfp part = victim.Part;
+      if (others.Count == 0 || part == null)
+      {
+        return false;
+      }
+
+      double clearance = others.Max(p => clearanceBetween(victim, p));
+      bool alongX = sheetW >= sheetH;
+
+      // The placed outline is the part's own moved by its position, so the far end of each is its outline's
+      // far end plus that position.
+      double end = others.Max(p => alongX ? p.Part.MaxX + p.X : p.Part.MaxY + p.Y);
+      double atEnd = end + clearance + PlacementCollision.PlacementNoise - (alongX ? part.MinX : part.MinY);
+      double crossFrom = margin - (alongX ? part.MinY : part.MinX);
+      double crossTo = (alongX ? sheetH : sheetW) - margin - (alongX ? part.MaxY : part.MaxX);
+      if (crossTo < crossFrom)
+      {
+        return false;
+      }
+
+      double x0 = victim.X;
+      double y0 = victim.Y;
+      var probe = new CommonEdgeClearance.ProbeContext(
+        ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, null);
+      IPartPlacement lastOffender = null;
+      const int Steps = 16;
+      for (int i = 0; i <= Steps; i++)
+      {
+        double across = crossFrom + ((crossTo - crossFrom) * i / Steps);
+        victim.X = alongX ? atEnd : across;
+        victim.Y = alongX ? across : atEnd;
+        probe.Moved(victim);
+        if (IsClearWhereItStands(
+          placements,
+          victim,
+          clearanceBetween,
+          (a, b) => PlacementCollision.SliverFor(0, 0),
+          probe,
+          sheetW,
+          sheetH,
+          margin,
+          ref lastOffender))
+        {
+          return true;
+        }
+      }
+
+      victim.X = x0;
+      victim.Y = y0;
+      return false;
+    }
+
+    /// <summary>
+    /// Move every part of the last sheet past the end of the pack on an earlier sheet and drop the last sheet,
+    /// when all of them find a place there. True when the sheet was dropped; otherwise nothing has moved.
+    /// </summary>
+    /// <remarks>
+    /// The sheet that takes the rest can still give a part back (see <see cref="DeferUnfit"/>), and when its own
+    /// tail has no room either, that part gets a sheet of its own. Measured on an invented job of seven
+    /// drawings: the third sheet gave back one clip and a fourth was cut for it, while the second ended six
+    /// inches short of its far edge. An earlier sheet is cut whole however far its parts reach, so a part past
+    /// the end of its pack costs nothing there.
+    /// </remarks>
+    internal static bool FoldLastSheetBack(
+      List<List<IPartPlacement>> sheetLayouts,
+      List<List<CommonEdgeIntent>> sheetCommonEdges,
+      List<(int W, int H)> sheetSizes,
+      Func<IPartPlacement, IPartPlacement, double> clearanceBetween,
+      double margin,
+      double commonLineGap,
+      double geometryTolerance)
+    {
+      int last = sheetLayouts.Count - 1;
+      if (last < 1 || sheetCommonEdges[last].Count > 0)
+      {
+        return false;
+      }
+
+      // The biggest first: it is the one most likely to find no room, and then nothing else need be tried.
+      var moved = new List<(int Sheet, IPartPlacement Part, double X, double Y)>();
+      foreach (IPartPlacement part in sheetLayouts[last].OrderByDescending(p => Math.Abs(p.Part?.Area ?? 0)).ToList())
+      {
+        double x0 = part.X;
+        double y0 = part.Y;
+        int target = -1;
+        for (int k = 0; k < last && target < 0; k++)
+        {
+          sheetLayouts[k].Add(part);
+          if (TryReseatAtTail(sheetLayouts[k], part, clearanceBetween, sheetCommonEdges[k], sheetSizes[k].W, sheetSizes[k].H, margin, commonLineGap, geometryTolerance))
+          {
+            target = k;
+          }
+          else
+          {
+            sheetLayouts[k].RemoveAt(sheetLayouts[k].Count - 1);
+          }
+        }
+
+        if (target < 0)
+        {
+          foreach (var (sheet, back, x, y) in moved)
+          {
+            sheetLayouts[sheet].Remove(back);
+            back.X = x;
+            back.Y = y;
+          }
+
+          return false;
+        }
+
+        moved.Add((target, part, x0, y0));
+      }
+
+      sheetLayouts.RemoveAt(last);
+      sheetCommonEdges.RemoveAt(last);
+      sheetSizes.RemoveAt(last);
+      return true;
     }
 
     /// <summary>
@@ -4737,6 +5476,10 @@
       var probe = new CommonEdgeClearance.ProbeContext(
         ClearanceEdges(commonEdges), commonLineGap, geometryTolerance, sourceCatalogs, boundaries, verdictCache);
 
+      // The neighbour the last position was too close to is nearly always the one this position is too close
+      // to as well, so it is asked first. Whether a position is clear does not depend on the order neighbours
+      // are asked in; asked in list order, every near neighbour before it was measured exactly for nothing.
+      IPartPlacement lastOffender = null;
       foreach (double step in new[] { 0.002, 0.01, 0.05, 0.2, 0.5, 1.0 })
       {
         double d = clearance * step;
@@ -4745,7 +5488,7 @@
           victim.X = x0 + dx;
           victim.Y = y0 + dy;
           probe.Moved(victim); // it is the same object at a new place; its cached boundary is now a lie
-          if (IsClearWhereItStands(placements, victim, clearanceBetween, sliverBetween, probe, sheetW, sheetH, margin))
+          if (IsClearWhereItStands(placements, victim, clearanceBetween, sliverBetween, probe, sheetW, sheetH, margin, ref lastOffender))
           {
             return true;
           }
@@ -4758,6 +5501,8 @@
     }
 
     /// <summary>One part against the sheet and against everybody else, by the rule the app judges with.</summary>
+    /// <param name="lastOffender">The neighbour found too close the last time, asked first; set to the one found
+    /// too close this time.</param>
     private static bool IsClearWhereItStands(
       List<IPartPlacement> placements,
       IPartPlacement victim,
@@ -4766,22 +5511,34 @@
       CommonEdgeClearance.ProbeContext probe,
       double sheetW,
       double sheetH,
-      double margin)
+      double margin,
+      ref IPartPlacement lastOffender)
     {
       if (PlacementAcceptance.IsOutsideUsableArea(victim, sheetW, sheetH, margin))
       {
         return false;
       }
 
+      if (lastOffender != null
+          && !ReferenceEquals(lastOffender, victim)
+          && probe.TooClose(victim, lastOffender, clearanceBetween(victim, lastOffender), sliverBetween(victim, lastOffender)))
+      {
+        return false;
+      }
+
       foreach (var other in placements)
       {
-        if (ReferenceEquals(other, victim) || other?.PlacedPart == null)
+        // Not `other.PlacedPart == null`: that builds the neighbour's whole placed outline, holes and all, for
+        // every neighbour at every position tried, only to be thrown away. The probe builds it once per pose
+        // and answers "not too close" for a part without one, which is what skipping it here meant.
+        if (ReferenceEquals(other, victim) || ReferenceEquals(other, lastOffender) || other == null)
         {
           continue;
         }
 
         if (probe.TooClose(victim, other, clearanceBetween(victim, other), sliverBetween(victim, other)))
         {
+          lastOffender = other;
           return false;
         }
       }
@@ -4922,13 +5679,17 @@
 
       const double scale = 1e6; // parts are small; 1e6 keeps Clipper coords well inside its safe range
       double smallestPartArea = pool.Where(k => k.Value > 0).Select(k => Math.Abs(loadedById[k.Key].Nfp.Area)).DefaultIfEmpty(double.MaxValue).Min();
+      var grownByAngle = new Dictionary<(int Source, int Angle), INfp>();
 
       try
       {
         for (int si = 0; si < sheetLayouts.Count && pool.Values.Sum() > 0; si++)
         {
-          // Every hole on this sheet (sheet coords, biggest first — big parts into big holes).
-          var holes = new List<List<IntPoint>>();
+          // Every hole on this sheet in sheet coords, the biggest first so that big parts take the big holes.
+          // A part dropped in has to fit the hole less the frame's half of the spacing, as it would keep that
+          // half from the frame's outline, and is grown by its own half below. Fitting it to the bare hole left
+          // it half the spacing from the frame. What already sits in the hole is still found with the bare one.
+          var holes = new List<(List<IntPoint> Bare, List<IntPoint> Fit)>();
           foreach (var pp in sheetLayouts[si].ToList())
           {
             var children = pp.PlacedPart.Children;
@@ -4937,22 +5698,32 @@
               continue;
             }
 
+            double frameHalf = loadedById.TryGetValue(pp.Source, out var frame) ? (frame.FitSpacing / 2.0) + HoleSlack(frame.FitSpacing) : 0;
             foreach (var child in children)
             {
               if (child.Points.Length >= 3)
               {
+                // Drawing a hole in only makes it smaller, so one already too small for every part is let go
+                // before the offset. A perforated panel has a thousand of them, and offsetting each one was
+                // what this fill spent its time on.
                 var path = DeepNestClipper.ScaleUpPath(child.Points, scale);
-                if (Math.Abs(Clipper.Area(path)) / (scale * scale) >= smallestPartArea)
+                if (Math.Abs(Clipper.Area(path)) / (scale * scale) < smallestPartArea)
                 {
-                  holes.Add(path);
+                  continue;
+                }
+
+                var fit = ShrinkPath(path, frameHalf * scale);
+                if (fit != null && Math.Abs(Clipper.Area(fit)) / (scale * scale) >= smallestPartArea)
+                {
+                  holes.Add((path, fit));
                 }
               }
             }
           }
 
-          holes.Sort((a, b) => Math.Abs(Clipper.Area(b)).CompareTo(Math.Abs(Clipper.Area(a))));
+          holes.Sort((a, b) => Math.Abs(Clipper.Area(b.Fit)).CompareTo(Math.Abs(Clipper.Area(a.Fit))));
 
-          foreach (var hole in holes)
+          foreach (var (bare, hole) in holes)
           {
             cancel.ThrowIfCancellationRequested();
             if (pool.Values.Sum() == 0)
@@ -4968,7 +5739,7 @@
             foreach (var existing in sheetLayouts[si].ToList())
             {
               var epath = DeepNestClipper.ScaleUpPath(existing.PlacedPart.Points, scale);
-              if (ContainedIn(epath, hole, seedEps))
+              if (ContainedIn(epath, bare, seedEps))
               {
                 double eff = loadedById.TryGetValue(existing.Source, out var el) ? el.FitSpacing : 0;
                 var grown = OffsetOutward(existing.PlacedPart, eff / 2.0);
@@ -4995,7 +5766,13 @@
                   // against whatever is already in the hole, so it cannot ask for a clearance that depends
                   // on the neighbour. Using the nominal spacing here would fit fewer parts into the holes of
                   // an all-common-cut job than before, which is a silent loss of material.
-                  var dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), loaded.FitSpacing / 2.0);
+                  // The same for every hole, so grown once per part and angle rather than once per hole.
+                  if (!grownByAngle.TryGetValue((src, rot), out INfp dil))
+                  {
+                    dil = OffsetOutward(Math.Abs(rot % 360) < 1e-9 ? forFit : forFit.Rotate(rot), (loaded.FitSpacing / 2.0) + HoleSlack(loaded.FitSpacing));
+                    grownByAngle[(src, rot)] = dil;
+                  }
+
                   if ((dil.MaxX - dil.MinX) > (hb.MaxX - hb.MinX) / scale || (dil.MaxY - dil.MinY) > (hb.MaxY - hb.MinY) / scale)
                   {
                     continue;
@@ -5028,6 +5805,84 @@
       {
         // Hole-filling is a best-effort bonus — never let a geometry edge case fail the whole nest.
       }
+    }
+
+    /// <summary>
+    /// What of this batch goes to the engine: the batch less what its frames' holes will take, which the sheet's
+    /// own hole fill puts there once the frames are placed.
+    /// </summary>
+    /// <remarks>
+    /// The engine never sees a hole, so every part it is given goes beside the frames and lengthens the strip,
+    /// even one the hole fill would have dropped into a window afterwards. Each drawing with holes is filled once
+    /// on its own, at every angle it may take, and holds back no more of a part than its worst angle takes, times
+    /// its copies in the batch. Whatever is held back and does not go in after all, because its frame did not
+    /// make the sheet, is simply still to be placed. A drawing set to share cuts is never held back: in a hole it
+    /// is cut on its own.
+    /// </remarks>
+    private static Dictionary<int, int> HoldBackForHoles(Dictionary<int, int> batchQty, Dictionary<int, Loaded> loadedById, CancellationToken cancel)
+    {
+      var sent = new Dictionary<int, int>(batchQty);
+      var spare = batchQty
+        .Where(kv => kv.Value > 0 && !(loadedById[kv.Key].RequiresMergedLines && loadedById[kv.Key].Cc != CommonCuttingMode.None))
+        .ToDictionary(kv => kv.Key, kv => kv.Value);
+      var frames = batchQty.Keys
+        .Where(src => batchQty[src] > 0 && (loadedById[src].Nfp.Children?.Count ?? 0) > 0)
+        .OrderByDescending(src => loadedById[src].Nfp.Children.Max(c => Math.Abs(c.Area)))
+        .ThenBy(src => src)
+        .ToList();
+      foreach (int frame in frames)
+      {
+        Dictionary<int, int> each = null;
+        foreach (int angle in loadedById[frame].Angles.Distinct())
+        {
+          var pool = spare.Where(kv => kv.Key != frame).ToDictionary(kv => kv.Key, kv => kv.Value);
+          var before = new Dictionary<int, int>(pool);
+          var alone = new List<IPartPlacement>
+          {
+            new PartPlacement(angle == 0 ? loadedById[frame].Nfp : loadedById[frame].Nfp.Rotate(angle)) { Rotation = angle, Source = frame },
+          };
+          FillHoles(new List<List<IPartPlacement>> { alone }, pool, loadedById, cancel);
+          var took = before.ToDictionary(kv => kv.Key, kv => kv.Value - pool[kv.Key]);
+          each = each == null ? took : each.ToDictionary(kv => kv.Key, kv => Math.Min(kv.Value, took[kv.Key]));
+        }
+
+        foreach (var (src, n) in each ?? new Dictionary<int, int>())
+        {
+          int hold = Math.Min(spare[src], n * batchQty[frame]);
+          sent[src] -= hold;
+          spare[src] -= hold;
+        }
+      }
+
+      return sent;
+    }
+
+    /// <summary>What a part dropped into a hole keeps on top of its half of the spacing, on each side: the slack
+    /// compaction leaves after every slide. Fitted to exactly the spacing, a part sits on the line the sheet is
+    /// judged by, with a different polygon offset, and comes out either side of it: measured, two of sixteen
+    /// squares in two frames were handed back.</summary>
+    private static double HoleSlack(double spacing) => Math.Max(0.001, spacing * 0.003);
+
+    /// <summary>A hole drawn in by <paramref name="by"/> (Clipper units); the largest piece when that splits it,
+    /// null when nothing is left. Mitred, so at a corner it gives up at least as much as a round offset.</summary>
+    private static List<IntPoint> ShrinkPath(List<IntPoint> path, double by)
+    {
+      if (by <= 0)
+      {
+        return path;
+      }
+
+      var oriented = new List<IntPoint>(path);
+      if (Clipper.Area(oriented) < 0)
+      {
+        oriented.Reverse();
+      }
+
+      var co = new ClipperOffset(4);
+      co.AddPath(oriented, JoinType.jtMiter, EndType.etClosedPolygon);
+      var solution = new List<List<IntPoint>>();
+      co.Execute(ref solution, -by);
+      return solution.OrderByDescending(p => Math.Abs(Clipper.Area(p))).FirstOrDefault();
     }
 
     /// <summary>Grid search for a translation that lands the dilated candidate fully inside the hole and
@@ -5263,6 +6118,77 @@
       _ => 600,
     };
 
+    /// <summary>The search a timed nest opens with when the row pattern does not take the job: Fast in every
+    /// other respect, on this many iterations. It always finishes, so Fast after it can be cut by the time.</summary>
+    /// <remarks>
+    /// <para>Fast on a sheet of many different parts does not feel fast: the demo's 57 parts, six drawings on a
+    /// 120 x 60 in sheet, took 20 s, and four times that job, on four sheets, 147 s. The operator asked for the
+    /// time picked to be kept. Measured on those jobs (invented parts, four-way rotation), the length the parts
+    /// reach on the one sheet, then the four-sheet job:</para>
+    /// <code>
+    ///   iterations    one sheet           four sheets
+    ///          100     2.9 s   98.5 in     18 s
+    ///          150     3.7 s   96.3 in     40 s
+    ///          200     4.5 s   94.3 in     77 s
+    ///          300    20.0 s   91.8 in    147 s   (Fast)
+    /// </code>
+    /// <para>The operator chose 150. At 100 the demo with common line on two drawings left 14 parts on their
+    /// own; at 150 it left 3, one fewer than Fast.</para>
+    /// </remarks>
+    private const int QuickSearchIterations = 150;
+
+    /// <summary>The opening's work for one sheet, in sample evaluations, when the job is expected to take
+    /// <paramref name="estimatedSheets"/>: the whole opening's share split between them, within a floor and a
+    /// ceiling.</summary>
+    /// <remarks>
+    /// <para>The opening's 150 iterations are not a fixed amount of work. Between two of the engine's checks a
+    /// separation runs until it stops improving, so one race of the opening took 1.3 s on 200 small parts
+    /// and 69 s on a welding table of 39 flat patterns in millimetres. Measured races, in sample evaluations
+    /// and seconds on the development laptop:</para>
+    /// <code>
+    ///   demo, 57 parts, one sheet           0.5 M    1.6 s
+    ///   200 parts of one small drawing      0.3 M    1.3 s
+    ///   300 small brackets                  5.7 M   12.6 s
+    ///   150 slotted bars                    8.0 M   21 s
+    ///   welding table, 39 flat patterns    17.7 M   69 s
+    ///   five welding tables, first sheet   47.3 M  183 s
+    /// </code>
+    /// <para>Evaluations run at 0.18 to 1.2 million a second across all of those, against a hundredfold
+    /// spread for iterations, so a cap counted in them bounds the race. 1.5 million a sheet leaves every
+    /// race that was already quick exactly as it was and holds the slow ones to about 2 to 8 s. A job of
+    /// several sheets shares 3 million between them, with 0.6 million as the least any sheet gets. Two
+    /// openings tried for five welding tables, three sheets: 1.5 million a sheet in 30 s, 2.25 million in 42 s.</para>
+    /// </remarks>
+    internal static long OpeningEvals(int estimatedSheets)
+      => Math.Clamp(OpeningEvalsTotal / Math.Max(1, estimatedSheets), OpeningEvalsMin, OpeningEvalsMax);
+
+    /// <summary>How many sheets a job is expected to take before it is nested: its parts' area over one
+    /// sheet's usable area, rounded up, and never more sheets than are in stock. Only the size of the job
+    /// goes in, so every machine expects the same.</summary>
+    internal static int EstimatedSheets(double partsArea, double usableSheetArea, int sheetsInStock)
+    {
+      if (usableSheetArea <= 0)
+      {
+        return 1;
+      }
+
+      double sheets = Math.Ceiling(partsArea / usableSheetArea);
+      return (int)Math.Clamp(sheets, 1, Math.Max(1, sheetsInStock));
+    }
+
+    /// <summary>The time a job nests for when the operator sets a time per sheet: that much for every sheet it is
+    /// expected to take (<see cref="EstimatedSheets"/>), and at least one. Zero or less is no limit.</summary>
+    internal static TimeSpan TimeLimit(double secondsPerSheet, int estimatedSheets)
+      => secondsPerSheet > 0
+        ? TimeSpan.FromSeconds(secondsPerSheet * Math.Max(1, estimatedSheets))
+        : NestRounds.NoLimit;
+
+    private const long OpeningEvalsTotal = 3_000_000;
+
+    private const long OpeningEvalsMin = 600_000;
+
+    private const long OpeningEvalsMax = 1_500_000;
+
 
     /// <summary>How many searches run at the same instant. This is the ONLY place the machine is allowed
     /// to influence a nest, and it influences only how long it takes — a slower machine finishes the same
@@ -5415,25 +6341,30 @@
           continue;
         }
 
-        CommonCenterCurve curve = edge.CenterCurve;
-        if (curve?.GeometryKind == CommonLineGeometryKind.CircularArc)
-        {
-          length += Math.Abs(curve.SweepRadians) * curve.Radius;
-        }
-        else
-        {
-          double dx = edge.End.X - edge.Start.X;
-          double dy = edge.End.Y - edge.Start.Y;
-          length += Math.Sqrt((dx * dx) + (dy * dy));
-        }
+        length += CommonEdgeLength(edge);
       }
 
       return length;
     }
 
+    /// <summary>How much cut one shared edge saves: along the arc for an arc, end to end for a line.</summary>
+    internal static double CommonEdgeLength(CommonEdge edge)
+    {
+      CommonCenterCurve curve = edge.CenterCurve;
+      if (curve?.GeometryKind == CommonLineGeometryKind.CircularArc)
+      {
+        return Math.Abs(curve.SweepRadians) * curve.Radius;
+      }
+
+      double dx = edge.End.X - edge.Start.X;
+      double dy = edge.End.Y - edge.Start.Y;
+      return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
     /// <summary>
-    /// Picks the best sheet candidate: most parts placed wins, then the greatest valid common-line length,
-    /// then the shortest extent along the sheet's long axis, higher strip density, and lower seed.
+    /// Picks the best sheet candidate: most parts placed wins, then the fewest parts set to share cuts that
+    /// share none, then the shortest extent along the sheet's long axis, then the greatest valid common-line
+    /// length, higher strip density, and lower seed.
     /// <para>
     /// Extent beats density because they are measured at different moments: density is sparrow's, taken on
     /// its own strip BEFORE the gravity compaction, while the extent is what is left after it — and the
@@ -5443,12 +6374,15 @@
     /// separated in the fifth decimal of density trade places between runs, so the same job produced a
     /// different leftover every time (reported in issue #2).
     /// </para>
-     /// Common-line length is compared only after all candidates place the same number of parts, so this
-     /// preference cannot move demand to an extra sheet. Density stays as the next tie-break when the
-     /// extents match. Pure — unit-testable. Returns the winner's index in
+    /// A part left on its own costs the operator a separate cut all the way round, so a shorter pack does not
+    /// make up for it. The extent comes before the common-line length because the rest of the sheet, left in
+    /// one piece, is what the operator keeps: a candidate that shares more cut but runs further along the
+    /// sheet loses. All three are compared only after all candidates place the same number of parts, so none
+    /// can move demand to an extra sheet. Density is the next tie-break when the extents and the common-line
+    /// lengths match. Pure and unit-testable. Returns the winner's index in
     /// <paramref name="cands"/>, or -1 if empty.
     /// </summary>
-    internal static int PickBest(IReadOnlyList<(int Count, double SharedLength, double Extent, double Density, int Seed)> cands)
+    internal static int PickBest(IReadOnlyList<(int Count, int Unshared, double SharedLength, double Extent, double Density, int Seed)> cands)
     {
       int best = -1;
       foreach (var (c, i) in cands.Select((v, i) => (v, i)))
@@ -5470,9 +6404,9 @@
           continue;
         }
 
-        if (c.SharedLength != b.SharedLength)
+        if (c.Unshared != b.Unshared)
         {
-          if (c.SharedLength > b.SharedLength)
+          if (c.Unshared < b.Unshared)
           {
             best = i;
           }
@@ -5481,11 +6415,21 @@
         }
 
         // Extents that differ only in float noise are a tie, so the ordering falls cleanly through to
-        // density instead of being decided by the last bits of two equivalent layouts.
+        // the common-line length instead of being decided by the last bits of two equivalent layouts.
         double eps = 1e-6 * Math.Max(1, Math.Max(Math.Abs(c.Extent), Math.Abs(b.Extent)));
         if (Math.Abs(c.Extent - b.Extent) > eps)
         {
           if (c.Extent < b.Extent)
+          {
+            best = i;
+          }
+
+          continue;
+        }
+
+        if (c.SharedLength != b.SharedLength)
+        {
+          if (c.SharedLength > b.SharedLength)
           {
             best = i;
           }
@@ -5508,7 +6452,10 @@
     /// machine is, which is what made a repeated nest come back with a different offcut every time.
     /// <paramref name="hardTimeoutSec"/> is only a watchdog for a hung process — if it ever fires the
     /// result is discarded rather than used, because a truncated search is not reproducible.</summary>
-    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, int workers, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
+    /// <param name="maxEvals">A cap on the search's work as well, in sample evaluations; 0 for none. The engine
+    /// counts them, not the clock, so the cap is as reproducible as the iterations. A search that finishes its
+    /// iterations within it comes out exactly as it would without one.</param>
+    private static string RunSparrowOnce(string exe, string workDir, string inputPath, int iterations, long maxEvals, int workers, int hardTimeoutSec, int seed, CancellationToken cancel, Action<double>? onDensity, out string error)
     {
       error = null;
       var psi = new ProcessStartInfo
@@ -5524,6 +6471,12 @@
       psi.ArgumentList.Add(inputPath);
       psi.ArgumentList.Add("--max-iterations"); // deterministic budget; also forces the failure-based
       psi.ArgumentList.Add(iterations.ToString(CultureInfo.InvariantCulture)); // compression decay
+      if (maxEvals > 0)
+      {
+        psi.ArgumentList.Add("--max-evals");
+        psi.ArgumentList.Add(maxEvals.ToString(CultureInfo.InvariantCulture));
+      }
+
       psi.ArgumentList.Add("-x"); // stop a search that is stuck (counts failures, not seconds)
       psi.ArgumentList.Add("-s"); // fixed RNG seed → repeatable per-seed run for best-of-N
       psi.ArgumentList.Add(seed.ToString(CultureInfo.InvariantCulture));

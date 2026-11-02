@@ -26,8 +26,9 @@ To arrange parts on the sheet, the SheetNest installer bundles an offline nestin
 **not** link against these libraries. `sparrow.exe` is a self-contained Rust binary; the
 `jagua-rs` geometry library is compiled into it **unmodified**, while `sparrow` carries a small
 local change so that nesting the same job twice gives the same result: a `--max-iterations`
-budget that ends the search on a counter instead of on elapsed time, and the failure-based
-(rather than time-based) compression decay whenever that budget is used. The worker-thread count
+budget that ends the search on a counter instead of on elapsed time, an optional `--max-evals`
+cap on the work the search may spend, counted the same way, and the failure-based (rather than
+time-based) compression decay whenever that budget is used. The worker-thread count
 is fixed with sparrow's own `--workers` option. The change is kept in this repository as
 `SparrowEngine/sheetnest-sparrow.patch`, which applies to the upstream release below.
 Corresponding source is available from the upstream projects below.

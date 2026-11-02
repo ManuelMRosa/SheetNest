@@ -32,12 +32,18 @@
     private List<(int W, int H)> userSheetPresets = new List<(int W, int H)>(); // "My sheets" (SessionState.SheetPresets)
     private bool autosaveEnabled = true;
     private int autosaveMinutes = 5;
+    private int materialTargetPercent = SessionState.DefaultMaterialTargetPercent; // 0 = off (SessionState)
+    private int nestSecondsPerSheet; // time limit per sheet in seconds, 0 = no limit (SessionState)
     // Per-user defaults for the NEXT job. The process-wide config is temporarily overwritten whenever
     // a document becomes active, so it cannot also be the source of truth for session preferences.
     private double sessionCommonLineGapInches = CommonLineDefaults.DefaultGapInches;
     private int sessionCommonLineMaxClusterParts = CommonLineDefaults.DefaultMaxClusterParts;
 
-    private DeepNestSharp.RasterNest.NestEffort nestEffort = DeepNestSharp.RasterNest.NestEffortDefaults.Default; // how hard the nester searches (SessionState)
+    private int nestRound; // the round a timed nest is on, for the status line; 0 before the first starts
+    private System.Threading.CancellationTokenSource nestStopCts; // Stop: hand over the best nest so far
+    private bool nestHasBest; // a nest already finished, so the button stops instead of cancelling
+    private double nestBestUsage = -1; // material usage of the best nest so far, for the status line; -1 = none yet
+    private TimeSpan nestLimit = DeepNestSharp.RasterNest.NestRounds.NoLimit; // the time the running nest has, for the status line
     private bool preferRectOffcut; // cut the last sheet's leftover off as a rectangular offcut (SessionState)
     private int offcutDirection; // 0 = end, 1 = side, 2 = both (SessionState.OffcutDirection)
     private double offcutSpacing = -1; // gap parts→offcut cut line; -1 = default to part spacing (SessionState)
@@ -196,18 +202,8 @@
           session.AutosaveEnabled ?? true,
           session.AutosaveMinutes >= 1 && session.AutosaveMinutes <= 60 ? session.AutosaveMinutes : 5);
 
-        // A Fast stored by a build that overwrote the "never chosen" marker on close says nothing about
-        // what the operator wanted, so it is forgotten once and the current default applies. Saving here
-        // is what makes it once: the write stamps the settings version, and a Fast picked deliberately
-        // after this point is kept.
-        if (DeepNestSharp.RasterNest.NestEffortDefaults.NeedsEffortReset(session.NestEffort, session.SettingsVersion))
-        {
-          session.NestEffort = DeepNestSharp.RasterNest.NestEffortDefaults.Unset;
-          session.Save();
-        }
-
-        this.nestEffort = DeepNestSharp.RasterNest.NestEffortDefaults.FromPersisted(session.NestEffort);
-        this.RefreshNestEffortMenu();
+        this.materialTargetPercent = session.EffectiveMaterialTargetPercent;
+        this.nestSecondsPerSheet = session.EffectiveNestSecondsPerSheet;
 
         // Global default rotations (plain in-memory config property — resets to 4 without this).
         if (session.DefaultRotations > 0)
@@ -502,8 +498,9 @@
         this.autosaveMinutes,
         this.unitsMm,
         commonLineGapInches: cfg.CommonLineGapInches,
-        effort: this.nestEffort,
-        commonLineMaxClusterParts: cfg.CommonLineMaxClusterParts)
+        commonLineMaxClusterParts: cfg.CommonLineMaxClusterParts,
+        materialTargetPercent: this.materialTargetPercent,
+        nestSecondsPerSheet: this.nestSecondsPerSheet)
       {
         Owner = this,
       };
@@ -513,6 +510,8 @@
       }
 
       this.ApplyAutosaveSettings(dialog.AutosaveEnabled, dialog.AutosaveMinutes);
+      this.materialTargetPercent = dialog.MaterialTargetPercent;
+      this.nestSecondsPerSheet = dialog.NestSecondsPerSheet;
       cfg.CommonLineGapInches = dialog.CommonLineGapInches;
       cfg.CommonLineMaxClusterParts = dialog.CommonLineMaxClusterParts;
       // Confirming Advanced Settings is an explicit operator choice: apply it to this document and also
@@ -538,18 +537,14 @@
       var session = SessionState.Load() ?? new SessionState();
       session.AutosaveEnabled = this.autosaveEnabled;
       session.AutosaveMinutes = this.autosaveMinutes;
+      session.MaterialTargetPercent = this.materialTargetPercent;
+      session.NestSecondsPerSheet = this.nestSecondsPerSheet;
       session.DefaultRotations = cfg.Rotations;
       session.SheetEdgeMargin = System.Math.Max(0, cfg.SheetSpacing);
       session.UnitsMm = this.unitsMm;
       session.CommonLineGapInches = cfg.CommonLineGapInches;
       session.CommonLineMaxClusterParts = cfg.CommonLineMaxClusterParts;
-      this.nestEffort = dialog.Effort;
-      session.NestEffort = (int)this.nestEffort;
       session.Save();
-
-      // Two places set the same preference, so the toolbar is rebuilt from the field rather than left
-      // showing whatever it showed before the dialog was opened.
-      this.RefreshNestEffortMenu();
     }
 
     /// <summary>
@@ -593,63 +588,6 @@
 
       LanguagePreference.Write(culture);
       ViewModel.MessageService.DisplayMessageBox(Strings.Msg_LanguageNextStart, Strings.Menu_Language, DeepNestLib.MessageBoxIcon.Information);
-    }
-
-    /// <summary>The arrow half of the NEST split button. Anchored under the button so the menu reads as
-    /// belonging to it rather than appearing at the pointer.</summary>
-    private void OnNestEffortMenu(object sender, RoutedEventArgs e)
-    {
-      if (this.nestEffortButton.ContextMenu is System.Windows.Controls.ContextMenu menu)
-      {
-        menu.PlacementTarget = this.nestEffortButton;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
-      }
-    }
-
-    private void OnNestEffortChosen(object sender, RoutedEventArgs e)
-    {
-      if (sender is System.Windows.Controls.MenuItem item
-          && item.Tag is string tag
-          && int.TryParse(tag, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int chosen))
-      {
-        this.nestEffort = DeepNestSharp.RasterNest.NestEffortDefaults.FromPersisted(chosen);
-        var session = SessionState.Load() ?? new SessionState();
-        session.NestEffort = (int)this.nestEffort;
-        session.Save();
-      }
-
-      // Unconditionally: a checkable MenuItem toggles itself on click, so even the item that was already
-      // ticked has to be put back the way the field says, or clicking the current effort unticks it.
-      this.RefreshNestEffortMenu();
-    }
-
-    /// <summary>
-    /// Rebuilds the ticks and the tooltip from <see cref="nestEffort"/>, never from whichever control was
-    /// clicked, so the toolbar and Advanced Settings cannot drift apart.
-    /// </summary>
-    private void RefreshNestEffortMenu()
-    {
-      if (this.effortFastItem == null)
-      {
-        return; // called before the toolbar exists
-      }
-
-      this.effortFastItem.IsChecked = this.nestEffort == DeepNestSharp.RasterNest.NestEffort.Fast;
-      this.effortNormalItem.IsChecked = this.nestEffort == DeepNestSharp.RasterNest.NestEffort.Normal;
-      this.effortBestItem.IsChecked = this.nestEffort == DeepNestSharp.RasterNest.NestEffort.Best;
-
-      string name = this.nestEffort switch
-      {
-        DeepNestSharp.RasterNest.NestEffort.Normal => Strings.Main_EffortNameNormal,
-        DeepNestSharp.RasterNest.NestEffort.Best => Strings.Main_EffortNameBest,
-        _ => Strings.Main_EffortNameFast,
-      };
-
-      // Says what it actually buys. It reads as "how long you wait", but what it changes is how TIGHTLY
-      // the parts end up packed — and on a common-line job that tightness is what decides whether the
-      // last part of a row gets to share its cut or sits on its own at the normal gap.
-      this.nestEffortButton.ToolTip = string.Format(Strings.Main_EffortTipFormat, name);
     }
 
     private void OnOffcutSettings(object sender, RoutedEventArgs e)
@@ -941,7 +879,7 @@
 
       // Sheet stock is deliberately NOT part of the session anymore — the app starts empty and each
       // saved .dnest project carries its own stock. Update the existing session instead of replacing it:
-      // replacing it used to erase every preference not named here, including NestEffort.
+      // replacing it used to erase every preference not named here, including the nest time.
       var session = SessionState.Load() ?? new SessionState();
       session.CaptureApplicationClose(
         System.Math.Max(0, ViewModel.SvgNestConfigViewModel.SvgNestConfig.SheetSpacing),
@@ -1708,7 +1646,12 @@
       }
 
       nestCts = new System.Threading.CancellationTokenSource();
+      this.nestStopCts = new System.Threading.CancellationTokenSource();
+      this.nestHasBest = false;
+      this.nestBestUsage = -1;
+      this.nestLimit = DeepNestSharp.RasterNest.NestRounds.NoLimit;
       this.cancelNestButton.Content = Strings.Main_Cancel;
+      this.cancelNestButton.ToolTip = Strings.Main_CancelTip;
       this.cancelNestButton.IsEnabled = true;
       this.cancelNestButton.Visibility = Visibility.Visible;
       this.nestPhaseText.Text = string.Format(Strings.Main_NestingFormat, "0:00");
@@ -1730,6 +1673,46 @@
 
       bool nestSucceeded = false;
       bool nestCancelled = false;
+      DeepNestSharp.RasterNest.NestRoundsReport? roundsReport = null;
+      double keptUtilization = 0;
+      this.nestRound = 0;
+      var maxTime = DeepNestSharp.RasterNest.NestRounds.NoLimit;
+      double materialTarget = this.materialTargetPercent / 100.0;
+      var offcut = this.CurrentOffcutOptions(); // the target leaves out the offcut the viewer will draw
+      var stopToken = this.nestStopCts.Token;
+      int secondsPerSheet = this.nestSecondsPerSheet;
+      var limitKnown = new System.Progress<TimeSpan>(limit =>
+      {
+        if (this.nestStopCts != null)
+        {
+          this.nestLimit = limit;
+          this.RenderNestProgress();
+        }
+      });
+      var roundStarted = new System.Progress<int>(round =>
+      {
+        this.nestRound = round;
+        this.RenderNestProgress();
+      });
+
+      // Once a nest has finished the button stops instead of cancelling: it hands that nest over.
+      var newBest = new System.Progress<double>(usage =>
+      {
+        if (this.nestStopCts == null)
+        {
+          return; // reported just before the nest ended; the final status is already on screen
+        }
+
+        this.nestBestUsage = usage;
+        if (!this.nestHasBest && this.cancelNestButton.IsEnabled)
+        {
+          this.nestHasBest = true;
+          this.cancelNestButton.Content = Strings.Main_Stop;
+          this.cancelNestButton.ToolTip = Strings.Main_StopTip;
+        }
+
+        this.RenderNestProgress();
+      });
       try
       {
         // Hidden end-to-end test hook for the crash reporter (set SHEETNEST_CRASH_TEST=1).
@@ -1739,16 +1722,17 @@
         }
 
         var token = nestCts.Token;
-        var (result, error) = await Task.Run(() =>
+        var (result, error, report) = await Task.Run(() =>
         {
           // The sparrow engine: dense collision-separation nesting, per-sheet, corner-compacted, with
           // pattern replication across identical sheets. Works in real drawing units (no raster grid).
-          // perSheetBudgetSec no longer bounds the search: how hard a sheet is searched is the operator's
-          // effort setting, in iterations, so two machines agree on the nest and only the clock differs. What
-          // survives here is the scale for the watchdog that kills a hung engine process.
+          // There is no time limit: the rounds stop on the material usage target, on two rounds in a row
+          // that do not improve, or on the operator's Stop. Each round is searched in iterations, so two
+          // machines agree on any round.
+          // perSheetBudgetSec only scales the watchdog that kills a hung engine process.
           // Common cutting rides along on each part's own mode; there is no job-wide flag to keep in step.
           double unitScale = this.unitsMm ? CommonLineDefaults.InchesToMillimeters : 1.0;
-          var r = SparrowNestService.Nest(
+          var r = SparrowNestService.NestForTime(
             parts,
             sheetStock,
             rotations,
@@ -1756,15 +1740,24 @@
             margin,
             5,
             sparrowExe,
+            maxTime,
             out string err,
+            out var rep,
             token,
             nestProgress,
+            roundStarted: round => ((IProgress<int>)roundStarted).Report(round),
             geometryTolerance: CommonLineDefaults.DefaultGeometryToleranceInches * unitScale,
             commonLineGap: config.CommonLineGapInches * unitScale,
-            effort: this.nestEffort,
-            commonLineMaxClusterParts: config.CommonLineMaxClusterParts);
-          return (r, err);
+            commonLineMaxClusterParts: config.CommonLineMaxClusterParts,
+            materialTarget: materialTarget,
+            offcut: offcut,
+            stop: stopToken,
+            newBest: best => ((IProgress<double>)newBest).Report(DeepNestSharp.RasterNest.NestRounds.UsedUtilization(best, offcut)),
+            secondsPerSheet: secondsPerSheet,
+            limit: limit => ((IProgress<TimeSpan>)limitKnown).Report(limit));
+          return (r, err, rep);
         });
+        roundsReport = report;
 
         if (result == null)
         {
@@ -1773,6 +1766,7 @@
         }
 
         nestSucceeded = true;
+        keptUtilization = DeepNestSharp.RasterNest.NestRounds.UsedUtilization(result, offcut);
 
         // Hand the per-part spacings to the viewer BEFORE showing the result, so manual nesting
         // (drag/rotate/nudge) enforces the same clearances the nester used — common-line parts may
@@ -1841,7 +1835,7 @@
             DeepNestLib.MessageBoxIcon.Warning);
         }
       }
-      catch (System.Exception cancelEx) when (IsCancellation(cancelEx))
+      catch (System.Exception cancelEx) when (DeepNestSharp.RasterNest.NestRounds.IsCancellation(cancelEx))
       {
         // User pressed Cancel: not an error — discard everything and return to idle. Cancellations
         // can also arrive WRAPPED: a Parallel.For without the token in its options bundles the
@@ -1895,7 +1889,7 @@
                 : string.Empty)
             : string.Empty;
 
-          this.nestPhaseText.Text = string.Format(Strings.Main_NestedInFormat, elapsed, seams);
+          this.nestPhaseText.Text = string.Format(Strings.Main_NestedInFormat, elapsed, RoundsSummary(roundsReport, materialTarget, keptUtilization) + seams);
 
           if (commonLineFallbacks.Length > 0)
           {
@@ -1911,8 +1905,14 @@
           this.nestPhaseText.Visibility = Visibility.Collapsed;
         }
 
+        this.nestRound = 0;
+        this.nestHasBest = false;
+        this.nestBestUsage = -1;
+        this.nestLimit = DeepNestSharp.RasterNest.NestRounds.NoLimit;
         nestCts.Dispose();
         nestCts = null;
+        this.nestStopCts.Dispose();
+        this.nestStopCts = null;
         if (button != null)
         {
           button.IsEnabled = true;
@@ -1920,12 +1920,79 @@
       }
     }
 
-    /// <summary>Renders the live nest status: just the elapsed clock (no progress bar — a global % can't be
-    /// known accurately). The final time is kept on screen when the nest ends.</summary>
+    /// <summary>Renders the live nest status: the elapsed clock, the round, and, against the material usage
+    /// target, how well the best nest so far uses the sheet, which is what Stop hands over. It is the target's
+    /// measure (the offcut left out), so it is shown beside the target and not on its own, where it would be
+    /// read as the utilization in the status bar. There is no progress bar, because a global % can't be known
+    /// accurately. The final time is kept on screen when the nest ends.</summary>
     private void RenderNestProgress()
     {
-      this.nestPhaseText.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture, Strings.Main_NestingFormat, NestElapsed());
+      bool limited = this.nestLimit != DeepNestSharp.RasterNest.NestRounds.NoLimit;
+      this.nestPhaseText.Text = (this.nestRound > 0
+        ? limited
+          ? string.Format(
+              System.Globalization.CultureInfo.InvariantCulture,
+              Strings.Main_NestingLimitFormat,
+              NestElapsed(),
+              Clock(this.nestLimit),
+              this.nestRound)
+          : string.Format(
+              System.Globalization.CultureInfo.InvariantCulture,
+              Strings.Main_NestingRoundFormat,
+              NestElapsed(),
+              this.nestRound)
+        : limited
+          ? string.Format(System.Globalization.CultureInfo.InvariantCulture, Strings.Main_NestingOfFormat, NestElapsed(), Clock(this.nestLimit))
+          : string.Format(System.Globalization.CultureInfo.InvariantCulture, Strings.Main_NestingFormat, NestElapsed()))
+        + (this.nestBestUsage >= 0 && this.materialTargetPercent > 0
+          ? string.Format(System.Globalization.CultureInfo.CurrentCulture, Strings.Main_NestBestSoFarFormat, this.materialTargetPercent, Math.Floor(this.nestBestUsage * 100))
+          : string.Empty);
     }
+
+    /// <summary>What the rounds of a nest came to, for the status line; nothing when none ran, or when the
+    /// opening (round 0, laid out without searching) was the nest kept. A nest handed over on the material usage
+    /// <paramref name="target"/> says so, with the <paramref name="utilization"/> it reached, and so does one the
+    /// operator stopped.</summary>
+    private static string RoundsSummary(DeepNestSharp.RasterNest.NestRoundsReport? report, double target, double utilization)
+    {
+      if (report == null)
+      {
+        return string.Empty;
+      }
+
+      if (report.OverTime)
+      {
+        return string.Format(System.Globalization.CultureInfo.InvariantCulture, Strings.Main_NestOverLimitFormat, Clock(report.MaxTime));
+      }
+
+      if (report.StopReason == DeepNestSharp.RasterNest.NestRoundsStop.Stopped)
+      {
+        return Strings.Main_NestStopped
+          + (report.BestRound == 0
+            ? string.Empty
+            : Languages.Count(report.FinishedRounds, Strings.Main_NestRounds_One, Strings.Main_NestRounds_Other, report.BestRound));
+      }
+
+      if (report.StopReason == DeepNestSharp.RasterNest.NestRoundsStop.TargetReached)
+      {
+        return string.Format(
+          System.Globalization.CultureInfo.CurrentCulture,
+          Strings.Main_NestTargetReachedFormat,
+          Math.Round(target * 100),
+          Math.Floor(utilization * 100));
+      }
+
+      if (report.BestRound == 0)
+      {
+        return string.Empty;
+      }
+
+      return Languages.Count(report.FinishedRounds, Strings.Main_NestRounds_One, Strings.Main_NestRounds_Other, report.BestRound);
+    }
+
+    /// <summary>A time as m:ss, the way the status line shows the clock.</summary>
+    private static string Clock(TimeSpan time)
+      => FormattableString.Invariant($"{(int)time.TotalMinutes}:{time.Seconds:00}");
 
     /// <summary>Elapsed nest time as m:ss (0:00 if the stopwatch isn't running).</summary>
     private string NestElapsed()
@@ -1951,17 +2018,19 @@
     private void OnCancelNest(object sender, RoutedEventArgs e)
     {
       // Cooperative: the engine checks the token at its phase boundaries (sub-second on real jobs).
-      this.cancelNestButton.Content = Strings.Main_Cancelling;
+      // With a nest already finished this is Stop: the round still running is thrown away and the best
+      // nest so far handed over. Before that there is nothing to hand over, so it cancels.
       this.cancelNestButton.IsEnabled = false;
-      nestCts?.Cancel();
-    }
-
-    private static bool IsCancellation(System.Exception ex)
-    {
-      return ex is System.OperationCanceledException
-        || (ex is System.AggregateException agg
-            && agg.Flatten().InnerExceptions.Count > 0
-            && agg.Flatten().InnerExceptions.All(e => e is System.OperationCanceledException));
+      if (this.nestHasBest)
+      {
+        this.cancelNestButton.Content = Strings.Main_Stopping;
+        this.nestStopCts?.Cancel();
+      }
+      else
+      {
+        this.cancelNestButton.Content = Strings.Main_Cancelling;
+        nestCts?.Cancel();
+      }
     }
 
     /// <summary>

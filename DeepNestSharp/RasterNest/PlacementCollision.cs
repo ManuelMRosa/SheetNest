@@ -184,11 +184,18 @@
     /// on the wrong side of zero. Depth asks the question the shop floor asks: how far into my part.</para>
     /// </summary>
     /// <param name="sliver">Depth the cut itself removes; anything shallower is not there once it is cut.</param>
+    /// <remarks>Only the contours that reach the other side's box go to Clipper. A contour changes the even-odd
+    /// fill only inside itself, so one whose box misses everything of the other side changes nothing the two
+    /// have in common, and every piece of overlap comes out the same. It is most of the work on a perforated
+    /// part: a flat pattern with 447 holes went to Clipper whole for every neighbour the planner checked.</remarks>
     internal static bool Overlaps(List<List<IntPoint>> a, List<List<IntPoint>> b, double sliver)
     {
       var clipper = new Clipper();
-      clipper.AddPaths(a, PolyType.ptSubject, true);
-      clipper.AddPaths(b, PolyType.ptClip, true);
+      if (!AddReaching(clipper, a, BoundsOf(b), PolyType.ptSubject) || !AddReaching(clipper, b, BoundsOf(a), PolyType.ptClip))
+      {
+        return false;
+      }
+
       var solution = new List<List<IntPoint>>();
       clipper.Execute(ClipType.ctIntersection, solution, PolyFillType.pftEvenOdd, PolyFillType.pftEvenOdd);
 
@@ -279,6 +286,58 @@
       }
 
       return 2 * lo;
+    }
+
+    /// <summary>Adds the contours whose box touches <paramref name="other"/>; false when there are none.</summary>
+    private static bool AddReaching(Clipper clipper, List<List<IntPoint>> paths, IntRect other, PolyType type)
+    {
+      bool any = false;
+      foreach (var path in paths)
+      {
+        if (BoxesTouch(BoundsOf(path), other))
+        {
+          clipper.AddPath(path, type, true);
+          any = true;
+        }
+      }
+
+      return any;
+    }
+
+    private static IntRect BoundsOf(List<IntPoint> path)
+    {
+      long minX = long.MaxValue, minY = long.MaxValue, maxX = long.MinValue, maxY = long.MinValue;
+      foreach (var p in path)
+      {
+        minX = Math.Min(minX, p.X);
+        maxX = Math.Max(maxX, p.X);
+        minY = Math.Min(minY, p.Y);
+        maxY = Math.Max(maxY, p.Y);
+      }
+
+      return new IntRect(minX, minY, maxX, maxY);
+    }
+
+    private static IntRect BoundsOf(List<List<IntPoint>> paths)
+    {
+      long minX = long.MaxValue, minY = long.MaxValue, maxX = long.MinValue, maxY = long.MinValue;
+      foreach (var path in paths)
+      {
+        foreach (var p in path)
+        {
+          minX = Math.Min(minX, p.X);
+          maxX = Math.Max(maxX, p.X);
+          minY = Math.Min(minY, p.Y);
+          maxY = Math.Max(maxY, p.Y);
+        }
+      }
+
+      return new IntRect(minX, minY, maxX, maxY);
+    }
+
+    private static bool BoxesTouch(IntRect a, IntRect b)
+    {
+      return a.left <= b.right && b.left <= a.right && a.top <= b.bottom && b.top <= a.bottom;
     }
 
     internal static List<List<IntPoint>> Translate(List<List<IntPoint>> paths, long dx, long dy)

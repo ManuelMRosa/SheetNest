@@ -37,32 +37,10 @@ namespace DeepNestSharp.RasterNest
     Best = 2,
   }
 
-  /// <summary>One source of truth for a new install and for a session with no saved choice.</summary>
+  /// <summary>The effort an engine call gets when its caller names none. The operator no longer picks an
+  /// effort: the app picks a time, and <see cref="NestRounds"/> turns it into rounds of each effort.</summary>
   internal static class NestEffortDefaults
   {
     internal const NestEffort Default = NestEffort.Normal;
-
-    /// <summary>What a session holds when the operator has never picked an effort.</summary>
-    internal const int Unset = -1;
-
-    internal static NestEffort FromPersisted(int value)
-      => value >= (int)NestEffort.Fast && value <= (int)NestEffort.Best
-        ? (NestEffort)value
-        : Default;
-
-    /// <summary>
-    /// Whether a stored effort has to be forgotten once, so the operator lands on the current default.
-    /// <para>
-    /// Builds before this one wrote whatever was in memory over the "never chosen" marker every time the
-    /// app closed, and what was in memory on an untouched install was the old default, Fast. So a stored
-    /// Fast from one of those builds does not say whether anyone chose it. It is reinterpreted ONCE, and
-    /// only Fast: Normal and Best could only ever have got there by someone picking them, because the
-    /// in-memory value was never either of those on its own.
-    /// </para>
-    /// <para>The version stamp is what makes it happen once. Without it, picking Fast on purpose would be
-    /// undone again on the next start.</para>
-    /// </summary>
-    internal static bool NeedsEffortReset(int persisted, int settingsVersion)
-      => settingsVersion < SessionState.CurrentSettingsVersion && persisted == (int)NestEffort.Fast;
   }
 }

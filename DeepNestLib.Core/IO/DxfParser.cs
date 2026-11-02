@@ -606,27 +606,30 @@
         newContourCurved = new List<bool>();
       }
 
-      while (allLineElements.Any())
+      var remaining = new RemainingElements(allLineElements);
+      while (remaining.Count > 0)
       {
         if (newContourPoints.Count == 0)
         {
-          var toStart = allLineElements.First().LineElement;
+          int first = remaining.First();
+          var toStart = allLineElements[first].LineElement;
           newContourPoints.Add(toStart.Start);
           prior = toStart.End;
           newContourPoints.Add(prior);
           newContourCurved.Add(toStart.Curved);
-          newContourEntities.Add(allLineElements.First().Entity);
-          allLineElements.RemoveAt(0);
+          newContourEntities.Add(allLineElements[first].Entity);
+          remaining.Remove(first);
         }
         else
         {
-          if (!TryGetAnotherPoint(prior, allLineElements, out (DxfEntity Entity, LineElement LineElement) next))
+          if (!remaining.TryNearest(prior, out int nextIndex))
           {
             CloseContour();
           }
           else
           {
-            allLineElements.Remove(next);
+            var next = allLineElements[nextIndex];
+            remaining.Remove(nextIndex);
             newContourEntities.Add(next.Entity);
             prior = EndIsClosest(prior, next) ? next.LineElement.End : next.LineElement.Start;
             newContourPoints.Add(prior);
@@ -660,24 +663,139 @@
       return next.LineElement.Start.DistTo(prior) < next.LineElement.End.DistTo(prior);
     }
 
-    private static bool TryGetAnotherPoint(PointF prior, List<(DxfEntity Entity, LineElement LineElement)> allLineElements, out (DxfEntity Entity, LineElement LineElement) next)
-    {
-      var match = allLineElements.Select(candidate => (candidate, MinDistance(prior, candidate)))
-                       .Where(o => o.Item2 <= ClosingThreshold)
-                       .OrderBy(o => o.Item2).FirstOrDefault();
-      if (match != default)
-      {
-        next = match.candidate;
-        return true;
-      }
-
-      next = default;
-      return false;
-    }
-
     private static double MinDistance(PointF prior, (DxfEntity Entity, LineElement LineElement) candidate)
     {
       return Math.Min(candidate.LineElement.Start.DistTo(prior), candidate.LineElement.End.DistTo(prior));
+    }
+
+    /// <summary>
+    /// The segments not yet chained into a contour, found by where their ends lie.
+    /// </summary>
+    /// <remarks>
+    /// The next segment of a contour is the nearest one with an end within <see cref="ClosingThreshold"/> of
+    /// the last point, the earliest in the drawing's order on a tie. Asking every segment left for that made
+    /// the chaining quadratic: a flat pattern with 1330 holes, 81,000 segments once its curves are cut into
+    /// chords, took 320 s to read. The ends are kept in square cells twice the threshold wide, so every end
+    /// within the threshold lies in the cell of the point or in one of the eight around it, and only those
+    /// are asked. The answer is the same segment the full search picked.
+    /// </remarks>
+    private sealed class RemainingElements
+    {
+      private const double Cell = 2 * ClosingThreshold;
+
+      // An end this far out could not be binned exactly; such a segment is asked about every time.
+      private const double Binnable = 1e12;
+
+      private readonly List<(DxfEntity Entity, LineElement LineElement)> elements;
+      private readonly bool[] removed;
+      private readonly Dictionary<(long X, long Y), List<int>> cells = new Dictionary<(long X, long Y), List<int>>();
+      private readonly List<int> unbinned = new List<int>();
+      private int first;
+
+      public RemainingElements(List<(DxfEntity Entity, LineElement LineElement)> elements)
+      {
+        this.elements = elements;
+        this.removed = new bool[elements.Count];
+        this.Count = elements.Count;
+        for (int i = 0; i < elements.Count; i++)
+        {
+          PointF start = elements[i].LineElement.Start;
+          PointF end = elements[i].LineElement.End;
+          if (!IsBinnable(start) || !IsBinnable(end))
+          {
+            this.unbinned.Add(i);
+            continue;
+          }
+
+          this.Bin(CellOf(start), i);
+          if (CellOf(end) != CellOf(start))
+          {
+            this.Bin(CellOf(end), i);
+          }
+        }
+      }
+
+      public int Count { get; private set; }
+
+      /// <summary>The earliest segment left.</summary>
+      public int First()
+      {
+        while (this.removed[this.first])
+        {
+          this.first++;
+        }
+
+        return this.first;
+      }
+
+      public void Remove(int index)
+      {
+        this.removed[index] = true;
+        this.Count--;
+      }
+
+      /// <summary>The nearest segment left with an end within the threshold of <paramref name="prior"/>, the
+      /// earliest of those at the same distance.</summary>
+      public bool TryNearest(PointF prior, out int nearest)
+      {
+        int found = -1;
+        double best = double.MaxValue;
+        void Consider(int index)
+        {
+          if (this.removed[index])
+          {
+            return;
+          }
+
+          double distance = MinDistance(prior, this.elements[index]);
+          if (distance <= ClosingThreshold && (distance < best || (distance == best && index < found)))
+          {
+            best = distance;
+            found = index;
+          }
+        }
+
+        foreach (int index in this.unbinned)
+        {
+          Consider(index);
+        }
+
+        // A point that cannot be binned is no distance from any end that can be measured.
+        if (IsBinnable(prior))
+        {
+          (long x, long y) = CellOf(prior);
+          for (long dx = -1; dx <= 1; dx++)
+          {
+            for (long dy = -1; dy <= 1; dy++)
+            {
+              if (this.cells.TryGetValue((x + dx, y + dy), out List<int> inCell))
+              {
+                foreach (int index in inCell)
+                {
+                  Consider(index);
+                }
+              }
+            }
+          }
+        }
+
+        nearest = found;
+        return found >= 0;
+      }
+
+      private static bool IsBinnable(PointF p) => Math.Abs(p.X) < Binnable && Math.Abs(p.Y) < Binnable;
+
+      private static (long X, long Y) CellOf(PointF p) => ((long)Math.Floor(p.X / Cell), (long)Math.Floor(p.Y / Cell));
+
+      private void Bin((long X, long Y) cell, int index)
+      {
+        if (!this.cells.TryGetValue(cell, out List<int> inCell))
+        {
+          this.cells[cell] = inCell = new List<int>();
+        }
+
+        inCell.Add(index);
+      }
     }
   }
 }

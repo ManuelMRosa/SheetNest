@@ -14,7 +14,6 @@ namespace DeepNestSharp.CiTests
       var session = JsonSerializer.Deserialize<SessionState>(legacyJson);
 
       session.Should().NotBeNull();
-      session.NestEffort.Should().Be(1);
       session.EffectiveCommonLineGapInches.Should().Be(DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches);
       session.EffectiveCommonLineMaxClusterParts.Should().Be(
         DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts);

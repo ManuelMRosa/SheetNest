@@ -102,20 +102,7 @@
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="{x:Static loc:Strings.Main_New}" Command="{Binding CreateNestProjectCommand}" ToolTip="{x:Static loc:Strings.Main_NewTip}" />
           <Button Style="{DynamicResource ModernButton}" Margin="3,0" Content="{x:Static loc:Strings.Main_Open}" Command="{Binding LoadNestProjectCommand}" ToolTip="{x:Static loc:Strings.Main_OpenTip}" />
           <Rectangle Style="{DynamicResource ToolbarSeparator}" />
-          <!-- Split button: NEST runs the job, the arrow beside it picks how hard to search. Effort is a
-               per-job decision (it decides whether the last part of a row gets to share its cut), so it
-               belongs next to the button that starts the job, not only inside Advanced Settings. -->
-          <Button Style="{DynamicResource PrimaryButton}" Margin="3,0,0,0" MinWidth="130" Content="{x:Static loc:Strings.Main_Nest}" Click="OnNest" ToolTip="{x:Static loc:Strings.Main_NestTip}" />
-          <Button x:Name="nestEffortButton" Style="{DynamicResource PrimaryButton}" Margin="0,0,3,0"
-                  MinWidth="22" Padding="6,4" Content="&#9662;" Click="OnNestEffortMenu">
-            <Button.ContextMenu>
-              <ContextMenu>
-                <MenuItem x:Name="effortFastItem" Header="{x:Static loc:Strings.Main_EffortFast}" IsCheckable="True" Tag="0" Click="OnNestEffortChosen" />
-                <MenuItem x:Name="effortNormalItem" Header="{x:Static loc:Strings.Main_EffortNormal}" IsCheckable="True" Tag="1" Click="OnNestEffortChosen" />
-                <MenuItem x:Name="effortBestItem" Header="{x:Static loc:Strings.Main_EffortBest}" IsCheckable="True" Tag="2" Click="OnNestEffortChosen" />
-              </ContextMenu>
-            </Button.ContextMenu>
-          </Button>
+          <Button Style="{DynamicResource PrimaryButton}" Margin="3,0" MinWidth="130" Content="{x:Static loc:Strings.Main_Nest}" Click="OnNest" ToolTip="{x:Static loc:Strings.Main_NestTip}" />
           <Button x:Name="cancelNestButton" Style="{DynamicResource DangerButton}" Margin="3,0" MinWidth="130" Content="{x:Static loc:Strings.Main_Cancel}" Click="OnCancelNest" Visibility="Collapsed" ToolTip="{x:Static loc:Strings.Main_CancelTip}" />
           <Button Style="{DynamicResource DangerButton}" Margin="3,0" MinWidth="130" Content="{x:Static loc:Strings.Main_ClearResult}" Click="OnClearResult" ToolTip="{x:Static loc:Strings.Main_ClearResultTip}" />
         </StackPanel>

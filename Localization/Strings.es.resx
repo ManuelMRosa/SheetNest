@@ -183,6 +183,12 @@
   <data name="Advanced_Inches" xml:space="preserve">
     <value>Pulgadas</value>
   </data>
+  <data name="Advanced_MaterialTarget" xml:space="preserve">
+    <value>Objetivo de aprovechamiento (%):</value>
+  </data>
+  <data name="Advanced_MaterialTargetTip" xml:space="preserve">
+    <value>Entrega el anidado en cuanto las piezas usan este tanto de la lámina, sin gastar el resto del tiempo. El área de las piezas se mide contra las láminas usadas, menos el retazo que SheetNest corta de la última; con el retazo apagado, cada lámina cuenta entera. 0 lo apaga.</value>
+  </data>
   <data name="Advanced_MaxClusterParts" xml:space="preserve">
     <value>Máx. piezas por grupo:</value>
   </data>
@@ -197,12 +203,6 @@
   </data>
   <data name="Advanced_Millimeters" xml:space="preserve">
     <value>Milímetros</value>
-  </data>
-  <data name="Advanced_NestingEffort" xml:space="preserve">
-    <value>Esfuerzo de anidado:</value>
-  </data>
-  <data name="Advanced_NestingEffortTip" xml:space="preserve">
-    <value>Cuánto tiempo busca SheetNest en cada lámina. Lo que se gana es un acomodo MÁS COMPACTO, no más piezas en la lámina: las piezas que caben se encuentran casi de inmediato, y el resto de la búsqueda se dedica a juntarlas para que el material sobrante quede en un solo trozo aprovechable.</value>
   </data>
   <data name="Advanced_NestingGroup" xml:space="preserve">
     <value>Anidado</value>
@@ -227,6 +227,12 @@
   </data>
   <data name="Advanced_Rotations90" xml:space="preserve">
     <value>Cada 90°</value>
+  </data>
+  <data name="Advanced_SecondsPerSheet" xml:space="preserve">
+    <value>Tiempo por lámina (s):</value>
+  </data>
+  <data name="Advanced_SecondsPerSheetTip" xml:space="preserve">
+    <value>Tope de tiempo por lámina: el anidado tiene estos segundos por cada lámina que se espera que use el trabajo. La primera ronda siempre termina. 0 = sin límite: para al llegar al objetivo de aprovechamiento, cuando deja de mejorar o cuando pulsas Detener.</value>
   </data>
   <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
     <value>Margen del borde ({0}):</value>
@@ -640,7 +646,7 @@
     <value>Cancelando…</value>
   </data>
   <data name="Main_CancelTip" xml:space="preserve">
-    <value>Detiene el anidado en curso</value>
+    <value>Cancela el anidado en curso; no se guarda nada</value>
   </data>
   <data name="Main_Clearances" xml:space="preserve">
     <value>Holguras</value>
@@ -671,27 +677,6 @@
   </data>
   <data name="Main_EditSheetTip" xml:space="preserve">
     <value>Edita la lámina seleccionada (tamaño y cantidad)</value>
-  </data>
-  <data name="Main_EffortBest" xml:space="preserve">
-    <value>Mejor (más lento)</value>
-  </data>
-  <data name="Main_EffortFast" xml:space="preserve">
-    <value>Rápido</value>
-  </data>
-  <data name="Main_EffortNameBest" xml:space="preserve">
-    <value>Mejor</value>
-  </data>
-  <data name="Main_EffortNameFast" xml:space="preserve">
-    <value>Rápido</value>
-  </data>
-  <data name="Main_EffortNameNormal" xml:space="preserve">
-    <value>Normal</value>
-  </data>
-  <data name="Main_EffortNormal" xml:space="preserve">
-    <value>Normal (estándar)</value>
-  </data>
-  <data name="Main_EffortTipFormat" xml:space="preserve">
-    <value>Esfuerzo de anidado: {0}. Da un acomodo MÁS APRETADO, no más piezas: las piezas que caben se encuentran casi de inmediato y el resto de la búsqueda las junta más. En un trabajo con corte común, eso es lo que permite que la última pieza de una fila comparta su corte en lugar de quedar sola.</value>
   </data>
   <data name="Main_Export" xml:space="preserve">
     <value>Exportar</value>
@@ -731,6 +716,33 @@
   </data>
   <data name="Main_NestingFormat" xml:space="preserve">
     <value>Anidando…  {0}</value>
+  </data>
+  <data name="Main_NestingOfFormat" xml:space="preserve">
+    <value>Anidando…  {0} de {1}</value>
+  </data>
+  <data name="Main_NestingLimitFormat" xml:space="preserve">
+    <value>Anidando…  {0} de {1}  ·  ronda {2}</value>
+  </data>
+  <data name="Main_NestingRoundFormat" xml:space="preserve">
+    <value>Anidando…  {0}  ·  ronda {1}</value>
+  </data>
+  <data name="Main_NestBestSoFarFormat" xml:space="preserve">
+    <value>  ·  objetivo {0} %, mejor hasta ahora {1} %</value>
+  </data>
+  <data name="Main_NestOverLimitFormat" xml:space="preserve">
+    <value>  ·  la primera ronda pasó del límite de {0}</value>
+  </data>
+  <data name="Main_NestStopped" xml:space="preserve">
+    <value>  ·  detenido</value>
+  </data>
+  <data name="Main_NestRounds_One" xml:space="preserve">
+    <value>  ·  {0} ronda</value>
+  </data>
+  <data name="Main_NestRounds_Other" xml:space="preserve">
+    <value>  ·  mejor de {0} rondas: ronda {1}</value>
+  </data>
+  <data name="Main_NestTargetReachedFormat" xml:space="preserve">
+    <value>  ·  objetivo de {0} % alcanzado ({1} %)</value>
   </data>
   <data name="Main_NestReport" xml:space="preserve">
     <value>Reporte de anidado</value>
@@ -854,6 +866,15 @@
   </data>
   <data name="Main_StatusUtilization" xml:space="preserve">
     <value>Aprovechamiento:</value>
+  </data>
+  <data name="Main_Stop" xml:space="preserve">
+    <value>■  Detener</value>
+  </data>
+  <data name="Main_Stopping" xml:space="preserve">
+    <value>Deteniendo…</value>
+  </data>
+  <data name="Main_StopTip" xml:space="preserve">
+    <value>Termina el anidado y entrega el mejor encontrado hasta ahora</value>
   </data>
   <data name="Main_UnfitBothFormat" xml:space="preserve">
     <value>, {0} por encimarse con otra pieza y {1} por estar dentro del margen del borde de la lámina</value>

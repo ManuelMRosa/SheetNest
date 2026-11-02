@@ -85,14 +85,38 @@
       => DeepNestLib.Placement.CommonLineDefaults.NormalizeMaxClusterParts(
         this.CommonLineMaxClusterParts);
 
+    /// <summary>The material usage target a new install starts with, in percent.</summary>
+    public const int DefaultMaterialTargetPercent = 90;
+
+    /// <summary>
+    /// Material usage target in percent: a nest whose parts cover at least this much of the sheets used, less
+    /// the offcut cut off the last one, is handed over without spending the rest of the time. -1 = default
+    /// (90), 0 = off.
+    /// </summary>
+    public int MaterialTargetPercent { get; set; } = -1;
+
+    /// <summary>The target this session represents, 0 (off) to 100; never saved, or out of range, is the default.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int EffectiveMaterialTargetPercent
+      => this.MaterialTargetPercent is >= 0 and <= 100 ? this.MaterialTargetPercent : DefaultMaterialTargetPercent;
+
+    /// <summary>The longest time per sheet the operator may set, in seconds.</summary>
+    public const int MaxNestSecondsPerSheet = 600;
+
+    /// <summary>
+    /// Time limit per sheet in seconds: the nest gets this much for every sheet the job is expected to take.
+    /// -1 = default (0), 0 = no limit (the target, two rounds without improvement or Stop end it).
+    /// </summary>
+    public int NestSecondsPerSheet { get; set; } = -1;
+
+    /// <summary>The time per sheet this session represents, 0 (no limit) to <see cref="MaxNestSecondsPerSheet"/>;
+    /// never saved, or out of range, is no limit.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int EffectiveNestSecondsPerSheet
+      => this.NestSecondsPerSheet is >= 0 and <= MaxNestSecondsPerSheet ? this.NestSecondsPerSheet : 0;
+
     /// <summary>User-saved sheet size presets ("My sheets" in the Add Sheet menu); Quantity unused.</summary>
     public List<SessionSheet> SheetPresets { get; set; } = new List<SessionSheet>();
-
-    /// <summary>How hard the nester searches each sheet: 0 fast, 1 normal, 2 best; -1 = never chosen,
-    /// so the product default applies. Kept per user and not in the project, because it is a preference
-    /// about this operator's own time. Written when the operator picks it, NOT when the app closes: an
-    /// earlier build did that and turned "never chosen" into a choice nobody made.</summary>
-    public int NestEffort { get; set; } = -1;
 
     /// <summary>Cut the last sheet's leftover off as a rectangular offcut; null = default (off).</summary>
     public bool? PreferRectangularOffcut { get; set; }
@@ -149,10 +173,6 @@
       this.AutosaveEnabled = autosaveEnabled;
       this.AutosaveMinutes = autosaveMinutes;
       this.DefaultRotations = defaultRotations;
-
-      // NestEffort is deliberately NOT written here. Both places that change it save it the moment it
-      // is chosen, so all this did was overwrite the "never chosen" marker with whatever the running
-      // app happened to hold, which on an untouched install was just the default written back.
       this.CommonLineGapInches = IsValidCommonLineGap(commonLineGapInches)
         ? commonLineGapInches
         : DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches;

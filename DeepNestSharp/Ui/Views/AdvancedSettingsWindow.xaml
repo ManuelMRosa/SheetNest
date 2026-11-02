@@ -25,6 +25,7 @@
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Grid.Column="0" Text="{x:Static loc:Strings.Advanced_DefaultRotations}" VerticalAlignment="Center" Margin="0,0,10,6" />
@@ -47,13 +48,15 @@
                            Minimum="0" Increment="0.05" FormatString="0.###"
                            ToolTip="{x:Static loc:Strings.Advanced_SheetEdgeMarginTip}" />
 
-        <TextBlock Grid.Row="3" Grid.Column="0" Text="{x:Static loc:Strings.Advanced_NestingEffort}" VerticalAlignment="Center" Margin="0,0,10,0" />
-        <ComboBox Grid.Row="3" Grid.Column="1" x:Name="effortCombo" Width="150" HorizontalAlignment="Left"
-                  ToolTip="{x:Static loc:Strings.Advanced_NestingEffortTip}">
-          <ComboBoxItem Tag="0" Content="{x:Static loc:Strings.Main_EffortFast}" />
-          <ComboBoxItem Tag="1" Content="{x:Static loc:Strings.Main_EffortNormal}" />
-          <ComboBoxItem Tag="2" Content="{x:Static loc:Strings.Main_EffortBest}" />
-        </ComboBox>
+        <TextBlock Grid.Row="3" Grid.Column="0" Text="{x:Static loc:Strings.Advanced_MaterialTarget}" VerticalAlignment="Center" Margin="0,0,10,6" />
+        <xctk:IntegerUpDown Grid.Row="3" Grid.Column="1" x:Name="materialTargetUpDown" Width="80" HorizontalAlignment="Left" Margin="0,0,0,6"
+                            Minimum="0" Maximum="100" Increment="1"
+                            ToolTip="{x:Static loc:Strings.Advanced_MaterialTargetTip}" />
+
+        <TextBlock Grid.Row="4" Grid.Column="0" Text="{x:Static loc:Strings.Advanced_SecondsPerSheet}" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <xctk:IntegerUpDown Grid.Row="4" Grid.Column="1" x:Name="secondsPerSheetUpDown" Width="80" HorizontalAlignment="Left"
+                            Minimum="0" Maximum="600" Increment="1"
+                            ToolTip="{x:Static loc:Strings.Advanced_SecondsPerSheetTip}" />
       </Grid>
     </GroupBox>
 

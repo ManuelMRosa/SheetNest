@@ -24,8 +24,9 @@ namespace DeepNestSharp.Ui.Views
       int autosaveMinutes,
       bool unitsMm = false,
       double commonLineGapInches = DeepNestLib.Placement.CommonLineDefaults.DefaultGapInches,
-      DeepNestSharp.RasterNest.NestEffort effort = DeepNestSharp.RasterNest.NestEffortDefaults.Default,
-      int commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts)
+      int commonLineMaxClusterParts = DeepNestLib.Placement.CommonLineDefaults.DefaultMaxClusterParts,
+      int materialTargetPercent = SessionState.DefaultMaterialTargetPercent,
+      int nestSecondsPerSheet = 0)
     {
       this.config = config;
       this.commonLineGapInches = NormalizeCommonLineGapInches(commonLineGapInches);
@@ -38,9 +39,10 @@ namespace DeepNestSharp.Ui.Views
       this.UpdateUnitPresentation();
 
       SelectRotations(config.Rotations);
-      this.effortCombo.SelectedIndex = (int)effort;
       this.spacingUpDown.Value = System.Math.Max(0, config.Spacing);
       this.marginUpDown.Value = System.Math.Max(0, config.SheetSpacing);
+      this.materialTargetUpDown.Value = materialTargetPercent;
+      this.secondsPerSheetUpDown.Value = nestSecondsPerSheet;
       this.mergeLinesCheck.IsChecked = config.MergeLines;
       this.differentiateCheck.IsChecked = config.DifferentiateChildren;
 
@@ -70,6 +72,12 @@ namespace DeepNestSharp.Ui.Views
 
     public int AutosaveMinutes => this.minutesUpDown.Value ?? 5;
 
+    /// <summary>The material usage target in percent, 0 = off, for the caller to persist (SessionState).</summary>
+    public int MaterialTargetPercent => System.Math.Clamp(this.materialTargetUpDown.Value ?? SessionState.DefaultMaterialTargetPercent, 0, 100);
+
+    /// <summary>The time limit per sheet in seconds, 0 = no limit, for the caller to persist (SessionState).</summary>
+    public int NestSecondsPerSheet => System.Math.Clamp(this.secondsPerSheetUpDown.Value ?? 0, 0, SessionState.MaxNestSecondsPerSheet);
+
     /// <summary>Converts canonical inches to the units selected for display.</summary>
     internal static double CommonLineGapForDisplay(double inches, bool unitsMm)
       => inches * (unitsMm ? DeepNestLib.Placement.CommonLineDefaults.InchesToMillimeters : 1.0);
@@ -77,13 +85,6 @@ namespace DeepNestSharp.Ui.Views
     /// <summary>Converts an edited display value back to canonical inches.</summary>
     internal static double CommonLineGapFromDisplay(double value, bool unitsMm)
       => value / (unitsMm ? DeepNestLib.Placement.CommonLineDefaults.InchesToMillimeters : 1.0);
-
-    /// <summary>How hard the nester searches each sheet. Persisted by the caller (SessionState), per user
-    /// and not per project: it is a preference about this operator's time, so opening somebody else's job
-    /// must not change it.</summary>
-    internal DeepNestSharp.RasterNest.NestEffort Effort => this.effortCombo.SelectedItem is ComboBoxItem e
-      ? (DeepNestSharp.RasterNest.NestEffort)int.Parse((string)e.Tag, System.Globalization.CultureInfo.InvariantCulture)
-      : DeepNestSharp.RasterNest.NestEffortDefaults.Default;
 
     /// <summary>The chosen global rotation code (1/2/4/8/36) — persisted by the caller.</summary>
     public int Rotations => this.rotationsCombo.SelectedItem is ComboBoxItem item
@@ -213,6 +214,8 @@ namespace DeepNestSharp.Ui.Views
       this.spacingUpDown.CommitInput();
       this.marginUpDown.CommitInput();
       this.minutesUpDown.CommitInput();
+      this.materialTargetUpDown.CommitInput();
+      this.secondsPerSheetUpDown.CommitInput();
       this.CommitCommonLineGap(this.displayedUnitsMm);
       this.CommitCommonLineMaxClusterParts();
 

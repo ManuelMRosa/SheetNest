@@ -222,6 +222,13 @@
   <data name="Advanced_Inches" xml:space="preserve">
     <value>Inches</value>
   </data>
+  <data name="Advanced_MaterialTarget" xml:space="preserve">
+    <value>Material usage target (%):</value>
+    <comment>The label column is narrow; keep it short.</comment>
+  </data>
+  <data name="Advanced_MaterialTargetTip" xml:space="preserve">
+    <value>Hand the nest over as soon as the parts use this much of the sheet, without spending the rest of the time. The area of the parts is measured against the sheets used, less the offcut SheetNest cuts off the last sheet; with the offcut option off, every sheet counts whole. 0 turns it off.</value>
+  </data>
   <data name="Advanced_MaxClusterParts" xml:space="preserve">
     <value>Maximum cluster parts:</value>
     <comment>Largest number of parts in one group that shares cuts. The label column is narrow; keep it short.</comment>
@@ -237,12 +244,6 @@
   </data>
   <data name="Advanced_Millimeters" xml:space="preserve">
     <value>Millimeters</value>
-  </data>
-  <data name="Advanced_NestingEffort" xml:space="preserve">
-    <value>Nesting effort:</value>
-  </data>
-  <data name="Advanced_NestingEffortTip" xml:space="preserve">
-    <value>How long the nester searches each sheet. It buys a TIGHTER pack, not more parts on the sheet: the parts that fit are found almost at once, and the rest of the search is spent squeezing them together so the material left over comes back as one usable piece.</value>
   </data>
   <data name="Advanced_NestingGroup" xml:space="preserve">
     <value>Nesting</value>
@@ -272,6 +273,13 @@
   <data name="Advanced_Rotations90" xml:space="preserve">
     <value>90° steps</value>
     <comment>Rotation choice: four angles 90 degrees apart. Same pattern as Rotation_45Steps.</comment>
+  </data>
+  <data name="Advanced_SecondsPerSheet" xml:space="preserve">
+    <value>Time per sheet (s):</value>
+    <comment>Label of the time limit per sheet, in seconds. The label column is narrow; keep it short.</comment>
+  </data>
+  <data name="Advanced_SecondsPerSheetTip" xml:space="preserve">
+    <value>Time limit per sheet: the nest gets this many seconds for every sheet the job is expected to take. The first round always finishes. 0 = no limit: the nest stops at the material usage target, when it stops improving, or when you press Stop.</value>
   </data>
   <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
     <value>Sheet edge margin ({0}):</value>
@@ -763,7 +771,8 @@
     <comment>The Cancel button while the nest stops.</comment>
   </data>
   <data name="Main_CancelTip" xml:space="preserve">
-    <value>Stop the running nest</value>
+    <value>Cancel the running nest; nothing is kept</value>
+    <comment>Tooltip of the Cancel button, shown until the first nest of the run has finished. After that the button is Stop (Main_StopTip).</comment>
   </data>
   <data name="Main_Clearances" xml:space="preserve">
     <value>Clearances</value>
@@ -797,32 +806,6 @@
   </data>
   <data name="Main_EditSheetTip" xml:space="preserve">
     <value>Edit the selected sheet (size and quantity)</value>
-  </data>
-  <data name="Main_EffortBest" xml:space="preserve">
-    <value>Best (slowest)</value>
-  </data>
-  <data name="Main_EffortFast" xml:space="preserve">
-    <value>Fast</value>
-    <comment>How hard the nester searches: the menu beside the NEST button.</comment>
-  </data>
-  <data name="Main_EffortNameBest" xml:space="preserve">
-    <value>Best</value>
-    <comment>Used as {0} in Main_EffortTipFormat.</comment>
-  </data>
-  <data name="Main_EffortNameFast" xml:space="preserve">
-    <value>Fast</value>
-    <comment>Used as {0} in Main_EffortTipFormat.</comment>
-  </data>
-  <data name="Main_EffortNameNormal" xml:space="preserve">
-    <value>Normal</value>
-    <comment>Used as {0} in Main_EffortTipFormat.</comment>
-  </data>
-  <data name="Main_EffortNormal" xml:space="preserve">
-    <value>Normal (default)</value>
-  </data>
-  <data name="Main_EffortTipFormat" xml:space="preserve">
-    <value>Nesting effort: {0}. It buys a TIGHTER pack, not more parts: the parts that fit are found almost at once and the rest of the search squeezes them together. On a common-line job that is what lets the last part of a row share its cut instead of standing alone.</value>
-    <comment>Tooltip of the arrow beside NEST. {0} is the effort name (Main_EffortName...).</comment>
   </data>
   <data name="Main_Export" xml:space="preserve">
     <value>Export</value>
@@ -868,11 +851,47 @@
   </data>
   <data name="Main_NestedInFormat" xml:space="preserve">
     <value>Nested in {0}{1}</value>
-    <comment>Status bar after a nest. {0} is the time (m:ss), {1} the shared-cut summary or nothing.</comment>
+    <comment>Status bar after a nest. {0} is the time (m:ss), {1} the rounds summary (Main_NestRounds..., Main_NestStopped, Main_NestTargetReachedFormat, Main_NestOverLimitFormat) followed by the shared-cut summary, or nothing.</comment>
+  </data>
+  <data name="Main_NestBestSoFarFormat" xml:space="preserve">
+    <value>  ·  target {0} %, best so far {1} %</value>
+    <comment>Status bar while a nest runs, appended once a nest has finished, when the material usage target is on. {0} is the target, {1} the usage of the best nest so far measured the same way (the offcut left out), both whole percents: what Stop would hand over. Keep the leading spaces and dot.</comment>
   </data>
   <data name="Main_NestingFormat" xml:space="preserve">
     <value>Nesting…  {0}</value>
     <comment>Status bar while a nest runs. {0} is the elapsed time, m:ss.</comment>
+  </data>
+  <data name="Main_NestingOfFormat" xml:space="preserve">
+    <value>Nesting…  {0} of {1}</value>
+    <comment>Status bar while a nest with a time per sheet set lays out its first quick nest, before round 1. {0} is the elapsed time and {1} the time the job has, both m:ss.</comment>
+  </data>
+  <data name="Main_NestingLimitFormat" xml:space="preserve">
+    <value>Nesting…  {0} of {1}  ·  round {2}</value>
+    <comment>Status bar while a nest runs with a time per sheet set. {0} is the elapsed time and {1} the time the job has (the time per sheet times the sheets it is expected to take), both m:ss; {2} is the round number. Keep the two spaces and the dot.</comment>
+  </data>
+  <data name="Main_NestingRoundFormat" xml:space="preserve">
+    <value>Nesting…  {0}  ·  round {1}</value>
+    <comment>Status bar while a nest runs. {0} is the elapsed time, m:ss; {1} is the round number. Keep the two spaces and the dot.</comment>
+  </data>
+  <data name="Main_NestOverLimitFormat" xml:space="preserve">
+    <value>  ·  the first round went over the {0} limit</value>
+    <comment>Status bar after a nest with a time per sheet set, when its first round took longer than the time (the first round always finishes). {0} is the time, m:ss. Keep the leading spaces and dot.</comment>
+  </data>
+  <data name="Main_NestStopped" xml:space="preserve">
+    <value>  ·  stopped</value>
+    <comment>Status bar after a nest the operator stopped with the Stop button, appended after the time. Keep the leading spaces and dot.</comment>
+  </data>
+  <data name="Main_NestRounds_One" xml:space="preserve">
+    <value>  ·  {0} round</value>
+    <comment>Status bar after a nest, appended after the time. Count is 1. Keep the leading spaces and dot.</comment>
+  </data>
+  <data name="Main_NestRounds_Other" xml:space="preserve">
+    <value>  ·  best of {0} rounds: round {1}</value>
+    <comment>Status bar after a nest, appended after the time. {0} is how many rounds finished (not 1), {1} the round that was kept. Keep the leading spaces and dot.</comment>
+  </data>
+  <data name="Main_NestTargetReachedFormat" xml:space="preserve">
+    <value>  ·  {0} % target reached ({1} %)</value>
+    <comment>Status bar after a nest that stopped early on the material usage target, appended after the time. {0} is the target, {1} the usage reached, both whole percents. Keep the leading spaces and dot.</comment>
   </data>
   <data name="Main_NestReport" xml:space="preserve">
     <value>Nest report</value>
@@ -1020,6 +1039,17 @@
   <data name="Main_StatusUtilization" xml:space="preserve">
     <value>Utilization:</value>
     <comment>Status bar label.</comment>
+  </data>
+  <data name="Main_Stop" xml:space="preserve">
+    <value>■  Stop</value>
+    <comment>The Cancel button once a nest of the run has finished: it ends the nest and keeps the best one found so far. Keep the square and the two spaces after it.</comment>
+  </data>
+  <data name="Main_Stopping" xml:space="preserve">
+    <value>Stopping…</value>
+    <comment>The Stop button while the nest ends.</comment>
+  </data>
+  <data name="Main_StopTip" xml:space="preserve">
+    <value>End the nest and keep the best one found so far</value>
   </data>
   <data name="Main_UnfitBothFormat" xml:space="preserve">
     <value>, {0} overlapping a neighbour and {1} inside the sheet edge margin</value>

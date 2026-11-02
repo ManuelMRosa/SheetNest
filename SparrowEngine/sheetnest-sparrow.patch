@@ -223,3 +223,206 @@ index 2a85fe8..4e87125 100644
 -- 
 2.53.0.windows.2
 
+
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: SheetNest <noreply@sheetnest.io>
+Date: Sat, 31 Oct 2026 21:00:00 -0400
+Subject: [PATCH 2/2] Cap the work too: --max-evals
+
+A termination check is not a fixed amount of work. Between two checks a
+separation runs until it stops improving, so the same number of checks
+took 1 s on one instance and 69 s on another. --max-evals counts the
+sample evaluations the separator spends and stops the search once a
+phase has spent its share, inside a separation if need be. It counts
+work, not time, so it is as reproducible as --max-iterations, and a run
+that never reaches it comes out exactly as without it.
+
+---
+ src/cli.rs                  | 12 ++++++++++--
+ src/optimizer/separator.rs  |  8 ++++++--
+ src/util/io.rs              |  4 ++++
+ src/util/iter_terminator.rs | 45 ++++++++++++++++++++++++++++++++++++++++++++-
+ src/util/terminator.rs      | 10 ++++++++++
+ 5 files changed, 74 insertions(+), 5 deletions(-)
+
+diff --git a/src/cli.rs b/src/cli.rs
+index 399d2a3..de41e04 100644
+--- a/src/cli.rs
++++ b/src/cli.rs
+@@ -126,7 +126,13 @@ pub fn run() -> Result<()>{
+             let explore = ((total as f32) * DEFAULT_EXPLORE_TIME_RATIO).round() as usize;
+             let compress = total.saturating_sub(explore);
+             let mut terminator = IterTerminator::new(vec![explore, compress]);
+-            optimize(
++            // --max-evals caps the work as well, split between the phases the way the checks are.
++            if let Some(evals) = args.max_evals {
++                let explore_evals = ((evals as f64) * (DEFAULT_EXPLORE_TIME_RATIO as f64)).round() as usize;
++                info!("[MAIN] work budget: {} sample evaluations", evals);
++                terminator = terminator.with_work_budgets(vec![explore_evals, evals.saturating_sub(explore_evals)]);
++            }
++            let solution = optimize(
+                 instance,
+                 rng,
+                 &mut svg_exporter,
+@@ -134,7 +140,9 @@ pub fn run() -> Result<()>{
+                 &config.expl_cfg,
+                 &config.cmpr_cfg,
+                 initial_solution.as_ref()
+-            )?
++            )?;
++            info!("[MAIN] work done: {} sample evaluations", terminator.work_done());
++            solution
+         }
+         None => {
+             let mut terminator = CtrlCTerminator::new();
+diff --git a/src/optimizer/separator.rs b/src/optimizer/separator.rs
+index 5f1121a..7ba96f3 100644
+--- a/src/optimizer/separator.rs
++++ b/src/optimizer/separator.rs
+@@ -89,9 +89,13 @@ impl Separator {
+             let initial_strike_loss = self.ct.get_total_loss();
+             debug!("[SEP] [s:{n_strikes},i:{n_iter}]     init_l: {}",FMT().fmt2(initial_strike_loss));
+ 
+-            while n_iter_no_improvement < self.config.iter_no_imprv_limit {
++            // The outer check never sees these iterations, and a hard separation runs thousands of them, so a
++            // work budget is asked here too. Without one it is always false and the loop is unchanged.
++            while n_iter_no_improvement < self.config.iter_no_imprv_limit && !term.work_spent() {
+                 let (loss_before, w_loss_before) = (self.ct.get_total_loss(), self.ct.get_total_weighted_loss(),);
+-                sep_stats += self.move_items_multi();
++                let iter_stats = self.move_items_multi();
++                term.add_work(iter_stats.total_evals);
++                sep_stats += iter_stats;
+                 let (loss, w_loss) = (self.ct.get_total_loss(), self.ct.get_total_weighted_loss(),);
+ 
+                 debug!("[SEP] [s:{n_strikes},i:{n_iter}] ( ) l: {} -> {}, wl: {} -> {}, (min l: {})", FMT().fmt2(loss_before), FMT().fmt2(loss), FMT().fmt2(w_loss_before), FMT().fmt2(w_loss), FMT().fmt2(min_loss));
+diff --git a/src/util/io.rs b/src/util/io.rs
+index 7c6a139..a6edc79 100644
+--- a/src/util/io.rs
++++ b/src/util/io.rs
+@@ -41,6 +41,10 @@ pub struct MainCli {
+     #[arg(long, help = "Stop after N termination checks instead of on the clock (reproducible)")]
+     pub max_iterations: Option<usize>,
+ 
++    /// Deterministic work cap on top of the checks: stop once the separator has spent N sample evaluations.
++    #[arg(long, requires = "max_iterations", help = "Also stop after N sample evaluations (reproducible)")]
++    pub max_evals: Option<usize>,
++
+     /// Number of worker threads used by the separator
+     #[arg(long)]
+     pub workers: Option<NonZeroUsize>,
+diff --git a/src/util/iter_terminator.rs b/src/util/iter_terminator.rs
+index bb13111..2cb9977 100644
+--- a/src/util/iter_terminator.rs
++++ b/src/util/iter_terminator.rs
+@@ -21,14 +21,28 @@ use std::time::Duration;
+ ///
+ /// `new_timeout` is how the optimizer announces a phase change; the durations it passes are ignored and
+ /// the next phase's iteration budget is taken instead. Ctrl-C still terminates immediately.
++///
++/// A check is not a fixed amount of work: between two of them a separation runs until it stops
++/// improving, which is a few evaluations on an easy instance and millions on a hard one, so the same
++/// number of checks took 1 s on one job and 69 s on another. An optional WORK budget caps that too: the
++/// sample evaluations the separator spends are counted, and once a phase's share is spent the search
++/// stops at once, inside a separation if need be. It counts what the search did, never the clock, so it
++/// is just as reproducible. A run that finishes its checks within the work budget never hears of it and
++/// comes out exactly as it would without one.
+ #[derive(Debug)]
+ pub struct IterTerminator {
+     /// Per-phase budgets, consumed in the order the optimizer starts the phases (explore, then compress).
+     phase_budgets: Vec<usize>,
++    /// Per-phase evaluation budgets, in the same order; none when the work is not budgeted.
++    work_budgets: Option<Vec<usize>>,
+     /// Index of the next budget to hand out on `new_timeout`.
+     next_phase: usize,
+     /// Checks remaining in the current phase.
+     remaining: AtomicUsize,
++    /// Evaluations remaining in the current phase.
++    work_remaining: AtomicUsize,
++    /// Evaluations spent in all phases, for the log.
++    work_done: AtomicUsize,
+     pub ctrlc: Arc<AtomicBool>,
+ }
+ 
+@@ -47,16 +61,30 @@ impl IterTerminator {
+ 
+         Self {
+             phase_budgets,
++            work_budgets: None,
+             next_phase: 0,
+             remaining: AtomicUsize::new(0),
++            work_remaining: AtomicUsize::new(0),
++            work_done: AtomicUsize::new(0),
+             ctrlc,
+         }
+     }
++
++    /// Caps each phase's sample evaluations as well, in the same phase order as the checks.
++    pub fn with_work_budgets(mut self, work_budgets: Vec<usize>) -> Self {
++        self.work_budgets = Some(work_budgets);
++        self
++    }
++
++    /// Evaluations spent so far, over every phase.
++    pub fn work_done(&self) -> usize {
++        self.work_done.load(Ordering::SeqCst)
++    }
+ }
+ 
+ impl Terminator for IterTerminator {
+     fn kill(&self) -> bool {
+-        if self.ctrlc.load(Ordering::SeqCst) {
++        if self.ctrlc.load(Ordering::SeqCst) || self.work_spent() {
+             return true;
+         }
+ 
+@@ -72,12 +100,27 @@ impl Terminator for IterTerminator {
+     fn new_timeout(&mut self, _timeout: Duration) {
+         self.ctrlc.store(false, Ordering::SeqCst);
+         let budget = self.phase_budgets.get(self.next_phase).copied().unwrap_or(0);
++        let work = self.work_budgets.as_ref().map_or(0, |w| w.get(self.next_phase).copied().unwrap_or(0));
+         self.next_phase += 1;
+         self.remaining.store(budget, Ordering::SeqCst);
++        self.work_remaining.store(work, Ordering::SeqCst);
+     }
+ 
+     /// There is no deadline — nothing in the optimizer reads this.
+     fn timeout_at(&self) -> Option<Instant> {
+         None
+     }
++
++    fn add_work(&self, evals: usize) {
++        self.work_done.fetch_add(evals, Ordering::SeqCst);
++        if self.work_budgets.is_some() {
++            let _ = self
++                .work_remaining
++                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |r| Some(r.saturating_sub(evals)));
++        }
++    }
++
++    fn work_spent(&self) -> bool {
++        self.work_budgets.is_some() && self.work_remaining.load(Ordering::SeqCst) == 0
++    }
+ }
+diff --git a/src/util/terminator.rs b/src/util/terminator.rs
+index 6bc8a79..b49542f 100644
+--- a/src/util/terminator.rs
++++ b/src/util/terminator.rs
+@@ -11,6 +11,16 @@ pub trait Terminator {
+ 
+     /// Returns the instant when a timeout was set, if any
+     fn timeout_at(&self) -> Option<Instant>;
++
++    /// Told of the sample evaluations a separation iteration just spent. Only a terminator that budgets
++    /// work listens; every other one ignores it.
++    fn add_work(&self, _evals: usize) {}
++
++    /// Whether the work budget is spent. Polled between the iterations of a separation, which the outer
++    /// checks never see, so a long separation stops where the budget ends. Always false without a budget.
++    fn work_spent(&self) -> bool {
++        false
++    }
+ }
+ 
+ #[derive(Debug, Clone)]
+-- 
+2.53.0.windows.2

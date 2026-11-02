@@ -874,8 +874,15 @@
 
     /// <summary>
     /// Grow the OUTER contour by <paramref name="inches"/> (round join = uniform Euclidean clearance,
-    /// matching the raster halo). Holes are kept as-is â€” conservative for spacing purposes.
+    /// matching the raster halo), and draw each hole in by the same amount.
     /// </summary>
+    /// <remarks>
+    /// The holes used to be kept as they were, on the reasoning that a neighbour outside the part never
+    /// reaches them. One inside does: a slide is judged where it ends, not along the way, so a small part can
+    /// land wholly inside a frame's window, and against a bare hole it then kept only its own half of the
+    /// spacing from the frame. Measured: 4 in squares beside two 24 x 16 frames came to rest in their windows,
+    /// 0.126 in from the frame. A part outside never touches the hole, so it slides exactly as before.
+    /// </remarks>
     private static List<List<IntPoint>> Inflate(List<List<IntPoint>> paths, double inches)
     {
       if (inches <= 0 || paths.Count == 0)
@@ -904,7 +911,18 @@
       var result = new List<List<IntPoint>>(grown);
       for (int i = 1; i < paths.Count; i++)
       {
-        result.Add(paths[i]);
+        // A hole drawn in to nothing leaves solid part there, which only keeps neighbours further away.
+        var hole = new List<IntPoint>(paths[i]);
+        if (!Clipper.Orientation(hole))
+        {
+          hole.Reverse();
+        }
+
+        var shrink = new ClipperOffset(2.0, Math.Abs(inches * Scale) * 0.0005);
+        shrink.AddPath(hole, JoinType.jtRound, EndType.etClosedPolygon);
+        var drawnIn = new List<List<IntPoint>>();
+        shrink.Execute(ref drawnIn, -inches * Scale);
+        result.AddRange(drawnIn);
       }
 
       return result.Count > 0 ? result : paths;
@@ -953,11 +971,20 @@
     }
 
     /// <summary>True when the two polygons overlap in real area (holes respected via even-odd).</summary>
+    /// <remarks>
+    /// Only the contours that reach the other polygon's box go to Clipper. A closed contour winds zero times
+    /// around any point outside its own box, so one that misses the other's box changes nothing where the two
+    /// could overlap, and the answer is the same overlap. It is most of the work: a part with eleven small
+    /// holes carries 671 points in them against 51 in its outline, and nearly every probe misses them all.
+    /// </remarks>
     private static bool Intersects(List<List<IntPoint>> a, List<List<IntPoint>> b)
     {
       var clipper = new Clipper();
-      clipper.AddPaths(a, PolyType.ptSubject, true);
-      clipper.AddPaths(b, PolyType.ptClip, true);
+      if (!AddReaching(clipper, a, BoundsOf(b), PolyType.ptSubject) || !AddReaching(clipper, b, BoundsOf(a), PolyType.ptClip))
+      {
+        return false;
+      }
+
       var solution = new List<List<IntPoint>>();
       clipper.Execute(ClipType.ctIntersection, solution, PolyFillType.pftEvenOdd, PolyFillType.pftEvenOdd);
       double area = 0;
@@ -967,6 +994,36 @@
       }
 
       return area > EpsArea;
+    }
+
+    /// <summary>Adds the contours whose box touches <paramref name="other"/>; false when there are none.</summary>
+    private static bool AddReaching(Clipper clipper, List<List<IntPoint>> paths, IntRect other, PolyType type)
+    {
+      bool any = false;
+      foreach (var path in paths)
+      {
+        if (BoxesTouch(BoundsOf(path), other))
+        {
+          clipper.AddPath(path, type, true);
+          any = true;
+        }
+      }
+
+      return any;
+    }
+
+    private static IntRect BoundsOf(List<IntPoint> path)
+    {
+      long minX = long.MaxValue, minY = long.MaxValue, maxX = long.MinValue, maxY = long.MinValue;
+      foreach (var p in path)
+      {
+        minX = Math.Min(minX, p.X);
+        maxX = Math.Max(maxX, p.X);
+        minY = Math.Min(minY, p.Y);
+        maxY = Math.Max(maxY, p.Y);
+      }
+
+      return new IntRect(minX, minY, maxX, maxY);
     }
 
     private static IntRect BoundsOf(List<List<IntPoint>> paths)

@@ -442,6 +442,153 @@
       }
     }
 
+    /// <summary>
+    /// Two 24 x 16 in frames with 20 x 12 windows on a sheet just big enough for the two of them, and sixteen
+    /// 4 in squares, eight of which fit in each window at a quarter inch of spacing. There is no room for a
+    /// square beside the frames, so the windows are the only place for them on this sheet.
+    /// <para>On unlimited stock the squares used to take a second sheet: the engine never sees holes, and the
+    /// hole fill only ran with what was left once the stock was gone. With one sheet of stock they went into
+    /// the windows, but the hole fill and compaction, which can slide a square into a window, both kept the
+    /// spacing only to the frame's bare hole, and squares sat an eighth of an inch from their frame.</para>
+    /// <para>Squares set to share cuts are left out of a sheet's own hole fill, so on one sheet of stock they
+    /// still go in at the end, the only way they get cut at all.</para>
+    /// </summary>
+    [SparrowTheory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    public void PartsGoInsideTheFramesOnTheirSheetAtTheFullSpacing(bool unlimited, bool squaresShareCuts)
+    {
+      string exe = SparrowExe.Resolve();
+      var dir = Path.Combine(Path.GetTempPath(), "SheetNestTests", Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(dir);
+      try
+      {
+        var parts = new List<RasterPartInfo>
+        {
+          new RasterPartInfo { Path = WriteFrame(dir), Quantity = 2 },
+          new RasterPartInfo
+          {
+            Path = WriteSquare(dir, 4),
+            Quantity = 16,
+            Cc = squaresShareCuts ? CommonCuttingMode.Unrestricted : CommonCuttingMode.None,
+            CommonCuttingDomain = squaresShareCuts ? "direct" : string.Empty,
+            RequiresMergedLines = squaresShareCuts,
+          },
+        };
+        var stock = new List<(int, int, int, bool)> { (50, 17, 1, unlimited) };
+
+        var result = SparrowNestService.Nest(parts, stock, 4, 0.25, 0.25, 5, exe, out string err, effort: NestEffort.Fast, commonLineGap: 0.010D, geometryTolerance: 0.0001D);
+
+        result.Should().NotBeNull($"nest must return a result (err={err})");
+        var sheets = result.UsedSheets.ToList();
+        int squares = sheets.SelectMany(s => s.PartPlacements).Count(p => p.Source == 1);
+        int tooClose = sheets.Sum(HodgsonRowPatternJobFixture.UnsafePairs);
+        this.output.WriteLine(FormattableString.Invariant($"FRAMES: unlimited={unlimited} share={squaresShareCuts} sheets={sheets.Count} squares={squares} tooClose={tooClose}"));
+        sheets.Should().ContainSingle("every square fits in a window");
+        squares.Should().Be(16);
+        tooClose.Should().Be(0, "a square in a window keeps the full spacing from its frame");
+      }
+      finally
+      {
+        try
+        {
+          Directory.Delete(dir, true);
+        }
+        catch (IOException)
+        {
+        }
+      }
+    }
+
+    /// <summary>
+    /// The same two frames and sixteen squares on a sheet with room to spare. The squares used to go to the
+    /// engine with the frames, which packs them beside the frames because it never sees the windows, so the
+    /// parts reached about half as far again. Held back for the windows, they reach only as far as the frames:
+    /// two of them side by side are 24 + 0.25 + 24 in.
+    /// </summary>
+    [SparrowTheory]
+    [InlineData(16)]
+    public void PartsThatFitInTheFramesDoNotLengthenTheSheet(int squares)
+    {
+      string exe = SparrowExe.Resolve();
+      var dir = Path.Combine(Path.GetTempPath(), "SheetNestTests", Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(dir);
+      try
+      {
+        var parts = new List<RasterPartInfo>
+        {
+          new RasterPartInfo { Path = WriteFrame(dir), Quantity = 2 },
+          new RasterPartInfo { Path = WriteSquare(dir, 4), Quantity = squares },
+        };
+        var stock = new List<(int, int, int, bool)> { (100, 17, 1, false) };
+
+        var result = SparrowNestService.Nest(parts, stock, 4, 0.25, 0.25, 5, exe, out string err, effort: NestEffort.Fast);
+
+        result.Should().NotBeNull($"nest must return a result (err={err})");
+        var sheet = result.UsedSheets.Should().ContainSingle().Subject;
+        double length = HodgsonRowPatternJobFixture.Length(sheet);
+        this.output.WriteLine(FormattableString.Invariant($"FRAMES: length={length:F3} placed={sheet.PartPlacements.Count} tooClose={HodgsonRowPatternJobFixture.UnsafePairs(sheet)}"));
+        sheet.PartPlacements.Should().HaveCount(2 + squares);
+        length.Should().BeLessThan(48.3, "every square is inside a window");
+        HodgsonRowPatternJobFixture.UnsafePairs(sheet).Should().Be(0);
+      }
+      finally
+      {
+        try
+        {
+          Directory.Delete(dir, true);
+        }
+        catch (IOException)
+        {
+        }
+      }
+    }
+
+    /// <summary>
+    /// Thirty big squares, more than one sheet's batch on their own, then forty small ones. Each sheet's batch was
+    /// taken drawing by drawing, so the big ones filled the batches of the first three sheets and the small ones
+    /// that fill the gaps beside them went on a fourth sheet of their own. Taken one of each in turn, they go
+    /// beside the big ones and the job takes three sheets.
+    /// </summary>
+    [SparrowTheory]
+    [InlineData(30, 40)]
+    public void TheFirstSheetOfAMixedJobGetsSomeOfEachDrawing(int big, int small)
+    {
+      string exe = SparrowExe.Resolve();
+      var dir = Path.Combine(Path.GetTempPath(), "SheetNestTests", Guid.NewGuid().ToString("N"));
+      Directory.CreateDirectory(dir);
+      try
+      {
+        var parts = new List<RasterPartInfo>
+        {
+          new RasterPartInfo { Path = WritePoly(dir, "big", new[] { (0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0) }), Quantity = big },
+          new RasterPartInfo { Path = WritePoly(dir, "small", new[] { (0.0, 0.0), (3.0, 0.0), (3.0, 3.0), (0.0, 3.0) }), Quantity = small },
+        };
+        var stock = new List<(int, int, int, bool)> { (60, 30, 1, true) };
+
+        var result = SparrowNestService.Nest(parts, stock, 4, 0.25, 0.25, 5, exe, out string err, effort: NestEffort.Fast);
+
+        result.Should().NotBeNull($"nest must return a result (err={err})");
+        var sheets = result.UsedSheets.ToList();
+        this.output.WriteLine(string.Join(" | ", sheets.Select((s, i) => FormattableString.Invariant(
+          $"sheet {i + 1}: big={s.PartPlacements.Count(p => p.Source == 0)} small={s.PartPlacements.Count(p => p.Source == 1)} length={HodgsonRowPatternJobFixture.Length(s):F3}"))));
+        sheets.Sum(s => s.PartPlacements.Count).Should().Be(big + small);
+        sheets[0].PartPlacements.Should().Contain(p => p.Source == 0).And.Contain(p => p.Source == 1, "the small squares are offered with the big ones");
+        sheets.Should().HaveCount(3, "the small squares fit beside the big ones, not on a fourth sheet of their own");
+      }
+      finally
+      {
+        try
+        {
+          Directory.Delete(dir, true);
+        }
+        catch (IOException)
+        {
+        }
+      }
+    }
+
     [Fact]
     public void HighPriorityPartsAreNestedBeforeLowPriorityWhenMaterialRunsShort()
     {
@@ -553,29 +700,39 @@
     }
 
     [Fact]
-    public void PickBestPrefersMostPlacedThenCommonLineLengthThenExtentThenDensityThenLowestSeed()
+    public void PickBestPrefersMostPlacedThenFewestOnTheirOwnThenExtentThenCommonLineLengthThenDensityThenLowestSeed()
     {
       // Most parts placed wins even if a rival packs shorter or denser.
-      SparrowNestService.PickBest(new[] { (Count: 25, SharedLength: 40.0, Extent: 110.0, Density: 0.93, Seed: 1), (26, 0.0, 118.0, 0.90, 2), (24, 80.0, 100.0, 0.95, 3) })
+      SparrowNestService.PickBest(new[] { (Count: 25, Unshared: 0, SharedLength: 40.0, Extent: 110.0, Density: 0.93, Seed: 1), (26, 0, 0.0, 118.0, 0.90, 2), (24, 0, 80.0, 100.0, 0.95, 3) })
         .Should().Be(1, "26 placed beats 25/24 regardless of extent or strip density");
 
-      // Tie on count → the longer validated common cut wins, even when it consumes more of the sheet.
-      SparrowNestService.PickBest(new[] { (26, 12.0, 115.0, 0.95, 1), (26, 20.0, 118.0, 0.90, 2) })
-        .Should().Be(1, "same count → common-line length outranks extent and strip density");
+      // Tie on count: a part left on its own costs a cut all the way round, so the shorter pack that leaves
+      // two loses to a longer one where every part shares.
+      SparrowNestService.PickBest(new[] { (150, 2, 1176.0, 40.75, 0.95, 1), (150, 0, 1208.0, 42.32, 0.90, 2) })
+        .Should().Be(1, "fewer parts on their own outranks extent");
 
-      // With equal cut saving, the shorter extent remains the material tie-breaker.
-      SparrowNestService.PickBest(new[] { (10, 15.0, 115.790, 0.94446, 6), (10, 15.0, 118.722, 0.94448, 7) })
-        .Should().Be(0, "equal common-line length leaves extent as the next criterion");
+      // Tie on count and parts on their own: the shorter extent wins, even against a longer validated common
+      // cut, because the rest of the sheet is what the operator keeps.
+      SparrowNestService.PickBest(new[] { (26, 0, 12.0, 115.0, 0.95, 1), (26, 0, 20.0, 118.0, 0.90, 2) })
+        .Should().Be(0, "same count: extent outranks common-line length and strip density");
+
+      // The issue #2 sheet: the shorter extent beats a denser rival.
+      SparrowNestService.PickBest(new[] { (10, 0, 15.0, 115.790, 0.94446, 6), (10, 0, 15.0, 118.722, 0.94448, 7) })
+        .Should().Be(0, "extent comes before density");
+
+      // Extents apart only by float noise are a tie: the longer common cut decides.
+      SparrowNestService.PickBest(new[] { (26, 0, 12.0, 115.0, 0.95, 1), (26, 0, 20.0, 115.0000001, 0.90, 2) })
+        .Should().Be(1, "extents equal within tolerance: common-line length is the next criterion");
 
       // Extents apart only by float noise are a tie → density decides.
-      SparrowNestService.PickBest(new[] { (26, 10.0, 115.0, 0.90, 1), (26, 10.0, 115.0000001, 0.92, 2) })
+      SparrowNestService.PickBest(new[] { (26, 0, 10.0, 115.0, 0.90, 1), (26, 0, 10.0, 115.0000001, 0.92, 2) })
         .Should().Be(1, "extents equal within tolerance → the denser candidate wins");
 
       // Tie on count, extent and density → lowest seed wins (stable).
-      SparrowNestService.PickBest(new[] { (26, 10.0, 115.0, 0.92, 5), (26, 10.0, 115.0, 0.92, 2) })
+      SparrowNestService.PickBest(new[] { (26, 0, 10.0, 115.0, 0.92, 5), (26, 0, 10.0, 115.0, 0.92, 2) })
         .Should().Be(1, "full tie → lowest seed (index 1, seed 2)");
 
-      SparrowNestService.PickBest(System.Array.Empty<(int, double, double, double, int)>()).Should().Be(-1);
+      SparrowNestService.PickBest(System.Array.Empty<(int, int, double, double, double, int)>()).Should().Be(-1);
     }
 
     [Fact]
@@ -702,6 +859,30 @@
       };
       file.Entities.Add(new IxMilia.Dxf.Entities.DxfPolyline(pts.Select(p => new IxMilia.Dxf.Entities.DxfVertex(p))) { IsClosed = true });
       string path = Path.Combine(dir, "sq.dxf");
+      file.Save(path);
+      return path;
+    }
+
+    /// <summary>An invented 24 x 16 in frame with a 20 x 12 in window.</summary>
+    private static string WriteFrame(string dir)
+    {
+      var file = new IxMilia.Dxf.DxfFile();
+      file.Header.Version = IxMilia.Dxf.DxfAcadVersion.R2000;
+      foreach (var (x0, y0, x1, y1) in new[] { (0D, 0D, 24D, 16D), (2D, 2D, 22D, 14D) })
+      {
+        file.Entities.Add(new IxMilia.Dxf.Entities.DxfLwPolyline(new[]
+        {
+          new IxMilia.Dxf.Entities.DxfLwPolylineVertex { X = x0, Y = y0 },
+          new IxMilia.Dxf.Entities.DxfLwPolylineVertex { X = x1, Y = y0 },
+          new IxMilia.Dxf.Entities.DxfLwPolylineVertex { X = x1, Y = y1 },
+          new IxMilia.Dxf.Entities.DxfLwPolylineVertex { X = x0, Y = y1 },
+        })
+        {
+          IsClosed = true,
+        });
+      }
+
+      string path = Path.Combine(dir, "frame.dxf");
       file.Save(path);
       return path;
     }
