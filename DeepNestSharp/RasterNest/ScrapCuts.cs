@@ -48,6 +48,21 @@ namespace DeepNestSharp.RasterNest
       => unitsMm
         ? (1000.0, 750.0, 0.5, 5.0)
         : (40.0, 30.0, 0.02, 0.1969);
+
+    /// <summary>The settings in force from what the session saved: -1 (never saved) takes the default for the
+    /// drawing's units, a type out of range is Both, and an explicit 0 is left alone.</summary>
+    public static ScrapCutOptions Resolve(int type, double spacingX, double spacingY, double partGap, double edgeOverlap, bool unitsMm)
+    {
+      var d = Defaults(unitsMm);
+      return new ScrapCutOptions
+      {
+        Type = type >= 0 && type <= 2 ? (ScrapCutType)type : ScrapCutType.Both,
+        SpacingX = spacingX >= 0 ? spacingX : d.SpacingX,
+        SpacingY = spacingY >= 0 ? spacingY : d.SpacingY,
+        PartGap = partGap >= 0 ? partGap : d.PartGap,
+        EdgeOverlap = edgeOverlap >= 0 ? edgeOverlap : d.EdgeOverlap,
+      };
+    }
   }
 
   /// <summary>
@@ -95,6 +110,20 @@ namespace DeepNestSharp.RasterNest
       }
 
       var lines = BuildLinesCore(outlines, w, h, cutX, cutY, options);
+      return lines.Count == 0 ? null : lines;
+    }
+
+    /// <summary>
+    /// Every extra cut one exported sheet carries, all on the offcut layer: the offcut cut only on the sheet
+    /// whose remnant is cut (<paramref name="carriesOffcut"/>), the scrap cuts on every sheet. Null when there
+    /// are none, which is how the export is told there is nothing to add.
+    /// </summary>
+    public static IReadOnlyList<OffcutLine> ExportLines(ISheetPlacement sheetPlacement, bool carriesOffcut, OffcutOptions offcut, ScrapCutOptions scrap)
+    {
+      var offcutHere = carriesOffcut ? offcut : null;
+      var lines = new List<OffcutLine>();
+      lines.AddRange(OffcutGeometry.BuildLines(sheetPlacement, offcutHere) ?? Array.Empty<OffcutLine>());
+      lines.AddRange(BuildLines(sheetPlacement, scrap, offcutHere) ?? Array.Empty<OffcutLine>());
       return lines.Count == 0 ? null : lines;
     }
 

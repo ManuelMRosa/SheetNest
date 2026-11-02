@@ -148,6 +148,24 @@
     /// <summary>How far the offcut cut runs past the sheet edge at each end; -1/0 = flush with the edge.</summary>
     public double OffcutEdgeOverlap { get; set; } = -1;
 
+    /// <summary>Cut the skeleton into pieces with scrap cuts; null = default (off).</summary>
+    public bool? ScrapCutsEnabled { get; set; }
+
+    /// <summary>Scrap cut lines: 0 = both ways, 1 = vertical, 2 = horizontal; -1 = default (both).</summary>
+    public int ScrapCutType { get; set; } = -1;
+
+    /// <summary>Ideal distance between the vertical scrap cuts (drawing units); -1 = default, 0 = none.</summary>
+    public double ScrapSpacingX { get; set; } = -1;
+
+    /// <summary>Ideal distance between the horizontal scrap cuts; -1 = default, 0 = none.</summary>
+    public double ScrapSpacingY { get; set; } = -1;
+
+    /// <summary>How close a scrap cut comes to a part; -1 = default.</summary>
+    public double ScrapPartGap { get; set; } = -1;
+
+    /// <summary>How far a scrap cut runs past the sheet edge; -1 = default.</summary>
+    public double ScrapEdgeOverlap { get; set; } = -1;
+
     /// <summary>
     /// Records the values owned by the running application when it closes. Called on an already-loaded
     /// session so preferences written by their own dialogs (including offcuts) survive.
