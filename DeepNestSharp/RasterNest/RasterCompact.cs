@@ -96,7 +96,36 @@
     /// corner; clearances are preserved exactly â€” each pair keeps (spacingA + spacingB)/2 via
     /// half-inflated shells, and explicit common-edge pairs keep <paramref name="commonLineGap"/>.
     /// </summary>
+    /// <remarks>
+    /// The work is done by the C++ translation in sheetnest_core.dll (<see cref="NativeCompact"/>), which gives
+    /// the same positions bit for bit. Without the DLL, or on an input it refuses, <see cref="CompactManaged"/>
+    /// runs instead.
+    /// </remarks>
     public static void Compact(
+      IList<CompactItem> items,
+      double sheetW,
+      double sheetH,
+      double margin,
+      int[] groups = null,
+      System.Threading.CancellationToken cancel = default,
+      double commonLineGap = CommonLineGap)
+    {
+      if (items == null || items.Count < 1)
+      {
+        return;
+      }
+
+      if (NativeCompact.TryCompact(items, sheetW, sheetH, margin, groups, cancel, commonLineGap))
+      {
+        return;
+      }
+
+      CompactManaged(items, sheetW, sheetH, margin, groups, cancel, commonLineGap);
+    }
+
+    /// <summary>The compaction in C#: what <see cref="Compact"/> runs without the native core, and what the
+    /// native core is a translation of.</summary>
+    internal static void CompactManaged(
       IList<CompactItem> items,
       double sheetW,
       double sheetH,

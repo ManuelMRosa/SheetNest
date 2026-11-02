@@ -68,6 +68,10 @@
     <Content Include="..\SparrowEngine\sparrow.exe" Link="sparrow.exe">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <!-- Native geometry core (native/, built with CMake + MSVC, x64). Without it the C# code runs. -->
+    <Content Include="..\NativeDlls\sheetnest_core.dll" Link="sheetnest_core.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\THIRD_PARTY_NOTICES.md" Link="THIRD_PARTY_NOTICES.md">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
