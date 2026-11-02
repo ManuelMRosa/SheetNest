@@ -1,0 +1,1507 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="About_CompilingMinkowski" xml:space="preserve">
+    <value>Compilar minkowski.dll</value>
+  </data>
+  <data name="About_Contributors" xml:space="preserve">
+    <value>Colaboradores</value>
+  </data>
+  <data name="About_DeepNestOriginal" xml:space="preserve">
+    <value>DeepNest - O original</value>
+  </data>
+  <data name="About_DeepNestPortPort" xml:space="preserve">
+    <value>DeepNestPort - Port para C# WinForms</value>
+  </data>
+  <data name="About_DeepNestSharpPort" xml:space="preserve">
+    <value>DeepNest# - Port para Net Core C#/Mvvm/WPF</value>
+  </data>
+  <data name="About_DxfExport" xml:space="preserve">
+    <value>(exportação dxf)</value>
+  </data>
+  <data name="About_DxfImportExport" xml:space="preserve">
+    <value>Importação/exportação DXF:</value>
+  </data>
+  <data name="About_GiantsQuote" xml:space="preserve">
+    <value>"Se vi mais longe, foi por estar sobre os ombros de gigantes"</value>
+  </data>
+  <data name="About_History1" xml:space="preserve">
+    <value>Jack e Felix fizeram um ótimo trabalho, mas o uso que o original fazia de um serviço remoto para converter entre formatos de imagem era um problema, e o Port simplesmente não se mostrava estável o bastante para o que eu precisava. Eu realmente precisava poder salvar projetos, resultados de encaixe e posicionamentos de chapas individuais, poder partir dos resultados de encaixes anteriores para os seguintes e poder editar posicionamentos, para encaixar aquela última peça nos vãos da chapa que o algoritmo simplesmente não encontrava.</value>
+  </data>
+  <data name="About_History2" xml:space="preserve">
+    <value>Felix fazia questão de se manter fiel ao código original do DeepNest no DeepNestPort...</value>
+  </data>
+  <data name="About_History3" xml:space="preserve">
+    <value>...e assim nasceu o DeepNestSharp. Ele reconstrói por completo a interface com WPF sobre Net.Core e é uma refatoração enorme que deu alguns frutos, mas também trouxe algumas concessões e problemas, alguns dos quais talvez ainda estejam pendentes... me avise.</value>
+  </data>
+  <data name="About_Intro" xml:space="preserve">
+    <value>O SheetNest é uma derivação (fork) do DeepNestSharp que acrescenta um motor de encaixe por GPU / raster, um plano de produção industrial com exportação DXF de layouts agrupados e uma interface de operador simplificada. Licença MIT; a linhagem completa está abaixo.</value>
+  </data>
+  <data name="About_MinkowskiExample" xml:space="preserve">
+    <value>Exemplo: cl /Ox -I "D:\boost\boost_1_76_0" /LD minkowski.cc</value>
+  </data>
+  <data name="About_MinkowskiIntro" xml:space="preserve">
+    <value>Está incluído um conjunto de minkowski.dll que funcionam em várias configurações de Windows que eu tenho (AnyCpu, x86 e x64), mas se você quiser usar o DllImport provavelmente precisará compilar as dll para a sua própria configuração. Muito trabalho foi feito para que o código nativo seja substituível; está perto, mas ainda é experimental. Para mim funciona; a sua experiência pode variar.</value>
+  </data>
+  <data name="About_MinkowskiStep1" xml:space="preserve">
+    <value>1. Substitua [boost_1.76_path] pelo seu caminho real do BOOST (1.76+) em compile.bat</value>
+  </data>
+  <data name="About_MinkowskiStep2" xml:space="preserve">
+    <value>2. Execute compile.bat no Developer Command Prompt do Visual Studio</value>
+  </data>
+  <data name="About_MinkowskiStep3" xml:space="preserve">
+    <value>3. Copie minkowski.dll para a pasta MinkowskiDlls.</value>
+  </data>
+  <data name="About_MinkowskiVisualStudio" xml:space="preserve">
+    <value>Se você trabalha no Visual Studio, o DeepNestLib.CiTests tem uma tarefa PostBuild que copia as DLL de lá para você. Caso contrário, garanta que as DLL certas cheguem à pasta do DeepNestSharp.exe. Observe que há diretivas de pré-processador para escolher a dll certa conforme a arquitetura em que você executa.</value>
+  </data>
+  <data name="About_PortToNetCore" xml:space="preserve">
+    <value>(port para Net.Core)</value>
+  </data>
+  <data name="About_QuoteBreakAway" xml:space="preserve">
+    <value>"Espero que você considere se separar do código legado, porque está ficando muito difícil de mesclar."</value>
+  </data>
+  <data name="About_QuoteEntangle" xml:space="preserve">
+    <value>&gt;&gt; Acho que não deveríamos emaranhar demais nossos repositórios</value>
+  </data>
+  <data name="About_QuoteTryCompatibility" xml:space="preserve">
+    <value>&gt;&gt; Vou tentar, mas é importante manter a compatibilidade com o código original...</value>
+  </data>
+  <data name="About_SimplificationFeatures" xml:space="preserve">
+    <value>(recursos de simplificação)</value>
+  </data>
+  <data name="About_TheOriginalDeepNest" xml:space="preserve">
+    <value>(O DeepNest original)</value>
+  </data>
+  <data name="About_TitleFormat" xml:space="preserve">
+    <value>Sobre o DeepNest# {0}:{1}</value>
+  </data>
+  <data name="About_WinFormsPort" xml:space="preserve">
+    <value>(port para WinForms C#)</value>
+  </data>
+  <data name="AddSheet_Add" xml:space="preserve">
+    <value>Adicionar</value>
+  </data>
+  <data name="AddSheet_EditTitle" xml:space="preserve">
+    <value>Editar chapa</value>
+  </data>
+  <data name="AddSheet_HeaderInches" xml:space="preserve">
+    <value>Tamanho da chapa em polegadas (largura = o lado maior).</value>
+  </data>
+  <data name="AddSheet_HeaderMillimeters" xml:space="preserve">
+    <value>Tamanho da chapa em milímetros (largura = o lado maior).</value>
+  </data>
+  <data name="AddSheet_HeightIn" xml:space="preserve">
+    <value>Altura (in)</value>
+  </data>
+  <data name="AddSheet_HeightMm" xml:space="preserve">
+    <value>Altura (mm)</value>
+  </data>
+  <data name="AddSheet_Quantity" xml:space="preserve">
+    <value>Quantidade</value>
+  </data>
+  <data name="AddSheet_RememberPreset" xml:space="preserve">
+    <value>Lembrar como predefinição</value>
+  </data>
+  <data name="AddSheet_RememberPresetTip" xml:space="preserve">
+    <value>Salva este tamanho em "Minhas chapas" no menu Adicionar chapa.</value>
+  </data>
+  <data name="AddSheet_Title" xml:space="preserve">
+    <value>Tamanho de chapa personalizado</value>
+  </data>
+  <data name="AddSheet_Unlimited" xml:space="preserve">
+    <value>Ilimitada</value>
+  </data>
+  <data name="AddSheet_UnlimitedTip" xml:space="preserve">
+    <value>Há tanta chapa deste tamanho quanto o trabalho precisar, então o encaixe continua pegando chapas até posicionar todas as peças. A quantidade é ignorada enquanto esta opção estiver marcada (ela mantém o valor para quando você desmarcar).</value>
+  </data>
+  <data name="AddSheet_WidthIn" xml:space="preserve">
+    <value>Largura (in)</value>
+  </data>
+  <data name="AddSheet_WidthMm" xml:space="preserve">
+    <value>Largura (mm)</value>
+  </data>
+  <data name="Advanced_ApplicationGroup" xml:space="preserve">
+    <value>Aplicativo</value>
+  </data>
+  <data name="Advanced_Autosave" xml:space="preserve">
+    <value>Salvar automaticamente o projeto aberto</value>
+  </data>
+  <data name="Advanced_AutosaveMinutes" xml:space="preserve">
+    <value>Salvar a cada (min):</value>
+  </data>
+  <data name="Advanced_AutosaveMinutesTip" xml:space="preserve">
+    <value>Com que frequência o projeto aberto é salvo automaticamente para recuperação.</value>
+  </data>
+  <data name="Advanced_AutosaveTip" xml:space="preserve">
+    <value>Salva periodicamente uma cópia do projeto aberto para que o trabalho não salvo possa ser recuperado após um travamento.</value>
+  </data>
+  <data name="Advanced_ClusterAuto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="Advanced_ClusterManual" xml:space="preserve">
+    <value>Manual</value>
+  </data>
+  <data name="Advanced_ClusterModeTip" xml:space="preserve">
+    <value>Auto deixa o SheetNest escolher um tamanho de grupo seguro; Manual aplica um limite fixo de peças.</value>
+  </data>
+  <data name="Advanced_CommonLineGapFormat" xml:space="preserve">
+    <value>Folga comum ({0}):</value>
+  </data>
+  <data name="Advanced_CommonLineGapTip" xml:space="preserve">
+    <value>Os posicionamentos com corte comum usam a folga configurada; o SheetNest resolve um único corte central antes de exportar o DXF. O valor é guardado em polegadas e convertido para as unidades de desenho escolhidas para exibição.</value>
+  </data>
+  <data name="Advanced_CommonLineGroup" xml:space="preserve">
+    <value>Corte comum</value>
+  </data>
+  <data name="Advanced_DefaultRotations" xml:space="preserve">
+    <value>Rotações padrão das peças:</value>
+  </data>
+  <data name="Advanced_DefaultRotationsTip" xml:space="preserve">
+    <value>Rotações que o encaixe pode testar nas peças que não foram editadas. A configuração de cada peça em Editar peça sempre tem prioridade.</value>
+  </data>
+  <data name="Advanced_DifferentiateHoles" xml:space="preserve">
+    <value>Diferenciar contornos de furos por cor</value>
+  </data>
+  <data name="Advanced_DifferentiateHolesTip" xml:space="preserve">
+    <value>Os contornos de furos (filhos) são exportados em outra cor para que o CAM possa tratá-los separadamente.</value>
+  </data>
+  <data name="Advanced_DxfExportGroup" xml:space="preserve">
+    <value>Exportação DXF</value>
+  </data>
+  <data name="Advanced_Inches" xml:space="preserve">
+    <value>Polegadas</value>
+  </data>
+  <data name="Advanced_MaterialTarget" xml:space="preserve">
+    <value>Meta de aproveitamento (%):</value>
+  </data>
+  <data name="Advanced_MaterialTargetTip" xml:space="preserve">
+    <value>Entrega o encaixe assim que as peças usam esta parte da chapa, sem gastar o resto do tempo. A área das peças é medida contra as chapas usadas, menos o retalho que o SheetNest corta da última chapa; com a opção de retalho desligada, cada chapa conta inteira. 0 desliga.</value>
+  </data>
+  <data name="Advanced_MaxClusterParts" xml:space="preserve">
+    <value>Máx. peças por grupo:</value>
+  </data>
+  <data name="Advanced_MaxClusterPartsTip" xml:space="preserve">
+    <value>Número máximo fixo de peças em um grupo de corte comum (2 a 500).</value>
+  </data>
+  <data name="Advanced_MergeLines" xml:space="preserve">
+    <value>Unir linhas de corte coincidentes</value>
+  </data>
+  <data name="Advanced_MergeLinesTip" xml:space="preserve">
+    <value>Opção de exportação legada para geometria comum: combina entidades DXF coincidentes. A saída de corte comum resolve seu único corte central separadamente antes da exportação.</value>
+  </data>
+  <data name="Advanced_Millimeters" xml:space="preserve">
+    <value>Milímetros</value>
+  </data>
+  <data name="Advanced_NestingGroup" xml:space="preserve">
+    <value>Encaixe</value>
+  </data>
+  <data name="Advanced_PartSpacingFormat" xml:space="preserve">
+    <value>Espaçamento das peças ({0}):</value>
+  </data>
+  <data name="Advanced_PartSpacingTip" xml:space="preserve">
+    <value>Espaçamento padrão entre peças comuns (unidades de desenho). Editar peça pode alterá-lo para cada peça; os posicionamentos com corte comum usam a folga separada abaixo.</value>
+  </data>
+  <data name="Advanced_ResetCluster" xml:space="preserve">
+    <value>Redefinir</value>
+  </data>
+  <data name="Advanced_ResetClusterTip" xml:space="preserve">
+    <value>Volta ao tamanho automático dos grupos de corte comum.</value>
+  </data>
+  <data name="Advanced_ResetGap" xml:space="preserve">
+    <value>Redefinir</value>
+  </data>
+  <data name="Advanced_ResetGapTip" xml:space="preserve">
+    <value>Restaura a folga comum de fábrica.</value>
+  </data>
+  <data name="Advanced_Rotations90" xml:space="preserve">
+    <value>Passos de 90°</value>
+  </data>
+  <data name="Advanced_SecondsPerSheet" xml:space="preserve">
+    <value>Tempo por chapa (s):</value>
+  </data>
+  <data name="Advanced_SecondsPerSheetTip" xml:space="preserve">
+    <value>Limite de tempo por chapa: o encaixe tem estes segundos para cada chapa que o trabalho deve usar, busca pelo relógio e entrega o melhor que encontrou, então duas execuções podem sair um pouco diferentes. Os cortes compartilhados que não deu tempo de planejar são cortados com espaçamento normal. 0 = sem limite: o encaixe para ao atingir a meta de aproveitamento, quando deixa de melhorar ou quando você clica em Parar.</value>
+  </data>
+  <data name="Advanced_SheetEdgeMarginFormat" xml:space="preserve">
+    <value>Margem da borda ({0}):</value>
+  </data>
+  <data name="Advanced_SheetEdgeMarginTip" xml:space="preserve">
+    <value>Borda livre mantida entre cada peça e a borda da chapa.</value>
+  </data>
+  <data name="Advanced_Title" xml:space="preserve">
+    <value>Configurações avançadas</value>
+  </data>
+  <data name="Advanced_Units" xml:space="preserve">
+    <value>Unidades:</value>
+  </data>
+  <data name="Advanced_UnitsTip" xml:space="preserve">
+    <value>Unidades de desenho para peças, chapas, espaçamento e margens. Use as mesmas unidades em que seus arquivos DXF foram desenhados; a folga comum física é convertida automaticamente.</value>
+  </data>
+  <data name="App_FileType3D" xml:space="preserve">
+    <value>  Chapa metálica 3D (*.step, *.stp, *.iges, *.igs)</value>
+  </data>
+  <data name="App_FileTypeDxf" xml:space="preserve">
+    <value>  AutoCad Drawing Exchange Format (*.dxf) e </value>
+  </data>
+  <data name="App_FileTypePolygon" xml:space="preserve">
+    <value>  Polígono DeepNest (*.dnpoly).</value>
+  </data>
+  <data name="App_FileTypeProject" xml:space="preserve">
+    <value>  Projeto DeepNest (*.dnest)</value>
+  </data>
+  <data name="App_FileTypeResult" xml:space="preserve">
+    <value>  Resultado DeepNest (*.dnr)</value>
+  </data>
+  <data name="App_FileTypeSheetPlacement" xml:space="preserve">
+    <value>  Posicionamento de chapa DeepNest (*.dnsp)</value>
+  </data>
+  <data name="App_MsgFilesSupported" xml:space="preserve">
+    <value>Os arquivos compatíveis são: </value>
+  </data>
+  <data name="App_MsgUnableToLoadFormat" xml:space="preserve">
+    <value>Não foi possível carregar {0}</value>
+  </data>
+  <data name="Card_NameFormat" xml:space="preserve">
+    <value>Encaixe {0}</value>
+  </data>
+  <data name="Common_Cancel" xml:space="preserve">
+    <value>Cancelar</value>
+  </data>
+  <data name="Common_Close" xml:space="preserve">
+    <value>Fechar</value>
+  </data>
+  <data name="Common_Edit" xml:space="preserve">
+    <value>Editar</value>
+  </data>
+  <data name="Common_OK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Common_Remove" xml:space="preserve">
+    <value>Remover</value>
+  </data>
+  <data name="Crash_CopyDetails" xml:space="preserve">
+    <value>Copiar detalhes</value>
+  </data>
+  <data name="Crash_Header" xml:space="preserve">
+    <value>O SheetNest encontrou um problema.</value>
+  </data>
+  <data name="Crash_LogNotWritten" xml:space="preserve">
+    <value>(não foi possível gravar o log)</value>
+  </data>
+  <data name="Crash_MsgBrowserFailed" xml:space="preserve">
+    <value>Não foi possível abrir o navegador. Use 'Copiar detalhes' e cole em uma nova issue em github.com/ManuelMRosa/SheetNest/issues.</value>
+  </data>
+  <data name="Crash_ReportHint" xml:space="preserve">
+    <value>Relatar isto ajuda a corrigir. O botão abaixo abre seu navegador com uma issue do GitHub já preenchida: lá você pode revisar tudo, e NADA é enviado a menos que você mesmo envie.</value>
+  </data>
+  <data name="Crash_ReportOnGitHub" xml:space="preserve">
+    <value>Relatar no GitHub</value>
+  </data>
+  <data name="Crash_SavedTo" xml:space="preserve">
+    <value>Um relatório de falha foi salvo em:</value>
+  </data>
+  <data name="Crash_Title" xml:space="preserve">
+    <value>SheetNest - Relatório de problema</value>
+  </data>
+  <data name="Dxf_LayerFormat" xml:space="preserve">
+    <value>na camada {0}</value>
+  </data>
+  <data name="Dxf_LayersFormat" xml:space="preserve">
+    <value>nas camadas {0}</value>
+  </data>
+  <data name="Dxf_MsgBadSplineFormat" xml:space="preserve">
+    <value>Este desenho contém um SPLINE cujos {0} pontos de controle e {1} nós não descrevem uma curva. Converta-o em polilinha e importe de novo.</value>
+  </data>
+  <data name="Dxf_MsgBlockReference" xml:space="preserve">
+    <value>Este arquivo não é compatível com o SheetNest: sua geometria está desenhada como um bloco (uma referência de bloco). Abra-o no seu programa de CAD, exploda os blocos e salve o DXF novamente.</value>
+  </data>
+  <data name="Dxf_MsgNoGeometryFormat" xml:space="preserve">
+    <value>'{0}' não tem geometria para encaixar: contém apenas texto, cotas ou outras anotações.</value>
+  </data>
+  <data name="Dxf_MsgOpenLineFormat" xml:space="preserve">
+    <value>'{0}' tem uma linha aberta {1}. Toda linha que é cortada precisa fechar uma figura, e esta não fecha. Apague-a, ou desenhe-a em amarelo para que ela seja gravada na peça em vez disso.</value>
+  </data>
+  <data name="Dxf_MsgOpenLinesFormat" xml:space="preserve">
+    <value>'{0}' tem {1} linhas abertas {2}. Toda linha que é cortada precisa fechar uma figura, e estas não fecham. Apague-as, ou desenhe-as em amarelo para que elas sejam gravadas na peça em vez disso.</value>
+  </data>
+  <data name="Dxf_MsgUnmeasurableFormat" xml:space="preserve">
+    <value>Este desenho contém um {0}, que o SheetNest não consegue medir. Exploda-o ou redesenhe-o como linhas, arcos, polilinhas, elipses ou splines e importe de novo.</value>
+  </data>
+  <data name="EditPart_CommonCutting" xml:space="preserve">
+    <value>Corte comum:</value>
+  </data>
+  <data name="EditPart_CommonCuttingNone" xml:space="preserve">
+    <value>Nenhum</value>
+  </data>
+  <data name="EditPart_CommonCuttingSamePart" xml:space="preserve">
+    <value>Mesma peça</value>
+  </data>
+  <data name="EditPart_CommonCuttingTip" xml:space="preserve">
+    <value>Com quem esta peça pode compartilhar uma aresta de corte. As arestas completas ficam na Folga comum configurada e são exportadas como um perímetro de grupo mais um corte comum pelo meio. O espaçamento da peça continua valendo em todo o resto. Alterar esta opção ativa explicitamente o corte comum para esta peça.</value>
+  </data>
+  <data name="EditPart_CommonCuttingUnrestricted" xml:space="preserve">
+    <value>Sem restrição (peças compatíveis)</value>
+  </data>
+  <data name="EditPart_Extra" xml:space="preserve">
+    <value>Extra:</value>
+  </data>
+  <data name="EditPart_ExtraTip" xml:space="preserve">
+    <value>Peças de reserva encaixadas além da quantidade necessária (por exemplo, caso uma seja refugada).</value>
+  </data>
+  <data name="EditPart_InDrawingUnits" xml:space="preserve">
+    <value>nas unidades do desenho</value>
+  </data>
+  <data name="EditPart_KFactor" xml:space="preserve">
+    <value>Fator K:</value>
+  </data>
+  <data name="EditPart_KFactorTip" xml:space="preserve">
+    <value>Fator K da compensação de dobra. Alterá-lo redesdobra esta peça com o FreeCAD (o comprimento desenvolvido muda).</value>
+  </data>
+  <data name="EditPart_LegacyCommonCuttingHint" xml:space="preserve">
+    <value>Um modo de corte comum legado salvo está inativo. Escolha um modo para confirmá-lo nesta peça DXF/STEP direta.</value>
+  </data>
+  <data name="EditPart_Mirrored" xml:space="preserve">
+    <value>Espelhadas:</value>
+  </data>
+  <data name="EditPart_MirroredTip" xml:space="preserve">
+    <value>Cópias encaixadas ESPELHADAS (invertidas em X) além das quantidades acima, para pares esquerda/direita. O DXF exportado corta estas espelhadas.</value>
+  </data>
+  <data name="EditPart_NestedSheetWarningFormat" xml:space="preserve">
+    <value>⚠ Este DXF parece uma CHAPA ENCAIXADA COMPLETA ({0} formas dentro de um quadro de {1:0.#}×{2:0.#}), não uma única peça. O SheetNest importa cada DXF como UMA peça, e os vãos entre as formas internas vêm do desenho original. Em vez disso, exporte cada peça como seu próprio DXF.</value>
+  </data>
+  <data name="EditPart_NotAvailable" xml:space="preserve">
+    <value>n/d</value>
+  </data>
+  <data name="EditPart_Orientations" xml:space="preserve">
+    <value>Orientações permitidas:</value>
+  </data>
+  <data name="EditPart_OrientationsTip" xml:space="preserve">
+    <value>Rotações que o encaixe pode aplicar a ESTA peça (por exemplo, restringir pela direção do grão).</value>
+  </data>
+  <data name="EditPart_PartFile" xml:space="preserve">
+    <value>Arquivo da peça:</value>
+  </data>
+  <data name="EditPart_PartSpacing" xml:space="preserve">
+    <value>Espaçamento da peça:</value>
+  </data>
+  <data name="EditPart_PartSpacingTip" xml:space="preserve">
+    <value>Espaçamento que esta peça mantém das vizinhas com as quais NÃO pode compartilhar corte (unidades de desenho). Duas peças ficam a (espaçamentoA + espaçamentoB) / 2 de distância.</value>
+  </data>
+  <data name="EditPart_Priority" xml:space="preserve">
+    <value>Prioridade:</value>
+  </data>
+  <data name="EditPart_PriorityHigh" xml:space="preserve">
+    <value>Alta</value>
+  </data>
+  <data name="EditPart_PriorityHighest" xml:space="preserve">
+    <value>Máxima</value>
+  </data>
+  <data name="EditPart_PriorityLow" xml:space="preserve">
+    <value>Baixa</value>
+  </data>
+  <data name="EditPart_PriorityLowest" xml:space="preserve">
+    <value>Mínima</value>
+  </data>
+  <data name="EditPart_PriorityNormal" xml:space="preserve">
+    <value>Normal</value>
+  </data>
+  <data name="EditPart_PriorityTip" xml:space="preserve">
+    <value>1 = prioridade máxima. As peças de maior prioridade são encaixadas primeiro, então preenchem as primeiras chapas e nunca são as que ficam de fora quando o material acaba.</value>
+  </data>
+  <data name="EditPart_Quantity" xml:space="preserve">
+    <value>Quantidade</value>
+  </data>
+  <data name="EditPart_Required" xml:space="preserve">
+    <value>Necessárias:</value>
+  </data>
+  <data name="EditPart_RequiredTip" xml:space="preserve">
+    <value>Peças necessárias para o trabalho.</value>
+  </data>
+  <data name="EditPart_Settings" xml:space="preserve">
+    <value>Configurações</value>
+  </data>
+  <data name="EditPart_Standard" xml:space="preserve">
+    <value>Norma:</value>
+  </data>
+  <data name="EditPart_SymmetricShapeHint" xml:space="preserve">
+    <value>Detectada forma com simetria de rotação (círculo/quadrado): girá-la não pode melhorar o encaixe, então "Como desenhada" economiza a busca.</value>
+  </data>
+  <data name="EditPart_Thickness" xml:space="preserve">
+    <value>Espessura:</value>
+  </data>
+  <data name="EditPart_Title" xml:space="preserve">
+    <value>Editar peça</value>
+  </data>
+  <data name="EditPart_Unfold3DGroup" xml:space="preserve">
+    <value>Desdobramento 3D (chapa metálica)</value>
+  </data>
+  <data name="Engine_FallbackContourFormat" xml:space="preserve">
+    <value>o formato do contorno externo não é compatível com a geometria exata de corte comum</value>
+  </data>
+  <data name="Engine_FallbackTopology" xml:space="preserve">
+    <value>a topologia do grupo de corte comum era inválida</value>
+  </data>
+  <data name="Engine_MsgAddSheetSize" xml:space="preserve">
+    <value>Primeiro adicione um tamanho de chapa.</value>
+  </data>
+  <data name="Engine_MsgCancelled" xml:space="preserve">
+    <value>Cancelado.</value>
+  </data>
+  <data name="Engine_MsgCannotReadFormat" xml:space="preserve">
+    <value>Não foi possível ler {0}.</value>
+  </data>
+  <data name="Engine_MsgClusterChanged" xml:space="preserve">
+    <value>Um grupo de corte comum mudou depois do posicionamento final e foi rejeitado.</value>
+  </data>
+  <data name="Engine_MsgClusterFailedSheetValidation" xml:space="preserve">
+    <value>Um grupo de corte comum não passou na validação final da chapa.</value>
+  </data>
+  <data name="Engine_MsgClusterTopologyFormat" xml:space="preserve">
+    <value>Um grupo de corte comum não passou na validação final de topologia: {0}</value>
+  </data>
+  <data name="Engine_MsgCommonLineGapInvalid" xml:space="preserve">
+    <value>A Folga comum deve ser uma distância positiva e finita nas unidades de desenho ativas.</value>
+  </data>
+  <data name="Engine_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>Não foi possível iniciar o motor de encaixe: {0}</value>
+  </data>
+  <data name="Engine_MsgEngineNotFound" xml:space="preserve">
+    <value>O motor de encaixe (sparrow.exe) não foi encontrado.</value>
+  </data>
+  <data name="Engine_MsgGeometryToleranceInvalid" xml:space="preserve">
+    <value>GeometryTolerance deve ser finita, positiva e menor que a Folga comum.</value>
+  </data>
+  <data name="Engine_MsgNoPlacements" xml:space="preserve">
+    <value>O motor de encaixe não retornou nenhum posicionamento.</value>
+  </data>
+  <data name="Engine_MsgNoPlacementsFormat" xml:space="preserve">
+    <value>O motor de encaixe não retornou nenhum posicionamento: {0}</value>
+  </data>
+  <data name="Engine_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} não contém nenhuma figura que possa ser encaixada.</value>
+  </data>
+  <data name="Engine_MsgNoSolution" xml:space="preserve">
+    <value>O motor de encaixe não produziu nenhuma solução.</value>
+  </data>
+  <data name="Engine_MsgNoSolutionExitFormat" xml:space="preserve">
+    <value>O motor de encaixe não produziu nenhuma solução (código de saída {0}).</value>
+  </data>
+  <data name="Engine_MsgNoSolutionFormat" xml:space="preserve">
+    <value>O motor de encaixe não produziu nenhuma solução: {0}</value>
+  </data>
+  <data name="Engine_MsgTimedOut" xml:space="preserve">
+    <value>O motor de encaixe excedeu o tempo limite.</value>
+  </data>
+  <data name="Export_DxfFilter" xml:space="preserve">
+    <value>Arquivos DXF (*.dxf)|*.dxf</value>
+  </data>
+  <data name="Export_MsgCommonLineArcSweep" xml:space="preserve">
+    <value>COMMON_LINE contém ângulos de ARC cuja varredura não é finita.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArc" xml:space="preserve">
+    <value>COMMON_LINE contém um ARC de comprimento zero ou inválido.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadArcValues" xml:space="preserve">
+    <value>COMMON_LINE contém um centro, raio ou ângulo de ARC não finito.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCircle" xml:space="preserve">
+    <value>COMMON_LINE contém um CIRCLE não finito, de comprimento zero ou inválido.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadCurve" xml:space="preserve">
+    <value>COMMON_LINE contém uma curva exata inválida ou não suportada.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadLine" xml:space="preserve">
+    <value>COMMON_LINE contém uma entidade LINE não finita, de comprimento zero ou minúscula.</value>
+  </data>
+  <data name="Export_MsgCommonLineBadPolylineSegment" xml:space="preserve">
+    <value>COMMON_LINE contém um segmento de LWPOLYLINE inválido ou minúsculo.</value>
+  </data>
+  <data name="Export_MsgCommonLineDegeneratePolyline" xml:space="preserve">
+    <value>COMMON_LINE contém uma LWPOLYLINE degenerada.</value>
+  </data>
+  <data name="Export_MsgCommonLineOtherEntity" xml:space="preserve">
+    <value>COMMON_LINE contém uma entidade que não é LINE, LWPOLYLINE circular, ARC nem CIRCLE.</value>
+  </data>
+  <data name="Export_MsgCommonLineTinySegment" xml:space="preserve">
+    <value>COMMON_LINE contém um segmento de comprimento zero ou minúsculo.</value>
+  </data>
+  <data name="Export_MsgContourNotRebuilt" xml:space="preserve">
+    <value>Não foi possível reconstruir um contorno DXF para a exportação de corte comum.</value>
+  </data>
+  <data name="Export_MsgCutInnerOpenCluster" xml:space="preserve">
+    <value>CUT_INNER contém um contorno de grupo aberto ou degenerado.</value>
+  </data>
+  <data name="Export_MsgCutOuterOpenCluster" xml:space="preserve">
+    <value>CUT_OUTER contém um contorno de grupo aberto ou degenerado.</value>
+  </data>
+  <data name="Export_MsgCutOuterSelfIntersecting" xml:space="preserve">
+    <value>CUT_OUTER contém um contorno que cruza a si mesmo.</value>
+  </data>
+  <data name="Export_MsgEmptyContourFormat" xml:space="preserve">
+    <value>{0} contém um contorno vazio.</value>
+  </data>
+  <data name="Export_MsgInvalidCutEntityFormat" xml:space="preserve">
+    <value>{0} contém uma entidade aberta, não finita, minúscula ou inválida por outro motivo.</value>
+  </data>
+  <data name="Export_MsgNotClosedFormat" xml:space="preserve">
+    <value>{0} contém geometria que não está completamente fechada.</value>
+  </data>
+  <data name="Export_MsgNotRebuiltClosedFormat" xml:space="preserve">
+    <value>Não foi possível reconstruir {0} como um contorno fechado.</value>
+  </data>
+  <data name="Export_MsgOuterSourceUnsupportedFormat" xml:space="preserve">
+    <value>A peça {0} tem geometria externa de origem que o grupo de corte comum não consegue preservar com exatidão.</value>
+  </data>
+  <data name="Export_MsgSourceChangedFormat" xml:space="preserve">
+    <value>O DXF de origem '{0}' mudou durante a exportação de corte comum; a exportação foi cancelada.</value>
+  </data>
+  <data name="Export_MsgSourceNotLoadedForCommonLineFormat" xml:space="preserve">
+    <value>Não foi possível carregar o arquivo {0} para a exportação validada de corte comum.</value>
+  </data>
+  <data name="Export_MsgSourceNotLoadedFormat" xml:space="preserve">
+    <value>Não foi possível carregar o arquivo {0}. Na exportação, por precisão, são usados os arquivos originais que geraram o encaixe, em vez das cópias giradas e manipuladas, talvez muitas vezes, durante o encaixe, o que poderia degradar sua exatidão. Seria possível carregar e guardar os arquivos originais, mas isso daria algum trabalho...</value>
+  </data>
+  <data name="Export_MsgSourceUnavailableFormat" xml:space="preserve">
+    <value>O DXF de origem '{0}' mudou ou deixou de estar disponível durante a exportação de corte comum.</value>
+  </data>
+  <data name="Export_MsgUnsupportedEntityFormat" xml:space="preserve">
+    <value>tipo de entidade não suportado: {0}</value>
+  </data>
+  <data name="Files_PartFilter" xml:space="preserve">
+    <value>AutoCad Drawing Exchange Format (*.dxf)|*.dxf|Polígono DeepNest (*.dnpoly)|*.dnpoly|Todos os arquivos (*.*)|*.*</value>
+  </data>
+  <data name="Files_ProjectFilter" xml:space="preserve">
+    <value>Projetos DeepNest (*.dnest)|*.dnest|Json (*.json)|*.json|Todos os arquivos (*.*)|*.*</value>
+  </data>
+  <data name="Import3D_File" xml:space="preserve">
+    <value>Arquivo</value>
+  </data>
+  <data name="Import3D_Inches" xml:space="preserve">
+    <value>Polegadas (desmarque para milímetros)</value>
+  </data>
+  <data name="Import3D_InchesTip" xml:space="preserve">
+    <value>Unidade que suas chapas/desenhos usam; a peça planificada é convertida para esta unidade.</value>
+  </data>
+  <data name="Import3D_Intro" xml:space="preserve">
+    <value>Ajuste o fator K da compensação de dobra conforme seu material/máquina e depois desdobre.</value>
+  </data>
+  <data name="Import3D_KFactor" xml:space="preserve">
+    <value>Fator K</value>
+  </data>
+  <data name="Import3D_KFactorTip" xml:space="preserve">
+    <value>Fator K da compensação de dobra. Calibre para que o comprimento desdobrado coincida com sua peça planificada real (típico: 0.3–0.5).</value>
+  </data>
+  <data name="Import3D_NotDetected" xml:space="preserve">
+    <value>Não detectada</value>
+  </data>
+  <data name="Import3D_PartsDetected" xml:space="preserve">
+    <value>Peças detectadas</value>
+  </data>
+  <data name="Import3D_Thickness" xml:space="preserve">
+    <value>Espessura</value>
+  </data>
+  <data name="Import3D_ThicknessVariesFormat" xml:space="preserve">
+    <value>varia ({0}–{1} {2})</value>
+  </data>
+  <data name="Import3D_Title" xml:space="preserve">
+    <value>Importar 3D: opções de desdobramento</value>
+  </data>
+  <data name="Import3D_UnfoldAndAdd" xml:space="preserve">
+    <value>Desdobrar</value>
+  </data>
+  <data name="Import3D_Units" xml:space="preserve">
+    <value>Unidades</value>
+  </data>
+  <data name="Main_AddPart" xml:space="preserve">
+    <value>+ Adicionar peça</value>
+  </data>
+  <data name="Main_AddPartTip" xml:space="preserve">
+    <value>Adiciona uma peça para encaixar (DXF).</value>
+  </data>
+  <data name="Main_AddSheet" xml:space="preserve">
+    <value>+ Adicionar chapa</value>
+  </data>
+  <data name="Main_AddSheetTip" xml:space="preserve">
+    <value>Adiciona uma chapa ao estoque: escolha um tamanho padrão ou digite um personalizado</value>
+  </data>
+  <data name="Main_AvailableFormat" xml:space="preserve">
+    <value>Disponíveis: {0}</value>
+  </data>
+  <data name="Main_Cancel" xml:space="preserve">
+    <value>■  Cancelar</value>
+  </data>
+  <data name="Main_Cancelling" xml:space="preserve">
+    <value>Cancelando…</value>
+  </data>
+  <data name="Main_CancelTip" xml:space="preserve">
+    <value>Cancela o encaixe em andamento; nada é mantido</value>
+  </data>
+  <data name="Main_Clearances" xml:space="preserve">
+    <value>Folgas</value>
+  </data>
+  <data name="Main_ClearResult" xml:space="preserve">
+    <value>Limpar resultado</value>
+  </data>
+  <data name="Main_ClearResultTip" xml:space="preserve">
+    <value>Descarta o resultado do encaixe e devolve ao estoque as chapas que ele usou</value>
+  </data>
+  <data name="Main_Color" xml:space="preserve">
+    <value>Cor</value>
+  </data>
+  <data name="Main_ColorTip" xml:space="preserve">
+    <value>Cor com que a peça selecionada é desenhada</value>
+  </data>
+  <data name="Main_CustomSize" xml:space="preserve">
+    <value>Tamanho personalizado…</value>
+  </data>
+  <data name="Main_DrawingsKept_One" xml:space="preserve">
+    <value>, {0} desenho mantido com espaçamento normal</value>
+  </data>
+  <data name="Main_DrawingsKept_Other" xml:space="preserve">
+    <value>, {0} desenhos mantidos com espaçamento normal</value>
+  </data>
+  <data name="Main_EditPartTip" xml:space="preserve">
+    <value>Edita a peça selecionada (quantidade, orientações, prioridade)</value>
+  </data>
+  <data name="Main_EditSheetTip" xml:space="preserve">
+    <value>Edita a chapa selecionada (tamanho e quantidade)</value>
+  </data>
+  <data name="Main_Export" xml:space="preserve">
+    <value>Exportar</value>
+  </data>
+  <data name="Main_ExportTip" xml:space="preserve">
+    <value>Exporta para DXF o resultado de encaixe selecionado</value>
+  </data>
+  <data name="Main_FallbackRowFormat" xml:space="preserve">
+    <value>    {0}: {1}</value>
+  </data>
+  <data name="Main_GivenUpFormat" xml:space="preserve">
+    <value>, {0} descartados</value>
+  </data>
+  <data name="Main_Import3DDialogTitle" xml:space="preserve">
+    <value>Importar 3D (STEP / IGES)</value>
+  </data>
+  <data name="Main_ImportedParts_One" xml:space="preserve">
+    <value>{0} peça importada.</value>
+  </data>
+  <data name="Main_ImportedParts_Other" xml:space="preserve">
+    <value>{0} peças importadas.</value>
+  </data>
+  <data name="Main_MySheets" xml:space="preserve">
+    <value>Minhas chapas</value>
+  </data>
+  <data name="Main_Nest" xml:space="preserve">
+    <value>▶  ENCAIXAR</value>
+  </data>
+  <data name="Main_NestCancelled" xml:space="preserve">
+    <value>Encaixe cancelado</value>
+  </data>
+  <data name="Main_NestedFormat" xml:space="preserve">
+    <value>Encaixadas: {0}</value>
+  </data>
+  <data name="Main_NestedInFormat" xml:space="preserve">
+    <value>Encaixado em {0}{1}</value>
+  </data>
+  <data name="Main_NestBestSoFarFormat" xml:space="preserve">
+    <value>  ·  meta {0} %, melhor até agora {1} %</value>
+  </data>
+  <data name="Main_NestingFormat" xml:space="preserve">
+    <value>Encaixando…  {0}</value>
+  </data>
+  <data name="Main_NestingOfFormat" xml:space="preserve">
+    <value>Encaixando…  {0} de {1}</value>
+  </data>
+  <data name="Main_NestingLimitFormat" xml:space="preserve">
+    <value>Encaixando…  {0} de {1}  ·  rodada {2}</value>
+  </data>
+  <data name="Main_NestingRoundFormat" xml:space="preserve">
+    <value>Encaixando…  {0}  ·  rodada {1}</value>
+  </data>
+  <data name="Main_NestOverLimitFormat" xml:space="preserve">
+    <value>  ·  passou do limite de {0}</value>
+  </data>
+  <data name="Main_NestStopped" xml:space="preserve">
+    <value>  ·  parado</value>
+  </data>
+  <data name="Main_NestRounds_One" xml:space="preserve">
+    <value>  ·  {0} rodada</value>
+  </data>
+  <data name="Main_NestRounds_Other" xml:space="preserve">
+    <value>  ·  melhor de {0} rodadas: rodada {1}</value>
+  </data>
+  <data name="Main_NestTargetReachedFormat" xml:space="preserve">
+    <value>  ·  meta de {0} % atingida ({1} %)</value>
+  </data>
+  <data name="Main_NestReport" xml:space="preserve">
+    <value>Relatório de encaixe</value>
+  </data>
+  <data name="Main_NestReportTip" xml:space="preserve">
+    <value>Salva um relatório de encaixe em PDF: uma página por layout, com a chapa desenhada em escala, sua lista de peças e seu aproveitamento</value>
+  </data>
+  <data name="Main_NestsEmpty" xml:space="preserve">
+    <value>Execute um encaixe para ver os layouts dele aqui.</value>
+  </data>
+  <data name="Main_NestsTab" xml:space="preserve">
+    <value>Encaixes</value>
+  </data>
+  <data name="Main_NestTip" xml:space="preserve">
+    <value>Executa o encaixe.</value>
+  </data>
+  <data name="Main_NetAreaFormat" xml:space="preserve">
+    <value>área líquida {0:0.0}</value>
+  </data>
+  <data name="Main_New" xml:space="preserve">
+    <value>Novo</value>
+  </data>
+  <data name="Main_NewTip" xml:space="preserve">
+    <value>Inicia um novo projeto de encaixe</value>
+  </data>
+  <data name="Main_Open" xml:space="preserve">
+    <value>Abrir</value>
+  </data>
+  <data name="Main_OpenTip" xml:space="preserve">
+    <value>Abre um projeto existente</value>
+  </data>
+  <data name="Main_PaletteSwatchFormat" xml:space="preserve">
+    <value>Peça {0}</value>
+  </data>
+  <data name="Main_PartColour" xml:space="preserve">
+    <value>Cor da peça</value>
+  </data>
+  <data name="Main_PartsTab" xml:space="preserve">
+    <value>Peças</value>
+  </data>
+  <data name="Main_PdfFilter" xml:space="preserve">
+    <value>Arquivos PDF (*.pdf)|*.pdf</value>
+  </data>
+  <data name="Main_QuantityFormat" xml:space="preserve">
+    <value>Quantidade: {0}</value>
+  </data>
+  <data name="Main_QuantityUnlimited" xml:space="preserve">
+    <value>Quantidade: ilimitada</value>
+  </data>
+  <data name="Main_RecoverUnsavedName" xml:space="preserve">
+    <value>um projeto não salvo</value>
+  </data>
+  <data name="Main_RecoverWhenFormat" xml:space="preserve">
+    <value> (salvo automaticamente em {0})</value>
+  </data>
+  <data name="Main_RemainingFormat" xml:space="preserve">
+    <value>Faltam: {0}</value>
+  </data>
+  <data name="Main_RemoveFromMySheets" xml:space="preserve">
+    <value>Remover de minhas chapas</value>
+  </data>
+  <data name="Main_RemovePartTip" xml:space="preserve">
+    <value>Remove a peça selecionada</value>
+  </data>
+  <data name="Main_RemoveSheetTip" xml:space="preserve">
+    <value>Remove a chapa selecionada</value>
+  </data>
+  <data name="Main_ReportFileName" xml:space="preserve">
+    <value>relatório de encaixe.pdf</value>
+  </data>
+  <data name="Main_ReportSheetName" xml:space="preserve">
+    <value>Chapa</value>
+  </data>
+  <data name="Main_RequiredFormat" xml:space="preserve">
+    <value>Necessárias: {0}</value>
+  </data>
+  <data name="Main_SaveReportTitle" xml:space="preserve">
+    <value>Salvar relatório de encaixe</value>
+  </data>
+  <data name="Main_SharedCuts_One" xml:space="preserve">
+    <value>  ·  {0} corte compartilhado</value>
+  </data>
+  <data name="Main_SharedCuts_Other" xml:space="preserve">
+    <value>  ·  {0} cortes compartilhados</value>
+  </data>
+  <data name="Main_SheetCardTip" xml:space="preserve">
+    <value>Tamanho da chapa, largura × altura (largura = o lado maior). Clique duas vezes ou use Editar para alterá-lo</value>
+  </data>
+  <data name="Main_SheetEdgeMargin" xml:space="preserve">
+    <value>Margem da borda da chapa</value>
+  </data>
+  <data name="Main_SheetEdgeMarginTip" xml:space="preserve">
+    <value>Borda vazia mantida livre ao redor da chapa (nas unidades do desenho).</value>
+  </data>
+  <data name="Main_SheetsFormat" xml:space="preserve">
+    <value>Chapas: {0}</value>
+  </data>
+  <data name="Main_SheetsHint" xml:space="preserve">
+    <value>largura = lado maior · todas as chapas da lista participam; em cada chapa é cortado o tamanho que melhor a preenche · marque Ilimitada em um tamanho e o trabalho usa quantas precisar</value>
+  </data>
+  <data name="Main_SheetsTab" xml:space="preserve">
+    <value>Chapas</value>
+  </data>
+  <data name="Main_SizeFormat" xml:space="preserve">
+    <value>Tamanho: {0}</value>
+  </data>
+  <data name="Main_SkippedSolids_One" xml:space="preserve">
+    <value>{0} sólido foi ignorado (não reconhecido como chapa metálica).</value>
+  </data>
+  <data name="Main_SkippedSolids_Other" xml:space="preserve">
+    <value>{0} sólidos foram ignorados (não reconhecidos como chapa metálica).</value>
+  </data>
+  <data name="Main_StatusPlaced" xml:space="preserve">
+    <value>Posicionadas:</value>
+  </data>
+  <data name="Main_StatusSheets" xml:space="preserve">
+    <value>Chapas:</value>
+  </data>
+  <data name="Main_StatusUnplaced" xml:space="preserve">
+    <value>Não posicionadas:</value>
+  </data>
+  <data name="Main_StatusUtilization" xml:space="preserve">
+    <value>Aproveitamento:</value>
+  </data>
+  <data name="Main_Stop" xml:space="preserve">
+    <value>■  Parar</value>
+  </data>
+  <data name="Main_Stopping" xml:space="preserve">
+    <value>Parando…</value>
+  </data>
+  <data name="Main_StopTip" xml:space="preserve">
+    <value>Encerra o encaixe e mantém o melhor encontrado até agora</value>
+  </data>
+  <data name="Main_UnfitBothFormat" xml:space="preserve">
+    <value>, {0} por sobreposição com outra peça e {1} por estar dentro da margem da borda da chapa</value>
+  </data>
+  <data name="Main_UnfitInMargin" xml:space="preserve">
+    <value>, por estar dentro da margem da borda da chapa</value>
+  </data>
+  <data name="Main_UnfitOverlapping" xml:space="preserve">
+    <value>, por sobreposição com outra peça</value>
+  </data>
+  <data name="Main_UnfitParts_One" xml:space="preserve">
+    <value>{0} peça</value>
+  </data>
+  <data name="Main_UnfitParts_Other" xml:space="preserve">
+    <value>{0} peças</value>
+  </data>
+  <data name="Main_UpdateAvailableFormat" xml:space="preserve">
+    <value>Atualização disponível: {0}</value>
+  </data>
+  <data name="Main_UpdateNoticeTip" xml:space="preserve">
+    <value>Há uma versão mais nova do SheetNest. Clique para abrir a página de download.</value>
+  </data>
+  <data name="Main_UsedFormat" xml:space="preserve">
+    <value>Usadas: {0}</value>
+  </data>
+  <data name="Main_UtilizationFormat" xml:space="preserve">
+    <value>Aproveitamento: {0}</value>
+  </data>
+  <data name="Menu_About" xml:space="preserve">
+    <value>Sobre</value>
+  </data>
+  <data name="Menu_AdvancedSettings" xml:space="preserve">
+    <value>Configurações avançadas...</value>
+  </data>
+  <data name="Menu_CheckUpdates" xml:space="preserve">
+    <value>Verificar atualizações...</value>
+  </data>
+  <data name="Menu_Exit" xml:space="preserve">
+    <value>Sair</value>
+  </data>
+  <data name="Menu_File" xml:space="preserve">
+    <value>_Arquivo</value>
+  </data>
+  <data name="Menu_Help" xml:space="preserve">
+    <value>A_juda</value>
+  </data>
+  <data name="Menu_Import3D" xml:space="preserve">
+    <value>Importar 3D (STEP / IGES)...</value>
+  </data>
+  <data name="Menu_Language" xml:space="preserve">
+    <value>Idioma</value>
+  </data>
+  <data name="Menu_LanguageAutomatic" xml:space="preserve">
+    <value>Automático (Windows)</value>
+  </data>
+  <data name="Menu_NewProject" xml:space="preserve">
+    <value>Novo projeto</value>
+  </data>
+  <data name="Menu_Offcut" xml:space="preserve">
+    <value>Retalho...</value>
+  </data>
+  <data name="Menu_OpenProject" xml:space="preserve">
+    <value>Abrir projeto...</value>
+  </data>
+  <data name="Menu_RecentEmpty" xml:space="preserve">
+    <value>(vazio)</value>
+  </data>
+  <data name="Menu_RecentProjects" xml:space="preserve">
+    <value>Projetos recentes</value>
+  </data>
+  <data name="Menu_Save" xml:space="preserve">
+    <value>Salvar</value>
+  </data>
+  <data name="Menu_SaveAs" xml:space="preserve">
+    <value>Salvar como...</value>
+  </data>
+  <data name="Menu_SendFeedback" xml:space="preserve">
+    <value>Enviar comentários...</value>
+  </data>
+  <data name="Menu_SendFeedbackTip" xml:space="preserve">
+    <value>Abre uma issue do GitHub já preenchida para sugerir ideias ou relatar problemas</value>
+  </data>
+  <data name="Menu_Settings" xml:space="preserve">
+    <value>_Configurações</value>
+  </data>
+  <data name="Msg_AddPartsFirst" xml:space="preserve">
+    <value>Abra um projeto e adicione peças primeiro.</value>
+  </data>
+  <data name="Msg_AddSheetFirst" xml:space="preserve">
+    <value>Primeiro adicione pelo menos uma chapa na aba Chapas.</value>
+  </data>
+  <data name="Msg_AvailableSheets_One" xml:space="preserve">
+    <value>na {0} chapa disponível</value>
+  </data>
+  <data name="Msg_AvailableSheets_Other" xml:space="preserve">
+    <value>nas {0} chapas disponíveis</value>
+  </data>
+  <data name="Msg_CheckUpdatesTitle" xml:space="preserve">
+    <value>Verificar atualizações</value>
+  </data>
+  <data name="Msg_CommonLineSkippedFormat" xml:space="preserve">
+    <value>O corte comum não foi aplicado a:
+
+{0}
+
+Essas peças mantiveram o espaçamento normal.</value>
+  </data>
+  <data name="Msg_CommonLineTitle" xml:space="preserve">
+    <value>Corte comum</value>
+  </data>
+  <data name="Msg_EngineMissing" xml:space="preserve">
+    <value>O motor de encaixe (sparrow.exe) não foi encontrado. Ele vem junto com o aplicativo; reinstale ou defina a variável de ambiente SHEETNEST_SPARROW com o caminho dele.</value>
+  </data>
+  <data name="Msg_ExportTitle" xml:space="preserve">
+    <value>Exportar DXF</value>
+  </data>
+  <data name="Msg_FeedbackNoBrowser" xml:space="preserve">
+    <value>Não foi possível abrir o navegador. Você pode enviar comentários em:
+https://github.com/ManuelMRosa/SheetNest/issues</value>
+  </data>
+  <data name="Msg_Import3DTitle" xml:space="preserve">
+    <value>Importar 3D</value>
+  </data>
+  <data name="Msg_LanguageNextStart" xml:space="preserve">
+    <value>O idioma muda na próxima vez que o SheetNest for aberto.</value>
+  </data>
+  <data name="Msg_NestReportTitle" xml:space="preserve">
+    <value>Relatório de encaixe</value>
+  </data>
+  <data name="Msg_NestTitle" xml:space="preserve">
+    <value>Encaixe</value>
+  </data>
+  <data name="Msg_NoResult" xml:space="preserve">
+    <value>O encaixe não produziu nenhum resultado.</value>
+  </data>
+  <data name="Msg_NotEnoughSheetsTitle" xml:space="preserve">
+    <value>Chapas insuficientes</value>
+  </data>
+  <data name="Msg_NotReadyToCut_One" xml:space="preserve">
+    <value>{0} peça não está pronta para cortar:
+
+{1}
+
+Ela está desenhada em vermelho. Afaste-a em Editar encaixe e tente de novo.</value>
+  </data>
+  <data name="Msg_NotReadyToCut_Other" xml:space="preserve">
+    <value>{0} peças não estão prontas para cortar:
+
+{1}
+
+Elas estão desenhadas em vermelho. Afaste-as em Editar encaixe e tente de novo.</value>
+  </data>
+  <data name="Msg_PartsDidNotFit_One" xml:space="preserve">
+    <value>{0} peça não coube {1}.
+
+Aumente a quantidade de chapas na aba Chapas, marque Ilimitada em um tamanho ou adicione outra chapa, e faça o encaixe de novo.</value>
+  </data>
+  <data name="Msg_PartsDidNotFit_Other" xml:space="preserve">
+    <value>{0} peças não couberam {1}.
+
+Aumente a quantidade de chapas na aba Chapas, marque Ilimitada em um tamanho ou adicione outra chapa, e faça o encaixe de novo.</value>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_One" xml:space="preserve">
+    <value>{0} peça não cabe em nenhum dos tamanhos de chapa da aba Chapas.
+
+O limite não foi a quantidade de chapas: um dos tamanhos é ilimitado. A peça é maior que todas as chapas em que poderia ir, então adicione um tamanho de chapa maior (ou verifique o espaçamento e a margem da peça).</value>
+  </data>
+  <data name="Msg_PartsDoNotFitAnySize_Other" xml:space="preserve">
+    <value>{0} peças não cabem em nenhum dos tamanhos de chapa da aba Chapas.
+
+O limite não foi a quantidade de chapas: um dos tamanhos é ilimitado. A peça é maior que todas as chapas em que poderia ir, então adicione um tamanho de chapa maior (ou verifique o espaçamento e a margem da peça).</value>
+  </data>
+  <data name="Msg_PartsDoNotFitTitle" xml:space="preserve">
+    <value>As peças não cabem</value>
+  </data>
+  <data name="Msg_RecoverAutosave" xml:space="preserve">
+    <value>O SheetNest fechou inesperadamente com alterações não salvas em {0}{1}.
+
+Recuperar o projeto salvo automaticamente?</value>
+  </data>
+  <data name="Msg_RecoveryTitle" xml:space="preserve">
+    <value>Recuperação</value>
+  </data>
+  <data name="Msg_ReportWriteFailed" xml:space="preserve">
+    <value>Não foi possível gravar o relatório: {0}</value>
+  </data>
+  <data name="Msg_ResultExists" xml:space="preserve">
+    <value>Já existe um resultado de encaixe. Primeiro clique em Limpar resultado; ele devolve ao estoque as chapas que esse encaixe usou.</value>
+  </data>
+  <data name="Msg_ReunfoldTitle" xml:space="preserve">
+    <value>Desdobrar de novo</value>
+  </data>
+  <data name="Msg_SaveBeforeClosing" xml:space="preserve">
+    <value>Você tem um resultado de encaixe. Salvar o projeto antes de fechar?</value>
+  </data>
+  <data name="Msg_SelectResultForExport" xml:space="preserve">
+    <value>Primeiro execute um encaixe e selecione um resultado; depois exporte.</value>
+  </data>
+  <data name="Msg_SelectResultForReport" xml:space="preserve">
+    <value>Primeiro execute um encaixe e selecione um resultado; depois salve o relatório.</value>
+  </data>
+  <data name="Msg_SendFeedbackTitle" xml:space="preserve">
+    <value>Enviar comentários</value>
+  </data>
+  <data name="Msg_UpdateAvailableFormat" xml:space="preserve">
+    <value>O SheetNest {0} está disponível (você tem a {1}).
+
+Abrir a página de download?</value>
+  </data>
+  <data name="Msg_UpdateCheckFailed" xml:space="preserve">
+    <value>Não foi possível verificar atualizações. Verifique sua conexão com a internet.</value>
+  </data>
+  <data name="Msg_UpToDateFormat" xml:space="preserve">
+    <value>Você tem a versão mais recente (SheetNest {0}).</value>
+  </data>
+  <data name="Offcut_Auto" xml:space="preserve">
+    <value>Auto (melhor retalho)</value>
+  </data>
+  <data name="Offcut_AutoTip" xml:space="preserve">
+    <value>Compara Final, Lateral e Ambos com o layout que o encaixe produziu e fica com o que libera mais material.</value>
+  </data>
+  <data name="Offcut_Both" xml:space="preserve">
+    <value>Ambos (em L)</value>
+  </data>
+  <data name="Offcut_BothTip" xml:space="preserve">
+    <value>Quando o encaixe deixou espaço nos dois lados, a sobra sai como dois retângulos (cortes de guilhotina, então nenhum corte divide um retalho em dois).</value>
+  </data>
+  <data name="Offcut_EdgeOverlapFormat" xml:space="preserve">
+    <value>Passagem da borda ({0}):</value>
+  </data>
+  <data name="Offcut_EdgeOverlapTip" xml:space="preserve">
+    <value>Quanto o corte passa ALÉM da borda da chapa em cada extremidade, para que o retalho se solte em vez de ficar preso por uma ponte nos cantos. 0 = rente à borda.</value>
+  </data>
+  <data name="Offcut_Enable" xml:space="preserve">
+    <value>Separar a sobra como um retalho retangular</value>
+  </data>
+  <data name="Offcut_EnableTip" xml:space="preserve">
+    <value>Mede a área livre que o encaixe deixou na última chapa e adiciona uma linha de corte para que ela saia como um retângulo reaproveitável. Nunca move uma peça: quando isto é calculado o encaixe já terminou, então ativá-lo não pode mudar onde nada é posicionado.</value>
+  </data>
+  <data name="Offcut_End" xml:space="preserve">
+    <value>Final da chapa</value>
+  </data>
+  <data name="Offcut_EndTip" xml:space="preserve">
+    <value>Uma tira inteira no final do lado maior da chapa: o retalho clássico.</value>
+  </data>
+  <data name="Offcut_MaxXFormat" xml:space="preserve">
+    <value>Tamanho máximo em X ({0}):</value>
+  </data>
+  <data name="Offcut_MaxXTip" xml:space="preserve">
+    <value>Retalho mais largo que ainda vale a pena separar. Se for maior, já não é um retalho e sim quase uma chapa, então nada é cortado e a chapa fica inteira. 0 = sem limite.</value>
+  </data>
+  <data name="Offcut_MaxYFormat" xml:space="preserve">
+    <value>Tamanho máximo em Y ({0}):</value>
+  </data>
+  <data name="Offcut_MaxYTip" xml:space="preserve">
+    <value>Retalho mais alto que ainda vale a pena separar. 0 = sem limite.</value>
+  </data>
+  <data name="Offcut_MinXFormat" xml:space="preserve">
+    <value>Tamanho mínimo em X ({0}):</value>
+  </data>
+  <data name="Offcut_MinXTip" xml:space="preserve">
+    <value>Retalho mais estreito que vale a pena separar. Abaixo disso a chapa fica sem cortar. 0 = automático (5% do lado da chapa).</value>
+  </data>
+  <data name="Offcut_MinYFormat" xml:space="preserve">
+    <value>Tamanho mínimo em Y ({0}):</value>
+  </data>
+  <data name="Offcut_MinYTip" xml:space="preserve">
+    <value>Retalho mais curto que vale a pena separar. 0 = automático (5% do lado da chapa).</value>
+  </data>
+  <data name="Offcut_RemnantPosition" xml:space="preserve">
+    <value>Posição do retalho</value>
+  </data>
+  <data name="Offcut_ResetDefaults" xml:space="preserve">
+    <value>Restaurar padrões</value>
+  </data>
+  <data name="Offcut_ResetDefaultsTip" xml:space="preserve">
+    <value>Volta os seis números acima aos valores recomendados para as unidades deste desenho. A posição do retalho e a caixa de ativação não são alteradas.</value>
+  </data>
+  <data name="Offcut_Side" xml:space="preserve">
+    <value>Lateral da chapa</value>
+  </data>
+  <data name="Offcut_SideTip" xml:space="preserve">
+    <value>Uma tira inteira ao longo do lado menor da chapa.</value>
+  </data>
+  <data name="Offcut_SpacingFormat" xml:space="preserve">
+    <value>Espaçamento do retalho ({0}):</value>
+  </data>
+  <data name="Offcut_SpacingTip" xml:space="preserve">
+    <value>Espaçamento mantido entre as peças encaixadas e a linha de corte do retalho (unidades de desenho).</value>
+  </data>
+  <data name="Offcut_Title" xml:space="preserve">
+    <value>Retalho</value>
+  </data>
+  <data name="Part_CommonLine" xml:space="preserve">
+    <value>corte comum</value>
+  </data>
+  <data name="Part_CommonLineSamePart" xml:space="preserve">
+    <value>corte comum (mesma peça)</value>
+  </data>
+  <data name="Part_Rot45Steps" xml:space="preserve">
+    <value>passos de 45°</value>
+  </data>
+  <data name="Part_Rot4Way" xml:space="preserve">
+    <value>4 ângulos</value>
+  </data>
+  <data name="Part_Rot90Only" xml:space="preserve">
+    <value>só 90°</value>
+  </data>
+  <data name="Part_RotAsDrawn" xml:space="preserve">
+    <value>como desenhada</value>
+  </data>
+  <data name="Part_RotFree" xml:space="preserve">
+    <value>livre</value>
+  </data>
+  <data name="Part_RotJobDefault" xml:space="preserve">
+    <value>do trabalho</value>
+  </data>
+  <data name="Part_RotOther" xml:space="preserve">
+    <value>rot: outra</value>
+  </data>
+  <data name="Part_SpacingDefault" xml:space="preserve">
+    <value>espaçamento: padrão</value>
+  </data>
+  <data name="Part_SpacingFormat" xml:space="preserve">
+    <value>espaçamento {0:0.###}</value>
+  </data>
+  <data name="Project_AddPartTitle" xml:space="preserve">
+    <value>Adicionar peça</value>
+  </data>
+  <data name="Project_ErrorSavingTitle" xml:space="preserve">
+    <value>Erro ao salvar</value>
+  </data>
+  <data name="Project_FileMissingTitle" xml:space="preserve">
+    <value>Arquivo ausente</value>
+  </data>
+  <data name="Project_FileNotFoundTitle" xml:space="preserve">
+    <value>Arquivo não encontrado</value>
+  </data>
+  <data name="Project_Import3DTitle" xml:space="preserve">
+    <value>Importar 3D</value>
+  </data>
+  <data name="Project_MsgCannotUseFormat" xml:space="preserve">
+    <value>{0} não pode ser usado:</value>
+  </data>
+  <data name="Project_MsgFileNotFoundFormat" xml:space="preserve">
+    <value>Arquivo não encontrado: {0}.</value>
+  </data>
+  <data name="Project_MsgMixedSvgDxf" xml:space="preserve">
+    <value>Não é possível exportar quando as peças são uma mistura de SVG e DXF.</value>
+  </data>
+  <data name="Project_MsgNoShapeFormat" xml:space="preserve">
+    <value>{0} não contém nenhuma figura que possa ser encaixada.</value>
+  </data>
+  <data name="Project_MsgSaveChangesFormat" xml:space="preserve">
+    <value>Salvar as alterações do arquivo '{0}'?</value>
+  </data>
+  <data name="Project_MsgSaveResultFirst" xml:space="preserve">
+    <value>Você tem um resultado de encaixe. Salvar o projeto primeiro?</value>
+  </data>
+  <data name="Project_MsgUnableToLocateFormat" xml:space="preserve">
+    <value>Não foi possível localizar {0}.</value>
+  </data>
+  <data name="Project_MsgUseImport3D" xml:space="preserve">
+    <value>Para importar uma peça 3D use Arquivo &gt; Importar 3D (STEP / IGES)... Ele detecta a espessura da chapa e permite definir o fator K.</value>
+  </data>
+  <data name="Report_Date" xml:space="preserve">
+    <value>DATA</value>
+  </data>
+  <data name="Report_DateFormat" xml:space="preserve">
+    <value>ddd dd/MM/yyyy HH:mm:ss</value>
+  </data>
+  <data name="Report_DrawingName" xml:space="preserve">
+    <value>NOME DO DESENHO</value>
+  </data>
+  <data name="Report_ItemColumn" xml:space="preserve">
+    <value>Item</value>
+  </data>
+  <data name="Report_Layout" xml:space="preserve">
+    <value>LAYOUT</value>
+  </data>
+  <data name="Report_LayoutOfFormat" xml:space="preserve">
+    <value>{0} de {1}</value>
+  </data>
+  <data name="Report_MoreFormat" xml:space="preserve">
+    <value>     ... e mais {0}</value>
+  </data>
+  <data name="Report_NothingToReport" xml:space="preserve">
+    <value>Nada para relatar. Execute um encaixe primeiro.</value>
+  </data>
+  <data name="Report_NumberOfSheets" xml:space="preserve">
+    <value>NÚMERO DE CHAPAS</value>
+  </data>
+  <data name="Report_NumOffColumn" xml:space="preserve">
+    <value>Qtd.</value>
+  </data>
+  <data name="Report_PartNameColumn" xml:space="preserve">
+    <value>Nome da peça</value>
+  </data>
+  <data name="Report_PartsHeading" xml:space="preserve">
+    <value>LISTA DE PEÇAS DO ENCAIXE</value>
+  </data>
+  <data name="Report_PartsNotPlaced" xml:space="preserve">
+    <value>PEÇAS SEM ENCAIXE</value>
+  </data>
+  <data name="Report_SettingHeading" xml:space="preserve">
+    <value>DADOS DO ENCAIXE</value>
+  </data>
+  <data name="Report_SheetSize" xml:space="preserve">
+    <value>TAMANHO DA CHAPA</value>
+  </data>
+  <data name="Report_SheetUtilization" xml:space="preserve">
+    <value>APROVEITAMENTO</value>
+  </data>
+  <data name="Rotation_0And180Tip" xml:space="preserve">
+    <value>0° e 180°: respeita o grão do material, mas pode virar.</value>
+  </data>
+  <data name="Rotation_0And90Tip" xml:space="preserve">
+    <value>0° e 90° permitidos.</value>
+  </data>
+  <data name="Rotation_45Steps" xml:space="preserve">
+    <value>Passos 45°</value>
+  </data>
+  <data name="Rotation_45StepsTip" xml:space="preserve">
+    <value>Oito orientações, a 45° uma da outra. A configuração do trabalho também oferece isto, e sem esta opção aqui uma peça não poderia mostrar como estava realmente configurada.</value>
+  </data>
+  <data name="Rotation_4Way" xml:space="preserve">
+    <value>4 ângulos</value>
+  </data>
+  <data name="Rotation_4WayTip" xml:space="preserve">
+    <value>As quatro orientações em esquadro (0 / 90 / 180 / 270°). A primeira opção segura em peças quadradas e em forma de L: nelas costuma superar a rotação livre, e sempre custa menos para buscar.</value>
+  </data>
+  <data name="Rotation_90And270Tip" xml:space="preserve">
+    <value>90° e 270°: sempre girada, para um lado ou para o outro.</value>
+  </data>
+  <data name="Rotation_90Only" xml:space="preserve">
+    <value>Só 90°</value>
+  </data>
+  <data name="Rotation_90OnlyTip" xml:space="preserve">
+    <value>Só 90°, então a peça sempre é girada uma vez.</value>
+  </data>
+  <data name="Rotation_AsDrawn" xml:space="preserve">
+    <value>Como desenhada</value>
+  </data>
+  <data name="Rotation_AsDrawnTip" xml:space="preserve">
+    <value>Só 0°, então a peça fica exatamente como foi desenhada (respeita o grão).</value>
+  </data>
+  <data name="Rotation_Free" xml:space="preserve">
+    <value>Livre</value>
+  </data>
+  <data name="Rotation_FreeTip" xml:space="preserve">
+    <value>Qualquer ângulo, e NÃO automaticamente o mais compacto. Ganha em peças com bordas inclinadas ou curvas, e perde nas quadradas ou em forma de L, que se encaixam exatamente em ângulo reto e não ganham nada ao serem inclinadas. Medido em dois trabalhos reais: 84.3% do bloco preenchido contra 81.6% com 4 ângulos em um, e 69.6% contra 73.2% no outro. Custa cerca do dobro de busca. Ignora o grão.</value>
+  </data>
+  <data name="Rotation_JobDefault" xml:space="preserve">
+    <value>Do trabalho</value>
+  </data>
+  <data name="Rotation_JobDefaultTip" xml:space="preserve">
+    <value>O que estiver definido no trabalho, em Configurações &gt; Configurações avançadas. Altere lá e esta peça acompanha.</value>
+  </data>
+  <data name="Step_Filter3D" xml:space="preserve">
+    <value>STEP / IGES 3D (*.step;*.stp;*.iges;*.igs)|*.step;*.stp;*.iges;*.igs|Todos os arquivos (*.*)|*.*</value>
+  </data>
+  <data name="Step_MsgCouldNotAnalyzeFormat" xml:space="preserve">
+    <value>Não foi possível analisar o modelo 3D.
+
+{0}</value>
+  </data>
+  <data name="Step_MsgCouldNotStartFormat" xml:space="preserve">
+    <value>Não foi possível iniciar o motor de desdobramento (FreeCAD):
+{0}
+
+{1}</value>
+  </data>
+  <data name="Step_MsgCouldNotUnfoldFormat" xml:space="preserve">
+    <value>Não foi possível desdobrar a peça 3D.
+
+{0}</value>
+  </data>
+  <data name="Step_MsgEngineNotFound" xml:space="preserve">
+    <value>O motor de desdobramento (FreeCAD) não foi encontrado.
+Reinstale o SheetNest (ele inclui o FreeCAD) ou instale o FreeCAD a partir de freecad.org.</value>
+  </data>
+  <data name="Step_MsgMacroNotFound" xml:space="preserve">
+    <value>unfold_macro.py não foi encontrado junto ao SheetNest.</value>
+  </data>
+  <data name="Step_MsgNoFlatPattern" xml:space="preserve">
+    <value>O desdobramento informou sucesso, mas não produziu nenhuma planificação.</value>
+  </data>
+  <data name="Step_MsgNoResultFormat" xml:space="preserve">
+    <value>O FreeCAD não retornou nenhum resultado.
+
+{0}</value>
+  </data>
+  <data name="Step_MsgTimedOutFormat" xml:space="preserve">
+    <value>O FreeCAD excedeu o tempo limite ({0} s).</value>
+  </data>
+  <data name="Viewer_DistanceAgainFormat" xml:space="preserve">
+    <value>distância: {0:0.000} {1}  ·  clique para medir de novo</value>
+  </data>
+  <data name="Viewer_DistanceFormat" xml:space="preserve">
+    <value>distância: {0:0.000} {1}</value>
+  </data>
+  <data name="Viewer_EditNest" xml:space="preserve">
+    <value>✋ Editar encaixe</value>
+  </data>
+  <data name="Viewer_EditNestTip" xml:space="preserve">
+    <value>Encaixe manual: clique em uma peça para selecioná-la, arraste para mover, gire com os botões. Ao arrastar, uma peça pode ficar sobre outra enquanto você reorganiza: ela fica vermelha, e a exportação é recusada até que nada esteja em vermelho. Segure Alt ao soltar para que ela deslize até a vizinha em vez disso. As setas não empurram uma peça bem posicionada contra uma vizinha, mas movem uma que já está em vermelho, para que você possa afastá-la passo a passo. As edições se aplicam a todas as cópias deste layout e vão para a exportação DXF.</value>
+  </data>
+  <data name="Viewer_EditNestTitle" xml:space="preserve">
+    <value>Editar encaixe</value>
+  </data>
+  <data name="Viewer_EmptyHint" xml:space="preserve">
+    <value>Execute um encaixe para ver o resultado aqui.</value>
+  </data>
+  <data name="Viewer_FullSheet" xml:space="preserve">
+    <value>Chapa completa</value>
+  </data>
+  <data name="Viewer_GapFormat" xml:space="preserve">
+    <value>folga {0} {1}</value>
+  </data>
+  <data name="Viewer_HintCommonLineLocked" xml:space="preserve">
+    <value>as peças de um grupo de corte comum estão travadas  ·  refaça o encaixe para mudar a posição delas</value>
+  </data>
+  <data name="Viewer_HintEdit" xml:space="preserve">
+    <value>clique = selecionar peça  ·  arrastar = mover  ·  setas = mover aos poucos  ·  digite uma coordenada para posicioná-la com exatidão  ·  sobreposições aparecem em vermelho</value>
+  </data>
+  <data name="Viewer_HintMeasureSecond" xml:space="preserve">
+    <value>medir: clique no segundo ponto</value>
+  </data>
+  <data name="Viewer_HintMeasureStart" xml:space="preserve">
+    <value>medir: clique em dois pontos (ajusta aos cantos)</value>
+  </data>
+  <data name="Viewer_HintPlanReadOnly" xml:space="preserve">
+    <value>este layout é uma proposta do plano de produção, não uma das chapas encaixadas, então não pode ser editado  ·  as chapas que ele representa são as que são cortadas</value>
+  </data>
+  <data name="Viewer_HintUnreadableNumber" xml:space="preserve">
+    <value>isso não é um número que eu consiga ler  ·  a peça ficou onde estava</value>
+  </data>
+  <data name="Viewer_HintView" xml:space="preserve">
+    <value>roda = zoom  ·  arrastar com a roda = mover a vista  ·  clique direito = ajustar</value>
+  </data>
+  <data name="Viewer_LayoutNameFormat" xml:space="preserve">
+    <value>Layout {0}</value>
+  </data>
+  <data name="Viewer_Measure" xml:space="preserve">
+    <value>Medir</value>
+  </data>
+  <data name="Viewer_MeasureTip" xml:space="preserve">
+    <value>Mede uma distância: clique em dois pontos do desenho; o comprimento aparece abaixo (nas unidades do desenho). Use para verificar o tamanho / fator K de uma peça 3D desdobrada.</value>
+  </data>
+  <data name="Viewer_Mirror" xml:space="preserve">
+    <value>⇆ Espelhar</value>
+  </data>
+  <data name="Viewer_MirrorTip" xml:space="preserve">
+    <value>Espelha a peça selecionada (esquerda ↔ direita). A exportação DXF também a espelha, então a peça cortada fica realmente espelhada, não só na tela.</value>
+  </data>
+  <data name="Viewer_MsgLeaveAnyway" xml:space="preserve">
+    <value>Sair mesmo assim?</value>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_One" xml:space="preserve">
+    <value>{0} peça neste layout não está pronta para cortar{1}.
+
+Ela está desenhada em vermelho. Afaste-a antes de sair do editor.
+
+{2}</value>
+  </data>
+  <data name="Viewer_MsgLeaveUnfit_Other" xml:space="preserve">
+    <value>{0} peças neste layout não estão prontas para cortar{1}.
+
+Elas estão desenhadas em vermelho. Afaste-as antes de sair do editor.
+
+{2}</value>
+  </data>
+  <data name="Viewer_MsgUndoAndLeave" xml:space="preserve">
+    <value>Desfazer suas alterações e sair mesmo assim?</value>
+  </data>
+  <data name="Viewer_NotFitCount_One" xml:space="preserve">
+    <value>{0} peça não pronta para cortar</value>
+  </data>
+  <data name="Viewer_NotFitCount_Other" xml:space="preserve">
+    <value>{0} peças não prontas para cortar</value>
+  </data>
+  <data name="Viewer_OverlapCountTip" xml:space="preserve">
+    <value>Peças sobrepostas a uma vizinha ou saindo da chapa. A exportação é recusada enquanto restar alguma.</value>
+  </data>
+  <data name="Viewer_PartAngleTip" xml:space="preserve">
+    <value>Ângulo em graus. Digite um valor e pressione Enter.</value>
+  </data>
+  <data name="Viewer_PartFallbackName" xml:space="preserve">
+    <value>peça</value>
+  </data>
+  <data name="Viewer_PartGapTip" xml:space="preserve">
+    <value>Distância desta peça até a vizinha mais próxima, medida quando a peça para.</value>
+  </data>
+  <data name="Viewer_PartXTip" xml:space="preserve">
+    <value>Borda esquerda da peça, em coordenadas da chapa. Digite um valor e pressione Enter.</value>
+  </data>
+  <data name="Viewer_PartYTip" xml:space="preserve">
+    <value>Borda inferior da peça, em coordenadas da chapa. Digite um valor e pressione Enter.</value>
+  </data>
+  <data name="Viewer_RedoTip" xml:space="preserve">
+    <value>Refazer (Ctrl+Y)</value>
+  </data>
+  <data name="Viewer_RemainderSheet" xml:space="preserve">
+    <value>Chapa de sobra</value>
+  </data>
+  <data name="Viewer_RotateCcw5Tip" xml:space="preserve">
+    <value>Gira a peça selecionada 5° no sentido anti-horário</value>
+  </data>
+  <data name="Viewer_RotateCcw90Tip" xml:space="preserve">
+    <value>Gira a peça selecionada 90° no sentido anti-horário</value>
+  </data>
+  <data name="Viewer_RotateCw5Tip" xml:space="preserve">
+    <value>Gira a peça selecionada 5° no sentido horário</value>
+  </data>
+  <data name="Viewer_RotateCw90Tip" xml:space="preserve">
+    <value>Gira a peça selecionada 90° no sentido horário</value>
+  </data>
+  <data name="Viewer_UndoTip" xml:space="preserve">
+    <value>Desfazer (Ctrl+Z)</value>
+  </data>
+  <data name="Viewer_UnfitBothFormat" xml:space="preserve">
+    <value>: {0} por sobreposição com outra peça e {1} por estar dentro da margem da borda da chapa</value>
+  </data>
+  <data name="Viewer_UnfitInMargin" xml:space="preserve">
+    <value>, por estar dentro da margem da borda da chapa</value>
+  </data>
+  <data name="Viewer_UnfitOverlapping" xml:space="preserve">
+    <value>, por sobreposição com outra peça</value>
+  </data>
+</root>
