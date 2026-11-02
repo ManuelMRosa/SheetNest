@@ -36,7 +36,6 @@
     // Target on-screen line width in device pixels (constant at any zoom level).
     private const double StrokeScreenPx = 1.0;
     private const double OffcutCutPx = 4.0; // offcut cut line, same idea: it decides where the material is split
-    private const double ScrapCutPx = 2.0; // scrap cuts: dashed and half as heavy, so the offcut cut still stands out
 
     // Measure snap: how close (device px) the cursor must be to a vertex to snap onto it.
     private const double SnapScreenPx = 12.0;
@@ -1111,7 +1110,7 @@
     }
 
     /// <summary>
-    /// The scrap cuts on this sheet, dashed. On the sheet that carries the offcut they stay out of the remnant,
+    /// The scrap cuts on this sheet, drawn exactly like the offcut cut. On the sheet that carries the offcut they stay out of the remnant,
     /// exactly as the export writes them.
     /// </summary>
     private void DrawScrapOverlay(ISheetPlacement sheetPlacement, double h, double stroke)
@@ -1135,10 +1134,9 @@
         {
           Data = new LineGeometry(a, b),
           Stroke = OffcutStroke,
-          StrokeThickness = stroke * ScrapCutPx,
-          StrokeDashArray = new DoubleCollection { 3, 2 },
+          StrokeThickness = stroke * OffcutCutPx,
           IsHitTestVisible = false,
-          Tag = ScrapCutPx,
+          Tag = OffcutCutPx,
         };
         this.canvas.Children.Add(line);
         this.offcutShapes.Add(line);

@@ -212,10 +212,10 @@
                   <Rectangle Canvas.Left="8" Canvas.Top="8" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
                   <Rectangle Canvas.Left="24" Canvas.Top="34" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
                   <Rectangle Canvas.Left="70" Canvas.Top="10" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
-                  <Line X1="32" Y1="1" X2="32" Y2="31" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
-                  <Line X1="32" Y1="51" X2="32" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
-                  <Line X1="62" Y1="1" X2="62" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
-                  <Line X1="1" Y1="28" X2="95" Y2="28" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="32" Y1="1" X2="32" Y2="31" Stroke="#000000" StrokeThickness="2.5" />
+                  <Line X1="32" Y1="51" X2="32" Y2="55" Stroke="#000000" StrokeThickness="2.5" />
+                  <Line X1="62" Y1="1" X2="62" Y2="55" Stroke="#000000" StrokeThickness="2.5" />
+                  <Line X1="1" Y1="28" X2="95" Y2="28" Stroke="#000000" StrokeThickness="2.5" />
                 </Canvas>
                 <TextBlock Text="{x:Static loc:Strings.Scrap_Both}" HorizontalAlignment="Center" Margin="0,4,0,0" />
               </StackPanel>
@@ -231,9 +231,9 @@
                   <Rectangle Canvas.Left="8" Canvas.Top="8" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
                   <Rectangle Canvas.Left="24" Canvas.Top="34" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
                   <Rectangle Canvas.Left="70" Canvas.Top="10" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
-                  <Line X1="32" Y1="1" X2="32" Y2="31" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
-                  <Line X1="32" Y1="51" X2="32" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
-                  <Line X1="62" Y1="1" X2="62" Y2="55" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="32" Y1="1" X2="32" Y2="31" Stroke="#000000" StrokeThickness="2.5" />
+                  <Line X1="32" Y1="51" X2="32" Y2="55" Stroke="#000000" StrokeThickness="2.5" />
+                  <Line X1="62" Y1="1" X2="62" Y2="55" Stroke="#000000" StrokeThickness="2.5" />
                 </Canvas>
                 <TextBlock Text="{x:Static loc:Strings.Scrap_Vertical}" HorizontalAlignment="Center" Margin="0,4,0,0" />
               </StackPanel>
@@ -249,7 +249,7 @@
                   <Rectangle Canvas.Left="8" Canvas.Top="8" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
                   <Rectangle Canvas.Left="24" Canvas.Top="34" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
                   <Rectangle Canvas.Left="70" Canvas.Top="10" Width="16" Height="14" Fill="#B4B8BC" Stroke="#808080" StrokeThickness="0.5" />
-                  <Line X1="1" Y1="28" X2="95" Y2="28" Stroke="#000000" StrokeThickness="1.5" StrokeDashArray="3,2" />
+                  <Line X1="1" Y1="28" X2="95" Y2="28" Stroke="#000000" StrokeThickness="2.5" />
                 </Canvas>
                 <TextBlock Text="{x:Static loc:Strings.Scrap_Horizontal}" HorizontalAlignment="Center" Margin="0,4,0,0" />
               </StackPanel>
