@@ -12,21 +12,8 @@ namespace DeepNestSharp.RasterNest
   /// </summary>
   internal static class NativeCompact
   {
-    private const string Library = "sheetnest_core";
     private const int Ok = 0;
     private const int CancelledResult = 1;
-
-    /// <summary>SHEETNEST_NATIVE=off: the C# code compacts, to compare the two.</summary>
-    private static readonly bool SwitchedOff = string.Equals(
-      Environment.GetEnvironmentVariable("SHEETNEST_NATIVE"),
-      "off",
-      StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Set once the DLL failed to load.</summary>
-    private static volatile bool missing;
-
-    /// <summary>Whether compaction still goes to the native code (it may yet fail to load on first use).</summary>
-    internal static bool Enabled => !SwitchedOff && !missing;
 
     /// <summary>
     /// Compacts <paramref name="items"/> in place as <see cref="RasterCompact.CompactManaged"/> would. False,
@@ -41,7 +28,7 @@ namespace DeepNestSharp.RasterNest
       int[] groups,
       CancellationToken cancel,
       double commonLineGap)
-      => !SwitchedOff && TryCompactNative(items, sheetW, sheetH, margin, groups, cancel, commonLineGap);
+      => !NativeCore.SwitchedOff && TryCompactNative(items, sheetW, sheetH, margin, groups, cancel, commonLineGap);
 
     /// <summary><see cref="TryCompact"/> whatever SHEETNEST_NATIVE says, for the parity tests.</summary>
     internal static bool TryCompactNative(
@@ -53,7 +40,7 @@ namespace DeepNestSharp.RasterNest
       CancellationToken cancel,
       double commonLineGap)
     {
-      if (missing)
+      if (NativeCore.Missing)
       {
         return false;
       }
@@ -131,9 +118,8 @@ namespace DeepNestSharp.RasterNest
               commonLineGap,
               pinned.AddrOfPinnedObject());
           }
-          catch (Exception ex) when (ex is DllNotFoundException || ex is EntryPointNotFoundException || ex is BadImageFormatException)
+          catch (Exception ex) when (NativeCore.IsLoadFailure(ex))
           {
-            missing = true;
             return false;
           }
         }
@@ -173,7 +159,7 @@ namespace DeepNestSharp.RasterNest
       }
     }
 
-    [DllImport(Library, EntryPoint = "snc_compact", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    [DllImport(NativeCore.Library, EntryPoint = "snc_compact", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     private static extern int SncCompact(
       int n,
       int[] contourCounts,

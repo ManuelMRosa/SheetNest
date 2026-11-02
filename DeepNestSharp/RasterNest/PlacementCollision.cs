@@ -58,7 +58,17 @@
     /// come off the machine exactly as drawn. Where a clearance was asked for, what overlaps is the grown
     /// shells rather than the parts, so the same figure reads as clearance the pair is short of, which a
     /// cut's width of is nothing either.</param>
+    /// <remarks>
+    /// The C++ translation in sheetnest_core.dll (<see cref="NativeCollision"/>) answers, with the same verdict.
+    /// Without the DLL, or on an input it refuses, <see cref="TooCloseManaged"/> does.
+    /// </remarks>
     internal static bool TooClose(INfp placedA, INfp placedB, double clearance, double sliver)
+      => NativeCollision.TryTooClose(placedA, placedB, clearance, sliver, out bool tooClose)
+        ? tooClose
+        : TooCloseManaged(placedA, placedB, clearance, sliver);
+
+    /// <summary><see cref="TooClose"/> in C#: what runs without the native core, and what it is a translation of.</summary>
+    internal static bool TooCloseManaged(INfp placedA, INfp placedB, double clearance, double sliver)
     {
       if (BoxesApart(placedA, placedB, clearance))
       {
