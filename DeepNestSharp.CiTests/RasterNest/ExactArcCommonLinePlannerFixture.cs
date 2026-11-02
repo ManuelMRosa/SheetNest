@@ -47,6 +47,41 @@ namespace DeepNestSharp.CiTests.RasterNest
       }
     }
 
+    /// <summary>
+    /// Handed no catalog, the finder loads the drawing itself, and given somewhere to remember it, it does so
+    /// once: the planner asks about thousands of pose pairs, and reading and hashing the drawing for each one was
+    /// half of a curved job's planner time. Once remembered, the drawing is not read again, so moving it away
+    /// changes nothing; without the memory the finder reads the disk every time and finds nothing there.
+    /// </summary>
+    [Fact]
+    public void TheArcFinderRemembersADrawingItLoadedForItself()
+    {
+      (string innerPath, string outerPath) = this.WriteSemicirclePair(Gap, "remembered");
+      IPartPlacement inner = LoadPlacement(innerPath, 0, 10D, 10D);
+      IPartPlacement outer = LoadPlacement(outerPath, 1, 10.20D, 10D);
+      var loaded = new Dictionary<string, DxfContourCatalog>(StringComparer.Ordinal);
+
+      var plain = DxfCommonLineArcCandidateFinder.Find(inner, outer, Gap, Tolerance);
+      var remembered = DxfCommonLineArcCandidateFinder.Find(inner, outer, Gap, Tolerance, null, null, loaded);
+
+      DxfCommonLineArcCandidate expected = plain.Should().ContainSingle().Subject;
+      SameTranslation(remembered.Should().ContainSingle().Subject, expected);
+
+      File.Move(outerPath, outerPath + ".moved");
+      SameTranslation(
+        DxfCommonLineArcCandidateFinder.Find(inner, outer, Gap, Tolerance, null, null, loaded).Should().ContainSingle(
+          "the drawing was remembered").Subject,
+        expected);
+      DxfCommonLineArcCandidateFinder.Find(inner, outer, Gap, Tolerance).Should().BeEmpty(
+        "without the memory the finder reads the disk, and the drawing is gone");
+
+      static void SameTranslation(DxfCommonLineArcCandidate actual, DxfCommonLineArcCandidate wanted)
+      {
+        BitConverter.DoubleToInt64Bits(actual.TranslationX).Should().Be(BitConverter.DoubleToInt64Bits(wanted.TranslationX));
+        BitConverter.DoubleToInt64Bits(actual.TranslationY).Should().Be(BitConverter.DoubleToInt64Bits(wanted.TranslationY));
+      }
+    }
+
     [Fact]
     public async Task PlannerCreatesExactArcAtActiveGapAndExportsClosedCluster()
     {

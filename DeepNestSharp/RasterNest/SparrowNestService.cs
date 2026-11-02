@@ -3044,6 +3044,10 @@
       var exactCatalogChecked = new bool[n];
       var exactArcsByPose = new Dictionary<(int Part, long Rotation), IReadOnlyList<(CommonBoundarySpan Span, DxfResolvedBoundarySpan Resolved)>>();
 
+      // What the arc finder loads for itself when it is handed no catalog, kept for this call so each drawing is
+      // read and hashed once rather than on every pose pair (it used to be half of a curved job's planner time).
+      var finderLoadedCatalogs = new Dictionary<string, DxfContourCatalog>(StringComparer.Ordinal);
+
       bool TryGetExactCatalog(int partIndex, out DxfContourCatalog catalog)
       {
         if (!exactCatalogChecked[partIndex])
@@ -3981,7 +3985,8 @@
                   commonLineGap,
                   geometryTolerance,
                   exactCatalogByPart[a],
-                  exactCatalogByPart[b]);
+                  exactCatalogByPart[b],
+                  finderLoadedCatalogs);
               }
               catch (CommonLineValidationException)
               {

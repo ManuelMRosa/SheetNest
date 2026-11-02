@@ -69,6 +69,19 @@ namespace DeepNestLib.Placement
       double geometryTolerance,
       DxfContourCatalog catalogA,
       DxfContourCatalog catalogB)
+      => Find(partA, partB, commonLineGap, geometryTolerance, catalogA, catalogB, null);
+
+    /// <param name="loaded">Remembers, by source name, the catalog loaded for a part handed none (null when it
+    /// could not be loaded), so a search asking about thousands of pose pairs reads and hashes each drawing once
+    /// instead of on every pair. One dictionary serves one search at one geometry tolerance.</param>
+    public static IReadOnlyList<DxfCommonLineArcCandidate> Find(
+      IPartPlacement partA,
+      IPartPlacement partB,
+      double commonLineGap,
+      double geometryTolerance,
+      DxfContourCatalog catalogA,
+      DxfContourCatalog catalogB,
+      IDictionary<string, DxfContourCatalog> loaded)
     {
       if (partA == null)
       {
@@ -89,8 +102,8 @@ namespace DeepNestLib.Placement
           "Common Line Gap must be finite and larger than GeometryTolerance.");
       }
 
-      if ((catalogA == null && !TryLoad(partA, geometryTolerance, out catalogA))
-        || (catalogB == null && !TryLoad(partB, geometryTolerance, out catalogB)))
+      if ((catalogA == null && !TryLoad(partA, geometryTolerance, loaded, out catalogA))
+        || (catalogB == null && !TryLoad(partB, geometryTolerance, loaded, out catalogB)))
       {
         return Array.Empty<DxfCommonLineArcCandidate>();
       }
@@ -373,6 +386,30 @@ namespace DeepNestLib.Placement
         X = source.X + translationX,
         Y = source.Y + translationY,
       };
+
+    /// <summary><see cref="TryLoad(IPartPlacement, double, out DxfContourCatalog)"/>, answered from
+    /// <paramref name="loaded"/> when this source was already tried, and remembered there when it was not.</summary>
+    private static bool TryLoad(
+      IPartPlacement placement,
+      double endpointTolerance,
+      IDictionary<string, DxfContourCatalog> loaded,
+      out DxfContourCatalog catalog)
+    {
+      string sourceName = placement?.Part?.Name;
+      if (loaded == null || sourceName == null)
+      {
+        return TryLoad(placement, endpointTolerance, out catalog);
+      }
+
+      if (loaded.TryGetValue(sourceName, out catalog))
+      {
+        return catalog != null;
+      }
+
+      bool found = TryLoad(placement, endpointTolerance, out catalog);
+      loaded[sourceName] = found ? catalog : null;
+      return found;
+    }
 
     private static bool TryLoad(
       IPartPlacement placement,
