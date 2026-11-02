@@ -35,7 +35,7 @@
 
     // Target on-screen line width in device pixels (constant at any zoom level).
     private const double StrokeScreenPx = 1.0;
-    private const double OffcutCutPx = 4.0; // offcut cut line, same idea: it decides where the material is split
+    private const double OffcutCutPx = 1.0; // offcut and scrap cut lines: the normal line width, kept on zoom
 
     // Measure snap: how close (device px) the cursor must be to a vertex to snap onto it.
     private const double SnapScreenPx = 12.0;
@@ -51,8 +51,7 @@
     // reported as moving a part that was "normal, not red" when the code had it flagged all along.
     private static readonly Brush InvalidFill = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F));
     // The offcut cut line and its size label: the darkest thing on a near-white sheet, so they are spotted
-    // without being looked for. Close to the part outline (#101010) on purpose - the line separates from it
-    // by WEIGHT, four solid pixels against one, not by colour.
+    // without being looked for. Drawn at the normal line width, like the part outlines.
     private static readonly Brush OffcutStroke = new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x00));
 
     // The directions the magnets probe. Nests are orthogonal, so a diagonal earns nothing.
