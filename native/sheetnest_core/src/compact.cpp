@@ -16,29 +16,17 @@
 #include <vector>
 
 #include "clipper.hpp"
+#include "clipper_util.hpp"
 
 namespace {
 
-using ClipperLib::cInt;
-using ClipperLib::IntPoint;
-using ClipperLib::Path;
-using ClipperLib::Paths;
+using namespace snc;
 
 constexpr double Scale = SNC_COMPACT_SCALE;          // integer units per drawing unit
 constexpr double EpsArea = 1e-6 * Scale * Scale;     // overlaps below 1e-6 square units are touching
 constexpr double Backoff = 0.001;                    // slack floor left after a slide, drawing units
 constexpr double BackoffPerClearance = 0.003;        // slack per unit of the clearance being enforced
 constexpr double WeldMax = 0.05;                     // furthest the weld closes a seam, drawing units
-constexpr cInt LongMax = std::numeric_limits<cInt>::max();
-constexpr cInt LongMin = std::numeric_limits<cInt>::min();
-
-struct IntRect
-{
-  cInt left;
-  cInt top;
-  cInt right;
-  cInt bottom;
-};
 
 // What the C# code would have thrown on. The caller runs the C# code instead, so the exception is its own.
 struct WouldThrow : std::runtime_error
@@ -49,40 +37,6 @@ struct WouldThrow : std::runtime_error
 struct Cancelled
 {
 };
-
-// (long)Math.Round(v): .NET rounds half to even. nearbyint does too in the default rounding mode, which
-// is the mode .NET runs in. (Clipper's own Round, half away from zero, is a different rule and stays.)
-inline cInt NetRound(double v)
-{
-  return static_cast<cInt>(std::nearbyint(v));
-}
-
-// Math.Min / Math.Max on doubles as .NET defines them (IEEE 754:2019 minimum/maximum: NaN propagates,
-// -0 is below +0), so even a signed zero comes out the same.
-inline double NetMin(double a, double b)
-{
-  if (a != b && !std::isnan(a))
-  {
-    return a < b ? a : b;
-  }
-
-  return std::signbit(a) ? a : b;
-}
-
-inline double NetMax(double a, double b)
-{
-  if (a != b)
-  {
-    if (!std::isnan(a))
-    {
-      return b < a ? a : b;
-    }
-
-    return a;
-  }
-
-  return std::signbit(b) ? a : b;
-}
 
 struct Contour
 {
@@ -184,57 +138,6 @@ Paths Translate(const Paths& paths, cInt dx, cInt dy)
   }
 
   return moved;
-}
-
-IntRect BoundsOf(const Path& path)
-{
-  cInt minX = LongMax, minY = LongMax, maxX = LongMin, maxY = LongMin;
-  for (const IntPoint& p : path)
-  {
-    minX = std::min(minX, p.X);
-    maxX = std::max(maxX, p.X);
-    minY = std::min(minY, p.Y);
-    maxY = std::max(maxY, p.Y);
-  }
-
-  return IntRect{minX, minY, maxX, maxY};
-}
-
-IntRect BoundsOf(const Paths& paths)
-{
-  cInt minX = LongMax, minY = LongMax, maxX = LongMin, maxY = LongMin;
-  for (const Path& path : paths)
-  {
-    for (const IntPoint& p : path)
-    {
-      minX = std::min(minX, p.X);
-      maxX = std::max(maxX, p.X);
-      minY = std::min(minY, p.Y);
-      maxY = std::max(maxY, p.Y);
-    }
-  }
-
-  return IntRect{minX, minY, maxX, maxY};
-}
-
-bool BoxesTouch(const IntRect& a, const IntRect& b)
-{
-  return a.left <= b.right && b.left <= a.right && a.top <= b.bottom && b.top <= a.bottom;
-}
-
-bool AddReaching(ClipperLib::Clipper& clipper, const Paths& paths, const IntRect& other, ClipperLib::PolyType type)
-{
-  bool any = false;
-  for (const Path& path : paths)
-  {
-    if (BoxesTouch(BoundsOf(path), other))
-    {
-      clipper.AddPath(path, type, true);
-      any = true;
-    }
-  }
-
-  return any;
 }
 
 bool Intersects(const Paths& a, const Paths& b)

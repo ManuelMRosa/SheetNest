@@ -22,6 +22,7 @@ endif()
 
 add_library(sheetnest_core SHARED
   sheetnest_core/src/compact.cpp
+  sheetnest_core/src/collision.cpp
   third_party/clipper/clipper.cpp)
 
 target_include_directories(sheetnest_core

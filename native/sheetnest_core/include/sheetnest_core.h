@@ -77,6 +77,34 @@ SNC_API int SNC_CALL snc_compact(
   double common_line_gap,
   const volatile int* cancel);
 
+/*
+ * PlacementCollision.TooClose: whether two placed parts are closer than a clearance. Each outline is grown by
+ * the clearance in turn (round joins, holes kept) and the pair is too close when the other part bites into it
+ * deeper than `sliver`, either way round. The depth of a bite is the diameter of the largest circle inside it.
+ *
+ * Integer units per drawing unit, and the explicit tolerances (as in PlacementCollision.cs):
+ *   round shells  arc tolerance 0.0005 x the clearance
+ *   depth         a bite counts only past `sliver` drawing units (the caller's kerf or noise floor)
+ */
+#define SNC_COLLISION_SCALE 1e6
+
+#define SNC_TOO_CLOSE_ERROR (-1) /* the C# code would throw on this input; the caller runs it to get the exception */
+
+/*
+ * Each part: its contour count (outline first, then holes), the points per contour, and the x, y of every
+ * point, already placed, in drawing units. A contour of fewer than three points is ignored, as in C#.
+ * Returns 1 when too close, 0 when not, SNC_TOO_CLOSE_ERROR on failure.
+ */
+SNC_API int SNC_CALL snc_too_close(
+  int a_contours,
+  const int* a_point_counts,
+  const double* a_points,
+  int b_contours,
+  const int* b_point_counts,
+  const double* b_points,
+  double clearance,
+  double sliver);
+
 #ifdef __cplusplus
 }
 #endif
