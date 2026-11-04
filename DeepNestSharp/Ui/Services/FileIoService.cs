@@ -38,13 +38,10 @@
           Multiselect = allowMultiSelect,
         };
 
-        if (!string.IsNullOrWhiteSpace(initialDirectory))
-        {
-          openFileDialog.InitialDirectory = initialDirectory;
-        }
+        openFileDialog.InitialDirectory = UsableFolder(initialDirectory);
 
         bool dialogResponse = false;
-        await dispatcherService.InvokeAsync(() => dialogResponse = openFileDialog.ShowDialog() == true).ConfigureAwait(false);
+        await dispatcherService.InvokeAsync(() => dialogResponse = Show(openFileDialog)).ConfigureAwait(false);
         if (dialogResponse)
         {
           return openFileDialog.FileNames;
@@ -70,18 +67,42 @@
         dlg.FileName = fileName;
       }
 
-      if (!string.IsNullOrWhiteSpace(initialDirectory))
-      {
-        dlg.InitialDirectory = initialDirectory;
-      }
+      dlg.InitialDirectory = UsableFolder(initialDirectory);
+      return Show(dlg) ? dlg.FileName : string.Empty;
+    }
 
-      var response = dlg.ShowDialog();
-      if (response.HasValue && response.Value)
+    /// <summary>
+    /// The folder to open a dialog in, or none. A project saved to a flash drive remembers that drive, and
+    /// once the drive is pulled the shell refuses the dialog outright ("the system cannot find the drive
+    /// specified"); at the laser that crashed the program while it asked whether to save on closing.
+    /// </summary>
+    internal static string UsableFolder(string? folder)
+    {
+      try
       {
-        return dlg.FileName;
+        return !string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder) ? folder : string.Empty;
       }
+      catch (System.Exception)
+      {
+        return string.Empty;
+      }
+    }
 
-      return string.Empty;
+    /// <summary>Shows the dialog; if the shell still refuses where it was told to open (a drive that went
+    /// between the check and the call, a network folder that no longer answers), shows it again without.</summary>
+    private static bool Show(FileDialog dialog)
+    {
+      try
+      {
+        return dialog.ShowDialog() == true;
+      }
+      catch (System.ComponentModel.Win32Exception)
+      {
+        dialog.InitialDirectory = string.Empty;
+        string name = Path.GetFileName(dialog.FileName ?? string.Empty);
+        dialog.FileName = name;
+        return dialog.ShowDialog() == true;
+      }
     }
   }
 }
