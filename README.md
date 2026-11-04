@@ -5,6 +5,8 @@
 <p align="center">
   <a href="https://sheetnest.io"><img src="https://img.shields.io/badge/Download%20for%20Windows-3aa851?style=for-the-badge&logo=windows&logoColor=white" alt="Download SheetNest for Windows"></a>
   <a href="https://ko-fi.com/sheetnest"><img src="https://img.shields.io/badge/Support-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support SheetNest on Ko-fi"></a>
+  <a href="https://www.linkedin.com/company/sheetnest/"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge" alt="SheetNest on LinkedIn"></a>
+  <a href="https://www.instagram.com/sheetnestusa/"><img src="https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="SheetNest on Instagram"></a>
 </p>
 
 <p align="center">
