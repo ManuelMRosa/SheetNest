@@ -183,6 +183,12 @@
     public override string ToJson(bool writeIndented = true)
     {
       var options = new JsonSerializerOptions();
+
+      // Each sheet written as the class it is, not through its interface: through the interface every
+      // computed member went into the file too, and PolygonsForExport alone is a second copy of every part's
+      // geometry (an operator's three-sheet job with a 1048-hole front saved at 4.4 MB). The class marks those
+      // as not saved, and the reader never needed them.
+      options.Converters.Add(new SheetPlacementJsonConverter());
       options.Converters.Add(new SheetJsonConverter());
       options.Converters.Add(new NfpJsonConverter());
       options.Converters.Add(new PartPlacementJsonConverter());
