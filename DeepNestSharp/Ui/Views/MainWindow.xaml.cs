@@ -1032,18 +1032,7 @@
       // Same guard as the parts list: MouseDoubleClick fires for double-clicks on the W/H spinners'
       // repeat arrows or the row buttons too, and those don't move the selection — walk up from the
       // real click target and edit the row that was actually hit.
-      var d = e.OriginalSource as System.Windows.DependencyObject;
-      while (d != null && !(d is ListViewItem))
-      {
-        if (d is System.Windows.Controls.Primitives.ButtonBase || d is Xceed.Wpf.Toolkit.IntegerUpDown)
-        {
-          return;
-        }
-
-        d = System.Windows.Media.VisualTreeHelper.GetParent(d);
-      }
-
-      if (d is ListViewItem item && item.DataContext is ISheetLoadInfo row)
+      if (RowHit(e.OriginalSource) is ListViewItem item && item.DataContext is ISheetLoadInfo row)
       {
         OpenEditSheet(row);
       }
@@ -1447,21 +1436,31 @@
       // button inside a row (WPF class handler with handledEventsToo) — and those clicks don't move
       // the selection, so acting on SelectedItem could edit the WRONG part. Walk up from the actual
       // click target: ignore clicks on interactive controls, and edit the row that was hit.
-      var d = e.OriginalSource as System.Windows.DependencyObject;
+      if (RowHit(e.OriginalSource) is ListViewItem item && item.DataContext is IDetailLoadInfo part)
+      {
+        OpenEditPart(part);
+      }
+    }
+
+    /// <summary>The list row a double-click landed in, walking up from the element under the mouse, or null when
+    /// it landed on a button or a spinner inside the row. A cell's text can be a Run, which is not part of the
+    /// visual tree: its parent is the TextBlock that holds it (issue #16 crashed on that).</summary>
+    internal static ListViewItem? RowHit(object originalSource)
+    {
+      System.Windows.DependencyObject? d = originalSource as System.Windows.DependencyObject;
       while (d != null && !(d is ListViewItem))
       {
         if (d is System.Windows.Controls.Primitives.ButtonBase || d is Xceed.Wpf.Toolkit.IntegerUpDown)
         {
-          return;
+          return null;
         }
 
-        d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+        d = d is System.Windows.Media.Visual || d is System.Windows.Media.Media3D.Visual3D
+          ? System.Windows.Media.VisualTreeHelper.GetParent(d)
+          : System.Windows.LogicalTreeHelper.GetParent(d);
       }
 
-      if (d is ListViewItem item && item.DataContext is IDetailLoadInfo part)
-      {
-        OpenEditPart(part);
-      }
+      return d as ListViewItem;
     }
 
     private async void OpenEditPart(IDetailLoadInfo part)
