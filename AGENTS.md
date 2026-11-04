@@ -284,6 +284,12 @@ Verificar con Git al iniciar; esta sección es una referencia fechada.
   del arreglo de catálogos. Excepciones como control de flujo: medido, no vale la pena; la mesa de soldar lanza 3571 en
   59 s (todas "spans are not separated by CommonLineGap"), menos de 1 %. El 21 % del perfil era una etiqueta de actividad
   del perfilador, no el costo de lanzar.
+- 2026-11-04, rama `release-1.1.14` (desde `main` con los PR #12-#15): **lo que lleva la 1.1.14.** El arreglo del #16
+  (`MainWindow.RowHit` sube por el árbol lógico cuando el doble clic cae en un `Run`; prueba `ListRowHitFixture`), los
+  cortes de esqueleto de la rama `scrap-cuts` (ventana "Retazo y cortes de esqueleto", `RasterNest/ScrapCuts.cs`) y el
+  patrón en filas que une bandas de distinta pose: `RowPatternPacker.Plan(..., stack, bridge)`, la pose con más piezas
+  primero, la banda unida que se corre a lo largo y `SparrowNestService.AnchorToCorner`. Detalle, números y pruebas en
+  COMMON_LINE_IMPLEMENTATION.md (secciones del 2026-11-03 y 2026-11-04).
 - La tabla de abajo no coincide con `main` de hoy. Medido con Fast: mixto 30 colocadas y 36 aristas;
   test2 x16/x17/x24/x25 con 26/27/41/42 aristas; x26 con 29 aristas, `isolated=1`, cadena 19; x27 con
   26 colocadas y 28 aristas. Comparar contra una línea base medida, no contra la tabla.

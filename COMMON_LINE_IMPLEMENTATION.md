@@ -77,7 +77,8 @@ that every native-engine scenario ran.
 A timed nest (`NestForTime`) first tries a row pattern (`RowPatternPacker`) when the
 job is a single drawing set to share cuts with itself and its opposite straight sides
 meet in full. Copies go in bands, side by side at the common-line gap. Bands of the same
-orientation and length close up into a grid; any other bands keep the normal spacing.
+orientation and length close up into a grid; any other bands keep the normal spacing, except
+where a band of one orientation can join the band of another (2026-11-03, below).
 
 Laying a part out by its box must give little or nothing away, so one of three things
 must hold:
@@ -432,6 +433,74 @@ A time limit is back as an option, per sheet: Advanced settings > Nesting > "Tim
 sheet (s)", 0 (no limit) by default. With a value the job gets that much for every sheet it
 is expected to take (`SparrowNestService.TimeLimit`, from `EstimatedSheets`), and the timed
 rounds run as before. Tests: `OpeningWorkFixture` and `NestSecondsPerSheetSessionFixture`.
+
+## Bands of two poses share where they meet, and the sheet starts at the corner (2026-11-03)
+
+The operator nested 19 copies of a 9 x 36 inch bar with R1 corners on one 120 x 60 inch
+sheet at 2 s a sheet and got 19 shared cuts some of the time, and always with four-way
+rotation; now and then 31. The row pattern laid 13 standing in a band and two rows of
+three lying above it, the rows at the normal spacing from the band. The 31 came only from
+a search round that finished in time and joined the rows to the band. With four rotations
+the search never finished in 2 s.
+
+`RowPatternPacker.Plan(..., bridge: true)` also lays the first band of a pose at the
+common-line gap from the last band of the pose before it. Each pose keeps the straight edges
+on every side of its box (`Pose.Side`) and the outline it is placed as. Every pair of parts
+across the two bands shares each pair of facing straight edges that overlap by at least the
+shortest seam, with the stretch of each edge as the record reads it (0 at the edge's first
+point, 1 at its last, clamped as the direct planner clamps). The band keeps the spacing
+instead when a pair of facing straight edges would overlap by less than a seam, when a pair
+with nothing shared comes inside the spacing (`PlacementCollision.TooClose` on the two
+outlines), when the block would pass the cluster limit, or when a facing straight edge runs
+into a square corner of its box. On test2 the clearance refuses the bridge: a lying part's
+corner would pass 0.012 in from a standing part's corner. On the Hodgson bar the square
+corners do: joined, its grid failed the topology check ("a zero-degree common-line corner is
+dangling"), because a standing bar joined down its long sides and across its end loses both
+edges at a corner where three seams meet. Without that rule the pattern still gave the same
+sheet, by falling back, but took 0.9 s longer on x150.
+
+`BuildRowPatternSheet` tries the grid joined, the grid, plain bands joined and plain bands,
+and keeps the first that passes the four checks. A joined layout only adds shared cut to the
+same split, so it never goes ahead of a grid it would lose to. A joined try that joins
+nothing is skipped.
+
+For the 19 bars the pattern now lays three stacked columns of six lying and one standing
+part, 117.03 in along the sheet instead of 117.12: 15 seams down the columns, 12 across
+them and 4 between the lying ones and the standing part beside them, 31 in one cluster.
+
+The pose with the most parts goes first (2026-11-04). `Build` laid the bands in pose order,
+so the one standing part sat in the corner with the columns after it; the operator wants the
+few odd parts at the end, next to the rest of the sheet. Poses now go by how many parts the
+split gives them, most first, and poses with as many keep their order. Without a bridge no
+measure the ranking reads depends on that order; the bridge joins the same edges mirrored.
+The Hodgson pattern hashes changed (x150 `0621C33752269DA6`, x600 `8F76FB86C548813F`) with
+the same sheets, lengths, edges and shared length; test2 x800 kept its hash.
+
+A joined band slides along (2026-11-04). test2 x26 still came out as two blocks, 28 shared
+cuts: the 36 in lying parts do not end where the 7.01 in standing ones meet, and laid from 0
+the second lying part ended 0.09 in short of a standing part's straight top, with the R1
+corners 0.012 in apart and nothing shared. `Build` now tries the joined band at 0, then a step
+of the spacing further along at a time, and keeps the first place `Bridge` accepts. It never
+slides past the longest band laid so far, so a joined layout is never longer than the one
+without, and never a whole part of the band below, where the same meeting comes round again.
+The pose's other bands slide with it. On test2 the first place is 1.25 in: every lying end
+rests on a standing part's straight top, 18 more seams, 46 in one cluster of 26, which passes
+the four checks. Untested: the length cap. For these parts a layout of only the longer pose
+always ties on parts and wins on length, so the cap never changes the result. test2 x800 changed
+its hash (`7DBFF387D25EAFD5`), with the same 31 sheets, and the pattern takes about 1.2 s longer
+over the 31 sheets (more seams to check, and the slide); the Hodgson pattern is unchanged.
+
+Separately, the clock can stop the second compaction before a cluster the planner moved has
+slid back to the corner. One 31-cut sheet of the same job came out 2.14 in off the left
+border. After the cull, `MapAndCompact` moves every part on the sheet together until the pack
+meets the border (`AnchorToCorner`): only towards the corner, and only when it is off it by
+more than the geometry tolerance. A rigid move keeps every seam and every spacing.
+
+Tests: `RowPatternPackerFixture` (the 19 laid out by hand, the stretches of a partial seam,
+test2's lying row sliding onto the band, the cluster limit, and the bridged sheet through the
+four checks with two and four rotations, the standing part last), `PackAnchorFixture` and
+`BridgedRowPatternJobFixture` (native, 2 s a sheet, 31 shared cuts from the corner with both
+rotation settings, the standing part last; an invented 7 x 36 in bar x26, 46 in one block).
 
 ## Scope
 

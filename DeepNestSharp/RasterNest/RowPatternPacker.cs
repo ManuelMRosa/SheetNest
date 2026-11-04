@@ -11,7 +11,8 @@ namespace DeepNestSharp.RasterNest
   /// <para>Each band holds copies side by side at the common-line gap, so every part shares the straight sides of
   /// its box with its neighbours. When a side only meets the same side of a copy turned half a turn (the flat
   /// back of a slotted bar), the band alternates the two. Bands keep the ordinary spacing from each other unless
-  /// they are stacked into a grid. Every part in a band of two or more shares a cut. The searched layout of a
+  /// they are stacked into a grid, or a band of one pose is bridged to the band of another pose beside it. Every
+  /// part in a band of two or more shares a cut. The searched layout of a
   /// rounded rectangle could not promise that: its best sheet of test2 left one part on its own.</para>
   /// <para>It is only used where laying the part out by its box gives little or nothing away: its copies cannot
   /// reach into each other's boxes (<see cref="CopiesKeepToTheirBoxes"/>), the part fills most of its box
@@ -89,7 +90,11 @@ namespace DeepNestSharp.RasterNest
           shape.W,
           shape.H,
           Joints(shape, twin, MaxXSide, MinXSide, shortest, tolerance),
-          Joints(shape, twin, MaxYSide, MinYSide, shortest, tolerance));
+          Joints(shape, twin, MaxYSide, MinYSide, shortest, tolerance),
+          shape.Sides,
+          twin?.Sides,
+          shape.Outline,
+          twin?.Outline);
         if ((pose.AlongX != Link.None || pose.AlongY != Link.None) && !poses.Any(p => p.SameAs(pose, tolerance)))
         {
           poses.Add(pose);
@@ -163,6 +168,12 @@ namespace DeepNestSharp.RasterNest
     /// gap from each other instead of the spacing, so the parts also share the sides that face across the
     /// bands and the block becomes a grid. Four seams meet at each inner corner of a grid; whether that cuts
     /// cleanly is for the common-line checks to say, so the caller falls back to plain bands when it does not.</para>
+    /// <para>With <paramref name="bridge"/>, the first band of a pose also sits at the common-line gap from the
+    /// last band of the pose before it, and every part shares the straight edges that face a part of the other
+    /// band: lying parts on top of standing ones share a stretch with each standing part under them. Where the
+    /// ends of a band would not rest on the band below, as 36 in lying parts do not on standing ones every
+    /// 7.01 in, the band slides along until they do, within the room the longest band leaves. A band whose
+    /// straight edges would still face the other band's over less than a seam keeps the spacing.</para>
     /// </summary>
     internal static Layout? Plan(
       double usableW,
@@ -174,7 +185,8 @@ namespace DeepNestSharp.RasterNest
       int maxChain,
       bool longAxisIsX,
       double tolerance,
-      bool stack = false)
+      bool stack = false,
+      bool bridge = false)
     {
       if (poses == null || poses.Count == 0 || count <= 0)
       {
@@ -241,6 +253,7 @@ namespace DeepNestSharp.RasterNest
       }
 
       Layout? best = null;
+      var clearance = new Dictionary<(int, bool, int, bool, bool, long), bool>();
       foreach (var option in options)
       {
         if (option.Bands.Select((m, p) => m * option.Kmax[p]).Sum() < target)
@@ -257,7 +270,7 @@ namespace DeepNestSharp.RasterNest
           {
             if (left == 0)
             {
-              Layout candidate = Build(poses, option.AlongX, option.Bands, parts, gap, spacing, stack, maxChain);
+              Layout candidate = Build(poses, option.AlongX, option.Bands, parts, gap, spacing, stack, bridge, maxChain, tolerance, clearance);
               if (best == null || Ranks(candidate, best, longAxisIsX, tolerance) < 0)
               {
                 best = candidate;
@@ -333,7 +346,7 @@ namespace DeepNestSharp.RasterNest
         {
           if (onSide)
           {
-            sides[side].Add(new SideEdge(i, Math.Min(from, to), Math.Max(from, to)));
+            sides[side].Add(new SideEdge(i, from, to));
           }
         }
       }
@@ -343,7 +356,7 @@ namespace DeepNestSharp.RasterNest
         side.Sort((x, y) => x.Lo.CompareTo(y.Lo));
       }
 
-      return new Shape(angle, w, h, sides);
+      return new Shape(angle, w, h, sides, turned);
     }
 
     /// <summary>The seams one way between the pose and its twin, indexed [lower or left turned, upper or right
@@ -377,7 +390,7 @@ namespace DeepNestSharp.RasterNest
         return null;
       }
 
-      var edges = new List<(int EdgeA, int EdgeB)>(high.Count);
+      var edges = new List<(int EdgeA, int EdgeB, double AStart, double AEnd, double BStart, double BEnd)>(high.Count);
       double length = 0;
       for (int i = 0; i < high.Count; i++)
       {
@@ -388,7 +401,7 @@ namespace DeepNestSharp.RasterNest
           return null;
         }
 
-        edges.Add((high[i].Edge, low[i].Edge));
+        edges.Add((high[i].Edge, low[i].Edge, 0D, 1D, 0D, 1D));
         length += high[i].Hi - high[i].Lo;
       }
 
@@ -472,20 +485,42 @@ namespace DeepNestSharp.RasterNest
       return Same(shortA, shortB, tolerance) ? 0 : shortA.CompareTo(shortB);
     }
 
-    /// <summary>Lays one split out from the corner and counts what it gives. Bands go in pose order, longer
-    /// bands first; each pose's parts are spread evenly over its bands, so a band of one (a part on its own)
-    /// only happens when there is no other way. A stacked block is one cluster, so it stops growing at
-    /// <paramref name="maxChain"/> parts and the next band starts a block of its own. A part is turned half a
-    /// turn when the way it meets a neighbour alternates: every other one along a band, every other band across
-    /// a block.</summary>
-    private static Layout Build(IReadOnlyList<Pose> poses, bool alongX, int[] bands, int[] parts, double gap, double spacing, bool stack, int maxChain)
+    /// <summary>Lays one split out from the corner and counts what it gives. The pose with the most parts goes
+    /// first and a pose with fewer after it, so a few odd parts close the layout next to the rest of the sheet;
+    /// poses with as many keep their order. Each pose's longer bands go first, and its parts are spread evenly
+    /// over its bands, so a band of one (a part on its own) only happens when there is no other way. A stacked
+    /// block is one cluster, so it stops growing at <paramref name="maxChain"/> parts and the next band starts a
+    /// block of its own. A part is turned half a turn when the way it meets a neighbour alternates: every other
+    /// one along a band, every other band across a block. With <paramref name="bridge"/>, a pose's first band
+    /// joins the block of the band before it when their facing straight edges make seams (see
+    /// <see cref="Bridge"/>) and the block stays within <paramref name="maxChain"/>; where the band's ends would
+    /// not rest on the band below, the pose's bands slide along within the room the longest band leaves.
+    /// <paramref name="clearance"/> keeps, across the splits of one plan, whether two parts of bridged bands keep
+    /// the spacing at a given offset.</summary>
+    private static Layout Build(
+      IReadOnlyList<Pose> poses,
+      bool alongX,
+      int[] bands,
+      int[] parts,
+      double gap,
+      double spacing,
+      bool stack,
+      bool bridge,
+      int maxChain,
+      double tolerance,
+      Dictionary<(int, bool, int, bool, bool, long), bool> clearance)
     {
       var slots = new List<Slot>();
       var seams = new List<Seam>();
+      double shortest = Math.Max(2 * gap, 8 * tolerance);
       double cursor = 0;
       double along = 0;
       bool first = true;
-      for (int p = 0; p < poses.Count; p++)
+      int lastStart = -1;
+      int lastSize = 0;
+      int lastBlock = 0;
+      int bridged = 0;
+      foreach (int p in Enumerable.Range(0, poses.Count).OrderByDescending(i => parts[i]))
       {
         int m = bands[p];
         if (m == 0)
@@ -502,21 +537,44 @@ namespace DeepNestSharp.RasterNest
         int previousStart = -1;
         int block = 0;
         int bandInBlock = 0;
+        double shift = 0;
         for (int band = 0; band < m; band++)
         {
           int size = (parts[p] / m) + (band < parts[p] % m ? 1 : 0);
           bool stacked = stack && acrossLink != Link.None && size == previousSize && block + size <= maxChain;
-          block = stacked ? block + size : size;
+          List<Seam>? across = null;
+          if (bridge && band == 0 && !first && lastBlock + size <= maxChain)
+          {
+            // Where its ends do not rest on the band below, the band slides along a step of the spacing at a time:
+            // never past the longest band laid so far, which would lengthen the layout, and never a whole part of
+            // the band below, where the same meeting comes round again.
+            Pose low = poses[slots[lastStart].PoseIndex];
+            double pitch = (alongX ? low.W : low.H) + gap;
+            double length = (size * a) + ((size - 1) * gap);
+            for (int k = 0; across == null && (k == 0 || (spacing > 0 && k * spacing < pitch && (k * spacing) + length <= along + tolerance)); k++)
+            {
+              across = Bridge(poses, slots, lastStart, lastSize, p, size, k * spacing, alongLink == Link.Alternate, gap, spacing, alongX, shortest, tolerance, clearance);
+              shift = across != null ? k * spacing : 0D;
+            }
+          }
+
+          block = stacked ? block + size : across != null ? lastBlock + size : size;
           bandInBlock = stacked ? bandInBlock + 1 : 0;
           if (!first)
           {
-            cursor += stacked ? gap : spacing;
+            cursor += stacked || across != null ? gap : spacing;
+          }
+
+          if (across != null)
+          {
+            seams.AddRange(across);
+            bridged++;
           }
 
           int start = slots.Count;
           for (int j = 0; j < size; j++)
           {
-            double offset = j * (a + gap);
+            double offset = shift + (j * (a + gap));
             bool flipped = (((alongLink == Link.Alternate ? j : 0) + (acrossLink == Link.Alternate ? bandInBlock : 0)) % 2) == 1;
             Joint? before = j > 0 ? pose.Join(alongX, slots[start + j - 1].Flipped, flipped) : null;
             if (before != null)
@@ -533,9 +591,12 @@ namespace DeepNestSharp.RasterNest
             slots.Add(alongX ? new Slot(p, offset, cursor, flipped) : new Slot(p, cursor, offset, flipped));
           }
 
-          along = Math.Max(along, (size * a) + ((size - 1) * gap));
+          along = Math.Max(along, shift + (size * a) + ((size - 1) * gap));
           previousSize = size;
           previousStart = start;
+          lastStart = start;
+          lastSize = size;
+          lastBlock = block;
           cursor += t;
           first = false;
         }
@@ -548,40 +609,201 @@ namespace DeepNestSharp.RasterNest
         slots.Count - welded.Count,
         seams.Sum(s => s.Length),
         alongX ? along : cursor,
-        alongX ? cursor : along);
+        alongX ? cursor : along,
+        bridged);
+    }
+
+    /// <summary>The seams between the band laid last and the next band, of another pose, laid at the gap
+    /// above it (or to its right) from <paramref name="shift"/> along: for each pair of parts, every pair of
+    /// straight edges that face each other
+    /// over at least <paramref name="shortest"/>, as spans of each edge. Null when there are none; when two
+    /// facing straight edges would meet over less than that, as they would sit at the gap with no seam, which
+    /// no cut can honour; when a facing straight edge runs into a square corner (see
+    /// <see cref="StopShortOfTheCorners"/>); or when two parts that share nothing come closer than the spacing,
+    /// as the corner where a lying part ends can over a standing one.</summary>
+    private static List<Seam>? Bridge(
+      IReadOnlyList<Pose> poses,
+      List<Slot> slots,
+      int lowStart,
+      int lowSize,
+      int highPose,
+      int highSize,
+      double shift,
+      bool highAlternates,
+      double gap,
+      double spacing,
+      bool alongX,
+      double shortest,
+      double tolerance,
+      Dictionary<(int, bool, int, bool, bool, long), bool> clearance)
+    {
+      Pose high = poses[highPose];
+      double highA = alongX ? high.W : high.H;
+      int highStart = slots.Count;
+      var seams = new List<Seam>();
+      for (int i = 0; i < lowSize; i++)
+      {
+        Slot lowSlot = slots[lowStart + i];
+        Pose low = poses[lowSlot.PoseIndex];
+        double lowAt = alongX ? lowSlot.MinX : lowSlot.MinY;
+        double lowEnd = lowAt + (alongX ? low.W : low.H);
+        double lowAcross = alongX ? lowSlot.MinY : lowSlot.MinX;
+        double highAcross = lowAcross + (alongX ? low.H : low.W) + gap;
+        IReadOnlyList<SideEdge> lowEdges = low.Side(lowSlot.Flipped, alongX ? MaxYSide : MaxXSide);
+        for (int j = Math.Max(0, (int)Math.Floor((lowAt - spacing - highA - shift) / (highA + gap))); j < highSize; j++)
+        {
+          double highAt = shift + (j * (highA + gap));
+          if (highAt >= lowEnd + spacing)
+          {
+            break;
+          }
+
+          bool highTurned = highAlternates && j % 2 == 1;
+          IReadOnlyList<SideEdge> highEdges = high.Side(highTurned, alongX ? MinYSide : MinXSide);
+          if (!StopShortOfTheCorners(lowEdges, lowEnd - lowAt, tolerance) || !StopShortOfTheCorners(highEdges, highA, tolerance))
+          {
+            return null;
+          }
+          var edges = new List<(int EdgeA, int EdgeB, double AStart, double AEnd, double BStart, double BEnd)>();
+          double length = 0;
+          foreach (SideEdge e in lowEdges)
+          {
+            foreach (SideEdge f in highEdges)
+            {
+              double from = Math.Max(lowAt + e.Lo, highAt + f.Lo);
+              double to = Math.Min(lowAt + e.Hi, highAt + f.Hi);
+              if (to - from <= tolerance)
+              {
+                continue;
+              }
+
+              if (to - from + tolerance < shortest)
+              {
+                return null;
+              }
+
+              // Clamped as the direct planner clamps: an end on a corner can come out a rounding hair past it.
+              double a0 = Math.Clamp(e.At(from - lowAt), 0, 1);
+              double a1 = Math.Clamp(e.At(to - lowAt), 0, 1);
+              double b0 = Math.Clamp(f.At(from - highAt), 0, 1);
+              double b1 = Math.Clamp(f.At(to - highAt), 0, 1);
+              edges.Add((e.Edge, f.Edge, Math.Min(a0, a1), Math.Max(a0, a1), Math.Min(b0, b1), Math.Max(b0, b1)));
+              length += to - from;
+            }
+          }
+
+          if (edges.Count > 0)
+          {
+            seams.Add(new Seam(lowStart + i, highStart + j, !alongX, new Joint(edges, length)));
+          }
+          else
+          {
+            // The parts sit the same distance across for every split, so only the offset along tells them apart.
+            var key = (lowSlot.PoseIndex, lowSlot.Flipped, highPose, highTurned, alongX, (long)Math.Round((highAt - lowAt) * 1e9));
+            if (!clearance.TryGetValue(key, out bool keeps))
+            {
+              keeps = KeepsTheSpacing(low.Outline(lowSlot.Flipped), lowAt, lowAcross, high.Outline(highTurned), highAt, highAcross, alongX, spacing);
+              clearance[key] = keeps;
+            }
+
+            if (!keeps)
+            {
+              return null;
+            }
+          }
+        }
+      }
+
+      return seams.Count > 0 ? seams : null;
+    }
+
+    /// <summary>Whether every straight edge on a side ends short of both corners of the box, as between rounded
+    /// corners. Where one reaches a square corner, a part joined to its neighbours down its long sides and to
+    /// the other band across its end loses both edges at that corner, three seams meet there, and the
+    /// common-line topology refuses it: measured on the slotted bar's square ends.</summary>
+    private static bool StopShortOfTheCorners(IReadOnlyList<SideEdge> edges, double side, double tolerance)
+      => edges.All(e => e.Lo > tolerance && e.Hi < side - tolerance);
+
+    /// <summary>Whether two copies with no seam between them, their box corners at the given places along and
+    /// across the bands, keep the spacing. A pose made up in a test has no outline and is taken to.</summary>
+    private static bool KeepsTheSpacing(INfp? a, double aAt, double aAcross, INfp? b, double bAt, double bAcross, bool alongX, double spacing)
+    {
+      if (a == null || b == null)
+      {
+        return true;
+      }
+
+      INfp placedA = alongX ? a.Shift(aAt - a.MinX, aAcross - a.MinY) : a.Shift(aAcross - a.MinX, aAt - a.MinY);
+      INfp placedB = alongX ? b.Shift(bAt - b.MinX, bAcross - b.MinY) : b.Shift(bAcross - b.MinX, bAt - b.MinY);
+      return !PlacementCollision.TooClose(placedA, placedB, spacing - PlacementCollision.PlacementNoise, 0D);
     }
 
     private static bool Same(double a, double b, double tolerance) => Math.Abs(a - b) <= tolerance;
 
     /// <summary>A straight edge on one side of the box, spanning <see cref="Lo"/> to <see cref="Hi"/> from the
-    /// box corner.</summary>
-    private readonly struct SideEdge
+    /// box corner. It runs from <see cref="From"/> (its first point) to <see cref="To"/>.</summary>
+    internal readonly struct SideEdge
     {
-      public SideEdge(int edge, double lo, double hi)
+      public SideEdge(int edge, double from, double to)
       {
         this.Edge = edge;
-        this.Lo = lo;
-        this.Hi = hi;
+        this.From = from;
+        this.To = to;
       }
 
       public int Edge { get; }
 
-      public double Lo { get; }
+      public double From { get; }
 
-      public double Hi { get; }
+      public double To { get; }
+
+      public double Lo => Math.Min(this.From, this.To);
+
+      public double Hi => Math.Max(this.From, this.To);
+
+      /// <summary>How far along the edge a point of the side lies, from 0 at its first point to 1 at its last.</summary>
+      public double At(double along) => (along - this.From) / (this.To - this.From);
     }
 
     /// <summary>The part's outline at one allowed angle: its box, and how copies meet across each pair of
     /// opposite sides, in this pose or alternating with its twin half a turn round.</summary>
     internal sealed class Pose
     {
-      /// <summary>A pose whose opposite sides each carry one straight edge, with no twin.</summary>
+      /// <summary>A pose whose opposite sides each carry one straight edge, with no twin. The straight edges sit
+      /// in the middle of their sides, as between the rounded corners of a rectangle. With no outline, nothing
+      /// checks whether two corners of bridged bands keep the spacing.</summary>
       public Pose(int angle, double w, double h, double seamAlongX, double seamAlongY, int minXEdge, int maxXEdge, int minYEdge, int maxYEdge)
-        : this(angle, null, w, h, Single(seamAlongX, maxXEdge, minXEdge), Single(seamAlongY, maxYEdge, minYEdge))
+        : this(
+          angle,
+          null,
+          w,
+          h,
+          Single(seamAlongX, maxXEdge, minXEdge),
+          Single(seamAlongY, maxYEdge, minYEdge),
+          new[]
+          {
+            Middle(minXEdge, h, seamAlongX),
+            Middle(maxXEdge, h, seamAlongX),
+            Middle(minYEdge, w, seamAlongY),
+            Middle(maxYEdge, w, seamAlongY),
+          },
+          null,
+          null,
+          null)
       {
       }
 
-      internal Pose(int angle, int? twinAngle, double w, double h, Joint?[,] alongX, Joint?[,] alongY)
+      internal Pose(
+        int angle,
+        int? twinAngle,
+        double w,
+        double h,
+        Joint?[,] alongX,
+        Joint?[,] alongY,
+        IReadOnlyList<SideEdge>[] sides,
+        IReadOnlyList<SideEdge>[]? twinSides,
+        INfp? outline,
+        INfp? twinOutline)
       {
         this.Angle = angle;
         this.TwinAngle = twinAngle;
@@ -589,6 +811,10 @@ namespace DeepNestSharp.RasterNest
         this.H = h;
         this.X = alongX;
         this.Y = alongY;
+        this.Sides = sides;
+        this.TwinSides = twinSides;
+        this.TurnedOutline = outline;
+        this.TwinOutline = twinOutline;
         this.AlongX = LinkOf(alongX, twinAngle != null);
         this.AlongY = LinkOf(alongY, twinAngle != null);
       }
@@ -616,10 +842,27 @@ namespace DeepNestSharp.RasterNest
 
       private Joint?[,] Y { get; }
 
+      /// <summary>Min X, max X, min Y, max Y of the pose's box: the straight edges on each.</summary>
+      private IReadOnlyList<SideEdge>[] Sides { get; }
+
+      private IReadOnlyList<SideEdge>[]? TwinSides { get; }
+
+      private INfp? TurnedOutline { get; }
+
+      private INfp? TwinOutline { get; }
+
       /// <summary>The seam between a copy and the one to its right (or above it), each in this pose or turned
       /// to its twin.</summary>
       public Joint? Join(bool alongX, bool firstTurned, bool secondTurned)
         => (alongX ? this.X : this.Y)[firstTurned ? 1 : 0, secondTurned ? 1 : 0];
+
+      /// <summary>The straight edges on one side of the box, in this pose or turned to its twin.</summary>
+      internal IReadOnlyList<SideEdge> Side(bool turned, int side)
+        => (turned ? this.TwinSides : this.Sides)?[side] ?? Array.Empty<SideEdge>();
+
+      /// <summary>The outline a copy in this pose, or turned to its twin, is placed as; null for a pose made up
+      /// in a test.</summary>
+      internal INfp? Outline(bool turned) => turned ? this.TwinOutline : this.TurnedOutline;
 
       internal bool SameAs(Pose other, double tolerance)
         => Same(this.W, other.W, tolerance)
@@ -634,11 +877,14 @@ namespace DeepNestSharp.RasterNest
         var joints = new Joint?[2, 2];
         if (seam > 0)
         {
-          joints[0, 0] = new Joint(new[] { (highEdge, lowEdge) }, seam);
+          joints[0, 0] = new Joint(new[] { (highEdge, lowEdge, 0D, 1D, 0D, 1D) }, seam);
         }
 
         return joints;
       }
+
+      private static IReadOnlyList<SideEdge> Middle(int edge, double side, double straight)
+        => straight > 0 ? new[] { new SideEdge(edge, (side - straight) / 2, (side + straight) / 2) } : Array.Empty<SideEdge>();
 
       private static Link LinkOf(Joint?[,] joints, bool hasTwin)
         => joints[0, 0] != null && (!hasTwin || joints[1, 1] != null) ? Link.Same
@@ -674,16 +920,17 @@ namespace DeepNestSharp.RasterNest
     }
 
     /// <summary>The straight edges two neighbours share: pairs of (edge on the lower or left part, edge on the
-    /// upper or right part), and their total length.</summary>
+    /// upper or right part), each with the stretch of it that is shared, from 0 at its first point to 1 at its
+    /// last, and their total length.</summary>
     internal sealed class Joint
     {
-      public Joint(IReadOnlyList<(int EdgeA, int EdgeB)> edges, double length)
+      public Joint(IReadOnlyList<(int EdgeA, int EdgeB, double AStart, double AEnd, double BStart, double BEnd)> edges, double length)
       {
         this.Edges = edges;
         this.Length = length;
       }
 
-      public IReadOnlyList<(int EdgeA, int EdgeB)> Edges { get; }
+      public IReadOnlyList<(int EdgeA, int EdgeB, double AStart, double AEnd, double BStart, double BEnd)> Edges { get; }
 
       public double Length { get; }
     }
@@ -728,15 +975,15 @@ namespace DeepNestSharp.RasterNest
 
       public bool AlongX { get; }
 
-      /// <summary>Pairs of (edge on A, edge on B).</summary>
-      public IReadOnlyList<(int EdgeA, int EdgeB)> Edges { get; }
+      /// <summary>Pairs of (edge on A, edge on B), with the shared stretch of each.</summary>
+      public IReadOnlyList<(int EdgeA, int EdgeB, double AStart, double AEnd, double BStart, double BEnd)> Edges { get; }
 
       public double Length { get; }
     }
 
     internal sealed class Layout
     {
-      public Layout(IReadOnlyList<Slot> slots, IReadOnlyList<Seam> seams, int unshared, double sharedLength, double extentX, double extentY)
+      public Layout(IReadOnlyList<Slot> slots, IReadOnlyList<Seam> seams, int unshared, double sharedLength, double extentX, double extentY, int bridged)
       {
         this.Slots = slots;
         this.Seams = seams;
@@ -744,6 +991,7 @@ namespace DeepNestSharp.RasterNest
         this.SharedLength = sharedLength;
         this.ExtentX = extentX;
         this.ExtentY = extentY;
+        this.Bridged = bridged;
       }
 
       public IReadOnlyList<Slot> Slots { get; }
@@ -760,16 +1008,20 @@ namespace DeepNestSharp.RasterNest
       public double ExtentX { get; }
 
       public double ExtentY { get; }
+
+      /// <summary>How many bands sit at the common-line gap from a band of another pose.</summary>
+      public int Bridged { get; }
     }
 
     private sealed class Shape
     {
-      public Shape(int angle, double w, double h, List<SideEdge>[] sides)
+      public Shape(int angle, double w, double h, List<SideEdge>[] sides, INfp outline)
       {
         this.Angle = angle;
         this.W = w;
         this.H = h;
         this.Sides = sides;
+        this.Outline = outline;
       }
 
       public int Angle { get; }
@@ -780,6 +1032,9 @@ namespace DeepNestSharp.RasterNest
 
       /// <summary>Min X, max X, min Y, max Y, each sorted along the side.</summary>
       public List<SideEdge>[] Sides { get; }
+
+      /// <summary>The outline turned to this angle, the polygon a copy in this pose is placed as.</summary>
+      public INfp Outline { get; }
     }
   }
 }

@@ -38,10 +38,15 @@ namespace DeepNestSharp.CiTests.RasterNest
     private static readonly RowPatternPacker.Pose Lying = new(90, 36D, 7D, 5D, 34D, 0, 1, 2, 3);
     private static readonly RowPatternPacker.Pose[] Both = { Standing, Lying };
 
+    // A wider bar, 9 x 36 with R1 corners: 34 in straight down its long sides, 7 across its ends.
+    private static readonly RowPatternPacker.Pose Tall = new(0, 9D, 36D, 34D, 7D, 0, 1, 2, 3);
+    private static readonly RowPatternPacker.Pose Flat = new(90, 36D, 9D, 7D, 34D, 0, 1, 2, 3);
+
     private readonly ITestOutputHelper output;
     private readonly string directory;
     private readonly string test2Path;
     private readonly string barPath;
+    private readonly string wideBarPath;
 
     public RowPatternPackerFixture(ITestOutputHelper output)
     {
@@ -52,6 +57,8 @@ namespace DeepNestSharp.CiTests.RasterNest
       CreateTest2Copy(this.test2Path);
       this.barPath = Path.Combine(this.directory, "slotted-bar.dxf");
       CreateSlottedBar(this.barPath);
+      this.wideBarPath = Path.Combine(this.directory, "wide-bar.dxf");
+      CreateRoundedRectangle(this.wideBarPath, 9D, 36D);
     }
 
     public void Dispose()
@@ -156,6 +163,153 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       layout.Placed.Should().Be(1);
       layout.Unshared.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Nineteen of the wider bar. Without the bridge, 13 stand in a band and two rows of three lie above them,
+    /// 117.12 in along the sheet: 12 seams down the band, two in each row and three between the rows, 19 in all,
+    /// and the rows rest on the band at the spacing with nothing shared. Bridged, the standing part a column of
+    /// its own would leave on its own shares with the lying parts beside it: three stacked columns of six lying
+    /// and one standing part, 3 x 36 + 9 in and three gaps, shorter. Down each column 5 seams of 34 in, across the
+    /// columns 2 x 6 of 7 in, and the ends of the four lying parts beside the standing part against its long
+    /// side: 7, 7, 7 and 6.97 in, where the fourth runs past its straight edge. 31 seams, every part in one block.
+    /// The pose with the most parts starts at the corner either way: the band of 13 under the rows, the columns
+    /// before the standing part, which closes the layout next to the rest of the sheet.
+    /// </summary>
+    [Fact]
+    public void NineteenWiderBarsShareInOneBlockWhenBandsOfTwoPosesAreBridged()
+    {
+      var poses = new[] { Tall, Flat };
+
+      var plain = RowPatternPacker.Plan(UsableW, UsableH, poses, Gap, Spacing, 19, 100, true, Tolerance, stack: true)!;
+      var bridged = RowPatternPacker.Plan(UsableW, UsableH, poses, Gap, Spacing, 19, 100, true, Tolerance, stack: true, bridge: true)!;
+
+      plain.Bridged.Should().Be(0);
+      plain.Seams.Should().HaveCount(19);
+      plain.SharedLength.Should().BeApproximately((12 * 34) + (4 * 7) + (3 * 34), 1e-6);
+      plain.ExtentX.Should().BeApproximately((13 * 9) + (12 * Gap), 1e-6);
+      plain.Slots.Where(s => s.PoseIndex == 0).Should().OnlyContain(s => s.MinY == 0, "the band of 13 starts at the corner");
+      plain.Slots.Where(s => s.PoseIndex == 1).Should().OnlyContain(s => s.MinY >= 36 + Spacing - 1e-6);
+
+      bridged.Placed.Should().Be(19);
+      bridged.Unshared.Should().Be(0);
+      bridged.Bridged.Should().Be(1);
+      bridged.Slots.Count(s => s.PoseIndex == 0).Should().Be(1);
+      bridged.Seams.Should().HaveCount(31);
+      bridged.SharedLength.Should().BeApproximately((15 * 34) + (12 * 7) + (3 * 7) + 6.97, 1e-6);
+      bridged.ExtentX.Should().BeApproximately(9 + (3 * 36) + (3 * Gap), 1e-6);
+      bridged.ExtentY.Should().BeApproximately((6 * 9) + (5 * Gap), 1e-6);
+      Clusters(bridged).Should().Equal(19);
+      bridged.Slots.Where(s => s.PoseIndex == 1).Min(s => s.MinX).Should().Be(0, "the lying columns start at the corner");
+      var standing = bridged.Slots.Single(s => s.PoseIndex == 0);
+      standing.MinX.Should().BeApproximately((3 * 36) + (3 * Gap), 1e-6, "the standing part closes the layout");
+      standing.MinY.Should().Be(0);
+
+      var across = bridged.Seams.Where(s => bridged.Slots[s.A].PoseIndex != bridged.Slots[s.B].PoseIndex).ToList();
+      across.Should().HaveCount(4).And.OnlyContain(s => s.AlongX && bridged.Slots[s.B].PoseIndex == 0, "the standing part stands to the right of the lying column");
+      across.Select(s => s.Length).Should().Equal(new[] { 7D, 7D, 7D, 6.97D }, (a, b) => Math.Abs(a - b) < 1e-6);
+
+      // The common-line record reads each edge's stretch from 0 at its first point to 1 at its last. The fourth
+      // lying part sits 3 x 9.01 = 27.03 in up: its end's straight edge runs from 28.03 to 35.03, the standing
+      // part's long one from 1 to 35.
+      var fourth = across[3].Edges.Should().ContainSingle().Subject;
+      fourth.EdgeA.Should().Be(1, "the lying part's max-X side");
+      fourth.EdgeB.Should().Be(0, "the standing part's min-X side");
+      fourth.AStart.Should().BeApproximately(0, 1e-6);
+      fourth.AEnd.Should().BeApproximately(6.97 / 7, 1e-6);
+      fourth.BStart.Should().BeApproximately(27.03 / 34, 1e-6);
+      fourth.BEnd.Should().BeApproximately(1, 1e-6);
+    }
+
+    /// <summary>The same bar with square corners: its straight edges run the full sides. A standing part joined to
+    /// the lying ones beside it would lose both edges at its corners, where three seams would meet, which the
+    /// common-line topology refuses (measured on the slotted bar's square ends). The bands keep the spacing.
+    /// Made-up poses have no outline, so nothing else can refuse the bridge here.</summary>
+    [Fact]
+    public void BandsOfPartsWithSquareCornersAreNotBridged()
+    {
+      var squareTall = new RowPatternPacker.Pose(0, 9D, 36D, 36D, 9D, 0, 1, 2, 3);
+      var squareFlat = new RowPatternPacker.Pose(90, 36D, 9D, 9D, 36D, 0, 1, 2, 3);
+
+      var layout = RowPatternPacker.Plan(UsableW, UsableH, new[] { squareTall, squareFlat }, Gap, Spacing, 19, 100, true, Tolerance, stack: true, bridge: true)!;
+
+      layout.Bridged.Should().Be(0);
+      layout.Seams.Should().HaveCount(19);
+    }
+
+    /// <summary>A block held to six parts: the standing part and a column of six lying beside it would make
+    /// seven, so the bridge stays out.</summary>
+    [Fact]
+    public void ABridgeNeverMakesABlockLargerThanTheLimit()
+    {
+      var layout = RowPatternPacker.Plan(UsableW, UsableH, new[] { Tall, Flat }, Gap, Spacing, 19, 6, true, Tolerance, stack: true, bridge: true)!;
+
+      Clusters(layout).Max().Should().BeLessOrEqualTo(6);
+    }
+
+    /// <summary>Test2's ends are narrower. Laid from the corner on the band of 17 standing, the second lying part
+    /// would end 0.09 in short of where the eleventh standing part's straight top begins, and their R1 corners
+    /// would pass 0.012 in apart with nothing shared, which no cut can take; the rows kept the spacing and only 28
+    /// seams came out. Slid 1.25 in along, five steps of the spacing, every end of the lying row rests on a
+    /// standing part's straight top: each lying part shares with the six standing ones under it, 46 seams, all 26
+    /// parts in one block, no longer than before.</summary>
+    [Fact]
+    public void ALyingRowSlidesAlongUntilEveryEndRestsOnAStandingPart()
+    {
+      var poses = RowPatternPacker.Poses(this.LoadTest2(), new[] { 0, 90 }, Gap, Tolerance);
+
+      var layout = RowPatternPacker.Plan(UsableW, UsableH, poses, Gap, Spacing, 43, 100, true, Tolerance, stack: true, bridge: true)!;
+
+      layout.Placed.Should().Be(26);
+      layout.Unshared.Should().Be(0);
+      layout.Bridged.Should().Be(1);
+      layout.Seams.Should().HaveCount(46);
+      Clusters(layout).Should().Equal(26);
+      layout.Slots.Where(s => s.PoseIndex == 1).Min(s => s.MinX).Should().BeApproximately(5 * Spacing, 1e-9);
+      layout.ExtentX.Should().BeApproximately((17 * 7) + (16 * Gap), 1e-6);
+      layout.ExtentY.Should().BeApproximately(36 + Gap + (3 * 7) + (2 * Gap), 1e-6);
+    }
+
+    /// <summary>The wider bar's nineteen on a sheet: the bridged block passes every check a searched sheet passes,
+    /// with 31 shared cuts, one cluster, no part on its own and no pair inside the spacing without a shared cut,
+    /// from the corner of the sheet. Four-way rotation gives the same poses.</summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    public void NineteenWiderBarsPassTheCommonLineChecksAsOneBridgedBlock(int turns)
+    {
+      int[] angles = turns == 4 ? new[] { 0, 90, 180, 270 } : new[] { 0, 90 };
+
+      var (placements, intents) = SparrowNestService.BuildRowPatternSheet(
+        Load(this.wideBarPath),
+        0,
+        angles,
+        false,
+        (CommonCuttingMode.SamePart, 0, "direct", true, Spacing),
+        19,
+        120,
+        60,
+        Margin,
+        Gap,
+        Tolerance,
+        100,
+        null);
+
+      placements.Should().NotBeNull("the bridged block must pass the checks");
+      var sheet = SheetOf(placements!, intents!);
+      var clusters = CommonLineGeometryResolver.Resolve(sheet).Clusters.Select(c => c.PartIds.Count).ToList();
+      this.output.WriteLine($"placements={placements!.Count} intents={intents!.Count} clusters={string.Join(",", clusters)}");
+
+      placements.Should().HaveCount(19);
+      intents.Should().HaveCount(31, "the bridged block, not the fallback to bands at the spacing");
+      clusters.Should().Equal(19);
+      Isolated(sheet).Should().Be(0);
+      UnsafePairs(sheet).Should().Be(0);
+      placements.Min(p => p.PlacedPart.MinX).Should().BeApproximately(Margin, 1e-6);
+      placements.Min(p => p.PlacedPart.MinY).Should().BeApproximately(Margin, 1e-6);
+      var standing = placements.Single(p => p.PlacedPart.MaxX - p.PlacedPart.MinX < 10);
+      standing.PlacedPart.MinX.Should().BeGreaterThan(placements.Where(p => p != standing).Max(p => p.PlacedPart.MaxX), "the standing part closes the layout");
+      standing.PlacedPart.MinY.Should().BeApproximately(Margin, 1e-6);
     }
 
     [Fact]
@@ -466,7 +620,8 @@ namespace DeepNestSharp.CiTests.RasterNest
     /// <summary>
     /// The gate for the whole idea: a sheet of test2 copies laid out by the pattern passes the same checks a
     /// searched sheet passes before its seams are kept, resolves into cuttable clusters, and leaves no pair
-    /// inside the spacing without a shared cut between them.
+    /// inside the spacing without a shared cut between them. The lying grid slid onto the standing band makes
+    /// every part one cluster.
     /// </summary>
     [Fact]
     public void ASheetOfTest2PassesTheCommonLineChecksWithEveryPartSharing()
@@ -490,7 +645,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       placements.Should().NotBeNull("the pattern must pass the checks on the operator's own part");
       placements!.Should().HaveCount(26);
-      intents.Should().HaveCount(28, "the stacked grid, not the fallback to plain bands");
+      intents.Should().HaveCount(46, "the stacked grid slid onto the band, not the fallback to plain bands");
       var records = intents!.Select(intent => CommonLineGeometryResolver.CreateCommonEdge(
         intent.PartA,
         intent.EdgeAIndex,
@@ -506,7 +661,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
       var clusters = CommonLineGeometryResolver.Resolve(sheet).Clusters.Select(c => c.PartIds.Count).OrderByDescending(n => n).ToList();
 
-      clusters.Should().Equal(17, 9);
+      clusters.Should().Equal(26);
       Isolated(sheet).Should().Be(0);
       UnsafePairs(sheet).Should().Be(0);
     }
@@ -540,7 +695,7 @@ namespace DeepNestSharp.CiTests.RasterNest
 
         placements.Should().NotBeNull("an open drawing is still readable");
         placements!.Should().HaveCount(26);
-        intents.Should().HaveCount(28);
+        intents.Should().HaveCount(46);
       }
     }
 
@@ -662,6 +817,29 @@ namespace DeepNestSharp.CiTests.RasterNest
       dxf.Entities.Add(new DxfCircle(new DxfPoint(4.5D, 34D, 0D), 0.125D));
       dxf.Entities.Add(new DxfCircle(new DxfPoint(4.5D, 32D, 0D), 0.125D));
       dxf.Entities.Add(new DxfCircle(new DxfPoint(2.5D, 32D, 0D), 0.125D));
+      dxf.Save(path, true);
+    }
+
+    /// <summary>An invented part: a <paramref name="w"/> x <paramref name="h"/> in rectangle with R1 corners, one
+    /// closed polyline with four bulges.</summary>
+    internal static void CreateRoundedRectangle(string path, double w, double h)
+    {
+      var dxf = new DxfFile();
+      dxf.Header.Version = DxfAcadVersion.R2000;
+      dxf.Entities.Add(new DxfLwPolyline(new[]
+      {
+        new DxfLwPolylineVertex { X = w, Y = h - 1 },
+        new DxfLwPolylineVertex { X = w, Y = 1D, Bulge = QuarterCircleBulge },
+        new DxfLwPolylineVertex { X = w - 1, Y = 0D },
+        new DxfLwPolylineVertex { X = 1D, Y = 0D, Bulge = QuarterCircleBulge },
+        new DxfLwPolylineVertex { X = 0D, Y = 1D },
+        new DxfLwPolylineVertex { X = 0D, Y = h - 1, Bulge = QuarterCircleBulge },
+        new DxfLwPolylineVertex { X = 1D, Y = h },
+        new DxfLwPolylineVertex { X = w - 1, Y = h, Bulge = QuarterCircleBulge },
+      })
+      {
+        IsClosed = true,
+      });
       dxf.Save(path, true);
     }
 

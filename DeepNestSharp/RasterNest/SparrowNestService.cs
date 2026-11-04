@@ -1916,7 +1916,10 @@
     /// One sheet of the row pattern, held to the same four checks a searched sheet passes before its seams
     /// are kept (see <see cref="MapAndCompact"/>): every seam makes an exact record, no outline eats into
     /// another, every pair without a seam keeps its spacing, and the clusters close into cuttable outlines.
-    /// The grid is tried first; when it does not pass, plain bands are. Null when neither does.
+    /// The grid is tried first, then plain bands, each first with the bands of different poses joined at the
+    /// common-line gap and then without; the first that passes is kept. Joining only adds shared cut to a layout,
+    /// so a joined layout only goes ahead of the same kind of layout without it, and a joined try that joins
+    /// nothing is the try without: that one is not planned again. Null when none passes.
     /// </summary>
     internal static (List<IPartPlacement> Placements, List<CommonEdgeIntent> CommonEdges) BuildRowPatternSheet(
       INfp outline,
@@ -1946,9 +1949,15 @@
 
       var outlineById = new Dictionary<int, INfp> { [source] = outline };
       var rules = new Dictionary<int, (CommonCuttingMode Cc, int ShareKey, string CommonCuttingDomain, bool RequiresMergedLines, double Spacing)> { [source] = rule };
-      foreach (bool stack in new[] { true, false })
+      bool joinedNothing = false;
+      foreach (var (stack, bridge) in new[] { (true, true), (true, false), (false, true), (false, false) })
       {
         cancel.ThrowIfCancellationRequested();
+        if (!bridge && joinedNothing)
+        {
+          continue;
+        }
+
         RowPatternPacker.Layout layout = RowPatternPacker.Plan(
           sheetW - (2 * margin),
           sheetH - (2 * margin),
@@ -1959,12 +1968,14 @@
           maxClusterParts,
           sheetW >= sheetH,
           geometryTolerance,
-          stack);
+          stack,
+          bridge);
         if (layout == null)
         {
           return (null, null);
         }
 
+        joinedNothing = bridge && layout.Bridged == 0;
         var placements = new List<IPartPlacement>(layout.Slots.Count);
         for (int i = 0; i < layout.Slots.Count; i++)
         {
@@ -1984,7 +1995,15 @@
         }
 
         var intents = layout.Seams
-          .SelectMany(seam => seam.Edges.Select(edge => new CommonEdgeIntent(placements[seam.A], edge.EdgeA, placements[seam.B], edge.EdgeB)))
+          .SelectMany(seam => seam.Edges.Select(edge => new CommonEdgeIntent(
+            placements[seam.A],
+            edge.EdgeA,
+            placements[seam.B],
+            edge.EdgeB,
+            edge.AStart,
+            edge.AEnd,
+            edge.BStart,
+            edge.BEnd)))
           .ToList();
 
         try
@@ -2308,7 +2327,38 @@
 
       RemoveOrphanedCommonLineGroups(placements, direct.Edges, placedBySource);
 
+      // The clock can stop the compaction before a cluster the planner moved has slid back to the corner; 9x36
+      // x19 came out 2.14 in off the left border that way.
+      AnchorToCorner(placements, margin, geometryTolerance);
+
       return (placements, placedBySource, seamsSnapped, seamsGivenUp, direct.Edges, direct.Fallbacks);
+    }
+
+    /// <summary>Moves every part on the sheet by the same amount until the pack meets the border at the bottom
+    /// left. Only ever towards the corner, and only when it is off it by more than the tolerance. A rigid move
+    /// keeps every seam and every spacing, and nothing moves past the border, so the checks the sheet passed
+    /// still hold.</summary>
+    internal static void AnchorToCorner(List<IPartPlacement> placements, double margin, double geometryTolerance)
+    {
+      if (placements.Count == 0)
+      {
+        return;
+      }
+
+      double dx = margin - placements.Min(p => p.PlacedPart.MinX);
+      double dy = margin - placements.Min(p => p.PlacedPart.MinY);
+      dx = dx < -geometryTolerance ? dx : 0D;
+      dy = dy < -geometryTolerance ? dy : 0D;
+      if (dx == 0D && dy == 0D)
+      {
+        return;
+      }
+
+      foreach (IPartPlacement placement in placements)
+      {
+        placement.X += dx;
+        placement.Y += dy;
+      }
     }
 
     /// <summary>
