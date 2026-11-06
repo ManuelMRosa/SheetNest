@@ -1,62 +1,17 @@
 <p align="center">
-  <img src="assets/banner.png" alt="SheetNest, free nesting software for sheet metal" width="900">
+  <img src="assets/banner.png" alt="SheetNest" width="900">
 </p>
 
-<p align="center">
-  <a href="https://sheetnest.io"><img src="https://img.shields.io/badge/Download%20for%20Windows-3aa851?style=for-the-badge&logo=windows&logoColor=white" alt="Download SheetNest for Windows"></a>
-  <a href="https://ko-fi.com/sheetnest"><img src="https://img.shields.io/badge/Support-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support SheetNest on Ko-fi"></a>
-  <a href="https://www.linkedin.com/company/sheetnest/"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge" alt="SheetNest on LinkedIn"></a>
-  <a href="https://www.instagram.com/sheetnestusa/"><img src="https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="SheetNest on Instagram"></a>
-</p>
+**SheetNest**: true-shape nesting software for sheet metal laser and plasma cutting.
 
-<p align="center">
-  <sub>Free · Windows 10/11, 64-bit · English, Español, Deutsch, Português (Brasil), 中文, हिन्दी · no account, no subscription</sub>
-</p>
+**Download:** https://sheetnest.io
 
-# SheetNest: free nesting software for sheet metal
+This repository holds the open-source code of SheetNest up to version 1.1.14, under the MIT License (see
+[LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). The current SheetNest is downloaded from
+[sheetnest.io](https://sheetnest.io) under the SheetNest License Agreement.
 
-SheetNest is free nesting software for sheet metal fabrication. It fits your parts onto stock sheets for CNC laser cutting and plasma cutting, on Windows, with no account and no subscription.
-
-If you cut sheet metal, SheetNest helps you get the most parts out of every sheet, buy less material, and hand your machine cut-ready files, all from a simple, one-toolbar app.
-
-## What SheetNest does
-
-- **Fits the most parts on every sheet, automatically.** True-shape nesting packs your parts tightly by their real outline, so you waste less material and buy fewer sheets. Real 800-part jobs nest in seconds.
-- **Imports your DXF part drawings.** Drop in the DXF files you already have and start nesting.
-- **Your drawing's colours say what each line is for.** Anything drawn in yellow is engraved: it is never cut, and it travels with its part onto the sheet, on screen and in the exported DXF, turned and mirrored with it. Blue text names the part and, after a comma, says how many you need (`BRACKET,12`). Every other colour is cut. A drawing that holds several parts comes in as one row per part. A line that does not close a shape is reported with how many there are, their layer, and how to fix the drawing.
-- **Imports 3D parts and flattens them for you.** Bring in a 3D sheet-metal part (STEP or IGES) and SheetNest unfolds it to a flat pattern that's ready to nest. The 3D unfolding engine is built in, runs offline, and needs nothing extra installed. You can set a per-part bend allowance (K-factor) and check the flat length with the built-in Measure tool.
-- **Tell it what you need.** Enter how many of each part you want (including mirrored copies), and list the sheet sizes and stock you actually have. Save your own sheet-size presets so they're one click next time.
-- **Nest with one click, then fine-tune by hand.** Let SheetNest lay everything out, then drag, rotate, nudge, and drop parts to contact yourself, with spacing kept safe and full undo/redo.
-- **Compatible parts can share one cut.** Choose per part whether it may share with any compatible part or only another copy of itself. SheetNest keeps ordinary spacing everywhere else, seats selected straight outside edges at the configurable Common Line Gap, and exports each cluster as a closed outer boundary plus one midpoint seam on clearly named layers your CAM can read.
-- **Picks the best sheet size for you.** Stock several sizes and SheetNest puts the bulk on the size that packs densest and the leftovers on the size that wastes least. Standard US sheet sizes are built in, plus your own custom sizes.
-- **Exports cut-ready DXF.** One clean DXF per layout, parts only, so your CAM software has nothing extra to trip over. Identical sheets are grouped into a simple "cut N of this layout" plan.
-- **One-click PDF report.** One page per layout, the paper you take to the machine: the job's settings, how many sheets to cut, the parts on that sheet, and the sheet drawn to scale with every part numbered to its row. Black and white with parts as outlines, so it prints clearly on any shop printer and uses almost no toner.
-- **Works in inches or millimeters.** Switch units to match your shop, with sheets up to 6000 × 2000 mm.
-- **Speaks your language.** English, Spanish, German, Brazilian Portuguese, Simplified Chinese and Hindi: every menu, button and message, and the PDF report. The installer asks which one SheetNest opens in, and Settings > Language changes it later. Translations come from people who use SheetNest, and adding one takes no programming: [help translate](Localization/README.md).
-- **Keeps your work safe.** Autosave and crash recovery, a backup copy on every save, a Recent Projects list, and double-click a project file to open it right where you left off. Each saved project remembers its own sheet stock and its finished nest.
-- **Free and open.** No account, no subscription, no license key. Open-source software you can just use.
-
-## Screenshots
-
-<p align="center">
-  <img src="imgs/main-nest.png" alt="SheetNest nesting sheet-metal parts on a stock sheet for laser cutting" width="900"><br>
-  <em>One-click true-shape nesting. Your parts packed tight on the sheet, ready to cut.</em>
-</p>
-
-<p align="center">
-  <img src="imgs/edit-nest.png" alt="Editing a nest by hand in SheetNest: select, drag, rotate and mirror parts" width="900"><br>
-  <em>Fine-tune by hand: select, drag, rotate, mirror, nudge, or type a coordinate to place a part exactly.</em>
-</p>
-
-<p align="center">
-  <img src="imgs/nest-report.png" alt="SheetNest PDF nest report page: settings, parts list and the sheet drawn to scale with every part numbered" width="640"><br>
-  <em>The one-click PDF report: one page per layout, with each part numbered so a cut piece can be matched to its row and marked.</em>
-</p>
-
-## License
-
-SheetNest is open-source software released under the MIT License. See [LICENSE](LICENSE).
-
-SheetNest bundles an offline 3D-unfolding engine built from open-source software (FreeCAD and the SheetMetal workbench under the GNU LGPL, and NetworkX under the BSD license). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list, licenses and sources.
-
-Building from source? See [BUILDING.md](BUILDING.md). Want to translate SheetNest, report a problem or send a change? See [CONTRIBUTING.md](CONTRIBUTING.md).
+- fits the most parts on every sheet, packed by their real outline
+- imports DXF drawings, and 3D STEP / IGES sheet-metal parts unfolded offline
+- common-line cutting between compatible parts
+- exports cut-ready DXF and a one-page PDF report per layout
+- English, Spanish, German, Brazilian Portuguese, Simplified Chinese and Hindi

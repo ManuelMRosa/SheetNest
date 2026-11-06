@@ -1,7 +1,7 @@
 # Building SheetNest from source
 
-You only need this if you want to build SheetNest yourself. Most people should just
-download the installer from the [latest release](https://github.com/ManuelMRosa/SheetNest/releases/latest).
+This builds SheetNest's open-source code, up to version 1.1.14. To use SheetNest, download it from
+[sheetnest.io](https://sheetnest.io/download).
 
 SheetNest is a .NET 10 / WPF desktop app for Windows.
 
